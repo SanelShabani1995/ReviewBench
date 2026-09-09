@@ -55,6 +55,14 @@ if ! jq -e 'type == "array"' <<<"$raw_findings" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Every finding must carry a file and a message. A malformed one is a bug in
+# the adapter, so fail loudly rather than quietly report a thinner review.
+bad=$(jq '[.[] | select((.file|type) != "string" or (.message|type) != "string")] | length' <<<"$raw_findings")
+if [[ "$bad" != "0" ]]; then
+  echo "agent: $bad finding(s) lack a string file or message; refusing to write a bad result" >&2
+  exit 1
+fi
+
 jq -n \
   --arg agent "$agent" \
   --arg repo "https://github.com/$RB_NWO" \
@@ -67,7 +75,6 @@ jq -n \
     agent: $agent,
     findings: [
       $findings[]
-      | select(.file != null and .message != null)
       | {
           producer: $agent,
           file: (.file | sub("^\\./"; "")),

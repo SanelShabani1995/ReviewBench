@@ -121,8 +121,6 @@ for (const file of files) {
     continue;
   }
 
-  checkNoSecrets(raw, errors);
-
   let manifest;
   try {
     manifest = JSON.parse(raw);
@@ -131,6 +129,10 @@ for (const file of files) {
     failed++;
     continue;
   }
+
+  // Scan the parsed document, not the file: a JSON escape such as sk-
+  // decodes to a key that a scan of the raw text would miss.
+  checkNoSecrets(JSON.stringify(manifest), errors);
 
   checkNode(manifest, schema, "", errors);
 

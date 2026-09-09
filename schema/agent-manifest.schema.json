@@ -9,8 +9,8 @@
   "properties": {
     "name": {
       "type": "string",
-      "description": "Stable identifier, used as the producer on every finding.",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$"
+      "description": "Stable identifier, used as the producer on every finding. Lowercase letters, digits, dot, underscore, dash.",
+      "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$"
     },
     "display_name": {
       "type": "string",
@@ -26,8 +26,8 @@
     },
     "image": {
       "type": "string",
-      "description": "Container image pinned by digest, so a run is reproducible and the bytes cannot change under us.",
-      "pattern": "^[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$"
+      "description": "Container image pinned by digest, so a run is reproducible and the bytes cannot change under us. Optional registry host (with port), then one or more path components of lowercase letters and digits separated by single dots, underscores or dashes.",
+      "pattern": "^([a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?/)?[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*@sha256:[a-f0-9]{64}$"
     },
     "configuration": {
       "type": "array",
