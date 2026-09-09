@@ -53,7 +53,7 @@ is. The leaderboard runs on pull requests you never see.
 |---|---|---|
 | 1 | Us | We run your image against one public pull request to confirm the contract holds |
 | 2 | Us | A maintainer approves you. This is the only approval needed before you can run |
-| 3 | You | Trigger a run whenever you like, up to 5 a month |
+| 3 | You | Trigger a run whenever you like, up to 10 a month |
 | 4 | Us | Your container runs once per pull request across the held-back corpus |
 | 5 | Us | Our judge scores every finding, and you get a private report |
 | 6 | You | Iterate, then ask to publish a configuration |
