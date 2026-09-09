@@ -92,8 +92,13 @@ run rather than publishing a partial score.
 
 - **Time.** 15 minutes per pull request by default. Ask if your agent needs
   longer.
-- **Network.** Open during the pilot. Later we will restrict egress to the
-  hosts you declare, so declare every host your agent contacts.
+- **Network.** Restricted to the hosts you declare, on port 443, through a
+  forward proxy. Its address arrives as `HTTP_PROXY` and `HTTPS_PROXY` (and
+  lowercase), which every mainstream HTTP client honours; `NODE_USE_ENV_PROXY=1`
+  is set for Node's built-in `fetch`. Declare every host, including any token
+  exchange your model provider does (Copilot seats, for example, use
+  `api.github.com` plus `api.githubcopilot.com` or
+  `api.enterprise.githubcopilot.com`). Refused hosts are listed in your report.
 - **No GPUs.** If you use an open model, host it yourself and call it over
   the network.
 - **Resources.** A standard GitHub-hosted runner, shared with our driver.
