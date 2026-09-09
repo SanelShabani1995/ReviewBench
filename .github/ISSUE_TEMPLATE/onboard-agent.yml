@@ -1,0 +1,127 @@
+name: Onboard an agent
+description: Register a code review agent so it can be run on the benchmark
+title: "Onboard: "
+labels: ["onboarding"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fill this in and we will turn it into a manifest for you. No git, no YAML.
+
+        **Do not put any credential in this form.** It is public. Declare only
+        which environment variables or file paths your agent needs; we collect
+        the values separately.
+
+  - type: input
+    id: name
+    attributes:
+      label: Agent identifier
+      description: Lowercase, no spaces. Becomes the producer on every finding.
+      placeholder: my-reviewer
+    validations:
+      required: true
+
+  - type: input
+    id: display_name
+    attributes:
+      label: Display name
+      description: How your reviewer should appear on the leaderboard.
+      placeholder: My Reviewer
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider
+      description: The company or person behind it.
+      placeholder: My Company
+    validations:
+      required: true
+
+  - type: input
+    id: image
+    attributes:
+      label: Container image, pinned by digest
+      description: >
+        Must be a digest, not a tag, so the run is reproducible. Get it with
+        `docker inspect --format='{{index .RepoDigests 0}}' <image>`.
+      placeholder: ghcr.io/my-org/my-reviewer@sha256:0123...
+    validations:
+      required: true
+
+  - type: input
+    id: configuration
+    attributes:
+      label: Configuration label
+      description: >
+        What distinguishes this from other setups you might test, such as a
+        model name or effort tier. Leave blank if you only have one.
+      placeholder: Balanced
+    validations:
+      required: false
+
+  - type: textarea
+    id: secrets
+    attributes:
+      label: Credentials your agent needs
+      description: >
+        Names and paths only, one per line. Prefix files with `file:`. Leave
+        blank if your agent needs no credential, for example because it calls a
+        model you host yourself with no key.
+      placeholder: |
+        OPENAI_API_KEY
+        MY_SERVICE_TOKEN
+        file:/root/.config/my-agent/creds.json
+    validations:
+      required: false
+
+  - type: textarea
+    id: egress
+    attributes:
+      label: Hosts your agent contacts
+      description: >
+        One per line. Anything not listed will eventually be blocked, so list
+        every host, including your own API.
+      placeholder: |
+        api.openai.com
+        api.my-company.com
+    validations:
+      required: false
+
+  - type: input
+    id: pr_timeout
+    attributes:
+      label: Seconds needed per pull request
+      description: Leave blank for the default of 900.
+      placeholder: "900"
+    validations:
+      required: false
+
+  - type: input
+    id: contact
+    attributes:
+      label: Contact
+      description: Where we send your private report.
+      placeholder: reviews@my-company.com
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else we should know
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before you submit
+      options:
+        - label: My image satisfies the agent contract and I tested it on the public showcase.
+          required: true
+        - label: No credential is baked into my image, and none appears in this form.
+          required: true
+        - label: I understand my agent's inference costs are mine, and that the corpus is not shared.
+          required: true

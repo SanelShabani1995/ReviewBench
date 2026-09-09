@@ -1,0 +1,47 @@
+name: Validate agent manifests
+
+# Runs on pull requests from anyone, including forks, so it must stay
+# read-only and touch no secrets. It only reads JSON.
+#
+# `pull_request`, never `pull_request_target`: this checks out contributor
+# content, and pull_request_target would run it with write access to this
+# repository.
+
+on:
+  pull_request:
+    paths:
+      - agents/**
+      - schema/**
+  push:
+    branches: [main]
+    paths:
+      - agents/**
+      - schema/**
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate every manifest
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          manifests=(agents/*.json)
+          if [ ${#manifests[@]} -eq 0 ]; then
+            echo "no manifests to validate"
+            exit 0
+          fi
+          node schema/validate-manifest.mjs "${manifests[@]}"
+
+      - name: Check the schema itself still parses
+        run: node -e "JSON.parse(require('fs').readFileSync('schema/agent-manifest.schema.json','utf8')); console.log('schema ok')"

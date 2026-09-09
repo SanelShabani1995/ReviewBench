@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://review-bench.ai/schema/agent-manifest.schema.json",
+  "title": "ReviewBench agent manifest",
+  "description": "Describes how to reach a vendor's agent. Declares the shape of any credentials it needs, never their values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "display_name", "provider", "image", "contact"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Stable identifier, used as the producer on every finding.",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$"
+    },
+    "display_name": {
+      "type": "string",
+      "description": "How the reviewer is named on the leaderboard.",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "provider": {
+      "type": "string",
+      "description": "The company or individual behind the reviewer.",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "image": {
+      "type": "string",
+      "description": "Container image pinned by digest, so a run is reproducible and the bytes cannot change under us.",
+      "pattern": "^[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$"
+    },
+    "configuration": {
+      "type": "array",
+      "description": "Labels distinguishing this configuration from others you test, such as model or effort tier.",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "value"],
+        "properties": {
+          "key": { "type": "string", "maxLength": 32 },
+          "value": { "type": "string", "maxLength": 64 },
+          "display_value": { "type": "string", "maxLength": 64 }
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "description": "The SHAPE of the credentials your agent needs. Values are never placed here; they are collected separately and stored write-only.",
+      "additionalProperties": false,
+      "properties": {
+        "env": {
+          "type": "array",
+          "description": "Environment variable names your agent reads.",
+          "maxItems": 16,
+          "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+        },
+        "files": {
+          "type": "array",
+          "description": "Absolute paths your agent expects a credential file at.",
+          "maxItems": 8,
+          "items": { "type": "string", "pattern": "^/[^\\0]+$" }
+        }
+      }
+    },
+    "egress": {
+      "type": "array",
+      "description": "Every host your agent contacts. Once egress is restricted, anything not listed here is blocked.",
+      "maxItems": 32,
+      "items": { "type": "string", "pattern": "^[a-z0-9.-]+$" }
+    },
+    "pr_timeout_seconds": {
+      "type": "integer",
+      "description": "Seconds your agent needs for one pull request. Ask for more only if you need it; longer runs are more likely to be cut short.",
+      "minimum": 60,
+      "maximum": 3600,
+      "default": 900
+    },
+    "contact": {
+      "type": "string",
+      "description": "Where we send your report and any questions.",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "notes": {
+      "type": "string",
+      "description": "Anything we should know when running your agent.",
+      "maxLength": 1000
+    }
+  }
+}
