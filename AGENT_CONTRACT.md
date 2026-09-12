@@ -27,7 +27,7 @@ docker run --rm \
 
 | Path or variable | Contents |
 |---|---|
-| `/work/repo` | The repository checked out at `RB_HEAD`, with `.git`, so `git diff $RB_BASE...$RB_HEAD` and repository history both work. Writable, discarded after the run. |
+| `/work/repo` | The repository checked out at `RB_HEAD`, with `.git`, so `git diff $RB_BASE...$RB_HEAD` and repository history both work. Marked safe for git through `GIT_CONFIG_*` variables; if your image clears the environment, set `safe.directory` yourself. Writable, discarded after the run. |
 | `/work/pr/diff.patch` | The change under review, already computed as a three-dot diff from base to head. Identical to what GitHub shows on the pull request. |
 | `/work/pr/pr.json` | `{ repo, pr_number, base, head, nwo, title, body }` |
 | `RB_NWO` | `owner/repo` |
