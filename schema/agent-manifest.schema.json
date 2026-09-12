@@ -5,7 +5,14 @@
   "description": "Describes how to reach a vendor's agent. Declares the shape of any credentials it needs, never their values.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["name", "display_name", "provider", "image", "contact"],
+  "required": [
+    "name",
+    "display_name",
+    "provider",
+    "image",
+    "contact",
+    "contacts"
+  ],
   "properties": {
     "name": {
       "type": "string",
@@ -36,11 +43,23 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["key", "value"],
+        "required": [
+          "key",
+          "value"
+        ],
         "properties": {
-          "key": { "type": "string", "maxLength": 32 },
-          "value": { "type": "string", "maxLength": 64 },
-          "display_value": { "type": "string", "maxLength": 64 }
+          "key": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "display_value": {
+            "type": "string",
+            "maxLength": 64
+          }
         }
       }
     },
@@ -53,13 +72,19 @@
           "type": "array",
           "description": "Environment variable names your agent reads.",
           "maxItems": 16,
-          "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
         },
         "files": {
           "type": "array",
           "description": "Absolute paths your agent expects a credential file at.",
           "maxItems": 8,
-          "items": { "type": "string", "pattern": "^/[^\\0]+$" }
+          "items": {
+            "type": "string",
+            "pattern": "^/[^\\0]+$"
+          }
         }
       }
     },
@@ -67,7 +92,10 @@
       "type": "array",
       "description": "Every host your agent contacts. Once egress is restricted, anything not listed here is blocked.",
       "maxItems": 32,
-      "items": { "type": "string", "pattern": "^[a-z0-9.-]+$" }
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9.-]+$"
+      }
     },
     "pr_timeout_seconds": {
       "type": "integer",
@@ -81,6 +109,16 @@
       "description": "Where we send your report and any questions.",
       "minLength": 3,
       "maxLength": 128
+    },
+    "contacts": {
+      "type": "array",
+      "description": "GitHub usernames allowed to act for this agent: start runs, publish, rotate credentials. Everything a vendor does later is checked against this list.",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}$"
+      }
     },
     "notes": {
       "type": "string",

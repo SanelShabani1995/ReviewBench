@@ -99,6 +99,15 @@ body:
       required: false
 
   - type: input
+    id: contacts
+    attributes:
+      label: GitHub usernames allowed to act for this agent
+      description: Comma-separated. Only these accounts can start runs, publish, or rotate credentials for this agent.
+      placeholder: alice-example, bob-example
+    validations:
+      required: true
+
+  - type: input
     id: contact
     attributes:
       label: Contact
