@@ -40,7 +40,7 @@ docker run --rm \
   -v "$PWD/findings:/work/candidate:ro" \
   -v "$PWD/results:/work/results" \
   ghcr.io/review-bench/review-bench:latest \
-  eval --candidate /work/candidate --scoring-profile official-2026-07
+  eval --candidate /work/candidate --scoring-profile official-2026-09
 ```
 
 **Showcase scores are not leaderboard scores.** These 25 pull requests are
