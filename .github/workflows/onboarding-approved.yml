@@ -1,0 +1,53 @@
+name: Onboarding approved
+
+# When a manifest pull request is merged, tell the agent's contacts what
+# comes next: connecting credentials in the vendor portal. Mentioning them
+# is what makes GitHub send the email.
+
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - "agents/*.json"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  notify:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comment with the next step
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          PORTAL: ${{ vars.VENDOR_PORTAL_URL || 'https://reviewbench-test.azurewebsites.net/vendor' }}
+        run: |
+          set -euo pipefail
+          # The manifests this pull request added or changed.
+          files=$(gh pr view "$PR" -R "$REPO" --json files --jq '.files[].path | select(startswith("agents/") and endswith(".json"))')
+          for f in $files; do
+            [ -f "$f" ] || continue
+            name=$(jq -r '.name' "$f")
+            display=$(jq -r '.display_name' "$f")
+            mentions=$(jq -r '[.contacts[]? | "@" + .] | join(" ")' "$f")
+            declared=$(jq -r '[(.secrets.env // [])[], (.secrets.files // [])[]] | length' "$f")
+            {
+              echo "$mentions: **$display** (\`$name\`) is approved."
+              echo
+              if [ "$declared" -gt 0 ]; then
+                echo "Next step: connect the agent's credentials in the vendor portal, then start a run."
+              else
+                echo "The manifest declares no credentials, so the agent is ready to run."
+              fi
+              echo
+              echo "$PORTAL"
+            } > /tmp/comment.md
+            gh pr comment "$PR" -R "$REPO" --body-file /tmp/comment.md
+          done
