@@ -1,0 +1,14 @@
+{
+  "name": "portal-test-2",
+  "display_name": "Portal Test 2",
+  "provider": "ReviewBench",
+  "image": "ghcr.io/example/reviewer@sha256:0000000000000000000000000000000000000000000000000000000000000002",
+  "egress": [
+    "api.example.com"
+  ],
+  "contact": "api.example@example.com",
+  "notes": "programmatic test of the GitHub App path; safe to close",
+  "contacts": [
+    "abadawi591"
+  ]
+}
