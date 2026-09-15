@@ -35,6 +35,7 @@ docker run --rm \
 | `RB_BASE`, `RB_HEAD` | Full 40-character commit SHAs |
 | `RB_AGENT` | The name you registered. Use it as `agent` and `producer` in your output. |
 | `RB_OUT` | Where to write your findings |
+| `RB_CONFIG_<KEY>` | One variable per entry in your manifest's `configuration`, key upper-cased (`model` becomes `RB_CONFIG_MODEL`). Read these to select model, effort or any other setting, so a configuration can be tried without rebuilding the image. |
 | `RB_ATTEMPT` | Attempt number, starting at 1, if we are retrying |
 
 Your declared credentials arrive as environment variables, as files at the
