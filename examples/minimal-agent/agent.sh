@@ -63,6 +63,19 @@ if [[ "$bad" != "0" ]]; then
   exit 1
 fi
 
+# Line numbers are optional, but when present they must be positive integers
+# with end_line at or after start_line.
+bad=$(jq '
+  def bad_line: . != null and ((type != "number") or (. != floor) or (. < 1));
+  [.[] | select(
+    (.start_line | bad_line) or (.end_line | bad_line)
+    or (.start_line != null and .end_line != null and .end_line < .start_line)
+  )] | length' <<<"$raw_findings")
+if [[ "$bad" != "0" ]]; then
+  echo "agent: $bad finding(s) have a start_line or end_line that is not a positive integer, or end_line before start_line; refusing to write a bad result" >&2
+  exit 1
+fi
+
 jq -n \
   --arg agent "$agent" \
   --arg repo "https://github.com/$RB_NWO" \
