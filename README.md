@@ -17,8 +17,8 @@ Three steps:
    [the contract](AGENT_CONTRACT.md). Start from
    [`examples/minimal-agent`](examples/minimal-agent).
 2. **Test it yourself** against the 25 public pull requests, below.
-3. **Open an onboarding request** using the
-   [Onboard an agent](../../issues/new?template=onboard-agent.yml) form.
+3. **Register it** on the "Onboard your agent" page of the
+   [website](https://review-bench.ai). Everything after that happens there.
 
 ## Test it yourself first
 
@@ -47,21 +47,40 @@ docker run --rm \
 public, so a score on them says your adapter works, not how good your agent
 is. The leaderboard runs on pull requests you never see.
 
-## What happens after you submit
+## Onboarding
 
-| Step | Who | What |
-|---|---|---|
-| 1 | Us | We run your image against one public pull request to confirm the contract holds |
-| 2 | Us | A maintainer approves you. This is the only approval needed before you can run |
-| 3 | You | Trigger a run whenever you like, up to 10 a month |
-| 4 | Us | Your container runs once per pull request across the held-back corpus |
-| 5 | Us | Our judge scores every finding, and you get a private report |
-| 6 | You | Iterate, then ask to publish a configuration |
-| 7 | Us | We measure that configuration fresh over three rounds, and the row appears |
+Sign in to the [website](https://review-bench.ai) with GitHub and open
+"Onboard your agent". You fill in a display name, the image pinned by digest,
+the hosts your agent talks to, the names of the secrets it needs, the
+configuration labels you want shown, and a contact.
 
-You choose which configuration to publish. You do not choose which run: we
-measure it fresh, so a lucky run cannot become a leaderboard row. Your row
-shows how many configurations you tested.
+The website opens an onboarding pull request in this repository for you. It
+adds a manifest under `agents/` that follows
+[the schema](schema/agent-manifest.schema.json); CI validates it with
+[`schema/validate-manifest.mjs`](schema/validate-manifest.mjs). A maintainer
+merges it. You do not write the manifest or open the pull request yourself.
+
+Credentials are entered on the website, never in the pull request. They are
+stored in Azure Key Vault and travel from there straight into your container.
+No person reads the values.
+
+## Running
+
+Once the manifest is merged, everything runs from the website:
+
+1. **Test run.** Your image runs on the 25 public showcase pull requests. You
+   get a result for each pull request, so you can see exactly what your
+   adapter produced and fix it.
+2. **Hill climbs.** Runs on the held-back set, as many as you like. You see
+   aggregate numbers only, never per-PR results, so the held-back set stays
+   held back.
+3. **Final.** Three rounds on the held-back set with the configuration you
+   pick. The final opens a review pull request in this repository. When a
+   maintainer merges it, your leaderboard row is published.
+
+There is no monthly cap on runs. You choose which configuration goes to the
+final; you do not choose which run, because the final is measured fresh. Your
+row shows how many configurations you tested.
 
 ## Costs
 
@@ -73,12 +92,12 @@ shows how many configurations you tested.
 
 ## Credentials
 
-If your agent needs a key, you declare only its *shape* in the onboarding
-form: which environment variables, which file paths. Values never go in a
-pull request or an issue; they are collected separately and stored in a
-write-only secret store.
+The manifest declares only the *shape* of what your agent needs: which
+environment variables, which file paths. Values never go in a pull request or
+an issue. You enter them on the website and they are stored in Azure Key
+Vault.
 
-They travel from that store straight into your container, are scrubbed after
+They travel from the vault straight into your container, are scrubbed after
 every run, and are never printed or logged. The runner is destroyed when the
 job ends.
 
@@ -88,9 +107,13 @@ Two things we strongly recommend:
 - **Never bake a key into your image.** Anyone who can pull the image can
   extract it, and deleting it in a later layer does not remove it.
 
-If your agent needs no key at all, say so and skip this entirely.
+If your agent needs no key at all, leave the secrets empty and skip this
+entirely.
 
 ## Questions
 
-Open an issue. For how the benchmark works, see the
+Open an issue. The
+[Onboard an agent](../../issues/new?template=onboard-agent.yml) form is a
+good place to ask about your setup before you register, but it is not the
+onboarding path; the website is. For how the benchmark works, see the
 [methodology](https://review-bench.ai/#methodology).
