@@ -9,13 +9,16 @@ docker build -t my-reviewer:dev .
 
 Then run it against one pull request from the public showcase. With
 `repos/` and `manifest.json` unpacked as described in the
-[root README](../../README.md#test-it-yourself-first), pick an entry and lay
-out the two files the adapter reads:
+[root README](../../README.md#test-it-yourself-first), pick an entry, check
+out its head so the container sees source files, and lay out the two files
+the adapter reads:
 
 ```sh
 entry=$(jq -c '.[0]' manifest.json)      # any entry of the showcase manifest
 nwo=$(jq -r .nwo <<<"$entry"); base=$(jq -r .base <<<"$entry"); head=$(jq -r .head <<<"$entry")
 mkdir -p pr out
+# The unpacked repositories carry objects only, so give this one a working tree.
+GIT_LFS_SKIP_SMUDGE=1 git -C "repos/${nwo/\//_}" checkout --detach "$head"
 git -C "repos/${nwo/\//_}" diff "$base...$head" > pr/diff.patch
 jq '{repo, pr_number, base, head, nwo, title, body}' <<<"$entry" > pr/pr.json
 ```
