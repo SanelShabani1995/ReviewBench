@@ -35,7 +35,7 @@ docker run --rm \
 | `RB_BASE`, `RB_HEAD` | Full 40-character commit SHAs |
 | `RB_AGENT` | The name you registered. Use it as `agent` and `producer` in your output. |
 | `RB_OUT` | Where to write your findings |
-| `RB_CONFIG_<KEY>` | One variable per entry in your manifest's `configuration`, key upper-cased (`model` becomes `RB_CONFIG_MODEL`). Read these to select model, effort or any other setting, so a configuration can be tried without rebuilding the image. |
+| `RB_CONFIG_<KEY>` | One variable per entry in your manifest's `configuration`. The key is upper-cased and every character that is not a letter or digit becomes an underscore (`model` becomes `RB_CONFIG_MODEL`, `max-tokens` becomes `RB_CONFIG_MAX_TOKENS`). Read these to select model, effort or any other setting, so a configuration can be tried without rebuilding the image. |
 | `RB_ATTEMPT` | Attempt number, starting at 1, if we are retrying |
 
 Your declared credentials arrive as environment variables, as files at the
@@ -76,7 +76,8 @@ One JSON file at `RB_OUT`:
   underlying issue is real.
 - One entry per logical issue, spanning the full line range. Do not emit one
   entry per line.
-- `pr.head` must equal `RB_HEAD`. A mismatch fails the pull request.
+- `pr.head` must equal `RB_HEAD` and `pr.pr_number` must equal `RB_PR_NUMBER`.
+  A mismatch in either fails the pull request.
 
 ### Exit codes
 
@@ -84,7 +85,7 @@ One JSON file at `RB_OUT`:
 |---|---|
 | Exit 0 with a valid file | Accepted |
 | Exit 0 with `"findings": []` | Accepted. You reviewed it and found nothing. |
-| Non-zero exit, missing file, malformed JSON, or wrong head | The pull request failed. We retry, then fail the run. |
+| Non-zero exit, missing file, malformed JSON, or wrong head or PR number | The pull request failed. We retry, then fail the run. |
 
 A run is all or nothing. One pull request that never succeeds fails the whole
 run rather than publishing a partial score.
@@ -93,8 +94,10 @@ run rather than publishing a partial score.
 
 - **Time.** 15 minutes per pull request by default. Ask if your agent needs
   longer.
-- **Network.** Restricted to the hosts you declare, on port 443, through a
-  forward proxy. Its address arrives as `HTTP_PROXY` and `HTTPS_PROXY` (and
+- **Network.** Enforced during every run: only the hosts listed in your
+  manifest's `egress` are reachable, on port 443, through a forward proxy.
+  Anything else is refused. The proxy address arrives as `HTTP_PROXY` and
+  `HTTPS_PROXY` (and
   lowercase), which every mainstream HTTP client honours; `NODE_USE_ENV_PROXY=1`
   is set for Node's built-in `fetch`. Declare every host, including any token
   exchange your model provider does (Copilot seats, for example, use
