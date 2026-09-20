@@ -10,6 +10,7 @@
     "display_name",
     "provider",
     "image",
+    "egress",
     "contact",
     "contacts"
   ],
@@ -33,8 +34,8 @@
     },
     "image": {
       "type": "string",
-      "description": "Container image pinned by digest, so a run is reproducible and the bytes cannot change under us. Optional registry host (with port), then one or more path components of lowercase letters and digits separated by single dots, underscores or dashes.",
-      "pattern": "^([a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?/)?[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*@sha256:[a-f0-9]{64}$"
+      "description": "Container image on the GitHub Container Registry, pinned by digest so a run is reproducible and the bytes cannot change under us: ghcr.io/<owner>/<name>@sha256:<64 hex>.",
+      "pattern": "^ghcr\\.io/[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)+@sha256:[a-f0-9]{64}$"
     },
     "configuration": {
       "type": "array",
@@ -50,7 +51,8 @@
         "properties": {
           "key": {
             "type": "string",
-            "maxLength": 32
+            "description": "Becomes the environment variable RB_CONFIG_<KEY> inside the container, upper-cased. Letters, digits, underscore, dash; starts with a letter.",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,31}$"
           },
           "value": {
             "type": "string",
@@ -83,19 +85,20 @@
           "maxItems": 8,
           "items": {
             "type": "string",
-            "pattern": "^/[^\\0]+$"
+            "pattern": "^/[^\u0000\n\r]+$"
           }
         }
       }
     },
     "egress": {
       "type": "array",
-      "description": "Every host your agent contacts. Once egress is restricted, anything not listed here is blocked.",
+      "description": "Every host your agent contacts. Anything not listed here is blocked during a run; at least one host is required.",
       "maxItems": 32,
       "items": {
         "type": "string",
-        "pattern": "^[a-z0-9.-]+$"
-      }
+        "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$"
+      },
+      "minItems": 1
     },
     "pr_timeout_seconds": {
       "type": "integer",
@@ -124,6 +127,14 @@
       "type": "string",
       "description": "Anything we should know when running your agent.",
       "maxLength": 1000
+    },
+    "image_visibility": {
+      "type": "string",
+      "enum": [
+        "public",
+        "private"
+      ],
+      "description": "public: the runner pulls anonymously. private: the runner pulls with the GHCR_PULL_TOKEN the vendor stores with its credentials (a GitHub token with read:packages)."
     }
   }
 }
