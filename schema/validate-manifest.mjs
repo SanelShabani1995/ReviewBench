@@ -35,6 +35,9 @@ function checkString(value, spec, path, errors) {
   if (spec.maxLength !== undefined && value.length > spec.maxLength) {
     errors.push(`${path}: longer than ${spec.maxLength} characters`);
   }
+  if (spec.enum && !spec.enum.includes(value)) {
+    errors.push(`${path}: must be one of ${spec.enum.map((v) => JSON.stringify(v)).join(", ")}`);
+  }
 }
 
 function checkNode(value, spec, path, errors) {
@@ -63,6 +66,9 @@ function checkNode(value, spec, path, errors) {
     if (!Array.isArray(value)) {
       errors.push(`${path}: expected an array`);
       return;
+    }
+    if (spec.minItems !== undefined && value.length < spec.minItems) {
+      errors.push(`${path}: fewer than ${spec.minItems} items`);
     }
     if (spec.maxItems !== undefined && value.length > spec.maxItems) {
       errors.push(`${path}: more than ${spec.maxItems} items`);
@@ -109,6 +115,12 @@ function checkNoSecrets(raw, errors) {
   }
 }
 
+function describe(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "an array";
+  return `a ${typeof value}`;
+}
+
 let failed = 0;
 for (const file of files) {
   const errors = [];
@@ -130,9 +142,15 @@ for (const file of files) {
     continue;
   }
 
-  // Scan the parsed document, not the file: a JSON escape such as sk-
-  // decodes to a key that a scan of the raw text would miss.
-  checkNoSecrets(JSON.stringify(manifest), errors);
+  if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) {
+    console.error(`${file}: the document must be a JSON object, not ${describe(manifest)}`);
+    failed++;
+    continue;
+  }
+
+  // Scan both the file and the parsed document: a \u escape hides a value
+  // from the raw text, and a duplicate key hides one from the parsed form.
+  checkNoSecrets(`${raw}\n${JSON.stringify(manifest)}`, errors);
 
   checkNode(manifest, schema, "", errors);
 
