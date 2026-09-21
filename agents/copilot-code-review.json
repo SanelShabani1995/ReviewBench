@@ -1,0 +1,25 @@
+{
+  "name": "copilot-code-review",
+  "display_name": "Copilot · Code Review",
+  "provider": "GitHub",
+  "image": "ghcr.io/review-bench/rb-agent-ccr-review@sha256:0ec46cb26c00d67c6a4758d495b9f82830cc382e78ca9f90ffa4916212b3343f",
+  "image_visibility": "private",
+  "contact": "abadawii591@gmail.com",
+  "configuration": [
+    {
+      "key": "effort",
+      "value": "medium"
+    }
+  ],
+  "secrets": {
+    "env": [
+      "GHCR_PULL_TOKEN"
+    ]
+  },
+  "egress": [
+    "api.githubcopilot.com"
+  ],
+  "contacts": [
+    "abadawi591"
+  ]
+}
