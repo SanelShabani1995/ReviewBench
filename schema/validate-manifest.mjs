@@ -154,9 +154,10 @@ for (const file of files) {
 
   checkNode(manifest, schema, "", errors);
 
-  // Usernames are compared lowercase everywhere; store them that way.
-  for (const login of manifest.contacts ?? []) {
-    if (login !== login.toLowerCase()) errors.push(`contacts: "${login}" must be lowercase`);
+  // Usernames are compared lowercase everywhere; store them that way. Shape
+  // errors are already recorded above, so only well-formed entries are checked.
+  for (const login of Array.isArray(manifest.contacts) ? manifest.contacts : []) {
+    if (typeof login === "string" && login !== login.toLowerCase()) errors.push(`contacts: "${login}" must be lowercase`);
   }
 
   // The file name is the identifier, so a mismatch means two manifests could

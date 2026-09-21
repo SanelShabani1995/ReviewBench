@@ -90,7 +90,9 @@ jq -n \
       $findings[]
       | {
           producer: $agent,
-          file: (.file | sub("^\\./"; "")),
+          file: (.file | sub("^\\./"; "")
+                 | if . == "" or startswith("/") or (split("/") | index("..")) != null
+                   then error("finding file must be a repository-relative path: " + .) else . end),
           start_line: (.start_line // 1),
           end_line: (.end_line // .start_line // 1),
           message: .message
