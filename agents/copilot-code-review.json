@@ -2,7 +2,7 @@
   "name": "copilot-code-review",
   "display_name": "Copilot · Code Review",
   "provider": "GitHub",
-  "image": "ghcr.io/review-bench/rb-agent-ccr-review@sha256:b3726c84efbc6fa6e815991a4ebf18b43a23bdeed5c043321f4fb154b57a3904",
+  "image": "ghcr.io/abadawi591/rb-agent-ccr-review@sha256:9173c413a56eb0634700ce18eb7e422c341ecbbd2a55356023ab4ee87613df0e",
   "image_visibility": "private",
   "contact": "abadawii591@gmail.com",
   "configuration": [
