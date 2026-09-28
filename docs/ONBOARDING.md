@@ -90,6 +90,8 @@ After approval, the portal shows a credentials form for your reviewer. Enter the
 
 Every run pulls your image by digest with your token, runs it with your secrets and your host allowlist, and judges the findings with the same judge as every other row.
 
+If the first pull request fails because a host was refused, the run stops there and names the host, so a wrong endpoint costs minutes, not a whole run.
+
 ## 5. Change something
 
 - New image: add a configuration in the portal with the new digest and labels. No approval needed; each run records which configuration it used.
@@ -99,5 +101,5 @@ Every run pulls your image by digest with your token, runs it with your secrets 
 ## What you cannot do
 
 - Point at an image outside `ghcr.io`, or at a tag.
-- Reach hosts you did not declare. If the first pull request fails because a host was refused, the run stops there and names it, so a wrong endpoint costs minutes, not a whole run.
+- Reach hosts you did not declare; the run reports every refused host.
 - See the held-back pull requests or their expert findings.
