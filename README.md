@@ -163,11 +163,11 @@ Once the manifest is merged, everything runs from the website:
 1. **Test run.** Your image runs on the 25 public showcase pull requests. You
    get a result for each pull request, so you can see exactly what your
    adapter produced and fix it.
-2. **Hill climbs.** Runs on the held-back set, as many as you like. You see
-   aggregate numbers only, never per-PR results, so the held-back set stays
-   held back.
-3. **Final.** Three rounds on the held-back set with the configuration you
-   pick. The final opens a review pull request in this repository. When a
+2. **Tuning on the full set** happens on your side. The full set, the judge
+   prompts and the judge models are public, so you can score all 219 pull
+   requests yourself, as often as you like, with your own compute.
+3. **Final.** Three rounds on the full set (219 pull requests) with the
+   configuration you pick. The final opens a review pull request in this repository. When a
    maintainer merges it, your leaderboard row is published.
 
 There is no monthly cap on runs. You choose which configuration goes to the
@@ -179,8 +179,9 @@ row shows how many configurations you tested.
 - **Your agent's inference is yours.** It runs with your credentials, inside
   your container. We never see them, and the model you use is part of what
   the benchmark measures, so we cannot supply it.
-- **The judge is ours.** Every reviewer is scored with the same pinned model,
-  at our cost.
+- **The judge is ours for test runs and finals.** Every reviewer is scored
+  with the same pinned model, at our cost. Tuning on the full set on your
+  side uses your own judge calls.
 
 ### Credentials
 

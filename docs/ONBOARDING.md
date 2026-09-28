@@ -15,7 +15,7 @@ Have these ready:
 - **For a private image only:** a classic GitHub token with the single scope `read:packages`, which you enter later as `GHCR_PULL_TOKEN`.
 - **To try it locally (optional):** bash, docker, git and jq. On Windows, use WSL.
 
-Budget about 15 minutes per pull request; a run covers 25 (test) or 219 (hill climb, final) pull requests.
+Budget about 15 minutes per pull request; a run covers 25 (test) or 219 (final) pull requests.
 
 ## 1. Build and push your image
 
@@ -100,7 +100,7 @@ After approval, the portal shows a credentials form for your reviewer. Enter the
 ## 4. Run
 
 - **Test run**: the 25 public pull requests, with per-PR detail, misses and judge votes. Use it to iterate; it is not on the leaderboard.
-- **Hill climb**: one pass over all 219 pull requests, totals only.
+- **Tuning on the full set**: on your side. Score all 219 pull requests yourself with the published judge prompts and models, as often as you like; we do not run these.
 - **Final run**: three fresh rounds over all 219; the mean becomes your row after a maintainer merges the publication.
 
 Every run pulls your image by digest with your token, runs it with your secrets and your host allowlist, and judges the findings with the same judge as every other row.
