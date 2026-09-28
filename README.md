@@ -218,3 +218,5 @@ ReviewBench follows a consensus-based governance model:
 
 ## License
 The repository is licensed under the [MIT License](LICENSE). The project documents copied from the MVG proposal retain the notices included in those files.
+
+Onboarding, step by step: [docs/ONBOARDING.md](docs/ONBOARDING.md).
