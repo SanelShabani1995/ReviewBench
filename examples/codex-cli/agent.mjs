@@ -42,7 +42,21 @@ function run(cmd, args, options = {}) {
   });
 }
 
-mkdirSync(join(homedir(), ".codex"), { recursive: true });
+// Name the provider explicitly, so Codex authenticates with the API key from
+// the environment instead of looking for an interactive login.
+const codexHome = join(homedir(), ".codex");
+mkdirSync(codexHome, { recursive: true });
+writeFileSync(join(codexHome, "config.toml"), [
+  `model = "${model}"`,
+  `model_provider = "openai_api_key"`,
+  ``,
+  `[model_providers.openai_api_key]`,
+  `name = "OpenAI"`,
+  `base_url = "https://api.openai.com/v1"`,
+  `env_key = "OPENAI_API_KEY"`,
+  `wire_api = "responses"`,
+  ``,
+].join("\n"));
 
 const responsePath = "/tmp/codex-review.txt";
 const args = [

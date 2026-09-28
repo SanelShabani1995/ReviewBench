@@ -92,6 +92,10 @@ run rather than publishing a partial score.
 
 ## Limits
 
+- **Platform.** `linux/amd64`. On Apple Silicon build with
+  `docker build --platform linux/amd64`, or the image will not start. The
+  image runs with no arguments, so its `ENTRYPOINT` (or `CMD`) must start
+  your adapter.
 - **Time.** 15 minutes per pull request by default. Ask if your agent needs
   longer.
 - **Network.** Enforced during every run: only the hosts listed in your

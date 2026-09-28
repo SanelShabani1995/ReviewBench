@@ -10,9 +10,12 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
 - **[A public corpus of 25 tasks](corpus/showcase/).** The selected pull
   requests come from 25 repositories and span a broad range of languages,
   repository sizes, change sizes, finding categories, and severities.
-- **[Benchmark documentation](docs/METHODOLOGY.md).** This includes the
-  [methodology](docs/METHODOLOGY.md), [corpus extraction process](docs/EXTRACTION.md),
-  and [evaluation harness](docs/HARNESS.md).
+- **[Benchmark documentation](docs/METHODOLOGY.md).** How the corpus was
+  built, how findings are labeled, and how agents are judged and scored.
+- **[Everything a reviewer vendor needs](#run-your-code-review-agent-on-reviewbench).**
+  The [agent contract](AGENT_CONTRACT.md), two [examples](examples/), a
+  [local test script](scripts/try-agent.sh) and the
+  [onboarding guide](docs/ONBOARDING.md).
 - **[The classifier prompt and supporting script](scripts/classifier/prompts.ts).**
   The classifier artifacts used to assign severity and category labels are
   published so the labeling process can be inspected and reproduced.
@@ -101,37 +104,35 @@ adapter that lets ReviewBench run your existing agent: it reads one pull
 request and writes one findings file. One open-source reviewer needed about
 90 lines of adapter code, mostly to map field names.
 
-Three steps:
+Four steps; the [onboarding guide](docs/ONBOARDING.md) walks through each one.
 
 1. **Wrap your agent** in a container that satisfies
    [the contract](AGENT_CONTRACT.md). Start from
-   [`examples/minimal-agent`](examples/minimal-agent/).
-2. **Test it yourself** against the 25 public pull requests, below.
-3. **Register it** on the "Onboard your agent" page of the
-   [website](https://review-bench.ai). Everything after that happens there.
+   [`examples/minimal-agent`](examples/minimal-agent/) (a shell skeleton) or
+   [`examples/codex-cli`](examples/codex-cli/) (a complete reviewer backed by a
+   model).
+2. **Build and push** the image to GitHub Container Registry and note its
+   digest ([how](docs/ONBOARDING.md#1-build-and-push-your-image)).
+3. **Try it locally** on the 25 public pull requests, below.
+4. **Register it** on the [website](https://review-bench.ai/submit). Everything
+   after that happens there.
 
-### Test it yourself first
+### Try it locally first
 
-The public runner bundles 25 pull requests, their frozen repositories, and
-the expert findings for them. Nothing is hidden, so you can iterate freely.
+[`scripts/try-agent.sh`](scripts/try-agent.sh) runs your image on the 25
+public pull requests the way the benchmark does: one fresh container per pull
+request, the same mounts and variables, and the same checks on the findings
+file. It needs docker, git and jq, and fetches each pull request from GitHub.
 
 ```sh
-docker pull ghcr.io/review-bench/review-bench:latest
-
-# Unpack the corpus so you can drive your agent over it.
-cid=$(docker create ghcr.io/review-bench/review-bench:latest)
-docker cp "$cid:/opt/review-bench/repos" ./repos
-docker cp "$cid:/opt/review-bench/corpus/showcase/manifest.json" .
-docker rm "$cid"
-
-# Score the findings your agent produced.
-docker run --rm \
-  -e ANTHROPIC_API_KEY \
-  -v "$PWD/findings:/work/candidate:ro" \
-  -v "$PWD/results:/work/results" \
-  ghcr.io/review-bench/review-bench:latest \
-  eval --candidate /work/candidate --scoring-profile official-2026-09
+git clone https://github.com/review-bench/ReviewBench && cd ReviewBench
+scripts/try-agent.sh my-reviewer:dev --pr 0          # one pull request
+scripts/try-agent.sh my-reviewer:dev -e MY_API_KEY   # all 25, passing a key through
 ```
+
+It does not score. Scores come from a **test run** in the portal, which runs
+the same 25 pull requests with the benchmark's judge and shows the result for
+each one.
 
 **Showcase scores are not leaderboard scores.** These 25 pull requests are
 public, so a score on them says your adapter works, not how good your agent
@@ -139,10 +140,12 @@ is. The leaderboard runs on pull requests you never see.
 
 ### Onboarding
 
-Sign in to the [website](https://review-bench.ai) with GitHub and open
-"Onboard your agent". You fill in a display name, the image pinned by digest,
-the hosts your agent talks to, the names of the secrets it needs, the
-configuration labels you want shown, and a contact.
+Sign in to the [website](https://review-bench.ai/submit) with GitHub and
+register your reviewer. You fill in a display name, the image pinned by
+digest, the hosts your agent talks to, the names of the secrets it needs, the
+configuration labels you want shown, and a contact. If your image is private,
+add `GHCR_PULL_TOKEN` to the secret names; see
+[private images](docs/ONBOARDING.md#public-or-private).
 
 The website opens an onboarding pull request in this repository for you. It
 adds a manifest under [`agents/`](agents/) that follows
@@ -218,5 +221,3 @@ ReviewBench follows a consensus-based governance model:
 
 ## License
 The repository is licensed under the [MIT License](LICENSE). The project documents copied from the MVG proposal retain the notices included in those files.
-
-Onboarding, step by step: [docs/ONBOARDING.md](docs/ONBOARDING.md).
