@@ -19,7 +19,7 @@ Budget about 15 minutes per pull request; a run covers 25 (test) or 219 (hill cl
 
 ## 1. Build and push your image
 
-Your image follows the [agent contract](../AGENT_CONTRACT.md); start from the [minimal example](../examples/minimal-agent) (a shell skeleton) or the [Codex CLI example](../examples/codex-cli) (a complete reviewer backed by a model). It lives in GitHub Container Registry under your own user or organisation, and we reference it by digest, never by tag.
+Your image follows the [agent contract](../AGENT_CONTRACT.md); start from the [Codex CLI example](../examples/codex-cli), a complete reviewer backed by a model. It lives in GitHub Container Registry under your own user or organisation, and we reference it by digest, never by tag.
 
 ### From your machine
 

@@ -13,7 +13,7 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
 - **[Benchmark documentation](docs/METHODOLOGY.md).** How the corpus was
   built, how findings are labeled, and how agents are judged and scored.
 - **[Everything a reviewer vendor needs](#run-your-code-review-agent-on-reviewbench).**
-  The [agent contract](AGENT_CONTRACT.md), two [examples](examples/), a
+  The [agent contract](AGENT_CONTRACT.md), an [example reviewer](examples/codex-cli/), a
   [local test script](scripts/try-agent.sh) and the
   [onboarding guide](docs/ONBOARDING.md).
 - **[The classifier prompt and supporting script](scripts/classifier/prompts.ts).**
@@ -108,9 +108,8 @@ Four steps; the [onboarding guide](docs/ONBOARDING.md) walks through each one.
 
 1. **Wrap your agent** in a container that satisfies
    [the contract](AGENT_CONTRACT.md). Start from
-   [`examples/minimal-agent`](examples/minimal-agent/) (a shell skeleton) or
-   [`examples/codex-cli`](examples/codex-cli/) (a complete reviewer backed by a
-   model).
+   [`examples/codex-cli`](examples/codex-cli/), a complete reviewer backed by
+   a model.
 2. **Build and push** the image to GitHub Container Registry and note its
    digest ([how](docs/ONBOARDING.md#1-build-and-push-your-image)).
 3. **Try it locally** on the 25 public pull requests, below.

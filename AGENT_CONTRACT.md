@@ -1,6 +1,6 @@
 # The agent contract
 
-Part of the vendor path: the [onboarding guide](docs/ONBOARDING.md) takes you from here to a test run. Examples: [minimal](examples/minimal-agent/), [Codex CLI](examples/codex-cli/).
+Part of the vendor path: the [onboarding guide](docs/ONBOARDING.md) takes you from here to a test run. Example: [Codex CLI](examples/codex-cli/).
 
 We start a fresh container from your image for every pull request, mount that
 pull request into it, and read the findings file it writes. Nothing carries
