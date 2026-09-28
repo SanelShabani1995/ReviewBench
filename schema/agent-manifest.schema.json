@@ -100,6 +100,12 @@
       },
       "minItems": 1
     },
+    "model_api_url": {
+      "type": "string",
+      "description": "The model API your agent calls, for example https://api.openai.com/v1 or https://<resource>.openai.azure.com/openai/v1. It reaches your container as RB_MODEL_BASE_URL, and its host is added to egress, so the endpoint is set in one place.",
+      "maxLength": 200,
+      "pattern": "^https://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+(/[^\\s?#]*)?$"
+    },
     "pr_timeout_seconds": {
       "type": "integer",
       "description": "Seconds your agent needs for one pull request. Ask for more only if you need it; longer runs are more likely to be cut short.",

@@ -18,7 +18,10 @@ if (!env.OPENAI_API_KEY) { console.error("agent: OPENAI_API_KEY is not set; decl
 const repo = env.RB_REPO ?? "/work/repo";
 const agent = env.RB_AGENT ?? "codex-cli";
 const model = env.RB_CONFIG_MODEL ?? "gpt-5.5";
-const effort = env.RB_CONFIG_EFFORT ?? "";
+// `reasoning` is accepted as another name for the effort label.
+const effort = env.RB_CONFIG_EFFORT ?? env.RB_CONFIG_REASONING ?? "";
+// The model API URL registered in the portal; OpenAI when none was given.
+const baseUrl = env.RB_MODEL_BASE_URL || "https://api.openai.com/v1";
 
 let title = `${env.RB_NWO}#${env.RB_PR_NUMBER}`;
 try { title = JSON.parse(readFileSync(env.RB_PR_JSON ?? "/work/pr/pr.json", "utf8")).title || title; } catch { /* keep the default */ }
@@ -52,7 +55,7 @@ writeFileSync(join(codexHome, "config.toml"), [
   ``,
   `[model_providers.openai_api_key]`,
   `name = "OpenAI"`,
-  `base_url = "https://api.openai.com/v1"`,
+  `base_url = "${baseUrl}"`,
   `env_key = "OPENAI_API_KEY"`,
   `wire_api = "responses"`,
   ``,
