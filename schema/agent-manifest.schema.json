@@ -10,7 +10,6 @@
     "display_name",
     "provider",
     "image",
-    "egress",
     "contact",
     "contacts"
   ],
@@ -92,19 +91,18 @@
     },
     "egress": {
       "type": "array",
-      "description": "Every host your agent contacts. Anything not listed here is blocked during a run; at least one host is required.",
+      "description": "Hosts your agent contacts besides the host of model_api_url, which is allowed for you. Anything else is blocked during a run. Give model_api_url, at least one host here, or both.",
       "maxItems": 32,
       "items": {
         "type": "string",
         "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$"
-      },
-      "minItems": 1
+      }
     },
     "model_api_url": {
       "type": "string",
       "description": "The model API your agent calls, for example https://api.openai.com/v1 or https://<resource>.openai.azure.com/openai/v1. It reaches your container as RB_MODEL_BASE_URL, and its host is added to egress, so the endpoint is set in one place.",
       "maxLength": 200,
-      "pattern": "^https://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+(/[^\\s?#]*)?$"
+      "pattern": "^https://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+(/[A-Za-z0-9._~%!$&'()*+,;=:@/-]*)?$"
     },
     "pr_timeout_seconds": {
       "type": "integer",

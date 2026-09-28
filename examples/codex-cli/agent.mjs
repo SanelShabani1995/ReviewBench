@@ -50,12 +50,13 @@ function run(cmd, args, options = {}) {
 const codexHome = join(homedir(), ".codex");
 mkdirSync(codexHome, { recursive: true });
 writeFileSync(join(codexHome, "config.toml"), [
-  `model = "${model}"`,
+  // JSON strings are valid TOML basic strings, so values are escaped either way.
+  `model = ${JSON.stringify(model)}`,
   `model_provider = "openai_api_key"`,
   ``,
   `[model_providers.openai_api_key]`,
   `name = "OpenAI"`,
-  `base_url = "${baseUrl}"`,
+  `base_url = ${JSON.stringify(baseUrl)}`,
   `env_key = "OPENAI_API_KEY"`,
   `wire_api = "responses"`,
   ``,
