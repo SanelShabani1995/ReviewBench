@@ -21,7 +21,7 @@ Files:
 ## Locally
 
 ```sh
-docker build -t codex-cli-reviewer:dev .
+docker build --platform linux/amd64 -t codex-cli-reviewer:dev .
+# from the repository root
+scripts/try-agent.sh codex-cli-reviewer:dev --pr 0 -e OPENAI_API_KEY -e RB_CONFIG_MODEL=gpt-5.5
 ```
-
-Then run it against one showcase pull request as described in the [minimal example](../minimal-agent/README.md), adding `-e OPENAI_API_KEY` and `-e RB_CONFIG_MODEL=gpt-5.5` to the `docker run` line.

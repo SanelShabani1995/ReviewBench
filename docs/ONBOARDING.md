@@ -12,7 +12,7 @@ Your image follows the [agent contract](../AGENT_CONTRACT.md); the [minimal exam
 # once: log in with a classic token that has write:packages
 echo "$GHCR_TOKEN" | docker login ghcr.io -u <your-github-user> --password-stdin
 
-docker build -t ghcr.io/<you>/<name>:v1 .
+docker build --platform linux/amd64 -t ghcr.io/<you>/<name>:v1 .
 docker push ghcr.io/<you>/<name>:v1
 
 # the digest to register
@@ -54,6 +54,15 @@ jobs:
 ```
 
 The run summary shows the digest to register.
+
+### Try it before you register
+
+```sh
+scripts/try-agent.sh ghcr.io/<you>/<name>@sha256:<digest> --pr 0
+```
+
+It runs your image on public pull requests exactly as the benchmark does and
+checks the findings file. See [Try it locally](../README.md#try-it-locally-first).
 
 ### Public or private
 

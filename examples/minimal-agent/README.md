@@ -7,39 +7,15 @@ can prove the plumbing before wiring in your agent.
 docker build -t my-reviewer:dev .
 ```
 
-Then run it against one pull request from the public showcase. With
-`repos/` and `manifest.json` unpacked as described in the
-[root README](../../README.md#test-it-yourself-first), pick an entry, check
-out its head so the container sees source files, and lay out the two files
-the adapter reads:
+Then run it on one pull request from the public showcase, the way the
+benchmark will, from the root of this repository:
 
 ```sh
-entry=$(jq -c '.[0]' manifest.json)      # any entry of the showcase manifest
-nwo=$(jq -r .nwo <<<"$entry"); base=$(jq -r .base <<<"$entry"); head=$(jq -r .head <<<"$entry")
-mkdir -p pr out
-# The unpacked repositories carry objects only, so give this one a working tree.
-GIT_LFS_SKIP_SMUDGE=1 git -C "repos/${nwo/\//_}" checkout --detach "$head"
-git -C "repos/${nwo/\//_}" diff "$base...$head" > pr/diff.patch
-jq '{repo, pr_number, base, head, nwo, title, body}' <<<"$entry" > pr/pr.json
+scripts/try-agent.sh my-reviewer:dev --pr 0
 ```
 
-Then run the adapter against that pull request:
-
-```sh
-docker run --rm \
-  -v "$PWD/repos/${nwo/\//_}:/work/repo" \
-  -v "$PWD/pr:/work/pr:ro" \
-  -v "$PWD/out:/work/out" \
-  -e RB_NWO="$nwo" -e RB_PR_NUMBER="$(jq -r .pr_number <<<"$entry")" \
-  -e RB_BASE="$base" -e RB_HEAD="$head" \
-  -e RB_AGENT=my-reviewer \
-  -e RB_DIFF=/work/pr/diff.patch -e RB_PR_JSON=/work/pr/pr.json \
-  -e RB_OUT=/work/out/findings.json \
-  my-reviewer:dev
-```
-
-The repository directory is the pull request's owner and repository joined
-with an underscore, which is how the runner image stores it.
+Drop `--pr 0` to run all 25. The script prints what failed, if anything, and
+leaves each findings file in `./findings/`.
 
 `agent.sh` has one section marked for replacement. Everything else is the
 envelope we expect and can stay as it is.
