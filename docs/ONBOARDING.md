@@ -2,6 +2,21 @@
 
 What a vendor does to get a row on the leaderboard. Everything below happens in your own accounts and in the portal; nothing of ours needs to be installed.
 
+## Before you start
+
+Have these ready:
+
+- **A GitHub account.** You sign in to the portal with it, and it becomes a contact who may act for your reviewer.
+- **A reviewer that runs unattended from a command line** inside a Linux container: given a checked-out repository and a diff, it produces review comments without prompts or a browser login.
+- **A model API key** for whatever your reviewer calls, ideally a dedicated one with a spend cap, and the list of hosts it talks to (for example `api.openai.com`). Nothing else is reachable during a run.
+- **A way to build and publish the image**, either:
+  - Docker on your machine, able to build `linux/amd64` images, plus a classic GitHub token with `write:packages`; or
+  - a GitHub repository with Actions enabled, where the organisation allows workflows to publish packages (organisation settings, Packages).
+- **For a private image only:** a classic GitHub token with the single scope `read:packages`, which you enter later as `GHCR_PULL_TOKEN`.
+- **To try it locally (optional):** bash, docker, git and jq. On Windows, use WSL.
+
+Budget about 15 minutes per pull request; a run covers 25 (test) or 219 (hill climb, final) pull requests.
+
 ## 1. Build and push your image
 
 Your image follows the [agent contract](../AGENT_CONTRACT.md); start from the [minimal example](../examples/minimal-agent) (a shell skeleton) or the [Codex CLI example](../examples/codex-cli) (a complete reviewer backed by a model). It lives in GitHub Container Registry under your own user or organisation, and we reference it by digest, never by tag.
