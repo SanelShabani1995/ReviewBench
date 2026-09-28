@@ -100,4 +100,4 @@ Every run pulls your image by digest with your token, runs it with your secrets 
 
 - Point at an image outside `ghcr.io`, or at a tag.
 - Reach hosts you did not declare; the run reports every refused host.
-- See the held-back pull requests or their expert findings.
+- Have us run tuning passes on the full set; those run on your side, with the published judge.

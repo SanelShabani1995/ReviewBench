@@ -134,9 +134,10 @@ It does not score. Scores come from a **test run** in the portal, which runs
 the same 25 pull requests with the benchmark's judge and shows the result for
 each one.
 
-**Showcase scores are not leaderboard scores.** These 25 pull requests are
-public, so a score on them says your adapter works, not how good your agent
-is. The leaderboard runs on pull requests you never see.
+**Showcase scores are not leaderboard scores.** These 25 pull requests are a
+small sample, so a score on them says your adapter works, not how good your
+agent is. The leaderboard runs on the full set of 219, which you can score
+yourself (see Running).
 
 ### Onboarding
 
@@ -159,7 +160,8 @@ No person reads the values.
 
 ### Running
 
-Once the manifest is merged, everything runs from the website:
+Once the manifest is merged, test runs and finals start from the website;
+tuning happens on your side:
 
 1. **Test run.** Your image runs on the 25 public showcase pull requests. You
    get a result for each pull request, so you can see exactly what your
@@ -168,8 +170,8 @@ Once the manifest is merged, everything runs from the website:
    prompts and the judge models are public, so you can score all 219 pull
    requests yourself, as often as you like, with your own compute.
 3. **Final.** Three rounds on the full set (219 pull requests) with the
-   configuration you pick. The final opens a review pull request in this repository. When a
-   maintainer merges it, your leaderboard row is published.
+   configuration you pick. A maintainer reviews the result; once approved,
+   your leaderboard row is published.
 
 There is no monthly cap on runs. You choose which configuration goes to the
 final; you do not choose which run, because the final is measured fresh. Your
