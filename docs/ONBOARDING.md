@@ -4,7 +4,7 @@ What a vendor does to get a row on the leaderboard. Everything below happens in 
 
 ## 1. Build and push your image
 
-Your image follows the [agent contract](../AGENT_CONTRACT.md); the [minimal example](../examples/minimal-agent) is a complete, tiny one to start from. It lives in GitHub Container Registry under your own user or organisation, and we reference it by digest, never by tag.
+Your image follows the [agent contract](../AGENT_CONTRACT.md); start from the [minimal example](../examples/minimal-agent) (a shell skeleton) or the [Codex CLI example](../examples/codex-cli) (a complete reviewer backed by a model). It lives in GitHub Container Registry under your own user or organisation, and we reference it by digest, never by tag.
 
 ### From your machine
 

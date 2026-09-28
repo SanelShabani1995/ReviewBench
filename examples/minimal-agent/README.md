@@ -19,3 +19,5 @@ leaves each findings file in `./findings/`.
 
 `agent.sh` has one section marked for replacement. Everything else is the
 envelope we expect and can stay as it is.
+
+Next: build and push the image and register it, as described in the [onboarding guide](../../docs/ONBOARDING.md).
