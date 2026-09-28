@@ -2,12 +2,63 @@
 
 What a vendor does to get a row on the leaderboard. Everything below happens in your own accounts and in the portal; nothing of ours needs to be installed.
 
-## 1. Build your image
+## 1. Build and push your image
 
-- Package your reviewer as a container that follows the [agent contract](../AGENT_CONTRACT.md). The [minimal example](../examples/minimal-agent) is a complete, tiny one.
-- Push it to GitHub Container Registry under your own user or organisation: `ghcr.io/<you>/<name>`. Any other registry is not accepted.
-- Note the digest (`sha256:…`). The manifest pins the digest, never a tag, so a row can always be traced to the exact bytes it ran.
-- Public or private package, your choice. Private is fine; see step 3.
+Your image follows the [agent contract](../AGENT_CONTRACT.md); the [minimal example](../examples/minimal-agent) is a complete, tiny one to start from. It lives in GitHub Container Registry under your own user or organisation, and we reference it by digest, never by tag.
+
+### From your machine
+
+```bash
+# once: log in with a classic token that has write:packages
+echo "$GHCR_TOKEN" | docker login ghcr.io -u <your-github-user> --password-stdin
+
+docker build -t ghcr.io/<you>/<name>:v1 .
+docker push ghcr.io/<you>/<name>:v1
+
+# the digest to register
+docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/<you>/<name>:v1
+# ghcr.io/<you>/<name>@sha256:<64 hex characters>
+```
+
+### From GitHub Actions (recommended)
+
+Put this in your image's repository as `.github/workflows/build.yml`. It needs no token of yours: the job pushes with its own.
+
+```yaml
+name: Build and push
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  packages: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/<name>:${{ github.sha }}
+      - run: echo "ghcr.io/${{ github.repository_owner }}/<name>@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+```
+
+The run summary shows the digest to register.
+
+### Public or private
+
+- **Public** package: nothing else to do; we pull it anonymously.
+- **Private** package (the default for a new package): create a GitHub **classic** personal access token with the single scope `read:packages` (Settings, Developer settings, Personal access tokens, Tokens (classic); fine-grained tokens cannot read packages). Declare the name `GHCR_PULL_TOKEN` in step 2 and enter the token in step 3.
 
 ## 2. Register it in the portal
 
