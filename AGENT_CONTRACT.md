@@ -36,6 +36,7 @@ docker run --rm \
 | `RB_AGENT` | The name you registered. Use it as `agent` and `producer` in your output. |
 | `RB_OUT` | Where to write your findings |
 | `RB_CONFIG_<KEY>` | One variable per entry in your manifest's `configuration`. The key is upper-cased and every character that is not a letter or digit becomes an underscore (`model` becomes `RB_CONFIG_MODEL`, `max-tokens` becomes `RB_CONFIG_MAX_TOKENS`). Read these to select model, effort or any other setting, so a configuration can be tried without rebuilding the image. |
+| `RB_MODEL_BASE_URL` | The model API URL you registered, if any (for example `https://api.openai.com/v1`). Read it instead of hardcoding your endpoint, so the endpoint and the allowlist come from one place. |
 | `RB_ATTEMPT` | Attempt number, starting at 1, if we are retrying |
 
 Your declared credentials arrive as environment variables, as files at the
@@ -100,7 +101,9 @@ run rather than publishing a partial score.
   longer.
 - **Network.** Enforced during every run: only the hosts listed in your
   manifest's `egress` are reachable, on port 443, through a forward proxy.
-  Anything else is refused. The proxy address arrives as `HTTP_PROXY` and
+  The host of your model API URL is added for you. Anything else is refused;
+  if the first pull request fails because a host was refused, the run stops
+  there and names the host. The proxy address arrives as `HTTP_PROXY` and
   `HTTPS_PROXY` (and
   lowercase), which every mainstream HTTP client honours; `NODE_USE_ENV_PROXY=1`
   is set for Node's built-in `fetch`. Declare every host, including any token

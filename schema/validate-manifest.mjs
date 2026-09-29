@@ -154,6 +154,11 @@ for (const file of files) {
 
   checkNode(manifest, schema, "", errors);
 
+  // The network needs somewhere to go: the model API's host, listed hosts, or both.
+  if (!(Array.isArray(manifest.egress) && manifest.egress.length) && !manifest.model_api_url) {
+    errors.push("egress: list at least one host, or set model_api_url");
+  }
+
   // Usernames are compared lowercase everywhere; store them that way. Shape
   // errors are already recorded above, so only well-formed entries are checked.
   for (const login of Array.isArray(manifest.contacts) ? manifest.contacts : []) {

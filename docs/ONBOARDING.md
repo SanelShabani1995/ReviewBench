@@ -71,7 +71,7 @@ checks the findings file. See [Try it locally](../README.md#try-it-locally-first
 
 ## 2. Register it in the portal
 
-- Sign in with GitHub at the portal and fill the form: display name, provider, image digest, the configuration labels shown on your row (for example `model`, `effort`), the hosts your container needs to reach, and the **names** of the secrets it needs.
+- Sign in with GitHub at the portal and fill the form: display name, provider, image digest, the configuration labels shown on your row (for example `model`, `effort`), your **model API URL** (its host is allowed automatically; add other hosts only if your agent needs them), and the **names** of the secrets it needs.
 - The portal opens a pull request with your manifest in this repository. A maintainer reviews and merges it; that merge is the approval. You can watch it here.
 
 ## 3. Enter your credentials
@@ -89,6 +89,8 @@ After approval, the portal shows a credentials form for your reviewer. Enter the
 - **Final run**: three fresh rounds over all 219; the mean becomes your row after a maintainer merges the publication.
 
 Every run pulls your image by digest with your token, runs it with your secrets and your host allowlist, and judges the findings with the same judge as every other row.
+
+If the first pull request fails because a host was refused, the run stops there and names the host, so a wrong endpoint costs minutes, not a whole run.
 
 ## 5. Change something
 
