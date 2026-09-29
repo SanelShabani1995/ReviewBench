@@ -10,6 +10,8 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
 - **[The test set: 25 tasks](corpus/showcase/).** The selected pull
   requests come from 25 repositories and span a broad range of languages,
   repository sizes, change sizes, finding categories, and severities.
+- **[The full set: 219 tasks](corpus/).** Every pull request the
+  leaderboard runs on, with its golden findings.
 - **[Benchmark documentation](docs/METHODOLOGY.md).** How the corpus was
   built, how findings are labeled, and how agents are judged and scored.
 - **[Everything a reviewer vendor needs](#run-your-code-review-agent-on-reviewbench).**
@@ -121,14 +123,14 @@ Four steps; the [onboarding guide](docs/ONBOARDING.md) walks through each one.
 [`scripts/try-agent.sh`](scripts/try-agent.sh) runs your image on the test
 set the way the benchmark does: one fresh container per pull request, the
 same mounts and variables, and the same checks on the findings file. With
-`--set full` it runs the full set instead, once it is published at launch. It
-needs docker, git and jq, and fetches each pull request from GitHub.
+`--set full` it runs the full set instead. It needs docker, git and jq, and
+fetches each pull request from GitHub.
 
 ```sh
 git clone https://github.com/review-bench/ReviewBench && cd ReviewBench
 scripts/try-agent.sh my-reviewer:dev --pr 0          # one pull request
 scripts/try-agent.sh my-reviewer:dev -e MY_API_KEY   # all 25, passing a key through
-scripts/try-agent.sh my-reviewer:dev --set full      # the full set, all 219 (from launch)
+scripts/try-agent.sh my-reviewer:dev --set full      # the full set, all 219
 ```
 
 It does not score. Scores come from a **test run** in the portal, which runs

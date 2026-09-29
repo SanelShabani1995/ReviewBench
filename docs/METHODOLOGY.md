@@ -711,10 +711,9 @@ into the guidelines and classifier calibration.
 
 The intended loop is:
 
-1. **Surface labels for inspection.** A subset of the golden set —
-   enough to exercise the full label space — is published alongside the
-   benchmark, with each finding's TP/FP label, severity, category, and
-   the relevant PR context.
+1. **Surface labels for inspection.** The full golden set is published
+   alongside the benchmark, with each finding's TP/FP label, severity,
+   category, and the relevant PR context.
 2. **Accept dispute submissions.** Reviewers can submit a dispute against
    any published finding: which axis they disagree with (TP/FP, severity,
    category, scope), what they believe the correct label is, and a short
