@@ -1,33 +1,46 @@
 #!/usr/bin/env bash
 #
-# Runs your agent image on the public showcase pull requests exactly the way
-# the benchmark does: one fresh container per pull request, the same mounts
-# and variables, and the same checks on the findings file. It does not score;
-# a test run in the portal does that.
+# Runs your agent image on the test set (or the full set) exactly the way the
+# benchmark does: one fresh container per pull request, the same mounts and
+# variables, and the same checks on the findings file. It does not score; a
+# test run in the portal does that.
 #
-#   scripts/try-agent.sh <image> [--pr <index>] [-e NAME[=VALUE] ...]
+#   scripts/try-agent.sh <image> [--set test|full] [--pr <index>] [-e NAME[=VALUE] ...]
 #
 #   scripts/try-agent.sh my-reviewer:dev --pr 0
 #   scripts/try-agent.sh my-reviewer:dev -e OPENAI_API_KEY -e RB_CONFIG_MODEL=gpt-5.5
+#   scripts/try-agent.sh my-reviewer:dev --set full -e OPENAI_API_KEY
+#
+# --set test (the default) runs the 25 pull requests in corpus/showcase.
+# --set full runs the full set of 219 in corpus/manifest.json, which exists
+# from launch.
 #
 # Needs docker, git and jq. Findings land in ./findings/<pr key>.json.
 set -euo pipefail
 
-usage() { sed -n '8,12p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '8,17p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 [ $# -ge 1 ] || usage
 image="$1"; shift
 only=""
+set_name=test
 env_args=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --pr) only="$2"; shift 2 ;;
-    -e) env_args+=(-e "$2"); shift 2 ;;
+    # Each option takes a value; without one, show the usage instead of an unbound-variable error.
+    --set) [ $# -ge 2 ] || usage; set_name="$2"; shift 2 ;;
+    --pr) [ $# -ge 2 ] || usage; only="$2"; shift 2 ;;
+    -e) [ $# -ge 2 ] || usage; env_args+=(-e "$2"); shift 2 ;;
     *) usage ;;
   esac
 done
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
-manifest="$here/corpus/showcase/manifest.json"
+case "$set_name" in
+  test) manifest="$here/corpus/showcase/manifest.json" ;;
+  full) manifest="$here/corpus/manifest.json"
+    [ -f "$manifest" ] || { echo "no full set at corpus/manifest.json; it is published there at launch" >&2; exit 2; } ;;
+  *) usage ;;
+esac
 work="${TRY_AGENT_WORK:-$PWD/.try-agent}"
 out_dir="$PWD/findings"
 mkdir -p "$work/repos" "$out_dir"

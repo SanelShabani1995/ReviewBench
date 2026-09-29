@@ -7,29 +7,31 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
 
 ## What is in the Repository?
 
-- **[A public corpus of 25 tasks](corpus/showcase/).** The selected pull
+- **[The test set: 25 tasks](corpus/showcase/).** The selected pull
   requests come from 25 repositories and span a broad range of languages,
   repository sizes, change sizes, finding categories, and severities.
+- **[The full set: 219 tasks](corpus/).** Every pull request the
+  leaderboard runs on, with its golden findings.
 - **[Benchmark documentation](docs/METHODOLOGY.md).** How the corpus was
   built, how findings are labeled, and how agents are judged and scored.
 - **[Everything a reviewer vendor needs](#run-your-code-review-agent-on-reviewbench).**
-  The [agent contract](AGENT_CONTRACT.md), two [examples](examples/), a
+  The [agent contract](AGENT_CONTRACT.md), the [Codex CLI example](examples/codex-cli/), a
   [local test script](scripts/try-agent.sh) and the
   [onboarding guide](docs/ONBOARDING.md).
 - **[The classifier prompt and supporting script](scripts/classifier/prompts.ts).**
   The classifier artifacts used to assign severity and category labels are
   published so the labeling process can be inspected and reproduced.
 
-### Public Corpus Distribution
+### Test Set Distribution
 
-The 25 public tasks were selected as a representative sample of the full
-corpus. They preserve its mix of major languages, change sizes, and
+The 25 test set tasks were selected as a representative sample of the full
+set. They preserve its mix of major languages, change sizes, and
 repository diversity while also covering every finding category and severity
 level.
 
 #### Languages
 
-| Language | Public tasks | Public share | Full corpus PRs | Full corpus share |
+| Language | Test set PRs | Test set share | Full set PRs | Full set share |
 |---|---:|---:|---:|---:|
 | TypeScript | 5 | 20.0% | 68 | 31.1% |
 | Python | 4 | 16.0% | 41 | 18.7% |
@@ -39,12 +41,12 @@ level.
 | Other languages | 9 | 36.0% | 51 | 23.3% |
 | **Total** | **25** | **100%** | **219** | **100%** |
 
-The public set's other languages are Rust, Java, Jupyter Notebook, Kotlin,
+The test set's other languages are Rust, Java, Jupyter Notebook, Kotlin,
 PHP, Ruby, Shell, and Swift.
 
 #### PR Change Size
 
-| Added and removed lines | Public tasks | Public share | Full corpus PRs | Full corpus share |
+| Added and removed lines | Test set PRs | Test set share | Full set PRs | Full set share |
 |---|---:|---:|---:|---:|
 | 50 or fewer | 3 | 12.0% | 17 | 7.8% |
 | 51-200 | 5 | 20.0% | 40 | 18.3% |
@@ -72,9 +74,9 @@ PHP, Ruby, Shell, and Swift.
 | Performance | 13 | API architecture | 12 |
 | Accessibility | 10 |  |  |
 
-### Full Corpus Distribution
+### Full Set Distribution
 
-The full corpus contains 219 PRs from 187 distinct repositories. No single
+The full set contains 219 PRs from 187 distinct repositories. No single
 repository dominates the benchmark. The most represented repository contributes
 10 PRs, or only 4.6% of the corpus. The corpus covers both common and
 long-tail languages as well as changes ranging from small patches to
@@ -108,33 +110,34 @@ Four steps; the [onboarding guide](docs/ONBOARDING.md) walks through each one.
 
 1. **Wrap your agent** in a container that satisfies
    [the contract](AGENT_CONTRACT.md). Start from
-   [`examples/minimal-agent`](examples/minimal-agent/) (a shell skeleton) or
-   [`examples/codex-cli`](examples/codex-cli/) (a complete reviewer backed by a
-   model).
+   [`examples/codex-cli`](examples/codex-cli/), a complete reviewer backed by a
+   model.
 2. **Build and push** the image to GitHub Container Registry and note its
    digest ([how](docs/ONBOARDING.md#1-build-and-push-your-image)).
-3. **Try it locally** on the 25 public pull requests, below.
+3. **Try it locally** on the test set (25 pull requests), below.
 4. **Register it** on the [website](https://review-bench.ai/submit). Everything
    after that happens there.
 
 ### Try it locally first
 
-[`scripts/try-agent.sh`](scripts/try-agent.sh) runs your image on the 25
-public pull requests the way the benchmark does: one fresh container per pull
-request, the same mounts and variables, and the same checks on the findings
-file. It needs docker, git and jq, and fetches each pull request from GitHub.
+[`scripts/try-agent.sh`](scripts/try-agent.sh) runs your image on the test
+set the way the benchmark does: one fresh container per pull request, the
+same mounts and variables, and the same checks on the findings file. With
+`--set full` it runs the full set instead. It needs docker, git and jq, and
+fetches each pull request from GitHub.
 
 ```sh
 git clone https://github.com/review-bench/ReviewBench && cd ReviewBench
 scripts/try-agent.sh my-reviewer:dev --pr 0          # one pull request
 scripts/try-agent.sh my-reviewer:dev -e MY_API_KEY   # all 25, passing a key through
+scripts/try-agent.sh my-reviewer:dev --set full      # the full set, all 219
 ```
 
 It does not score. Scores come from a **test run** in the portal, which runs
 the same 25 pull requests with the benchmark's judge and shows the result for
 each one.
 
-**Showcase scores are not leaderboard scores.** These 25 pull requests are a
+**Test set scores are not leaderboard scores.** These 25 pull requests are a
 small sample, so a score on them says your adapter works, not how good your
 agent is. The leaderboard runs on the full set of 219, which you can score
 yourself (see Running).
@@ -163,7 +166,7 @@ No person reads the values.
 Once the manifest is merged, test runs and finals start from the website;
 tuning happens on your side:
 
-1. **Test run.** Your image runs on the 25 public showcase pull requests. You
+1. **Test run.** Your image runs on the test set (25 pull requests). You
    get a result for each pull request, so you can see exactly what your
    adapter produced and fix it.
 2. **Tuning on the full set** happens on your side. The full set, the judge

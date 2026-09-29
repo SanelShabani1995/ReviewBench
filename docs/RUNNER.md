@@ -1,15 +1,18 @@
-# Run your agent on the showcase
+# Run your agent on the test set
 
-The 25 public pull requests in [`corpus/showcase`](../corpus/showcase/) are yours to iterate on. Two ways to run on them:
+The test set, 25 pull requests in [`corpus/showcase`](../corpus/showcase/), is yours to iterate on. Two ways to run on them:
 
 ## Locally, without scoring
 
-[`scripts/try-agent.sh`](../scripts/try-agent.sh) runs your image on each showcase pull request the way the benchmark does: a fresh container per pull request, the repository checked out at head under `/work/repo`, the diff and metadata under `/work/pr`, the same `RB_*` variables, and the same checks on the findings file your agent writes.
+[`scripts/try-agent.sh`](../scripts/try-agent.sh) runs your image on each test set pull request the way the benchmark does: a fresh container per pull request, the repository checked out at head under `/work/repo`, the diff and metadata under `/work/pr`, the same `RB_*` variables, and the same checks on the findings file your agent writes.
 
 ```sh
 scripts/try-agent.sh my-reviewer:dev --pr 0                  # one pull request
 scripts/try-agent.sh my-reviewer:dev -e OPENAI_API_KEY       # all 25, passing a key through
+scripts/try-agent.sh my-reviewer:dev --set full              # the full set, all 219
 ```
+
+`--set full` reads the full set's manifest, [`corpus/manifest.json`](../corpus/manifest.json), which exists from launch.
 
 It needs docker, git and jq, and fetches each pull request from GitHub. Findings land in `./findings/`. It stops at checking the format; it does not judge the findings.
 

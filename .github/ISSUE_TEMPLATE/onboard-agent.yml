@@ -121,9 +121,9 @@ body:
     attributes:
       label: Before you submit
       options:
-        - label: My image satisfies the agent contract and I tested it on the public showcase.
+        - label: My image satisfies the agent contract and I tested it on the test set.
           required: true
         - label: No credential is baked into my image, and none appears in this form.
           required: true
-        - label: I understand my agent's inference costs are mine, and that the corpus is not shared.
+        - label: I understand my agent's inference costs are mine.
           required: true

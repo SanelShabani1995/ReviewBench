@@ -16,7 +16,7 @@
 <rect x="200" y="148" width="280" height="52" rx="4" fill="#085041" stroke="#5dcaa5" stroke-width="0.8"/>
 <text x="214" y="170" font-size="12" fill="#9fe1cb">2</text>
 <text x="238" y="170" font-size="14" font-weight="600" fill="#e1f5ee">Wrap your agent</text>
-<text x="238" y="188" font-size="12" fill="#9fe1cb">copy examples/minimal-agent</text>
+<text x="238" y="188" font-size="12" fill="#9fe1cb">copy examples/codex-cli</text>
 <line x1="340" y1="202" x2="340" y2="214" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arrow)"/>
 
 <rect x="200" y="216" width="280" height="52" rx="4" fill="#085041" stroke="#5dcaa5" stroke-width="0.8"/>
