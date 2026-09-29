@@ -108,9 +108,8 @@ Four steps; the [onboarding guide](docs/ONBOARDING.md) walks through each one.
 
 1. **Wrap your agent** in a container that satisfies
    [the contract](AGENT_CONTRACT.md). Start from
-   [`examples/minimal-agent`](examples/minimal-agent/) (a shell skeleton) or
-   [`examples/codex-cli`](examples/codex-cli/) (a complete reviewer backed by a
-   model).
+   [`examples/codex-cli`](examples/codex-cli/), a complete reviewer backed by a
+   model.
 2. **Build and push** the image to GitHub Container Registry and note its
    digest ([how](docs/ONBOARDING.md#1-build-and-push-your-image)).
 3. **Try it locally** on the test set (25 pull requests), below.
