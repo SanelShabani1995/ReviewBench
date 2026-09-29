@@ -134,9 +134,10 @@ It does not score. Scores come from a **test run** in the portal, which runs
 the same 25 pull requests with the benchmark's judge and shows the result for
 each one.
 
-**Showcase scores are not leaderboard scores.** These 25 pull requests are
-public, so a score on them says your adapter works, not how good your agent
-is. The leaderboard runs on pull requests you never see.
+**Showcase scores are not leaderboard scores.** These 25 pull requests are a
+small sample, so a score on them says your adapter works, not how good your
+agent is. The leaderboard runs on the full set of 219, which you can score
+yourself (see Running).
 
 ### Onboarding
 
@@ -159,17 +160,18 @@ No person reads the values.
 
 ### Running
 
-Once the manifest is merged, everything runs from the website:
+Once the manifest is merged, test runs and finals start from the website;
+tuning happens on your side:
 
 1. **Test run.** Your image runs on the 25 public showcase pull requests. You
    get a result for each pull request, so you can see exactly what your
    adapter produced and fix it.
-2. **Hill climbs.** Runs on the held-back set, as many as you like. You see
-   aggregate numbers only, never per-PR results, so the held-back set stays
-   held back.
-3. **Final.** Three rounds on the held-back set with the configuration you
-   pick. The final opens a review pull request in this repository. When a
-   maintainer merges it, your leaderboard row is published.
+2. **Tuning on the full set** happens on your side. The full set, the judge
+   prompts and the judge models are public, so you can score all 219 pull
+   requests yourself, as often as you like, with your own compute.
+3. **Final.** Three rounds on the full set (219 pull requests) with the
+   configuration you pick. A maintainer reviews the result; once approved,
+   your leaderboard row is published.
 
 There is no monthly cap on runs. You choose which configuration goes to the
 final; you do not choose which run, because the final is measured fresh. Your
@@ -180,8 +182,9 @@ row shows how many configurations you tested.
 - **Your agent's inference is yours.** It runs with your credentials, inside
   your container. We never see them, and the model you use is part of what
   the benchmark measures, so we cannot supply it.
-- **The judge is ours.** Every reviewer is scored with the same pinned model,
-  at our cost.
+- **The judge's cost is coverd by us for test and final runs.** Every reviewer's result are evaluated
+  with the same judge panel models, at our cost. Tuning on the full set on your
+  side uses your own judge calls.
 
 ### Credentials
 

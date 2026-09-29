@@ -85,7 +85,7 @@ After approval, the portal shows a credentials form for your reviewer. Enter the
 ## 4. Run
 
 - **Test run**: the 25 public pull requests, with per-PR detail, misses and judge votes. Use it to iterate; it is not on the leaderboard.
-- **Hill climb**: one pass over all 219 pull requests, totals only.
+- **Tuning on the full set**: on your side. Evaluate your agent with the full set of 219 pull requests and the published judge prompts and models, as often as you like.
 - **Final run**: three fresh rounds over all 219; the mean becomes your row after a maintainer merges the publication.
 
 Every run pulls your image by digest with your token, runs it with your secrets and your host allowlist, and judges the findings with the same judge as every other row.
@@ -102,4 +102,4 @@ If the first pull request fails because a host was refused, the run stops there 
 
 - Point at an image outside `ghcr.io`, or at a tag.
 - Reach hosts you did not declare; the run reports every refused host.
-- See the held-back pull requests or their expert findings.
+- Have us run tuning passes on the full set; those run on your side, with the published judge.
