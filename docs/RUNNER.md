@@ -12,7 +12,7 @@ scripts/try-agent.sh my-reviewer:dev -e OPENAI_API_KEY       # all 25, passing a
 scripts/try-agent.sh my-reviewer:dev --set full              # the full set, all 219
 ```
 
-`--set full` reads the full set's manifest, `corpus/manifest.json`, which is published at launch.
+`--set full` reads the full set's manifest, [`corpus/manifest.json`](../corpus/manifest.json), which exists from launch.
 
 It needs docker, git and jq, and fetches each pull request from GitHub. Findings land in `./findings/`. It stops at checking the format; it does not judge the findings.
 

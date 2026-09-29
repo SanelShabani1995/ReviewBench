@@ -125,5 +125,5 @@ body:
           required: true
         - label: No credential is baked into my image, and none appears in this form.
           required: true
-        - label: I understand my agent's inference costs are mine, and that the corpus is not shared.
+        - label: I understand my agent's inference costs are mine.
           required: true
