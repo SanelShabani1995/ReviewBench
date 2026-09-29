@@ -30,7 +30,7 @@
     },
     "provider": {
       "type": "string",
-      "description": "The company or individual behind the reviewer. Optional; the reviewer's display name when absent.",
+      "description": "The company or individual behind the reviewer. Optional: when omitted, the API stores the display_name here.",
       "minLength": 1,
       "maxLength": 64
     },

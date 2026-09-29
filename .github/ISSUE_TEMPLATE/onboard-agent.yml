@@ -36,7 +36,7 @@ body:
     id: provider
     attributes:
       label: Provider
-      description: Optional. The company or person behind it; the reviewer's name when left out.
+      description: Optional. The company or person behind it; when left blank, the API uses the Display name.
       placeholder: My Company
     validations:
       required: false
