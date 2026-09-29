@@ -26,9 +26,10 @@ set_name=test
 env_args=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --set) set_name="$2"; shift 2 ;;
-    --pr) only="$2"; shift 2 ;;
-    -e) env_args+=(-e "$2"); shift 2 ;;
+    # Each option takes a value; without one, show the usage instead of an unbound-variable error.
+    --set) [ $# -ge 2 ] || usage; set_name="$2"; shift 2 ;;
+    --pr) [ $# -ge 2 ] || usage; only="$2"; shift 2 ;;
+    -e) [ $# -ge 2 ] || usage; env_args+=(-e "$2"); shift 2 ;;
     *) usage ;;
   esac
 done

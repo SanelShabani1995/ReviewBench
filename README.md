@@ -15,7 +15,7 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
 - **[Benchmark documentation](docs/METHODOLOGY.md).** How the corpus was
   built, how findings are labeled, and how agents are judged and scored.
 - **[Everything a reviewer vendor needs](#run-your-code-review-agent-on-reviewbench).**
-  The [agent contract](AGENT_CONTRACT.md), two [examples](examples/), a
+  The [agent contract](AGENT_CONTRACT.md), the [Codex CLI example](examples/codex-cli/), a
   [local test script](scripts/try-agent.sh) and the
   [onboarding guide](docs/ONBOARDING.md).
 - **[The classifier prompt and supporting script](scripts/classifier/prompts.ts).**
