@@ -7,10 +7,12 @@ The test set, 25 pull requests listed in [`corpus/test/test.json`](../corpus/tes
 [`scripts/try-agent.sh`](../scripts/try-agent.sh) runs your image on each test set pull request the way the benchmark does: a fresh container per pull request, the repository checked out at head under `/work/repo`, the diff and metadata under `/work/pr`, the same `RB_*` variables, and the same checks on the findings file your agent writes.
 
 ```sh
-scripts/try-agent.sh my-reviewer:dev --pr 0                  # one pull request
-scripts/try-agent.sh my-reviewer:dev -e OPENAI_API_KEY       # all 25, passing a key through
-scripts/try-agent.sh my-reviewer:dev --set full              # the full set, all 219
+scripts/try-agent.sh my-reviewer:dev --pr 0 -e OPENAI_API_KEY      # one pull request
+scripts/try-agent.sh my-reviewer:dev -e OPENAI_API_KEY             # all 25
+scripts/try-agent.sh my-reviewer:dev --set full -e OPENAI_API_KEY  # the full set, all 219
 ```
+
+`-e NAME` passes that variable from your shell into the container under the name your agent reads; the script never puts the value on a command line or into the findings files. If your endpoint is not OpenAI, add `-e RB_MODEL_BASE_URL=https://…` as well. A private package needs `docker login ghcr.io` on your machine first.
 
 `--set full` reads the full set's manifest, [`corpus/manifest.json`](../corpus/manifest.json).
 

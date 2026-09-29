@@ -135,10 +135,11 @@ scripts/try-agent.sh my-reviewer:dev -e MY_API_KEY             # all 25
 scripts/try-agent.sh my-reviewer:dev --set full -e MY_API_KEY  # the full set, all 219
 ```
 
-`-e NAME` passes that variable from your shell into the container, so your
-model key travels under the name your agent reads and is never written
-anywhere. If your endpoint is not OpenAI, add `-e RB_MODEL_BASE_URL=https://…`
-as well. A private package needs `docker login ghcr.io` on your machine first.
+`-e NAME` passes that variable from your shell into the container under the
+name your agent reads; the script never puts the value on a command line or
+into the findings files. If your endpoint is not OpenAI, add
+`-e RB_MODEL_BASE_URL=https://…` as well. A private package needs
+`docker login ghcr.io` on your machine first.
 
 It does not score. Scores come from a **test run** in the portal, which runs
 the same 25 pull requests with the benchmark's judge and shows the result for
