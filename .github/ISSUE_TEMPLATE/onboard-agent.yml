@@ -36,10 +36,10 @@ body:
     id: provider
     attributes:
       label: Provider
-      description: The company or person behind it.
+      description: Optional. The company or person behind it; the reviewer's name when left out.
       placeholder: My Company
     validations:
-      required: true
+      required: false
 
   - type: input
     id: image
