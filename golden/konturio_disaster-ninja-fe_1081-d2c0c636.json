@@ -1,0 +1,491 @@
+{
+  "pr_key": "konturio_disaster-ninja-fe_1081-d2c0c636",
+  "pr": {
+    "repo": "https://github.com/konturio/disaster-ninja-fe",
+    "pr_number": 1081,
+    "base": "9f04fad3b614c5bad660916916d4f1f5ff0e8b9e",
+    "head": "d2c0c636fc49cb7e318c17ad8e4a96aaddba9511"
+  },
+  "findings": [
+    {
+      "file": "src/core/logical_layers/renderers/BivariateRenderer/BivariateRenderer.tsx",
+      "start_line": 2,
+      "end_line": 2,
+      "message": "LAYER_BIVARIATE_PREFIX and SOURCE_BIVARIATE_PREFIX are imported from './constants' (BivariateRenderer/constants.ts), but those symbols are not exported from that file. They are defined in '~core/logical_layers/constants'. At runtime this resolves to undefined for both names, so getSourcePrefix() returns 'undefined' and getClickableLayerId() returns 'undefinedSOME_ID', breaking source registration, layer lookup, and popup filtering for all bivariate layers.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: BivariateRenderer.tsx imports LAYER_BIVARIATE_PREFIX and SOURCE_BIVARIATE_PREFIX from './constants' (BivariateRenderer/constants.ts), but those symbols are not exported from that file — they only exist in ~core/logical_layers/constants.ts. At runtime these imports resolve to undefined, breaking getSourcePrefix() and getClickableLayerId() for all bivariate layers.",
+      "severity_justification": "All bivariate layer source registration, layer lookup, and popup filtering would be broken at runtime since the source ID and layer ID would contain 'undefined' instead of the expected prefixes.",
+      "category_justification": "Wrong import path causes critical symbols to be undefined, producing incorrect layer and source IDs that break the bivariate rendering pipeline.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/MCDARenderer/MCDARenderer.tsx",
+      "start_line": 1,
+      "end_line": 32,
+      "message": "MCDARenderer is never instantiated anywhere in the application. mcdaLayer.ts still creates BivariateRenderer for MCDA layers, and getLayerRenderer.ts also uses BivariateRenderer for the bivariate group. The new class is entirely dead code and the intent to migrate MCDA layers to MCDARenderer is incomplete.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "MCDARenderer is defined and exported but never imported or instantiated anywhere in the application. mcdaLayer.ts (line 83) still creates BivariateRenderer for MCDA layers and getLayerRenderer.ts (line 13) does the same. The class is dead code introduced by this PR.",
+      "severity_justification": "No runtime behavior is broken — it's unused code. The MCDA functionality still works via BivariateRenderer. The risk is future confusion or unintentional drift, not an immediate bug.",
+      "category_justification": "Dead code that serves no current purpose makes the codebase harder to maintain and understand. The new class is an incomplete migration that was not wired up.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/ClickableFeaturesRenderer/ClickableFeaturesRenderer.tsx",
+      "start_line": 145,
+      "end_line": 145,
+      "message": "addPopup() always dispatches dispatchMetricsEvent('mcda_popup'), regardless of layer type. Before this refactor, bivariate layer clicks used addBivariatePopup() which did not emit this event — only MCDA clicks did. Now that BivariateRenderer delegates to ClickableFeaturesRenderer.addPopup, bivariate map clicks incorrectly record 'mcda_popup' metrics events, corrupting analytics.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "ClickableFeaturesRenderer.addPopup() at line 145 unconditionally calls dispatchMetricsEvent('mcda_popup') on every click popup. The old addBivariatePopup() (visible in the diff) had no such metrics call, while addMCDAPopup() did. Since BivariateRenderer now delegates popup handling to ClickableFeaturesRenderer.addPopup(), bivariate map clicks incorrectly emit the 'mcda_popup' event.",
+      "severity_justification": "Bivariate layer clicks will pollute MCDA analytics with incorrect event counts. This corrupts metrics data used for product decisions without breaking actual functionality.",
+      "category_justification": "The behavior change causes incorrect analytics events to be emitted for bivariate layer interactions, which is a factual behavioral regression from the pre-refactor code.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/MultivariateRenderer/MultivariateRenderer.tsx",
+      "start_line": 125,
+      "end_line": 133,
+      "message": "getMaxZoomLevel checks layer.style?.type !== 'multivariate', but for layers coming through BivariateRenderer or MCDARenderer the source object always has type 'mcda' or 'bivariate', never 'multivariate'. This means the function always returns FALLBACK_BIVARIATE_MAX_ZOOM (9) for MCDA layers whose source doesn't pre-set maxZoom (e.g. mcdaLayer.ts). Previously, mountMCDALayer called getMaxMCDAZoomLevel(style.config, fallback) which could return a higher zoom level based on indicator metadata, so tile fetching could be under-zoomed after this refactor.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "MultivariateRenderer.getMaxZoomLevel checks layer.style?.type !== 'multivariate', but BivariateRenderer/MCDARenderer sources always carry type 'mcda' or 'bivariate' on layer.style. Since MCDA layers in mcdaLayer.ts don't set layer.maxZoom, getMaxZoomLevel always returns FALLBACK_BIVARIATE_MAX_ZOOM=9. Previously mountMCDALayer called getMaxMCDAZoomLevel(style.config, fallback) which could return higher zoom from indicator metadata, so tile fetching is now capped at 9 for all MCDA layers regardless of indicator maxZoom values.",
+      "severity_justification": "MCDA layers will be limited to zoom level 9 for tile fetching even if their indicators support higher zoom levels, resulting in lower-resolution data being displayed. This is a behavioral regression but doesn't fully break the feature.",
+      "category_justification": "Incorrect zoom level computation for MCDA layers is a logic error that causes wrong tile fetch parameters, producing a behavioral regression from the pre-refactor code.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/BivariateRenderer/BivariateRenderer.tsx",
+      "start_line": 22,
+      "end_line": 42,
+      "message": "convertStyle() returns null when both legend and style are null. The old BivariateRenderer.mountBivariateLayer threw an explicit Error('[Bivariate id] Vector layers must have legend') in this case. Now _updateMap silently skips mountLayers and addPopup with no error or warning, making it impossible to diagnose a layer that fails to render because it has no legend.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "convertStyle() returns null when both legend and style are null. ClickableFeaturesRenderer._updateMap silently skips mountLayers and addPopup when style is null. The old mountBivariateLayer threw an explicit Error('[Bivariate id] Vector layers must have legend') in this path. The diagnostic error is gone, replaced by silent failure.",
+      "severity_justification": "This only affects an error/edge case where a layer has neither legend nor style. The behavior change is from an explicit thrown error to silent skip — a debuggability regression but not a functional breakage for normal operation.",
+      "category_justification": "The finding is about loss of diagnostic information (an explicit error message) rather than a runtime functional bug, making it primarily a maintainability/debuggability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/utils/bivariate/bivariateToMultivariate.ts",
+      "start_line": 9,
+      "end_line": 30,
+      "message": "legendToMultivariateStyle calls createDefaultMCDAConfig for both axes on every invocation, which internally calls generateMCDAId (nanoid) and generates fresh random IDs each time. BivariateRenderer.willSourceUpdate and willMount both call convertStyle → legendToMultivariateStyle on every state update, producing a new MultivariateLayerStyle with new score/base config IDs on each call. If downstream code keys anything on these IDs (e.g. caching, equality checks), it will see spurious changes on every update.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "While createDefaultMCDAConfig does call generateMCDAId (nanoid) on each invocation, no current code keys on the generated score/base config IDs. Style generation uses config.layers not config.id, mountLayers guards re-entry with the renderer-computed layerId (LAYER_BIVARIATE_PREFIX + this.id), and no equality or caching logic in the atom/renderer system references these IDs. The claimed harm is explicitly conditional ('if downstream code keys anything on these IDs') and that condition does not hold in the current codebase.",
+      "severity_justification": "Even if the concern were valid, there is no current code path where the non-deterministic IDs cause spurious re-renders or cache invalidation.",
+      "category_justification": "The concern is about unnecessary object creation and potential equality/caching issues from non-deterministic ID generation on repeated calls.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/utils/bivariate/bivariateToMultivariate.ts",
+      "start_line": 28,
+      "end_line": 34,
+      "message": "The `colors` object being created for the multivariate style does not include the `type` property, which is expected by the `ColorTheme` type alias. The `ColorTheme` type is a union that includes `BivariateColorTheme`, which has `type: 'bivariate'`. While the `ColorTheme` from `~core/types` is an array of `{ id: string, color: string }`, the `colors` property in `MultivariateStyleConfig` expects a `BivariateColorTheme` or `MCDAColorTheme` which have a `type` property.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code correctly writes `colors: { type: 'bivariate', colors }` at line 41, where the outer wrapper object has `type: 'bivariate'` matching BivariateColorConfig. The ColorTheme array (the inner `colors` variable) does not need a type property — the discriminant belongs on the BivariateColorConfig wrapper, which is properly set. The finding incorrectly claims the type property is missing.",
+      "severity_justification": "The claim is factually wrong — no type property is missing.",
+      "category_justification": "The finding makes a claim about a type mismatch that does not exist in the code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/BivariateRenderer/BivariateRenderer.tsx",
+      "start_line": 40,
+      "end_line": 43,
+      "message": "In `willSourceUpdate`, the `converted` style derived from `convertStyle` might be null or undefined, yet it is blindly passed down to `super.willSourceUpdate`. This could lead to issues in the superclass method.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The superclass ClickableFeaturesRenderer._updateMap accepts `style: LayerStyle | null` and explicitly guards with `if (style)` before calling mountLayers/addPopup. LogicalLayerState.style is typed as `LayerStyle | null`, so null is a valid value to pass. Passing a null converted style to super.willSourceUpdate is intentional and handled correctly — it simply skips layer mounting, which is the expected behavior when no style is available.",
+      "severity_justification": "The claim is factually incorrect — null is explicitly handled by the superclass.",
+      "category_justification": "The finding makes an incorrect claim about null propagation causing issues in the superclass.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/MCDARenderer/MCDARenderer.tsx",
+      "start_line": 17,
+      "end_line": 19,
+      "message": "The `convertStyle` function assumes `style` is non-null before it attempts to convert it with `mcdaToMultivariateStyle`. However, there is no explicit null check for `style`, making this susceptible to runtime errors if style is null.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The convertStyle function at line 18 explicitly checks for null with `return style ? mcdaToMultivariateStyle(style) : null;`. If style is null, it returns null safely. The finding's claim that there is no null check is factually incorrect.",
+      "severity_justification": "The claim is simply wrong — the null check is present and correct.",
+      "category_justification": "The finding makes a factually incorrect claim about missing null handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/utils/bivariate/bivariateToMultivariate.ts",
+      "start_line": 27,
+      "end_line": 29,
+      "message": "Potential misalignment: `id` used in `ColorTheme` generation in `legendToMultivariateStyle` is just `step.label`. If labels are non-unique, this could cause conflicts in resulting styles.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Bivariate step labels are by design unique grid-cell identifiers (A1, A2, B1, B2, etc.). The old code also depended on unique labels — invertClusters and getCellLabelByValue used them as identifiers. The finding is generic speculation about invalid inputs that don't occur in practice and is not a new risk introduced by this PR.",
+      "severity_justification": "Even if taken seriously, this is a theoretical edge case with no realistic trigger scenario in the bivariate system.",
+      "category_justification": "The finding makes a claim about potential data conflicts from non-unique IDs.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/utils/bivariate/bivariateToMultivariate.test.ts",
+      "start_line": 37,
+      "end_line": 43,
+      "message": "The test case for `legendToMultivariateStyle` does not check edge cases, such as legends with non-unique labels or missing axis details, leading to incomplete validation of the function.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a generic test coverage suggestion — it could be applied verbatim to virtually any test file in any codebase. It does not identify a specific edge case that is known to occur in practice or a concrete bug that a missing test would catch. The bivariate legend structure has unique labels by design and the function's behavior on 'missing axis details' is not a scenario the system produces. This is a boilerplate coverage complaint with no specific justification tied to actual risk.",
+      "severity_justification": "No concrete failing scenario or known bug is identified that the missing edge case tests would catch.",
+      "category_justification": "The finding is about missing test coverage for edge cases.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/BivariateRenderer/BivariateRenderer.tsx",
+      "start_line": 32,
+      "end_line": 44,
+      "message": "After this refactor, `getMaxZoomLevel` for the source's tile spec is inherited from `MultivariateRenderer`, which only computes a proper max zoom when `layer.style?.type === 'multivariate'` (see `MultivariateRenderer.tsx` lines 125-132). For a `BivariateRenderer` layer, `layer.style` is typically undefined (bivariate layers carry a `legend`, not a `style`), and for an MCDA layer it is `'mcda'` — in both cases the check fails and `FALLBACK_BIVARIATE_MAX_ZOOM` is returned. The converted multivariate style is passed via `state.style` to `super`, but `getMaxZoomLevel` reads `layer.style` (the original), so the conversion never reaches it.\n\nPreviously `mountBivariateLayer` derived max zoom from `legend.axis.x/y.quotients` via `getMaxNumeratorZoomLevel`, and `mountMCDALayer` derived it from `style.config` via `getMaxMCDAZoomLevel`. Both of those paths are gone, so for layers that don't specify `layer.maxZoom` explicitly, the resulting source's `maxzoom` regresses to the constant fallback regardless of the indicators' actual zoom support. Consider overriding `getMaxZoomLevel` in `BivariateRenderer`/`MCDARenderer` to compute from the converted multivariate config (or from legend/MCDA style) so the previous behaviour is preserved.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: MultivariateRenderer.getMaxZoomLevel checks layer.style?.type (the original LayerTileSource.style), not the converted multivariate style passed via state.style. For bivariate layers layer.style is undefined and for MCDA layers it is 'mcda', so both always return FALLBACK_BIVARIATE_MAX_ZOOM=9. The old code used getMaxNumeratorZoomLevel and getMaxMCDAZoomLevel which could derive actual indicator zoom levels. LayerDetailsDto confirms maxZoom is optional, so layers without explicit maxZoom are expected and this regression is real.",
+      "severity_justification": "Affects tile loading bounds for layers without explicit maxZoom. If indicators support higher zoom than 9, tiles won't load at those zoom levels, degrading map rendering. The old code explicitly computed this value from indicator data to avoid this problem.",
+      "category_justification": "Behavioral regression — the max zoom computation was silently broken by the refactor, causing layers to use a hardcoded fallback instead of a value derived from indicator data.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/MCDARenderer/MCDARenderer.tsx",
+      "start_line": 21,
+      "end_line": 31,
+      "message": "Same issue as in `BivariateRenderer`: the inherited `MultivariateRenderer.getMaxZoomLevel` only computes a non-fallback max zoom when `layer.style?.type === 'multivariate'`, but here `layer.style.type` is `'mcda'`, so the source will always be created with `FALLBACK_BIVARIATE_MAX_ZOOM` when `layer.maxZoom` is not explicitly set. The pre-refactor `mountMCDALayer` used `getMaxMCDAZoomLevel(style.config, FALLBACK_BIVARIATE_MAX_ZOOM)` to derive it from the MCDA layers. Consider overriding `getMaxZoomLevel` here to compute from the (converted) multivariate config so MCDA layers don't lose their dynamic zoom capping.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: same root cause as the BivariateRenderer finding. MCDARenderer converts style to multivariate and passes it via state.style, but MultivariateRenderer.getMaxZoomLevel reads layer.style (the original LayerTileSource), which has type 'mcda'. The condition layer.style?.type !== 'multivariate' is always true for MCDARenderer layers, so FALLBACK_BIVARIATE_MAX_ZOOM=9 is always returned when layer.maxZoom is not explicitly set. The pre-refactor mountMCDALayer used getMaxMCDAZoomLevel(style.config) which derived the value from indicator data.",
+      "severity_justification": "Same impact as the BivariateRenderer case: MCDA layers without explicit maxZoom will be capped at zoom 9 regardless of what their indicators support, potentially preventing tile loading at higher zoom levels.",
+      "category_justification": "Behavioral regression introduced by the refactor — the dynamic zoom computation from MCDA config is silently lost, replaced by a hardcoded fallback.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/BivariateRenderer/BivariateRenderer.tsx",
+      "start_line": 35,
+      "end_line": 36,
+      "message": "The converted style is only placed on the transient state passed to `super`, but `MultivariateRenderer.getMaxZoomLevel()` reads `state.source.style` when creating the tile source. For legacy bivariate layers the source still has no multivariate style, so layers without an explicit `maxZoom` fall back to `FALLBACK_BIVARIATE_MAX_ZOOM` instead of using the axes' indicator `maxZoom` values as the previous renderer did.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same root cause as Finding 1 — verified in that analysis. getMaxZoomLevel reads layer.style (LayerTileSource.style), which for bivariate layers is undefined or non-multivariate, so FALLBACK_BIVARIATE_MAX_ZOOM=9 is always used when layer.maxZoom is not set. The previous mountBivariateLayer used getMaxNumeratorZoomLevel from legend axes.",
+      "severity_justification": "Same impact as Finding 1: layers without explicit maxZoom lose dynamic zoom computation, capping tiles at zoom 9 regardless of indicator support.",
+      "category_justification": "Behavioral regression from the refactor — dynamic max zoom computation from legend axes is silently replaced by a hardcoded fallback.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/MCDARenderer/MCDARenderer.tsx",
+      "start_line": 23,
+      "end_line": 24,
+      "message": "The converted MCDA style is passed only as `state.style`, but the inherited source creation path computes max zoom from `state.source.style`. For MCDA sources with no explicit `maxZoom`, this means `MultivariateRenderer.getMaxZoomLevel()` sees a non-multivariate source style and falls back to the bivariate default instead of using `getMaxMCDAZoomLevel`, which can truncate tiles at higher zooms.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same root cause as Findings 1 and 2, verified in those analyses. MCDARenderer passes the converted style via state.style but getMaxZoomLevel reads layer.style (LayerTileSource.style which has type 'mcda'), failing the multivariate check and returning FALLBACK_BIVARIATE_MAX_ZOOM=9. Pre-refactor mountMCDALayer used getMaxMCDAZoomLevel(style.config) for layers without explicit maxZoom.",
+      "severity_justification": "MCDA layers without explicit maxZoom lose dynamic zoom computation from indicator data, potentially truncating tile loading at higher zoom levels.",
+      "category_justification": "Behavioral regression — dynamic max zoom from MCDA config silently replaced by hardcoded fallback.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/MCDARenderer/index.ts",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "This exports the new renderer, but no code path selects it: `getLayerRenderer` only returns `MultivariateRenderer` for `layer.type === 'multivariate'`, `BivariateRenderer` for bivariate overlays, and `GenericRenderer` otherwise. As a result MCDA tile layers still go through `GenericRenderer`, which ignores tile `style` configs and requires a legend, so the new MCDA renderer will not be used unless the factory is updated.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: MCDARenderer is never imported or instantiated outside its own definition files. getLayerRenderer.ts has no case for it, and mcdaLayer.ts explicitly uses new BivariateRenderer({id}) for MCDA layers. The finding correctly identifies that MCDARenderer is dead code. The claim that MCDA falls back to GenericRenderer is factually wrong (it uses BivariateRenderer), but the core finding that MCDARenderer is unreachable and the factory was not updated is accurate and actionable.",
+      "severity_justification": "MCDARenderer is a new class introduced by this PR but never used, making it dead code. MCDA layers continue working via BivariateRenderer, so there is no runtime breakage, but the new class is pointless as-is and creates maintenance confusion.",
+      "category_justification": "A newly introduced class that is never invoked is a functional gap — the intended code path using MCDARenderer for MCDA layers is never reached.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/BivariateRenderer/BivariateRenderer.tsx",
+      "start_line": 35,
+      "end_line": 36,
+      "message": "On source updates this now delegates to `ClickableFeaturesRenderer._updateMap`, whose `addPopup()` calls `cleanUpListeners()` before `addHoverAndActiveFeatureState()`. Since the existing border layer makes `addHoverAndActiveFeatureState()` return early, the hover/active listeners removed by `cleanUpListeners()` are not re-registered after a source update, so feature highlighting stops working.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: addPopup calls cleanUpListeners() removing all _listenersCleaningTasks entries including hover/active feature state listeners. Then addHoverAndActiveFeatureState returns early because the border layer already exists on source update. Old addBivariatePopup only removed its own click handler without calling cleanUpListeners(), so hover/active listeners survived source updates. The PR changed this behavior, making hover/active feature highlighting stop working after the first source update on bivariate layers.",
+      "severity_justification": "Hover and active feature highlighting breaks after source updates on bivariate layers — a user-visible regression where clicking/hovering on hexagons no longer shows feature state highlighting after a source update occurs.",
+      "category_justification": "Behavioral regression — a specific user-visible interaction stops working after source updates due to listener cleanup not being properly paired with re-registration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/renderers/MCDARenderer/MCDARenderer.tsx",
+      "start_line": 23,
+      "end_line": 24,
+      "message": "On source updates this delegates to `ClickableFeaturesRenderer._updateMap`, where `addPopup()` clears all registered listeners before `addHoverAndActiveFeatureState()` runs. Because the border layer already exists, `addHoverAndActiveFeatureState()` returns without re-registering the hover/active handlers, so MCDA feature highlighting is lost after any source refresh.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The mechanism is correct and verified — addPopup calls cleanUpListeners() then addHoverAndActiveFeatureState returns early because the border layer exists. However, MCDARenderer is never instantiated (dead code per Finding 5), so this bug has no runtime impact. Furthermore, the old addMCDAPopup also called cleanUpListeners(), making this pre-existing for MCDA layers rather than newly introduced by the PR.",
+      "severity_justification": "MCDARenderer is never used (dead code), so this bug has no runtime impact. Even if it were used, the same bug was already present in the pre-PR MCDA handling, making this a pre-existing issue.",
+      "category_justification": "Behavioral bug in a listener lifecycle — hover/active handlers are not re-registered after source updates — same class of issue as Finding 6.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/bivariate_manager/readme.md",
+      "start_line": 52,
+      "end_line": 55,
+      "message": "These lines lost the indentation used by the surrounding numbered-list item, so Markdown renders them outside item 5 while the preceding explanation remains nested. Indent them like the other lines in this section to keep the document structure intact.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the new lines added by the PR have no leading indentation while the rest of numbered list item 5 uses 3-space indent. In Markdown this causes the new text to render outside the list item. The diff confirms the old 'For reference' line had leading spaces that were removed.",
+      "severity_justification": "Minor documentation formatting issue — the text is still readable and the content is correct, but the Markdown structure breaks the numbered list nesting.",
+      "category_justification": "Purely a documentation formatting issue in a readme file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/investigations/maplibre-migration.md",
+      "start_line": 79,
+      "end_line": 80,
+      "message": "This entry still says `BivariateRenderer` registers listeners via `registerMapListener`, but the refactored file no longer does that directly; listener registration now lives in `ClickableFeaturesRenderer` through `MultivariateRenderer`. Keeping this as-is points future migration work at the wrong file.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: BivariateRenderer.tsx lines 1-45 contains no registerMapListener calls — it is a thin wrapper with only convertStyle, willSourceUpdate, and willMount. The doc was partially updated (line range corrected) but the description 'event listener registration via registerMapListener' was not removed, making it factually incorrect. ClickableFeaturesRenderer.tsx is already separately listed as the correct location.",
+      "severity_justification": "Documentation-only inaccuracy in an investigation doc. Could mislead future migration work to look in the wrong file, but has no runtime impact.",
+      "category_justification": "Stale/incorrect description in a migration investigation document pointing future work at the wrong file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/investigations/maplibre-migration.md",
+      "start_line": 59,
+      "end_line": 60,
+      "message": "This now points the addSource/addLayer migration item at `BivariateRenderer`, but that file no longer contains those calls after the refactor. The relevant implementation is in the delegated renderer path, so this entry is misleading for future migration work.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: BivariateRenderer.tsx lines 1-45 contains no addSource or addLayer calls. The refactor delegated those to ClickableFeaturesRenderer and MultivariateRenderer which are already listed separately in the same doc section. The PR updated the line range but left the (addSource/addLayer) annotation intact, making it factually incorrect.",
+      "severity_justification": "Documentation-only inaccuracy in an investigation doc. Could mislead future migration work to look in the wrong file, but no runtime impact.",
+      "category_justification": "Stale annotation in a migration investigation document — the described behavior no longer exists in the referenced file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/investigations/maplibre-migration.md",
+      "start_line": 93,
+      "end_line": 94,
+      "message": "This feature-state entry still points to `BivariateRenderer`, but the refactored file does not contain feature-state logic; it is inherited via `ClickableFeaturesRenderer`. The documentation should point to the actual implementation to avoid sending maintainers to an empty wrapper.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: BivariateRenderer.tsx lines 1-45 contains no feature state logic whatsoever. The feature state logic (addHoverAndActiveFeatureState, createFeatureStateHandlers) lives in ClickableFeaturesRenderer which is already correctly listed immediately below the BivariateRenderer entry. The PR updated the line range from 103-400 to 1-45 but left the (feature state logic) annotation, making it factually incorrect.",
+      "severity_justification": "Documentation-only inaccuracy in an investigation doc. No runtime impact, but could send maintainers looking in the wrong file.",
+      "category_justification": "Stale annotation in a migration investigation document — the described behavior no longer exists in the referenced file after the refactor.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/investigations/maplibre-migration.md",
+      "start_line": 40,
+      "end_line": 41,
+      "message": "This file no longer has direct `maplibre-gl` imports or MapLibre type usages after the refactor, so listing all of `BivariateRenderer` under import/type migration targets is inaccurate. The relevant MapLibre usages are now in the renderer it delegates to.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: BivariateRenderer.tsx has no maplibre-gl imports or type references at all. The grep returned no results. The PR updated the line range from the old multi-line reference to [Lines 1-45] but kept the entry in the MapLibre import/type migration section, which is now factually incorrect. ClickableFeaturesRenderer is already listed separately as the actual location.",
+      "severity_justification": "Documentation-only inaccuracy in an investigation doc. No runtime impact, but points migration work at an empty wrapper instead of the real implementation.",
+      "category_justification": "Stale entry in a migration investigation document — the referenced file no longer contains the MapLibre imports/types described.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/utils/bivariate/bivariateToMultivariate.ts",
+      "start_line": 38,
+      "end_line": 41,
+      "message": "These raw bivariate axis steps are passed to the multivariate bivariate classifier, but the converted dimensions are MCDA layers with `normalization: 'max-min'`, so `linearNormalization()` produces 0–1 scores before classification. The old bivariate style compared raw quotient values against these raw steps; after this conversion, thresholds such as 10/30/50 are compared against normalized scores, which puts most features in the wrong legend cell. Either preserve raw scoring for converted bivariate axes or convert the step overrides to the same normalized scale.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified through code trace: createMCDALayersFromBivariateAxes sets normalization: 'max-min', so linearNormalization produces 0-1 values. These are then classified in createBivariateMultivariateStyle against stepOverrides.scoreSteps/baseSteps which are set to legend.axis.x.steps/axis.y.steps (raw axis values like [0, 10, 50, ...]). The old generateLayerStyleFromBivariateLegend compared raw quotient division results against those same raw steps — the new path normalizes first then compares against raw steps. All features land in the same classification bucket, completely breaking bivariate coloring.",
+      "severity_justification": "This breaks the core visual output of bivariate layers — all hexagons get the same color/class instead of being distributed across the 3x3 bivariate grid. The bivariate layer feature is fundamentally non-functional after this conversion.",
+      "category_justification": "Logic error in the conversion between bivariate and multivariate representations — mismatched scales (raw vs 0-1 normalized) for step classification thresholds produce completely wrong visual output.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,793 @@
+{
+  "pr_key": "caasi_town-zero_6-f6ef91ce",
+  "pr": {
+    "repo": "https://github.com/caasi/town-zero",
+    "pr_number": 6,
+    "base": "10daec495f5c7513cfcfe25543f3c7bdf9fd7f94",
+    "head": "f6ef91cec23186113b32a994b447ce89bcbc5cc6"
+  },
+  "findings": [
+    {
+      "file": "server/src/dialogue/trigger-registry.ts",
+      "start_line": 83,
+      "end_line": 83,
+      "message": "`rule.fired = true` mutates the TriggerRule object in place. `loadScenario` registers the same object references from `ScenarioData` directly (no copy). If `ScenarioData` is a module-level singleton (as `villagerBasicScenario` is), `fired` state bleeds across multiple game rooms or test runs that load the same scenario. Any `once: true` trigger that fires in one room will appear already-fired in the next room loaded from that singleton.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: `rule.fired = true` in trigger-registry.ts:83 mutates the TriggerRule in place; loadScenario passes trigger objects without copying; villagerBasicScenario is a module-level export const singleton. Any once:true trigger firing in one room would bleed into subsequent rooms loaded from the same singleton. The bug is latent (villagerBasicScenario has no triggers currently) but the pattern is broken for future scenarios.",
+      "severity_justification": "Real correctness bug — once:true triggers in any module-level scenario would silently fail to fire in subsequent rooms after the first fire, which is game-logic-breaking behavior. Currently dormant because the only exported singleton has no triggers, but will manifest as soon as any trigger is added.",
+      "category_justification": "Shared mutable state across game room instances causes incorrect trigger behavior — once:true triggers that should fire per-room will only fire once globally.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/trigger-registry.ts",
+      "start_line": 10,
+      "end_line": 26,
+      "message": "`extractFactKeys` only traverses `fact_ref` nodes. Trigger conditions that reference only `prop_ref` (e.g., `$npc.hp < 10`), `local_ref`, or builtin `call` nodes without any `fact_ref` subexpressions produce an empty `deps` set. An empty `deps` means no key in `changedFacts` can ever match, so `relevant` is always false and those triggers silently never evaluate, regardless of whether their condition is met.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: extractFactKeys only collects fact_ref keys. A trigger whose `when` expression uses only prop_ref/local_ref/literal nodes (no fact_ref) produces an empty deps set. In evaluateBatch, an empty deps set means the changedFacts loop never sets relevant=true, so the trigger is unconditionally skipped. This is silent and realistic given the DSL exposes npc.prop('hp') etc.",
+      "severity_justification": "Any trigger authored with only prop_ref-based conditions silently never fires. Current shipped triggers all use fact_ref conditions so impact is latent, but the failure mode is silent and hard to debug.",
+      "category_justification": "The change-tracking relevance filter incorrectly excludes triggers whose conditions don't reference any fact_ref, causing them to silently never evaluate.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/trigger-registry.ts",
+      "start_line": 71,
+      "end_line": 80,
+      "message": "The `EvalContext` used for trigger condition evaluation stubs out `player` and `npc` accessors to always return `0`. Any trigger `when` expression using `has_item(\"$player\", ...)`, `faction_of(\"$npc\")`, `distance(\"$player\", \"$npc\")`, or `prop_ref` against player/npc silently evaluates those sub-expressions as `0` instead of the actual agent state. This causes triggers to fire or not fire incorrectly without any error.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: evaluateBatch creates EvalContext with player/npc accessors stubbed to always return 0. Any trigger when-expression mixing fact_ref (passes relevance check) with prop_ref/has_item/distance/faction_of will evaluate those subexpressions as 0, causing incorrect fire decisions silently. The DSL explicitly supports these expressions in trigger conditions.",
+      "severity_justification": "Triggers mixing fact-based and agent-state-based conditions evaluate incorrectly and silently. No current shipped trigger exercises this path, but it is a realistic authoring pattern given the DSL API surface.",
+      "category_justification": "Agent state is silently substituted with 0 in trigger condition evaluation, producing incorrect boolean outcomes without any error or warning.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/tick.ts",
+      "start_line": 190,
+      "end_line": 217,
+      "message": "Phase 8 trigger execution only handles `set_fact` effects; `give_item`, `take_item`, `damage`, and `register_trigger` emit a console.warn and are dropped silently. The DSL allows all these effect types on triggers (they're in the `Effect` union), they serialize and load without error, and the executor in `executor.ts` correctly handles them — but the tick loop's trigger execution path simply ignores them. Authors who write triggers with item or damage effects will get no runtime error and no functional behaviour.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in tick.ts phase 8: only set_fact is handled inline; all other Effect types (give_item, take_item, damage, register_trigger, set_local) emit console.warn and are dropped. The DSL and Effect union allow all these types in trigger then-arrays, and executor.ts already handles them correctly but is not used here.",
+      "severity_justification": "Trigger effects other than set_fact are silently dropped at runtime with only a warn log. Authors writing triggers with item or damage effects get no error and no behavior, despite the full executor infrastructure being available and correct.",
+      "category_justification": "The trigger execution path in the tick loop handles only one of six effect types, silently dropping the rest despite a complete executor being available.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/trigger-registry.ts",
+      "start_line": 33,
+      "end_line": 35,
+      "message": "`register()` throws on duplicate IDs. The `register_trigger` effect in an action node passes `effect.trigger` (a fixed object reference with a fixed `id`) to `this.triggerRegistry?.register(rule)` in `DialogueSession.buildMutableContext()`. If a dialogue tree loops back to an action node containing a `register_trigger` effect (e.g., `node A → choice → back to A`), the second visit throws `Duplicate trigger rule id`, which propagates uncaught through `executeEffects` → `advanceWithEffects` → `getState()`, crashing the session.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: register() throws on duplicate IDs; DialogueSession.buildMutableContext registers triggers without try/catch; executeEffects/advanceWithEffects/getState have no exception handling. The engine has no cycle guard on action nodes. A dialogue loop revisiting an action node with register_trigger effect throws an uncaught error crashing the session. The effect type is fully supported in the DSL and Effect union.",
+      "severity_justification": "Crashes the dialogue session with an uncaught exception when a looping dialogue revisits an action node with register_trigger. Requires a specific authoring pattern but the DSL explicitly supports it and gives no warning.",
+      "category_justification": "An uncaught exception propagates through multiple layers and crashes the dialogue session when a legitimate dialogue loop pattern is used.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/dialogue-session.ts",
+      "start_line": 35,
+      "end_line": 35,
+      "message": "`currentTick` is captured once at session construction and never updated. Beliefs written via `setFact` during a session are stamped with the construction tick (line 173: `tick: this.currentTick`). For sessions that span multiple server ticks — which is inevitable when awaiting an LLM response on a `request` node — those beliefs get a stale timestamp. Other agents' beliefs for the same key with higher (more-recent) ticks will overwrite them during belief merges, even though the dialogue-set belief was actually more recent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: currentTick is captured once at construction (line 35) and never updated. setFact stamps beliefs with tick: this.currentTick (line 173). mergeBeliefs uses newer-tick-wins logic. A session spanning multiple ticks (inevitable with LLM request nodes) stamps facts with a stale tick, making them losers in belief merges against any same-key fact set by another agent at a later real tick.",
+      "severity_justification": "The scenario requires a same-key belief set by another agent during the same session's lifetime to actually cause incorrect overwriting. In practice sessions are short and the immediate effect is slightly stale tick metadata. Real merge conflicts are possible but not common with current scenario designs.",
+      "category_justification": "Beliefs written during a multi-tick dialogue session carry stale timestamps, causing them to be incorrectly overwritten during belief merges with newer same-key facts from other agents.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "shared/src/script-dsl/builders.ts",
+      "start_line": 154,
+      "end_line": 165,
+      "message": "`build()` validates that text nodes have a non-empty `next` field but does not validate that any referenced node IDs (`next`, `nextYes`, `nextNo`, option `next`) actually exist in the `nodes` map. Typos in `goto()`, `nextYes`/`nextNo`, or manually-specified `next` targets are silently accepted at build time and only raise an error at runtime when `DialogueEngine.getCurrentNode()` throws `Dialogue node \"...\" not found`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: build() only checks for empty nodeOrder and empty next strings on text nodes. It does not validate that any referenced node IDs (next, nextYes, nextNo, option next, root) exist in the nodes map. Typos in goto()/nextYes/nextNo are silently accepted at build time and only surface as runtime throws in DialogueEngine.getCurrentNode().",
+      "severity_justification": "This is a missing validation that shifts error detection from authoring time to runtime. The runtime error is clear when it fires, so it is not silent in production. However, it would be better caught at scenario load/build time. Low severity since it doesn't cause silent incorrect behavior — it eventually throws.",
+      "category_justification": "Missing build-time validation that would improve authoring ergonomics and shift error detection earlier, without affecting correctness of valid dialogues.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/dialogue-session.ts",
+      "start_line": 95,
+      "end_line": 98,
+      "message": "The recursive call in `getState()` to auto-advance through `action` nodes can lead to a stack overflow if there's a long chain of such nodes. While a depth limit of 100 is implemented to prevent infinite loops, a large but finite chain could still exceed Node.js's stack depth limit. The function should be converted to an iterative loop to handle arbitrarily long chains of action nodes without consuming stack space.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The depth cap is 100. Node.js's call stack limit is ~10,000+ frames. 100 shallow recursive getState() calls cannot overflow the stack. The finding's core claim — that the finite chain 'could still exceed Node.js's stack depth limit' — is factually incorrect given the hard cap in place. Converting to iteration is a valid style suggestion but misrepresents the actual risk.",
+      "severity_justification": "Even if the finding were correct, the impact would be limited to a thrown error on maliciously deep dialogue trees. The actual risk at depth 100 is effectively zero.",
+      "category_justification": "The finding concerns potential stack overflow, a reliability concern, even though the actual risk is negligible with the depth cap.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/tick.ts",
+      "start_line": 158,
+      "end_line": 166,
+      "message": "During trigger evaluation, all agents' beliefs are merged into a single `allBeliefs` map. This creates a global view of all facts, which violates the project's design principle of \"no global omniscience\". Triggers should be evaluated against an agent's local knowledge (their own beliefs and those of adjacent agents they have merged with), not a world-state view. This gives agents with access to more information an unfair advantage and leaks information across the map.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Inline TODO directly above already says the exact same thing",
+      "severity_justification": "The violation is real and self-documented with a TODO. However, triggers currently only use fact_ref-based conditions evaluated against the global belief pool — the practical game-balance impact of information leakage is low in the current system. The author deferred this intentionally.",
+      "category_justification": "The global belief merge contradicts the documented information model where agents have local knowledge only, causing triggers to fire based on facts the target agent should not have access to.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/tick.ts",
+      "start_line": 181,
+      "end_line": 196,
+      "message": "When a trigger fires and applies a `set_fact` effect, the `evaluate` call to resolve the fact's value is provided with a limited `EvalContext` that does not include full agent or settlement state. The context is hardcoded with accessors that return 0 for most properties, which will lead to incorrect calculations for any expression that relies on agent state (like HP, position, or inventory other than what's held by the target agent). This breaks triggers that need to compute new facts based on the state of the world.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the EvalContext in tick.ts phase 8 for set_fact value evaluation stubs player accessor to always return 0 and npc accessor to return only inventory values (0 for hp, position, role, faction, id). Compare to DialogueSession.makeAgentAccessor() which exposes all properties correctly. A set_fact value expression referencing $npc.hp or $player.food silently computes 0.",
+      "severity_justification": "set_fact effects in triggers whose value expressions reference agent state beyond inventory will silently write incorrect fact values. The DSL supports such expressions and the failure is silent with no warning.",
+      "category_justification": "The EvalContext for set_fact value evaluation is incomplete, causing incorrect fact values to be written when expressions reference agent properties beyond the inventory subset.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/agent.ts",
+      "start_line": 140,
+      "end_line": 143,
+      "message": "The `mergeBeliefs` method creates a shallow copy of each fact using the spread syntax (`{ ...fact }`). If a fact's `value` is an object or array, it will not be deep-copied. While `Value` is currently defined as `boolean | number | string`, this creates a risk of shared mutable state if complex fact values are introduced in the future, as two agents could then hold references to the same mutable object within their belief stores.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Value is defined as boolean | number | string (all primitives) in script-types.ts. The spread copy { ...fact } is correct and safe for the current type. There is no shared mutable state risk at this SHA. The finding speculates about a hypothetical future type extension, not any actual issue in the current code.",
+      "severity_justification": "Even as a forward-looking concern, Value being extended to include objects is speculative and would require explicit type changes reviewed at that time.",
+      "category_justification": "The concern is about potential future risk if the Value type is extended, not a current bug.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/dialogue-session.ts",
+      "start_line": 56,
+      "end_line": 61,
+      "message": "When constructing a `DialogueSession`, the `locals` from a pre-existing `DialogueProgressEntry` are loaded. However, `visitedNodes` and `selectedOptions` are ignored. This means that if a conversation is resumed, the dialogue engine will not remember which nodes have been seen or which choices were made, potentially allowing players to re-trigger one-time options or see different conditional paths than they should.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "visitedNodes and selectedOptions are pure output/tracking fields — they are written during navigation but never read by any routing or filtering logic in the engine or session. getVisibleOptions() filters only by opt.condition (beliefs/locals). ChoiceOptionData has no 'once' flag. Not restoring these fields from progress produces fresh history records but has zero behavioral impact.",
+      "severity_justification": "The concern about re-triggering options or different conditional paths is unfounded given the actual implementation. The fields are tracking-only.",
+      "category_justification": "The finding makes an incorrect claim about behavioral impact of not restoring tracking fields.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/dialogue-gate.ts",
+      "start_line": 28,
+      "end_line": 39,
+      "message": "The `evaluateDialogueGate` function, which asks an LLM to decide on a player's request, constructs a `makeAccessor` for agent properties but only exposes the agent's inventory, not other properties like HP or position. When interpolating the request label, any `prop_ref` to non-inventory properties (e.g., `t`Your HP is ${npc.prop('hp')}`t`) will incorrectly resolve to 0.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually wrong. makeAccessor in dialogue-gate.ts explicitly handles hp, id, role, faction, x, y, and inventory properties — it returns the real agent value for all of these, not 0. The claim that 'only inventory is exposed' is directly contradicted by the code at lines 19-26.",
+      "severity_justification": "The finding identifies a non-existent bug.",
+      "category_justification": "The finding makes an incorrect factual claim about which properties the accessor exposes.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/evaluator.ts",
+      "start_line": 128,
+      "end_line": 128,
+      "message": "The `div` operation in the arithmetic evaluator returns 0 when dividing by zero. This can silently produce incorrect results in calculations (e.g., `100 / 0` becomes `0` instead of indicating an error). It would be safer to throw an error or return `NaN` to make division-by-zero errors more visible and prevent them from propagating as valid-looking numbers.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at line 128 returns 0 for division by zero, which is a deliberate choice (not an oversight). The finding is factually correct that 0 is returned, but this is a design decision — returning 0 is a common safe default in game scripting DSLs to avoid crashes from user-authored expressions. The finding offers a preference (throw or NaN) but neither is objectively better for a game dialogue DSL where expression authors may not anticipate edge cases. NaN would propagate silently into conditions causing incorrect boolean results (worse than 0), and throwing would crash the session. The 0-return is a reasonable defensive choice.",
+      "severity_justification": "Division by zero in game dialogue expressions is an edge case with minimal gameplay impact. The 0 default prevents crashes and is a common convention in scripting systems.",
+      "category_justification": "The finding concerns the correctness of arithmetic evaluation behavior for an edge case.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/trigger-registry.ts",
+      "start_line": 105,
+      "end_line": 114,
+      "message": "The `evaluateBatch` method does not handle errors if `checkCondition` throws, potentially leaving `fired` rules in inconsistent states. This could disrupt the proper execution of conditional triggers.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The 'inconsistent state' claim is inaccurate: rule.fired = true only executes after successful checkCondition, so a throw leaves fired flags correctly set for rules processed before the throw, and simply skips subsequent rules for the batch. This is an exception-propagation concern (remaining triggers skipped), not a state corruption issue. The finding is generic 'add try-catch' advice without demonstrating a specific concrete failure path.",
+      "severity_justification": "At worst a checkCondition throw skips remaining trigger evaluations for one tick, which is a minor operational concern not a correctness or safety issue.",
+      "category_justification": "The concern is about exception propagation causing incomplete trigger batch evaluation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/executor.ts",
+      "start_line": 48,
+      "end_line": 50,
+      "message": "In `giveItem`, if the target agent's inventory does not exist, no error is raised, and the operation silently fails. This behavior can mask problems in agent setup or data integrity.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The scenario 'target agent's inventory does not exist' cannot occur in production: Agent.inventory is always initialized to emptyResourceStore() in the constructor, and resolveAgentRef throws for unknown refs before addToInventory is ever called. The finding confuses the executor's abstract interface with the concrete production implementation.",
+      "severity_justification": "The described failure mode does not exist in the actual code path.",
+      "category_justification": "The finding makes an incorrect claim about a silent failure that cannot occur in the production code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/executor.ts",
+      "start_line": 55,
+      "end_line": 57,
+      "message": "In `takeItem`, there is no validation if the agent's inventory does not exist, and failures return false. This could lead to unclear error handling logic depending on the caller's behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same as finding 16: Agent.inventory is always initialized via emptyResourceStore() in the constructor, so 'inventory does not exist' is impossible. In production, takeItem calls resolveAgentRef (throws for unknown refs) then Agent.removeFromInventory which checks inventory[resource] < amount and returns false for insufficient funds — this is intentional short-circuit behavior documented in the executor. The false return is a designed transaction-failure signal, not an error masking issue.",
+      "severity_justification": "The described failure mode does not exist in the production code path. Returning false on insufficient funds is intentional behavior.",
+      "category_justification": "The finding makes an incorrect claim about a validation gap that does not exist given the Agent class invariants.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/dialogue-engine.ts",
+      "start_line": 83,
+      "end_line": 90,
+      "message": "`advanceWithEffects` does not check for improperly defined action nodes without effects, leading to potential runtime errors or undefined behaviors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "An action node with an empty effects array is valid per DialogueNodeData type (effects: Effect[]). executeEffects([]) is a no-op for-loop that completes normally, then moveTo(node.next) runs correctly. There is no runtime error or undefined behavior — the finding describes a non-existent problem.",
+      "severity_justification": "The scenario described causes no actual failure in the code.",
+      "category_justification": "The finding incorrectly claims an action node without effects causes runtime errors or undefined behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/scenario-loader.ts",
+      "start_line": 28,
+      "end_line": 33,
+      "message": "`loadScenario` directly sets agent beliefs during NPC creation without any validation or deduplication checks. This behavior could allow conflicting data entries or duplicate beliefs.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Agent.setBelief uses Map.set() which naturally handles duplicate keys via last-write-wins. There is no data corruption or conflicting entries — the map holds exactly one entry per key. The finding describes a trivial authoring edge case that is handled gracefully with no real bug or data integrity risk.",
+      "severity_justification": "Even if the same key appears twice in initialBeliefs, the result is a simple overwrite with no corruption or error.",
+      "category_justification": "Generic add-validation advice for an edge case with no real behavioral impact.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/ai/prompt-builder.ts",
+      "start_line": 48,
+      "end_line": 56,
+      "message": "Beliefs are converted to strings using `String(fact.value)`, which may fail for non-primitive values and could lead to unexpected results if any value is an object or a non-string data type.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Value is typed as boolean | number | string (all primitives) in script-types.ts. String() on any of these produces correct, predictable output: String(true)='true', String(42)='42', String('hello')='hello'. The finding speculates about non-primitive values that cannot exist given the type definition. This is the same speculative concern as finding 11.",
+      "severity_justification": "String() on boolean/number/string primitives is well-defined and correct. No actual failure mode exists with the current Value type.",
+      "category_justification": "The finding incorrectly claims String() could fail for the current Value type, which is restricted to primitives.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/dialogue-engine.ts",
+      "start_line": 144,
+      "end_line": 147,
+      "message": "`selectOption` throws an error if an out-of-range index is selected. While exceptions might be helpful during development, bounds checking or user feedback mechanisms would better fit production.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Throwing on an out-of-range index is correct production behavior for a server-side engine — it catches programming errors (caller passed an invalid index) and prevents silent undefined behavior. The finding suggests replacing throws with 'user feedback mechanisms' but selectOption is an internal engine method called by server code, not directly by user input. The throw-on-invalid-input pattern is consistent with the rest of the engine (selectOptionById, advance, resolveRequest all throw on invalid calls). This is a style preference, not a real issue.",
+      "severity_justification": "Throwing on invalid index is correct and consistent with the rest of the codebase's error handling pattern for programming errors.",
+      "category_justification": "The finding is a style preference about error handling approach with no concrete impact.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/dialogue-gate.ts",
+      "start_line": 54,
+      "end_line": 54,
+      "message": "[javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring] Detected string concatenation with a non-literal variable in a util.format / console.log function. If an attacker injects a format specifier in the string, it will forge the log message. Try to use constant values for the format string.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic static analysis template alert. Node.js console.error with a template literal does not process printf-style format specifiers — the interpolated string is passed as a single opaque argument. There is no util.format call and no exploitable format string vulnerability. The alert fires on any console.log with string interpolation regardless of actual risk.",
+      "severity_justification": "No exploitable format string vulnerability exists in Node.js console.error with template literals. This is a false positive from a blanket static analysis rule.",
+      "category_justification": "The finding is framed as a security vulnerability (format string injection) even though it is not exploitable in this context.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring"
+      }
+    },
+    {
+      "file": "server/src/simulation/tick.ts",
+      "start_line": 161,
+      "end_line": 223,
+      "message": "Phase 8 trigger evaluation depends on `recordChangedFact` being called when beliefs change, but `recordChangedFact` is only invoked from `DialogueSession.setFact` (see `dialogue-session.ts:174`). The other paths that mutate beliefs — `Agent.setBelief` called from `scenario-loader.ts:30`, `Agent.mergeBeliefs` called from `vision.ts:58-59` during phase 7, and the trigger's own `targetAgent.setBelief(...)` at line 209 below — never record changes. As a result, scenario-level triggers will essentially never fire from normal gameplay (belief merges between adjacent agents won't trigger anything), and triggers that themselves modify facts won't cause downstream triggers to fire on the next tick. Consider routing belief mutations through a helper that records the change, or have `Agent.setBelief`/`mergeBeliefs` accept an optional `TriggerRegistry` to record into.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `recordChangedFact` is called only in `dialogue-session.ts:174`. The other three belief-mutation sites (`scenario-loader.ts:30`, `vision.ts:58-59`, `tick.ts:209`) never call `recordChangedFact`, so triggers dependent on those paths will never fire. The finding is factually accurate and identifies a concrete gap in the trigger system's change-tracking logic.",
+      "severity_justification": "The trigger system is entirely new in this PR and its core change-detection mechanism is incomplete for most belief-mutation paths, meaning scenario-designed triggers based on adjacent-agent belief propagation or trigger-chaining won't fire. This breaks intended gameplay mechanics but no existing code depends on it yet.",
+      "category_justification": "Logic error: the trigger evaluation subsystem silently skips firing for belief mutations that don't go through `DialogueSession.setFact`, producing wrong (missing) behavior.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/scenario-loader.ts",
+      "start_line": 11,
+      "end_line": 52,
+      "message": "`loadScenario` returns a `triggerRegistry` but does not assign it to `state.triggerRegistry`. Since `processTick` only evaluates triggers when `state.triggerRegistry` is set (see `tick.ts:161`), callers have to remember to do `state.triggerRegistry = loadScenario(...).triggerRegistry` manually, otherwise the entire trigger system is silently inert. Consider either assigning it inside `loadScenario` (since the loader is already mutating `state.agents`), or returning a result that makes the wiring explicit.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `loadScenario` creates a `TriggerRegistry`, populates it, and returns it, but never assigns it to `state.triggerRegistry`. The function already mutates `state.agents`, making the inconsistency concrete. Callers must manually wire the registry, and the existing integration test doesn't do so, confirming the gap.",
+      "severity_justification": "The trigger system will be silently inert in any production context where the caller doesn't manually wire the result — no error, no warning, just no triggers ever firing. The inconsistency (mutate `state.agents` but return rather than assign the registry) makes the omission easy to miss.",
+      "category_justification": "Incomplete wiring causes the trigger evaluation system to be silently non-functional when `loadScenario` is called without manually propagating its return value into `state`.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/dialogue-session.ts",
+      "start_line": 51,
+      "end_line": 110,
+      "message": "`getState` is named like a read-only accessor but, on `action` nodes, it calls `engine.advanceWithEffects(...)` which mutates engine state and executes side effects (set_fact, give_item, etc.) before recursing. Calling `getState()` twice in a row on the same session can therefore yield different results and re-trigger effects already applied (well, the second call would land on a non-action node so effects wouldn't re-run, but the implicit advance still happens once). At minimum the name and JSDoc should make the mutating behavior obvious; better would be to do the auto-advance only on explicit `advance()`/`select()`/`resolveRequest()` transitions and have `getState()` return the raw current node (possibly throwing or skipping if the engine is parked on an action node).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim is accurate: `getState()` mutates engine state and fires effects on action nodes. However, in normal usage the engine is never parked on an action node after any public method returns (they all end with `getState()`), so double-fire is practically impossible. The naming/API design concern is real — a method named `getState` has documented side effects — but the JSDoc already discloses this behavior.",
+      "severity_justification": "The practical risk of double-fired effects is near-zero due to how the other public methods are structured. The concern is primarily about API hygiene: a getter with documented side effects is an unusual contract but not a likely source of real bugs given current usage patterns.",
+      "category_justification": "The core issue is API contract design — a method named `getState` that has side effects on first call for action-node roots, which violates reader expectations of a getter even though the behavior is documented in JSDoc.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/scenario-loader.ts",
+      "start_line": 15,
+      "end_line": 16,
+      "message": "`loadScenario` creates and returns a `TriggerRegistry` but never attaches it to `state.triggerRegistry`, while `processTick` only evaluates triggers from `state.triggerRegistry`. Since this function otherwise mutates the provided state when spawning NPCs, callers that simply load a scenario will get no Phase 8 trigger execution unless they remember an extra assignment.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical issue to Finding 2, already verified: `loadScenario` never assigns the created `TriggerRegistry` to `state.triggerRegistry`, so phase 8 trigger evaluation is silently skipped unless the caller manually wires the result. The code in `scenario-loader.ts:15-51` and `tick.ts:161` confirms this.",
+      "severity_justification": "Same as Finding 2: the trigger system will be silently inert in any production context where the caller doesn't manually wire the result. No error, no warning, just no triggers firing.",
+      "category_justification": "Incomplete wiring causes the trigger evaluation system to be silently non-functional unless the caller performs an extra manual step.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/scenario-loader.ts",
+      "start_line": 29,
+      "end_line": 30,
+      "message": "Initial beliefs are inserted directly on the agent without recording the changed fact keys in the trigger registry. `TriggerRegistry.evaluateBatch` skips every rule whose dependency is not in `changedFacts`, so scenario triggers that should fire from facts present at spawn time will never run.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `scenario-loader.ts:30` calls `agent.setBelief` for initial beliefs without calling `recordChangedFact`. `evaluateBatch` skips any rule whose dependency facts aren't in `changedFacts` (trigger-registry.ts:65-70). Triggers that depend solely on initial spawn-time beliefs will therefore never fire.",
+      "severity_justification": "Most gameplay triggers are likely event-driven (facts change during play), so spawn-time-only triggers are an edge case. However it is a genuine design gap: if a scenario-author writes a trigger that fires based on an initial condition, it will silently not work. Severity slightly below medium because this is new code with no live usage yet.",
+      "category_justification": "Logic error: initial belief values bypass the change-tracking mechanism that `evaluateBatch` depends on, causing spawn-time triggers to never evaluate.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/vision.ts",
+      "start_line": 58,
+      "end_line": 59,
+      "message": "Beliefs learned through adjacency are not reported to the trigger registry. Because Phase 8 filters rules using `changedFacts`, a trigger depending on a fact propagated by `mergeBeliefs` will be skipped even though the target agent's beliefs changed this tick.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `vision.ts:58-59` calls `a.mergeBeliefs(b.getAllBeliefs())` and `b.mergeBeliefs(a.getAllBeliefs())` without calling `recordChangedFact`. Since `evaluateBatch` in trigger-registry.ts skips any rule whose dependencies aren't in `changedFacts`, triggers depending on adjacency-propagated beliefs will never fire. This is the same root cause as Finding 1, applied specifically to the vision/belief-merge path.",
+      "severity_justification": "Adjacency belief merging (phase 7) is the primary in-game mechanism by which facts propagate between agents, so this represents the most common real-gameplay scenario where triggers should fire but won't. This path is more likely to be hit during normal play than spawn-time facts.",
+      "category_justification": "Logic error: belief mutations from adjacency merges bypass the change-tracking mechanism, preventing trigger evaluation from firing on what should be the most common fact-propagation path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/tick.ts",
+      "start_line": 209,
+      "end_line": 214,
+      "message": "Facts written by trigger effects are not recorded as changed facts. Since the registry clears `changedFacts` at the end of the tick and only evaluates rules whose dependencies are marked changed, triggers cannot chain from facts produced by other triggers on the next tick.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `tick.ts:209` calls `targetAgent.setBelief(...)` without `recordChangedFact`. `clearChangedFacts()` runs at line 223 at the end of the same tick. Since the next tick starts with an empty `changedFacts`, any trigger that fires and sets a fact cannot cause a downstream trigger to fire on the next tick. The finding is factually accurate.",
+      "severity_justification": "Trigger chaining is an advanced use case unlikely to be in current scenario designs, and the code is still new with no live usage. However it is a genuine semantic gap: a scenario-author expecting T1 → set_fact → T2 to chain will find T2 never fires.",
+      "category_justification": "Logic error: trigger-written belief mutations bypass change-tracking, preventing trigger chains from propagating across ticks.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/tick.ts",
+      "start_line": 188,
+      "end_line": 190,
+      "message": "The effect's own `target` is ignored here; every `set_fact` effect is applied to each trigger target being iterated. For example, a rule with `targets: [\"elder\", \"scout\"]` and `setFact(\"elder\", ...)` will write the fact to both elder and scout, which changes the authored semantics of the effect.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: in the phase 8 loop at tick.ts:188-214, `effect.target` is never used — `setBelief` is always called on `targetAgent` (resolved from `rule.targets`). The `set_fact` type has an explicit `target: AgentRef` field per `script-types.ts`, but it is ignored, causing all effects to be applied to all rule targets regardless of the per-effect target specification.",
+      "severity_justification": "Facts are written to wrong agents, violating scenario-authored semantics. A trigger designed to update only one agent's beliefs will corrupt all target agents' belief stores. The integration test uses exactly this pattern, so this would silently produce wrong results.",
+      "category_justification": "Logic error: `effect.target` is ignored, causing fact mutations to be applied to the wrong agents.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/simulation/tick.ts",
+      "start_line": 183,
+      "end_line": 185,
+      "message": "Trigger targets only resolve concrete agent IDs in this branch. The shared `AgentRef` type and DSL allow `$player`/`$npc`, but those refs fall through to `agents.get(\"$player\")`/`agents.get(\"$npc\")` and are skipped, so valid trigger targets never receive their effects.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: phase 8 in tick.ts handles `$faction:xxx` specially but falls through to `agents.get(targetRef)` for all other refs, including `$player` and `$npc`. Since the agents Map is keyed by actual IDs, those lookups return undefined and the effects are silently skipped. The DSL, type definition, and tests all use `$player` as a valid trigger target, confirming this is an intended use case that is broken.",
+      "severity_justification": "Any scenario that uses `$player` or `$npc` as a trigger target will silently get no effects applied to those agents. Given that `$player` appears in multiple test examples as a trigger target, this represents a common intended usage that is completely non-functional.",
+      "category_justification": "Logic error: valid AgentRef values `$player` and `$npc` are not resolved in the trigger effect application loop, silently producing no effects for those targets.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/ai/prompt-builder.ts",
+      "start_line": 43,
+      "end_line": 46,
+      "message": "This serializes every belief into the LLM prompt with no cap or prioritization, unlike memories which are limited to five entries. As belief stores grow through propagation and triggers, prompts can become unexpectedly large and hit model/context or latency limits.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `prompt-builder.ts` caps memories at 5 entries (`remembered.slice(0, 5)`) but emits all beliefs unconditionally (`for (const [key, fact] of beliefs)`). With adjacency merging running every tick, belief stores can grow across the agent population and inflate prompts without bound.",
+      "severity_justification": "In practice, the number of distinct facts in a typical scenario is likely small, and LLM context limits on Haiku-tier models are generous enough not to be immediately hit. But the asymmetry with the memory cap is a real design gap that could cause latency/cost issues as scenarios grow.",
+      "category_justification": "Unbounded prompt growth due to no cap on beliefs included in LLM prompt, contrasting with the explicit cap applied to memories.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "shared/src/script-dsl/builders.ts",
+      "start_line": 95,
+      "end_line": 96,
+      "message": "Registering a node with an ID that already exists silently overwrites the previous node while leaving the old entry in `nodeOrder`. A typo or duplicate ID can change the dialogue root/links without any build-time error, producing a tree that fails later at runtime.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `registerNode` does `nodes[id] = node` (silent overwrite) and `nodeOrder.push(id)` (duplicate entry). The auto-chain mechanism then can set wrong `next` pointers when the duplicate ID is processed again. The scenario builder guards against duplicate NPC/dialogue IDs but `registerNode` has no such guard. No test exists for duplicate node IDs within a dialogue.",
+      "severity_justification": "This is an authoring/build-time ergonomics issue. A typo producing a duplicate node ID results in silently broken dialogue flow rather than an immediate error. The author would discover it only when testing the broken conversation tree. No live scenarios are affected yet since this code is new.",
+      "category_justification": "Missing duplicate-ID guard in `registerNode` allows silent data corruption of the dialogue node map and auto-chain links during scenario authoring.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "shared/src/script-dsl/builders.ts",
+      "start_line": 65,
+      "end_line": 66,
+      "message": "The `text()` API accepts `opts.context`, but the builder never stores it in `DialogueNodeData` or passes it to locale resolution. Authors can provide a disambiguation context that is silently discarded, so localized text using `@@context` cannot work for these nodes.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `text()` in builders.ts accepts `opts.context` in its type signature but the implementation only uses `opts.speaker` and `opts.next`, silently dropping `context`. `resolveLocale` is defined and tested but never called from any production dialogue code, confirming the i18n plumbing is incomplete.",
+      "severity_justification": "This affects only a not-yet-active i18n subsystem — `resolveLocale` is not wired into production dialogue flow at all, so no existing behavior is broken. It's a latent gap that matters only when locale resolution is actually connected.",
+      "category_justification": "The API contract accepts `context` but the implementation silently discards it, violating the expectations of anyone reading the type signature and making `@@context` disambiguation non-functional for these nodes.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/executor.ts",
+      "start_line": 35,
+      "end_line": 37,
+      "message": "`give_item` accepts any JavaScript number, including negative, `NaN`, or `Infinity`. Because `Agent.addToInventory` directly adds the amount, a negative or non-finite scripted amount can corrupt inventory instead of being rejected.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `executor.ts` only checks `typeof amount !== 'number'` for give_item, and `Agent.addToInventory` does `this.inventory[resource] += amount` with no guards. Negative, NaN, or Infinity amounts would silently corrupt inventory. No defensive checks exist anywhere in this path.",
+      "severity_justification": "Exploitation requires a scenario author to write a negative/invalid amount literal, or craft an arithmetic expression that evaluates to such a value. The evaluator already guards division-by-zero (returns 0), limiting the Infinity path. The risk is author error in a scripting system, not external input — real but unlikely in practice.",
+      "category_justification": "Missing input validation allows invalid numeric amounts to corrupt agent inventory state via `addToInventory`.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/executor.ts",
+      "start_line": 43,
+      "end_line": 45,
+      "message": "`take_item` only checks that the evaluated amount is a number, so negative or non-finite amounts are forwarded to inventory removal. With the current `Agent.removeFromInventory` implementation, a negative take increases the target's inventory instead of deducting resources.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `removeFromInventory` guard is `if (this.inventory[resource] < amount)` — with a negative amount this is always false, so it passes. Then `inventory -= amount` with a negative amount increases inventory. A negative `take_item` effect silently acts as a give rather than a take, bypassing all checks.",
+      "severity_justification": "Same class as Finding 13: requires an authored scenario to pass a negative amount, either by mistake or adversarial authoring. No external untrusted input is involved. The behavior is counterintuitive and wrong but only reachable through scenario script errors.",
+      "category_justification": "Logic error: `removeFromInventory`'s guard is arithmetically inverted for negative amounts, causing a take operation to add inventory instead of deducting it.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/executor.ts",
+      "start_line": 50,
+      "end_line": 52,
+      "message": "`damage` accepts negative and non-finite numbers. A negative scripted damage amount is passed to `Agent.takeDamage`, which subtracts it and can heal the target above its maximum HP instead of applying damage.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `takeDamage` does `Math.max(0, this.hp - damage)`. A negative damage value subtracts a negative, increasing HP with no upper bound check against `maxHp`. A scripted `damage($npc, -10)` would heal the target above maximum HP.",
+      "severity_justification": "Same class as Findings 13-14: requires an authored scenario to pass a negative amount. The unintended healing effect (exceeding maxHp) is a real semantic error but only reachable through scenario script mistakes, not external input.",
+      "category_justification": "Missing validation allows negative damage amounts to heal agents above their maximum HP via arithmetic inversion in `takeDamage`.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "server/src/dialogue/dialogue-session.ts",
+      "start_line": 160,
+      "end_line": 164,
+      "message": "Dialogue action effects can be authored with any `AgentRef` (including concrete agent IDs and `$faction:*`), but session execution only resolves `$npc` and `$player`. A valid scripted effect such as `setFact(\"elder\", ...)` will throw at runtime when reached in dialogue.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `resolveAgentRef` at line 160-163 handles only `$npc` and `$player`, throwing for any other ref including concrete agent IDs and `$faction:*`. All four MutableContext effect implementations (`setFact`, `giveItem`, `takeItem`, `damage`) call `resolveAgentRef`. The `AgentRef` type allows any string, creating a mismatch where valid DSL throws at dialogue runtime.",
+      "severity_justification": "A scenario author writing a dialogue action effect with a concrete agent ID (e.g. `setFact('elder', ...)`) gets a runtime throw that crashes the active dialogue session. The error is unrecoverable and surfaces only when that action node is reached during play, not at build time.",
+      "category_justification": "Type system allows valid AgentRef values that the runtime implementation rejects with an exception, causing dialogue session crashes for legitimate authored effects.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "shared/src/script-dsl/builders.ts",
+      "start_line": 112,
+      "end_line": 116,
+      "message": "`getData()` returns the option builder's mutable backing object, and this code mutates/stores that same object in the tree. If an `OptionBuilder` is accidentally reused in another choice, the later `data.id` assignment mutates the option already stored on the earlier choice.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `getData()` returns the same `data` object reference on every call. `choice()` does `data.id = ...` mutating the shared object, then stores the reference directly into the node. A reused OptionBuilder would have its `id` overwritten by the last choice that processes it, corrupting the earlier choice's option id. No defensive copy is made anywhere in this path.",
+      "severity_justification": "Requires deliberately reusing the same OptionBuilder instance across multiple choice calls, which is not the designed pattern. The inline DSL usage (`d.option(...).goto(...)` passed directly to `d.choice(...)`) creates a fresh builder each time and is unaffected. An easy-to-miss pitfall but not a realistic mistake in normal scenario authoring.",
+      "category_justification": "Shared mutable backing object means reusing an OptionBuilder across choices causes id mutation on the stored node reference, producing incorrect option ids.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

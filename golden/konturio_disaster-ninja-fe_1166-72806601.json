@@ -1,0 +1,191 @@
+{
+  "pr_key": "konturio_disaster-ninja-fe_1166-72806601",
+  "pr": {
+    "repo": "https://github.com/konturio/disaster-ninja-fe",
+    "pr_number": 1166,
+    "base": "cdc5015dcd8381a96408c71f44b435791e2207d0",
+    "head": "728066014427766309128a2d297ab574ad0eaf35"
+  },
+  "findings": [
+    {
+      "file": "src/features/create_layer/atoms/editableLayerController.ts",
+      "start_line": 91,
+      "end_line": 99,
+      "message": "When `editableLayersListResource` has not yet loaded (initial state) or failed to load, `existingLayers.data` is null. `existingLayers.data?.some(...)` returns `undefined`, which is falsy, so `duplicateName` is false and the check is silently bypassed. A user who clicks Save before the layers list finishes loading can create a duplicate name with no error shown. The code should either block saving while the list is loading/errored, or explicitly check `existingLayers.loading` and `existingLayers.error`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the async atom's initial state has `data: null`. `existingLayers.data?.some(...)` returns `undefined` when the resource hasn't loaded or has failed, making `duplicateName` falsy and silently bypassing the duplicate check. This is a real correctness gap in the newly added validation logic.",
+      "severity_justification": "The duplicate name enforcement can be silently bypassed in a race condition (save before list loads) or when the list fetch fails. This is a real but non-critical UX/data integrity issue — the server may still reject duplicates, but the client-side guard provides no protection in this scenario.",
+      "category_justification": "The logic introduced by this PR contains a conditional check that silently fails (returns `undefined`) instead of blocking the save, leading to incorrect behavior under specific but realistic conditions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/create_layer/atoms/editableLayerController.ts",
+      "start_line": 92,
+      "end_line": 94,
+      "message": "The name comparison `l.name === dataState.name` is case-sensitive. If the backend treats layer names case-insensitively (e.g., 'LayerA' and 'layera' are considered the same), this client-side check will fail to catch the duplicate. The comparison should use `.toLowerCase()` on both sides, or the backend's uniqueness semantics need to be confirmed to be strictly case-sensitive.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim is speculative and unverifiable from the frontend code alone — it requires knowledge of backend behavior that is not available in this repo. There is no evidence anywhere in the codebase that the backend treats layer names case-insensitively. Even if the backend were case-insensitive, the result would be a backend error (handled by the catch block), not a silent duplicate, which limits practical impact.",
+      "severity_justification": "Even in the worst case, if the backend is case-insensitive, the user would receive a backend error rather than a friendly client-side message — a minor UX issue, not data corruption.",
+      "category_justification": "The finding concerns whether the comparison logic correctly matches backend semantics.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/create_layer/atoms/editableLayerController.ts",
+      "start_line": 92,
+      "end_line": 94,
+      "message": "The name comparison does not trim whitespace. A user can bypass the duplicate check by adding a leading or trailing space (e.g., ' MyLayer' vs 'MyLayer'), creating a near-duplicate that is visually indistinguishable. The comparison should use `.trim()` on both sides.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: no trimming is applied at any point in the layer name flow — neither in the form input handler, the updateName atom action, nor the new duplicate comparison. The comparison is strict string equality, so ' MyLayer' ≠ 'MyLayer' and the check is bypassed. The claim is factually correct.",
+      "severity_justification": "This is a minor edge case — a user would need to intentionally add leading/trailing spaces to bypass the check, and the backend may still reject such near-duplicates. Visually indistinguishable duplicates are a UX concern but not a data integrity issue.",
+      "category_justification": "The duplicate-name validation logic fails to normalize input before comparison, allowing the check to be bypassed with whitespace-padded names.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/create_layer/atoms/editableLayerController.ts",
+      "start_line": 88,
+      "end_line": 99,
+      "message": "The duplicate check is purely client-side and not atomic with the API call. If two browser sessions (or tabs) simultaneously pass the check and call `createLayer`, both will succeed and two layers with identical names will be created. This is a known limitation of client-only validation, but it means the feature description ('preventing creation of user layers with duplicate names') is only partially enforced.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is factually correct but generic — it restates the well-known principle that client-side validation doesn't prevent concurrent operations. The finding itself admits this is 'a known limitation of client-side validation.' The practical scenario (two simultaneous sessions from the same user racing to create identically-named layers) is negligibly unlikely in this personal layer management context. No actionable frontend-only fix exists; resolution would require backend-side enforcement which is outside this PR's scope.",
+      "severity_justification": "Even if the race condition occurs, it results in duplicate layer names in an edge case scenario with negligible real-world impact for a personal layer creation feature.",
+      "category_justification": "Concerns the correctness/completeness of the duplicate-name enforcement logic.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/create_layer/atoms/editableLayerController.ts",
+      "start_line": 95,
+      "end_line": 97,
+      "message": "When a duplicate layer name is detected, the UI shows a notification, but the `loading` state remains `false`. The save button in the UI does not get disabled, and the loading indicator is not shown. However, after a successful save, `loading` is set to `true` and then `false` on completion. For consistency, `loading` state should probably be handled here as well, even if it's just for a brief moment.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `loading` state controls the entire form visibility — when `true`, the form is replaced by a `<LoadingSpinner>`. Setting `loading: true` during a synchronous duplicate-name check would unnecessarily flash the spinner and hide the form, which is worse UX than the current behavior where the form stays visible so the user can edit the name. The current behavior is intentionally correct.",
+      "severity_justification": "The suggested 'fix' would actually regress UX by causing an unnecessary spinner flash during instant validation.",
+      "category_justification": "The finding is a style/consistency suggestion about state management.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/create_layer/atoms/editableLayerController.ts",
+      "start_line": 160,
+      "end_line": 162,
+      "message": "The variable `data.appId` is commented as `temporary code`, which introduces uncertainty in its usage. Ensure this is resolved or handled robustly before merging.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `// @ts-expect-error temporary code` comment on `data.appId` is pre-existing code, present in the prior commit before this PR. This PR did not introduce or modify these lines. The finding incorrectly implies this needs to be resolved before merging this PR.",
+      "severity_justification": "Pre-existing technical debt with a TODO-style comment — low impact and unrelated to this PR's changes.",
+      "category_justification": "Concerns code quality and unresolved technical debt.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/create_layer/atoms/editableLayerController.ts",
+      "start_line": 182,
+      "end_line": 185,
+      "message": "The error handling within the try-catch block only updates the `error` property of state but does not notify the user directly about the failure. Consider adding notification logic to inform the user of saveLayer failure.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually incorrect. When the catch block sets `error: e as string` in state, the `createStateMap` utility in `EditLayerPanel` renders `<ErrorMessage message={errorMessage} />` for the error state. Users are informed of the failure via the inline error display. This pre-existing error handling was not changed by this PR.",
+      "severity_justification": "The claim is wrong — error display already exists via the state map pattern.",
+      "category_justification": "The finding makes an incorrect claim about whether the user is notified of errors.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/translations/en/common.json",
+      "start_line": 243,
+      "end_line": 243,
+      "message": "The new localization key `layer_name_exists` is added for error messaging, but there is no test to ensure its correct usage or translation availability in non-English locales. Ensure this key is consistent and works across supported locales.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is generic — it restates standard i18n best practice (ensure translations exist in all locales) without identifying a concrete failure. The i18n service has `fallbackLng: 'en'` so missing keys in other locales fall back gracefully to English. Adding new EN keys before other-locale translations is the normal project workflow. The 'no tests' concern is also generic boilerplate applicable to any i18n key addition.",
+      "severity_justification": "Missing translations fall back to English silently via i18next fallback configuration, causing no functional failure — at worst non-English users see English text for this one error message.",
+      "category_justification": "Concerns translation coverage and i18n key consistency across locales.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/create_layer/atoms/editableLayerController.ts",
+      "start_line": 91,
+      "end_line": 94,
+      "message": "The duplicate check uses `editableLayersListResource`, but successful deletes do not refetch or remove the deleted layer from that resource in this controller. After a user deletes a layer, the stale resource can still contain its name and incorrectly block creating a new layer with the same name until a refresh occurs.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: successful deletes explicitly skip refetching editableLayersListResource (line 190 has it commented out). The new duplicate-name check reads from that same resource. A deleted layer remains in the stale list, and because a new layer has no id, `l.id !== dataState.id` is always true, so the check incorrectly blocks creating a new layer with the previously-deleted name.",
+      "severity_justification": "Causes a user-visible bug — valid layer names are rejected after a deletion — but it resolves on page refresh and doesn't cause data loss or security issues.",
+      "category_justification": "The duplicate-name validation produces an incorrect result (false positive) due to stale state, leading to wrong behaviour rather than a style or reliability concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

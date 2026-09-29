@@ -1,0 +1,571 @@
+{
+  "pr_key": "scorbo2_ext-sn-statistics_20-12fad831",
+  "pr": {
+    "repo": "https://github.com/scorbo2/ext-sn-statistics",
+    "pr_number": 20,
+    "base": "da54721276e4132447cd708c35f18f3a635815a2",
+    "head": "12fad8312a7ca0ecc58480c2a582649386cf08a4"
+  },
+  "findings": [
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/WordSearchThread.java",
+      "start_line": 26,
+      "end_line": 26,
+      "message": "The `results` field is written on the worker thread (line 47) and read on the Swing EDT via `SwingUtilities.invokeLater` (StatisticsDialog.java:450). Without `volatile`, the JMM does not guarantee the EDT will see the updated value. While the AWT event queue implementation typically provides a happens-before in practice, the field must be declared `volatile` to make the guarantee explicit under the JMM.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`EventQueue`'s lock/unlock + EDT lock acquisition creates happens-before edge",
+      "severity_justification": "The code is functionally correct because invokeLater provides a happens-before through EventQueue synchronization. The risk is theoretical and the consequence is a stale read in a rare refactoring scenario, not an active bug.",
+      "category_justification": "Cross-thread visibility / Java Memory Model concern falls under reliability rather than correctness since there is no active bug, just a defensive-coding gap.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsDialog.java",
+      "start_line": 437,
+      "end_line": 444,
+      "message": "User search input is never lowercased before being added to `wordSet`. Notes are indexed with fully lowercased tokens (via `normalizeText()`), so a search for 'Hello' would never match the indexed word 'hello'. The code comments say TagList provides 'normalized' parsing, but TagList is a tag-management type whose case-folding behaviour is not documented here and cannot be relied upon to lowercase. Each tag value should be explicitly lowercased (`.toLowerCase()`) before insertion into `wordSet`.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`TagList.fromRawString()` routes every token through `Tag`'s constructor which lowercases",
+      "severity_justification": "The word search feature would silently return zero results for any mixed-case user input if TagList doesn't lowercase — a user-visible correctness failure with no error indication.",
+      "category_justification": "Case mismatch between indexed tokens and search terms is a logic bug in search functionality.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/WordSearchThread.java",
+      "start_line": 47,
+      "end_line": 47,
+      "message": "`TOP_N_WORDS = 25` is passed as the limit to `findWords` for a specific-word search. Inside `findWords`, results are sorted by frequency and then `limit(N)` is applied. If the user searches for more than 25 words, results beyond rank 25 are silently discarded — some of the user's explicitly requested words return no result with no indication. The limit is semantically correct for the 'top N words' use case but wrong for a targeted lookup. The limit should be `searchWords.size()` (or `Integer.MAX_VALUE`) when `specificWords` is non-empty.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: WordSearchThread passes TOP_N_WORDS (25) as the limit to findWords for a targeted-word search. The only constraint on input is advisory help text; no hard max is enforced. If a user enters 26+ words that all appear in notes, the one ranked 26th by frequency is silently dropped from results — the output says 'X combined occurrences' with no indication a word was excluded.",
+      "severity_justification": "The UI help text advises 1-25 words, making the scenario unlikely in normal use. The bug only manifests beyond position 25 by frequency, and words with zero occurrences aren't affected (they already produce no result). Low practical impact but a real silent data loss.",
+      "category_justification": "A specific-word lookup silently drops results due to applying a top-N cap that's intended for a different use case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsUtil.java",
+      "start_line": 302,
+      "end_line": 318,
+      "message": "`normalizeText` preserves apostrophes throughout the whole token. After splitting on whitespace, tokens can carry leading or trailing apostrophes (e.g., text `\"dogs'\"` (possessive plural) produces token `\"dogs'\"`, and `\"'quoted'\"` produces `\"'quoted'\"` and `\"words'\"` depending on context). These apostrophe-bearing forms are indexed as distinct words from their apostrophe-free counterparts. A user searching for `dogs` will not match `dogs'`. The method should strip leading and trailing apostrophes from each token, or the split step in `findWords` should do so.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed by executing the normalization+split logic: 'dogs'' produces token 'dogs'', ''quoted'' produces ''quoted'', and ''hello world'' produces ''hello' and 'world''. These apostrophe-bearing tokens are indexed as distinct words from their clean forms, splitting occurrence counts and causing search mismatches.",
+      "severity_justification": "Possessive plurals ('dogs'', 'cats'') and words near punctuation like quotes are common in prose; their counts would be split from plain-word counts, degrading accuracy of both the top-25 display and word searches. Not catastrophic but noticeably wrong for real note corpora.",
+      "category_justification": "Incorrect tokenization causes wrong word counts and failed search matches — a logic error in the analysis algorithm.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsDialog.java",
+      "start_line": 340,
+      "end_line": 344,
+      "message": "`stats.getTopWords()` can return null if the `Statistics` object was constructed with a null `topWords` argument (the constructor performs no null check). If `loadWords()` throws before assigning `topWords`, and a caller invokes `getStatistics()` without checking `wasCanceled`, the returned `Statistics` has a null `topWords`. The subsequent `topWords.getUniqueWordCount()` call on line 344 would then throw a NullPointerException. A null guard (`if (topWords == null)`) or an early-return should be added.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The only caller of loader.getStatistics() is ProgressListener.progressComplete(), which only fires when all workers succeed. If loadWords() throws, the ExecutionException is caught in run(), wasCanceled is set to true, and fireProgressCanceled() routes to progressCanceled() which sets statistics to null and skips the dialog entirely. The specific NPE path described requires a caller that doesn't exist in the codebase.",
+      "severity_justification": "Even as a theoretical concern, the described scenario requires a programmer calling getStatistics() without checking wasCanceled — a pattern that doesn't exist here. Impact is low.",
+      "category_justification": "The concern is about robustness and defensive null-handling, which falls under reliability.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsUtil.java",
+      "start_line": 143,
+      "end_line": 163,
+      "message": "`uniqueWords` is a `HashSet<String>` that accumulates every distinct word token across all notes — including short words excluded from frequency counting. For a large corpus this set can grow to millions of entries and remain live for the entire duration of `findWords`. Unlike `wordCounts` (which is pruned before materialisation), `uniqueWords` is never pruned. This is an unbounded memory allocation on the statistics-loading thread for the sole purpose of computing a single integer at the end. Consider using a streaming cardinality estimator (e.g., HyperLogLog) or at minimum documenting the memory trade-off.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: uniqueWords is an unpruned HashSet storing full string objects for every unique token, including short words excluded from wordCounts, with the sole purpose of computing a single integer (size). This is inconsistent with wordCounts which is explicitly pruned with an OOM comment. The concern is real even if the practical scale for a personal notes app keeps actual risk low.",
+      "severity_justification": "Personal notes apps have bounded vocabulary (~50K-100K unique words at most), so the actual memory footprint is a few MB — significant enough to flag but unlikely to cause OOM in practice. The 'millions of entries' claim is overstated for this domain.",
+      "category_justification": "The finding is about unnecessary memory allocation and the absence of the same pruning/documentation applied to the analogous wordCounts structure.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/Phrase.java",
+      "start_line": 19,
+      "end_line": 24,
+      "message": "The `occurrenceCount` validation was changed from `< 0` (allows zero) to `<= 0` (disallows zero). Any existing caller that constructs a `Phrase` with `occurrenceCount = 0` — for example in unit tests that verify zero-frequency edge cases — will now receive an `IllegalArgumentException` where none was thrown before. This is a silent breaking change to the public constructor contract. The error message also says 'cannot be negative or zero' while the parameter javadoc says 'Must be greater than zero', but the old javadoc said 'A non-negative integer', so any consumer relying on zero being valid will break.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "While the contract change is real (0 was allowed, now rejected), no existing callers in this repo construct Phrase with occurrenceCount=0. All test usages verified to use counts ≥ 1. The production findPhrases code prunes all entries with count < MIN_PHRASE_FREQUENCY (2) before any Phrase is constructed, so 0 is structurally impossible in the production path. The new contract is more semantically correct.",
+      "severity_justification": "No callers are actually broken by this change in the codebase as it stands.",
+      "category_justification": "The finding is about a change to the public constructor contract of a record type.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsDialog.java",
+      "start_line": 286,
+      "end_line": 290,
+      "message": "This code uses `TagList.fromRawString()` to parse a comma-separated list of words to search. While convenient, this class's `getTags()` method limits results to the first `TagList.MAX_TAGS_IN_MEMORY` (25) tags. If a user enters more than 25 words to search, the list will be silently truncated, and the search will only be performed on the first 25 words without any user notification. The input should be checked against this limit, and the user should be informed if their input is truncated.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim depends on TagList.MAX_TAGS_IN_MEMORY = 25 and silent truncation behavior in getTags(). The TagList source is not available in this repository (it's an external snotes dependency). There is no evidence in the codebase to confirm or deny the existence of this constant or this truncation behavior. The help text '1-25 words' could reflect TOP_N_WORDS = 25 (already addressed in a separate finding) rather than a TagList limit. The finding is unverifiable from available context.",
+      "severity_justification": "If the claim were true, silent truncation of user search input without notification would be a genuine UX correctness issue, but it cannot be confirmed.",
+      "category_justification": "The concern, if true, would be silent data loss in user-facing input parsing.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsUtil.java",
+      "start_line": 150,
+      "end_line": 153,
+      "message": "When `specificWords` are provided, single-occurrence words are not pruned. This is correct. However, in the general case (`specificWords` is empty), single-occurrence words are pruned using `MIN_PHRASE_FREQUENCY` (value is 2). If `findWords` is called with `N=1`, it can never return a result because any single top word would have its count checked, and if it's less than 2, it would be removed, resulting in an empty list. The pruning logic should perhaps be skipped if `N` is very small.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim 'can never return a result' with N=1 is factually incorrect. The pruning removes words with count < 2 (single-occurrence), but any word appearing 2+ times survives and is returned regardless of N. An empty result with N=1 only occurs when all words have count==1 — this is data-dependent, not N-dependent, and would produce empty results for any N, not just N=1.",
+      "severity_justification": "The reasoning is flawed and the scenario described isn't actually a bug; it's expected pruning behavior. Low impact even as a theoretical concern.",
+      "category_justification": "The finding makes an incorrect claim about logic behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsUtil.java",
+      "start_line": 133,
+      "end_line": 136,
+      "message": "In `findWords`, when searching for specific words, the logic continues to the next word in the note (`continue;`) after finding a match. If a note contains the same searched word multiple times (e.g., \"searchword ... searchword\"), only the first occurrence within that note will be counted. The loop should continue processing all words in the note's text to correctly count all occurrences.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The continue statement is inside the for (String word : words) word-level loop, so it advances to the next token in the current note's word array — not to the next note. All occurrences within a note are counted. The existing test findWords_withSpecificWords_shouldCountOnlyWordsInTheSet verifies this: it expects occurrenceCount=3 from a note containing 'hello' twice plus another note containing it once, which would fail if only the first per-note occurrence were counted.",
+      "severity_justification": "The finding is incorrect; the code works as intended.",
+      "category_justification": "The claim is about incorrect occurrence counting — a correctness concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/WordSearchThread.java",
+      "start_line": 43,
+      "end_line": 50,
+      "message": "The `run()` method in `WordSearchThread` does not check for thread interruption. The comment states that cancellation is ignored because the work is fast. However, for very large note sets, the search could be time-consuming. A cooperative cancellation mechanism, for instance checking `Thread.currentThread().isInterrupted()` before starting the work in `run()`, would make the progress dialog more responsive to user cancellation requests.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The design assumption ('by the time we receive a cancel message, our work would already be complete') is explicitly an assumption that could fail for large corpora. The progress dialog cancel button would be unresponsive for the entire duration of findWords. The finding correctly identifies the concern even though the suggested fix (check before starting only) is inadequate — it only covers cancellation arriving before work begins.",
+      "severity_justification": "For a personal notes app, corpus size is naturally bounded and the 'one step is fast' assumption usually holds. The behavior is documented. Low practical impact.",
+      "category_justification": "Concerns UI responsiveness and cooperative cancellation support for a background worker.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsDialog.java",
+      "start_line": 292,
+      "end_line": 295,
+      "message": "The code iterates through a `TagList` to build a `Set<String>` of words for the search. `TagList`'s internal storage is already a `Set<Tag>`, so `tagList.getTags()` returns a `Set`. This iteration is redundant; it would be more efficient to use a stream and map operation: `wordSet = tagList.getTags().stream().map(Tag::getTag).collect(Collectors.toSet());`",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The for-each loop and stream approach are functionally equivalent; neither is 'redundant'. The efficiency claim is incorrect — for at most ~25 items, a pre-sized for-each loop is at least as fast as a stream pipeline. This is a style preference framed with a false efficiency argument.",
+      "severity_justification": "Even if the suggestion were adopted, there would be no meaningful behavioral or performance difference.",
+      "category_justification": "The finding is purely a code style suggestion with no correctness or performance substance.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/WordList.java",
+      "start_line": 49,
+      "end_line": 49,
+      "message": "The `getWords()` method returns `List.copyOf(words)`, creating a new unmodifiable list each time it's called. While this ensures immutability, `WordList` itself is intended to be immutable as its fields are final and the list is assigned at construction. A more efficient approach would be to ensure the list is immutable upon construction (e.g., `this.words = words == null ? List.of() : List.copyOf(words);`) and then return the immutable reference directly from `getWords()`, avoiding repeated defensive copying.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed via test: List.copyOf() on a Stream.toList() result creates a new list object each time (not the same reference). getWords() is called 4 times in StatisticsDialog on the same instance. The suggestion to copy at construction and return the stored reference directly is the correct immutability pattern and avoids redundant allocation.",
+      "severity_justification": "At most 25 Word objects per copy, called only a few times during UI rendering — negligible allocation cost in practice, but the pattern is genuinely suboptimal.",
+      "category_justification": "Unnecessary object allocation on each getWords() call when a single copy at construction would suffice.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsLoaderThread.java",
+      "start_line": 117,
+      "end_line": 125,
+      "message": "In the `run` method, exceptions thrown by worker threads result in setting `wasCanceled` to true, but execution continues with remaining workers. This could lead to partial or inconsistent statistics data being generated.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "After an exception, wasCanceled=true causes chunkComplete() to short-circuit for all subsequent calls, preventing fireProgressComplete() from ever firing. progressComplete() is therefore never called, so loader.getStatistics() is never invoked on partial data, and setStatistics(null, false) is already applied via progressCanceled(). Workers do continue running (wasted CPU) but the partial field writes are never surfaced to the user. The claim about 'inconsistent statistics data being generated' is factually incorrect.",
+      "severity_justification": "Even if the workers continue unnecessarily, no partial data reaches the UI. The resource waste is pre-existing and bounded.",
+      "category_justification": "The concern is about error handling and resource management in the background loading thread.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsUtil.java",
+      "start_line": 267,
+      "end_line": 274,
+      "message": "`findWords` function creates a `HashSet` to track unique words but does not trim or validate the individual words before insertion, risking redundant entries with leading/trailing spaces.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Words are produced by split('\\\\s+') on the already-trimmed output of normalizeText(), which converts all non-alphanumeric characters to spaces and trims the result. This combination guarantees tokens with no leading or trailing whitespace. Verified by running the actual code with various whitespace-heavy inputs.",
+      "severity_justification": "The claimed issue does not exist in the code.",
+      "category_justification": "The finding makes an incorrect claim about data integrity in a processing function.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsUtil.java",
+      "start_line": 267,
+      "end_line": 318,
+      "message": "In `findWords`, the `wordCounts.values().removeIf(count -> count < MIN_PHRASE_FREQUENCY)` operation modifies the map directly, which could lead to concurrency issues if accessed concurrently by other workers.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "wordCounts is a local variable (new HashMap<>() on each invocation) that is never shared between threads or stored in any field. Each call to findWords() operates on its own private map. The removeIf operation on a method-local HashMap has no concurrency exposure regardless of how many threads call findWords() concurrently.",
+      "severity_justification": "The claimed concurrency issue does not exist.",
+      "category_justification": "The finding is about thread safety, which is a reliability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsDialog.java",
+      "start_line": 323,
+      "end_line": 366,
+      "message": "`buildWordsTab` method does not handle the scenario where the list of top words exceeds the GUI's vertical space, making the UI non-scrollable for a potentially large list.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The Words tab is wrapped with ScrollUtil.buildScrollPane() on line 93, identical to all other tabs. The content is scrollable. The finding is factually incorrect.",
+      "severity_justification": "The claimed UI issue does not exist.",
+      "category_justification": "The finding makes an incorrect factual claim about the UI component structure.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsUtil.java",
+      "start_line": 282,
+      "end_line": 318,
+      "message": "The `findWords` method uses a single-threaded loop for per-note word counting, which might not scale well for very large datasets, as all word processing is done serially.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic 'loops are single-threaded' comment with no concrete performance evidence, no measured bottleneck, and no specifics about this codebase. findWords already runs on a background thread in parallel with other stat workers. For a personal notes app with an in-memory corpus, parallelizing the inner word-counting loop would add synchronization overhead that likely outweighs any benefit. The finding could be copy-pasted to any loop in any project unchanged.",
+      "severity_justification": "No concrete performance issue demonstrated; the application domain (personal notes) keeps the corpus bounded.",
+      "category_justification": "The finding is about processing throughput/scalability.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsLoaderThread.java",
+      "start_line": 241,
+      "end_line": 243,
+      "message": "The `phrasesByLength.put` call in `loadPhrases` does not verify the returned list from `allPhrases.filter` for null, which may lead to a NullPointerException.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "PhraseList.filter() never returns null. When n <= 0, it returns List.of(). Otherwise it returns a stream().toList() result, which is always non-null. No NPE is possible at the phrasesByLength.put() call.",
+      "severity_justification": "The claimed NPE path does not exist.",
+      "category_justification": "The finding makes an incorrect claim about a possible NullPointerException.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsDialog.java",
+      "start_line": 220,
+      "end_line": 261,
+      "message": "In `phraseLengthChanged`, if `filter` returns an empty list mid-update, the GUI does not reset the previous labels, potentially leaving stale or partial data displayed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "phraseLengthChanged() explicitly clears all phraseLabels to empty string at the very start of the method, before any filtering or data retrieval. Stale data cannot remain regardless of whether the filtered list is null, empty, or populated.",
+      "severity_justification": "The claimed UI bug does not exist in the code.",
+      "category_justification": "The finding makes an incorrect claim about stale GUI state.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsUtil.java",
+      "start_line": 113,
+      "end_line": 194,
+      "message": "In `countWords`, the normalization step (`normalizeText`) creates intermediary strings in memory. This inefficiently reallocates memory on large text inputs, impacting performance.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "countWords does not call normalizeText at all — it uses replaceAll+trim directly. The finding misidentifies which method is involved. Even setting aside the factual error, 'creates intermediary strings' is a generic statement about all Java string manipulation with no concrete performance evidence specific to this code.",
+      "severity_justification": "The finding is based on an incorrect premise and makes no concrete performance case.",
+      "category_justification": "The finding is framed as a memory/performance concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsUtil.java",
+      "start_line": 380,
+      "end_line": 383,
+      "message": "The `normalizeText` method does not filter unprintable Unicode characters, which may result in including non-visible or invalid sequences in normalized results.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "normalizeText uses a whitelist: only characters passing Character.isLetterOrDigit() or apostrophe are kept; all others — including every unprintable Unicode character — are replaced with a space. Tested with null bytes, control characters (U+0000-U+001F), zero-width space (U+200B), and BOM (U+FEFF): all produce clean word tokens with no non-visible characters in the output.",
+      "severity_justification": "The claimed issue does not exist; the code already handles the scenario correctly.",
+      "category_justification": "The finding makes an incorrect claim about which characters survive normalization.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsDialog.java",
+      "start_line": 439,
+      "end_line": 446,
+      "message": "When the user's input parses to zero tags (for example, if they type only commas/whitespace), `wordSet` will be empty. Passing an empty set to `StatisticsUtil.findWords(notes, specificWords, N)` is documented to behave like the general top-N overload — so instead of telling the user \"0 occurrences found\", the result dialog will display the top 25 most common words across all notes (with their global counts), which is misleading and not what the user asked for. Consider explicitly handling the empty-`wordSet` case here (e.g., short-circuit and tell the user no valid search terms were provided) before invoking the search.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `setAllowBlank(false)` only rejects a completely blank field; input like ',,,' passes validation but parses to an empty TagList → empty wordSet. StatisticsUtil.findWords documents that an empty specificWords set is equivalent to the general top-N overload, so the result dialog would show global top-25 words rather than any error, which is misleading.",
+      "severity_justification": "The user receives incorrect, misleading results (global top-25) instead of feedback that no valid search terms were provided; not data-corrupting but a clear UX/correctness defect.",
+      "category_justification": "The logic produces incorrect output (top-N results instead of an error) when the user provides input that tokenizes to no valid words.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsDialog.java",
+      "start_line": 358,
+      "end_line": 360,
+      "message": "The Words tab returns before adding the search form whenever the precomputed top-word list is empty. That can happen even when notes exist (for example, only short words or only single-occurrence words are present), but the PR requirement says on-the-fly searches should still work and should ignore the minimum word length. Keep the search controls available as long as there are notes to search, even if there are no top words to display.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the early return at line 360 (`return wordSearchForm`) is triggered whenever the precomputed top-word list is empty — which can happen when all words are short (<5 chars) or all appear only once. In those cases notes still exist and the on-the-fly search (which ignores MIN_WORD_LENGTH) would be functional, but the search controls are never rendered, making the feature inaccessible.",
+      "severity_justification": "A meaningful feature (on-the-fly word search) becomes silently unavailable in a valid, real-world scenario (notes containing only short or unique words), directly contradicting the PR's stated requirement.",
+      "category_justification": "The early-return logic is incorrect: it conflates 'no precomputed top words' with 'no notes to search', producing wrong UI behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsUtil.java",
+      "start_line": 165,
+      "end_line": 169,
+      "message": "The specific-word lookup compares the caller-provided set directly against normalized note tokens. If the search set contains different casing or punctuation (for example “Hello” or “hello!”), it will not match “hello” even though word searches are supposed to use the same case-insensitive, punctuation-stripping normalization rules as the note text. Normalize the requested words with normalizeText before doing contains checks.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the code: note text is normalized to lowercase via normalizeText() before tokenization, but the specificWords set is compared as-is against those lowercase tokens (line 167: specificWords.contains(word)). If a caller passes 'Hello' or 'hello!', it will never match 'hello'. Whether TagList normalizes to lowercase is unverifiable (dependency not in repo), but the API has no normalization guarantee and the mismatch is a concrete correctness defect.",
+      "severity_justification": "A user typing 'Hello' in the search box would receive 0 results even if the notes contain 'hello', with no error feedback — a silent, confusing failure.",
+      "category_justification": "The comparison logic produces incorrect (empty) results when input casing or punctuation doesn't exactly match the pre-normalized tokens extracted from notes.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsDialog.java",
+      "start_line": 437,
+      "end_line": 440,
+      "message": "After parsing, this code does not check whether any actual search terms remain. Inputs such as only commas/whitespace can produce an empty wordSet, and StatisticsUtil.findWords treats an empty set as a general top-word search, so the user would see unrelated top-word results instead of a validation error or zero matches.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to Finding 1: verified that setAllowBlank(false) only guards against a completely empty field; comma/whitespace input like ',,,' passes isFormValid() but TagList.fromRawString produces an empty tag list → empty wordSet → findWords treats it as general top-N search, showing global top-25 words instead of an error.",
+      "severity_justification": "Same impact as Finding 1: misleading results shown to user (global top-25 words) when they provide input that yields no valid search terms.",
+      "category_justification": "Incorrect output produced — top-N global results returned instead of a validation error or empty result when no valid search terms were parsed.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/copilot-instructions.md",
+      "start_line": 31,
+      "end_line": 31,
+      "message": "This data-flow section was updated for the Words tab but still says the loader runs 6 worker tasks. StatisticsLoaderThread now adds loadWords as a seventh parallel task, so the documentation should be updated to avoid misleading future contributors.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the docs say '6 parallel worker tasks' but StatisticsLoaderThread.run() now adds 7 workers (loadGeneralStats, loadYearData, loadAllMonthsData, loadMonthData, loadWeekData, loadPhrases, loadWords). The doc was updated to mention the Words tab (6 tabs) but the worker count was not updated.",
+      "severity_justification": "Pure documentation inaccuracy — no runtime behavior is affected, but it will mislead contributors reading the architecture notes.",
+      "category_justification": "The finding is about an incorrect count in the developer-facing architecture documentation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsUtil.java",
+      "start_line": 24,
+      "end_line": 24,
+      "message": "Issue #18 specifies omitting words of three characters or fewer, but this threshold excludes every 4-character word as well (for example “that”, “this”, or “note”). Unless the product requirement changed, this should be 4 so only words with length < 4 are skipped.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The PR description explicitly states 'fewer than 5 characters are excluded', matching MIN_WORD_LENGTH = 5. The code comment on line 24 even lists 'that' as an intentional exclusion example. The finding's claim that issue #18 specifies a different threshold (≤3 chars) is unverifiable from the available context, and the PR author clearly made a deliberate choice documented in the PR body.",
+      "severity_justification": "Even if the threshold were a deviation from the original issue, changing it from 4 to 5 is a minor product decision with minimal impact.",
+      "category_justification": "The finding alleges a mismatch between implementation and requirements.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

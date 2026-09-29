@@ -1,0 +1,10 @@
+{
+  "pr_key": "konturio_disaster-ninja-fe_1208-04c27fe9",
+  "pr": {
+    "repo": "https://github.com/konturio/disaster-ninja-fe",
+    "pr_number": 1208,
+    "base": "75f9f78fbcd43ba62b3e1abfe56592e8b1786c3d",
+    "head": "04c27fe9ae865972c3cb6c6a0ee0fd0f85186758"
+  },
+  "findings": []
+}

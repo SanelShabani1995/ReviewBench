@@ -1,0 +1,359 @@
+{
+  "pr_key": "Hermione-Granger-1176_artifacts_24-5d880a71",
+  "pr": {
+    "repo": "https://github.com/Hermione-Granger-1176/artifacts",
+    "pr_number": 24,
+    "base": "18e6f1f143c9d2b5374eb958d2bca7b059c7617d",
+    "head": "5d880a71d4b9f4c3d7ac8b16e925dcaeb42d984b"
+  },
+  "findings": [
+    {
+      "file": "js/modules/runtime.js",
+      "start_line": 108,
+      "end_line": 115,
+      "message": "updateRuntimeDiagnostics has inverted copy-button reset logic. When hasSummary is true (a new error is being displayed), the function returns early without resetting the button text to 'Copy error details'. The reset runs only when hasSummary is false (i.e., the button is being hidden). Consequence: after a user clicks 'Copy' (button shows 'Copied'), any subsequent error leaves the button visible but still showing 'Copied' instead of 'Copy error details', producing a stale UI state for the new error.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in code: `copyButton.hidden = !hasSummary; if (hasSummary) { return; }` causes the text reset ('Copy error details' + removeAttribute) to run only when hasSummary is false (button hidden), not when a new error arrives. The git diff confirms the PR refactored this function but kept the same inverted semantics — after a user clicks 'Copy', any subsequent error leaves the button showing 'Copied' for the new error.",
+      "severity_justification": "Purely a UI stale-state issue: the copy button text is wrong until the user interacts again. No data loss, no security impact, and the button still functions correctly when clicked.",
+      "category_justification": "The logic produces an incorrect UI state — button text is not reset when a new error replaces the previous one.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "js/modules/app-runtime.js",
+      "start_line": 41,
+      "end_line": 44,
+      "message": "bootstrap() explicitly reports an error via runtime.reportError(), then re-throws it. The re-thrown error is an uncaught exception inside a DOMContentLoaded handler, which triggers the window 'error' event. setupGlobalErrorHandlers() also calls reportError for that event. The same error is therefore reported twice: once with the app-specific onErrorContext and once with context 'window error'. This produces duplicate console.error calls and could confuse diagnostics tooling.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: bootstrap() explicitly calls reportError() then re-throws. setupGlobalErrorHandlers() registers a window 'error' listener that also calls reportError(). An uncaught exception in a DOMContentLoaded handler triggers window 'error', so the same error is reported twice — once with onErrorContext, once with 'window error'. The current PR only added JSDoc; the logic was pre-existing.",
+      "severity_justification": "Results in duplicate console.error calls and confusing diagnostics output, but the app still fails correctly and the error UI is shown. No data loss, security impact, or broken user workflow.",
+      "category_justification": "Produces incorrect runtime behavior — the same error is logged twice with different contexts, potentially misleading diagnostics and error tracking.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/ci/issue_alerts.py",
+      "start_line": 7,
+      "end_line": 28,
+      "message": "issue_payloads_by_title fetches at most ISSUE_TITLE_MATCH_LIMIT=100 open issues without pagination. If a repository has more than 100 open non-PR issues, the existing alert issue (e.g., 'Repository settings drift detected' or 'Live site smoke check failed') may not appear in the first page and will not be found. sync_alert_issue will then create a duplicate issue instead of updating the existing one, gradually accumulating stale open issues on the repository.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: issue_payloads_by_title fetches exactly per_page=ISSUE_TITLE_MATCH_LIMIT=100 with no pagination loop. If the repo has >100 open issues, the alert issue could be missed and sync_alert_issue would create a duplicate. The finding is factually correct. The PR only added helper functions in this file; the 100-issue cap is pre-existing.",
+      "severity_justification": "This is a small hobby repository where >100 open issues is essentially impossible in practice. The consequence (duplicate alert issues) is also a minor operational annoyance rather than data loss or security failure.",
+      "category_justification": "The limitation affects the reliability of the alert issue deduplication mechanism — under a specific (practically unlikely) condition, duplicate issues would accumulate.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/audit-repo-settings.yml",
+      "start_line": 56,
+      "end_line": 67,
+      "message": "The heredoc opening delimiter is unquoted (<<EOF rather than <<'EOF'), so the shell expands $(cat audit-repo-settings.json) inside the heredoc. Any shell metacharacters in the audit output—backticks, $(...), etc.—are executed. The audit output includes messages built from GitHub API response values (e.g. ruleset names, Pages branch names). If those values ever contain shell metacharacters, arbitrary commands would execute in the workflow runner. The 'Close repository settings drift issue when clean' step correctly uses <<'EOF', so the asymmetry is also a maintenance hazard.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Shell doesn't re-expand substitution results",
+      "severity_justification": "Concrete shell injection path in a CI workflow with issues:write and contents:read permissions. However, the input source (own repository settings via GitHub API) limits realistic exploitability — a repo owner would need to set a maliciously named ruleset to trigger it, limiting the practical attack surface.",
+      "category_justification": "Shell injection via unquoted heredoc with command substitution of file contents that originate from GitHub API responses.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "js/modules/app-shell.js",
+      "start_line": 3,
+      "end_line": 3,
+      "message": "SAFE_RELATIVE_PATH_RE = /^[./a-zA-Z0-9_-]+$/ permits paths that begin with '//' (e.g. '//evil.com'), because both '/' characters match the character class. Such a value passed as homePath produces <a href=\"//evil.com\"> in the rendered header, which browsers treat as a protocol-relative URL and navigate to the attacker-controlled host. The regex should anchor the allowed prefix to prevent leading '//' (e.g. require the path to start with './').",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The regex flaw is factually correct (//evil.com passes /^[./a-zA-Z0-9_-]+$/), but homePath is not user-controlled in any current code path — all callers use the hardcoded default '../../'. The security guidelines require a concrete data flow from untrusted input to a dangerous sink, which does not exist here. This is a gap in a theoretical defensive guard with no actual exploitable path in the codebase.",
+      "severity_justification": "Even as a hypothetical concern, homePath is an API parameter consumed only by app developers, not end users. No current call site enables exploitation.",
+      "category_justification": "The finding frames this as a potential open-redirect/protocol-relative URL injection via a broken regex guard in a navigation context.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/build/prepare_site.py",
+      "start_line": 158,
+      "end_line": 163,
+      "message": "_replace_exact_many applies replacements sequentially with str.replace(), which replaces all occurrences including ones introduced by earlier substitutions. In _patch_app_social_metadata the substitution order is APP_URL_PLACEHOLDER, APP_TITLE_PLACEHOLDER, APP_DESCRIPTION_PLACEHOLDER, APP_SHARE_IMAGE_PLACEHOLDER. If an app's name.txt or description.txt contains a later placeholder string (e.g. '__APP_THUMBNAIL_URL__'), the first substitution embeds it in the content, and the subsequent pass replaces it with the thumbnail URL—silently corrupting the title or description of the deployed artifact page.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The sequential replacement flaw is real and verifiable: _replace_exact_many applies str.replace() in dict order, so if a title/description value from name.txt/description.txt contains a later placeholder key, that key gets substituted in the next pass. The mechanism is correct. However, no existing metadata files contain placeholder strings, making the trigger condition practically impossible.",
+      "severity_justification": "The trigger requires a developer to write a string like '__APP_THUMBNAIL_URL__' in name.txt or description.txt, which is essentially impossible in normal operation. No current files exhibit this pattern. The failure would also be visually obvious in the deployed page.",
+      "category_justification": "Incorrect sequential substitution logic that could silently corrupt deployed metadata, though only under a practically unreachable condition.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/loan-amortization/js/modules/extras.js",
+      "start_line": 117,
+      "end_line": 127,
+      "message": "periodLabel is interpolated directly into item.innerHTML without HTML escaping (e.g. <span>${periodLabel}(s)</span> and <span>at ${periodLabel}</span>), while the tooltip summary on the same element uses escapeAttribute(). The values are currently constrained to hardcoded strings, but if the frequency label source ever changes or a locale-dependent label is introduced, arbitrary HTML could be injected. The inconsistency with the explicit escaping applied elsewhere in the same template makes this a latent XSS risk.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "periodLabel always comes from a hardcoded cadence dictionary lookup (year/half-year/quarter/month/bi-week/week after toLowerCase), never from user input. There is no concrete data flow from untrusted input to the innerHTML sink. The finding itself acknowledges the values are 'currently constrained to hardcoded strings' — this is a speculative latent concern, not a concrete exploitable vulnerability.",
+      "severity_justification": "Even if classified as a real concern, the hardcoded source values contain no HTML-special characters and there is no realistic path for externally controlled input to reach periodLabel.",
+      "category_justification": "The finding frames the unescaped innerHTML interpolation as a latent XSS risk due to inconsistency with escapeAttribute() usage elsewhere in the same template.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/build/generate_thumbnails.py",
+      "start_line": 361,
+      "end_line": 370,
+      "message": "generate_thumbnails() mutates the module-level global ARTIFACT_BASE_URL inside a with block using 'global ARTIFACT_BASE_URL'. If asyncio.run() raises an exception that bypasses the finally clause (e.g. SystemExit or KeyboardInterrupt), ARTIFACT_BASE_URL is left set to the server URL from the previous call. Subsequent calls to artifact_url() (including in test code that doesn't start the server) would silently use the stale URL, producing incorrect thumbnail capture URLs or test failures that are hard to diagnose.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding incorrectly claims that SystemExit or KeyboardInterrupt bypass the finally clause. Python finally blocks execute for all BaseException subclasses including both. Verified experimentally. ARTIFACT_BASE_URL is correctly reset to '' in the finally block for all exception types that can realistically be raised by asyncio.run().",
+      "severity_justification": "The finding describes a scenario that cannot actually occur with standard Python exception handling.",
+      "category_justification": "The finding concerns error-handling behavior and state cleanup after exceptions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "js/modules/app-shell.js",
+      "start_line": 85,
+      "end_line": 85,
+      "message": "[javascript.lang.correctness.no-replaceall.no-replaceall] The string method replaceAll is not supported in all versions of javascript, and is not supported by older browser versions. Consider using replace() with a regex as the first argument instead like mystring.replace(/bad/g, \"good\") instead of mystring.replaceAll(\"bad\", \"good\") (https://discourse.threejs.org/t/replaceall-is-not-a-function/14585)",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "replaceAll has the same browser support floor as optional chaining (?.) which is already used throughout the codebase. The project targets modern browsers with no transpilation pipeline, no browserslist config, and uses CSS.escape(), ES modules, and other APIs requiring the same or newer browser versions. This is a generic linter warning that does not apply to the project's actual compatibility requirements.",
+      "severity_justification": "Even if accepted at face value, the fix would be purely cosmetic with no behavior change, and the claimed compatibility gap does not exist for any browser that can run this codebase.",
+      "category_justification": "The finding is a generic compatibility/style suggestion about a specific method, not a logic error or security issue.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.correctness.no-replaceall.no-replaceall"
+      }
+    },
+    {
+      "file": "js/modules/config.js",
+      "start_line": 120,
+      "end_line": 120,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `contract` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "contract.artifactIdPattern comes from a hardcoded static config file ('^[a-z0-9]+(?:-[a-z0-9]+)*$'), is validated as a valid regex before use, and is never user-controlled. The actual pattern is a simple linear regex with no ReDoS risk. This is a generic semgrep detect-non-literal-regexp template alert that cannot demonstrate a concrete exploit path in this specific codebase.",
+      "severity_justification": "No exploitable path exists: the pattern source is build-time generated config, not user input, and the pattern itself has no catastrophic backtracking.",
+      "category_justification": "The finding frames this as a potential ReDoS vulnerability via a non-literal RegExp constructor call.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "js/modules/config.js",
+      "start_line": 174,
+      "end_line": 174,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `value` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same generic detect-non-literal-regexp semgrep rule as finding 10, applied to the validation call at line 174 which wraps new RegExp(value.artifactIdPattern) in a try/catch specifically to validate the pattern is a valid regex. The value originates from build-time generated gallery-config.js from a static config file, not from user input. No concrete ReDoS exploit path exists.",
+      "severity_justification": "The artifactIdPattern is a static build-time value, not user-controlled, and the pattern in use is a simple linear regex incapable of catastrophic backtracking.",
+      "category_justification": "The finding frames this as a potential ReDoS vulnerability via a non-literal RegExp constructor call.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "scripts/build/index_outputs.py",
+      "start_line": 156,
+      "end_line": 156,
+      "message": "[python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1] Detected SHA1 hash algorithm which is considered insecure. SHA1 is not collision resistant and is therefore not suitable as a cryptographic signature. Use SHA256 or SHA3 instead.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "SHA1 is used only to deterministically map a string key to a badge color index (digest()[0] % palette_length). This is a non-cryptographic use where collision resistance and cryptographic security are entirely irrelevant. The generic linter rule fires on any SHA1 usage without considering the non-security context.",
+      "severity_justification": "No security property depends on this hash — it is purely a stable color-selection function. Replacing it with SHA256 would have zero impact on security.",
+      "category_justification": "The finding frames SHA1 usage as a cryptographic security risk, which is the category even though it is a false positive.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1"
+      }
+    },
+    {
+      "file": "index.html",
+      "start_line": 32,
+      "end_line": 32,
+      "message": "The new external theme bootstrap is not included in the deploy-time cache-busting replacements, unlike the other root JS/CSS assets. After `js/app-theme.js` changes, deployed `index.html` will continue to reference the unversioned URL, so browsers/CDNs can keep serving a stale bootstrap script; add it to the same versioning path used for `js/app.js`, `js/data.js`, etc.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "index.html references `js/app-theme.js` at line 32 without a version query string, and `_patch_index_html` in prepare_site.py versions four other JS/CSS assets but omits `app-theme.js`. This PR introduced the external app-theme.js file (replacing an inline script) but did not add it to the cache-busting replacements, leaving it unversioned at deploy time.",
+      "severity_justification": "app-theme.js is a small theme bootstrap script unlikely to change frequently; a stale version would cause incorrect initial theme flash until cache expires, which is visible but not a data integrity or security concern.",
+      "category_justification": "This is a deployment/caching concern — deployed pages may serve a stale bootstrap script after updates, a build/deploy reliability issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/browser/test_frontend_apps_smoke.py",
+      "start_line": 30,
+      "end_line": 31,
+      "message": "This is the only smoke test that asserts each mature app reaches `window.__ARTIFACT_READY__`, but it runs with CSP bypassed. Because the PR adds CSP meta tags to these app pages (including the Chart.js CDN allowlist for the loan app), this test would still pass if the real policy blocked a required script; keep at least one app-load smoke path with CSP enforced and reserve bypassing for axe injection tests.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: test_frontend_apps_smoke.py line 30 uses bypass_csp=True while checking window.__ARTIFACT_READY__, and the PR adds CSP to app pages including a script-src allowlist for cdnjs.cloudflare.com in loan-amortization. All app browser tests bypass CSP, meaning a misconfigured or too-restrictive CSP blocking Chart.js CDN would not be caught.",
+      "severity_justification": "This is a testing gap introduced alongside the CSP changes, not broken production behavior. The CSP appears correctly configured; the risk is that future CSP changes could break apps silently. Low severity as it requires a future incorrect change to cause real harm.",
+      "category_justification": "The finding identifies a gap in test coverage: CSP compliance is not validated in any app browser test, since all use bypass_csp=True.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "index.html",
+      "start_line": 29,
+      "end_line": 30,
+      "message": "The PR description says CSP and Referrer-Policy meta tags were added to all HTML pages, but `404.html` still has neither tag (and still contains inline style/script). Either update that page too or narrow the stated scope; otherwise the error page remains outside the hardening this change advertises.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: 404.html has no CSP or Referrer-Policy meta tags and retains inline style/script. The PR description explicitly claims CSP and Referrer-Policy were added to 'all HTML pages', making this a clear inconsistency between stated scope and actual implementation.",
+      "severity_justification": "The 404.html inline script only does URL path manipulation (no user input to dangerous sinks), so the practical security exposure is minimal. The primary concern is the PR's stated scope not matching what was implemented.",
+      "category_justification": "The finding is about missing security hardening (CSP/Referrer-Policy) that the PR explicitly claimed to apply universally across all HTML pages.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/js/home/catalog.test.js",
+      "start_line": 105,
+      "end_line": 116,
+      "message": "This wall-clock performance assertion can make the test suite flaky on slower or loaded CI runners, even when the algorithm is correct. Prefer asserting deterministic behavior/complexity characteristics, or benchmark this separately from the pass/fail unit tests instead of failing on a fixed 50 ms threshold.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: test at lines 91-116 of catalog.test.js uses `performance.now()` to measure 500-item filter+sort and asserts `durationMs < 50` with a hard wall-clock threshold. This will fail on slow or loaded CI runners regardless of algorithmic correctness.",
+      "severity_justification": "The test failure would be spurious (not indicating a real bug), potentially causing CI flakiness, but it doesn't affect production behavior. The fix is straightforward and the test would only fail intermittently under high load.",
+      "category_justification": "This is a test design issue — using a wall-clock performance threshold in a unit test makes the suite flaky in a way that doesn't reflect actual correctness of the code under test.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/loan-amortization/js/modules/extras.js",
+      "start_line": 59,
+      "end_line": 64,
+      "message": "The period fields are used as discrete schedule period numbers, but this accepts fractional values. A user can type values like `1.5`; one-time extras will never match any integer period, and recurring extras with fractional `startPeriod`/`every` can be silently skipped or applied unpredictably. Reject or normalize non-integer values for `every`, `startPeriod`, and `period` before mutating the extra payment model.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: updateExtraField only checks `parsed < 1` for period fields, accepting fractional values like 1.5. In getExtraForPeriod, one-time extras use strict equality against integer period counters so a fractional period never matches (silently skipped). Recurring extras use floating-point modulo with fractional operands, producing unpredictable application timing.",
+      "severity_justification": "This is a user-facing correctness bug in a financial calculator: one-time extra payments with a fractional period silently never apply, and recurring extras with fractional every/startPeriod behave non-deterministically. A user who manually types 1.5 would get silently wrong calculation results.",
+      "category_justification": "The issue is incorrect behavior when fractional values are accepted for fields that must be integers in the amortization schedule logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

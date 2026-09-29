@@ -1,0 +1,351 @@
+{
+  "pr_key": "hughdidit_DAISy-Agency_309-ac6e2196",
+  "pr": {
+    "repo": "https://github.com/hughdidit/DAISy-Agency",
+    "pr_number": 309,
+    "base": "130fc084dcec4731e67de96162d1abccae44f7ce",
+    "head": "ac6e2196f5c307fd09fa6ad8a64ba9ada14ab385"
+  },
+  "findings": [
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 232,
+      "end_line": 264,
+      "message": "verify_runtime_binaries_for_target references three variables (runtime_binary_manifest_in_image, runtime_binary_manifest_in_repo, runtime_wrapper_bin) as implicit globals without declaring them as parameters or local, and without ${var:?} guards inside the function. They happen to be set before each call site in the current GCE block, but the function has no internal contract enforcing this. Any future caller — including the sandbox path if it were refactored outside the GCE block — would silently proceed with empty values, causing misleading failures (e.g., manifest check against an empty path, or wrapper binary path of '/gemini').",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The function directly uses runtime_binary_manifest_in_image, runtime_binary_manifest_in_repo, and runtime_wrapper_bin as implicit globals with no internal guards. Verified at lines 240, 243, 252-255, 264. set -u only catches unset variables, not empty-string values, so a future caller assigning empty strings would silently produce malformed paths like '/gemini'.",
+      "severity_justification": "Both current call sites are in the same GCE block and the globals are set immediately before use. The risk is future callers; there is no current breakage.",
+      "category_justification": "The function violates encapsulation by relying on implicit global state instead of parameters, making it unsafe to reuse independently.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 185,
+      "end_line": 207,
+      "message": "build_target_direct_exec_command duplicates the entire smoke-command building logic from build_direct_exec_smoke_command (prefix stripping, complex-char safety check, argument-splitting loop) in its image mode case rather than delegating to that function. The two copies can silently diverge: a fix applied to build_direct_exec_smoke_command (used by container mode) will not automatically apply to the image mode path. The image mode path is already exercised differently from staging (it was the path NOT covered by the staging evidence cited in the PR), making divergence especially hard to detect.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the image branch of build_target_direct_exec_command duplicates the smoke_suffix extraction case statement, the complex-char safety guard, and the arg-splitting loop that are already in build_direct_exec_smoke_command. The container branch delegates to that function; the image branch does not. The two copies are currently identical but can diverge silently.",
+      "severity_justification": "No current behavioral difference; the risk is future maintenance drift. The image path is less exercised (sandbox only), making divergence hard to detect but the immediate impact is cosmetic.",
+      "category_justification": "Classic DRY violation — duplicated logic that can silently diverge across two branches of the same function, with one branch already demonstrating the correct delegation pattern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 283,
+      "end_line": 285,
+      "message": "The non-wrapper probe runs the smoke command (e.g. 'jq --version') directly via PATH rather than against the resolved binary_path returned by command -v. The old code explicitly substituted binary_path into the smoke command so the specific installed binary was exercised. The new code re-resolves via PATH independently: if a different 'jq' binary appears earlier in PATH than the one at binary_path (e.g. a test shim), the smoke passes while binary_path points to a different, potentially broken, binary. The resolved path is reported in runtime_bins but was never actually smoked.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified against the diff and current code. The new non-wrapper probe runs smoke_command directly (e.g. 'jq --version') while binary_path is resolved separately via command -v. The old code explicitly substituted binary_path into the smoke command so the resolved binary was exercised. The two lookups can return different binaries if PATH has duplicates or shims, meaning the reported path was never actually smoked.",
+      "severity_justification": "In practice, Docker containers have clean PATHs so both lookups typically resolve the same binary. The regression is real but the practical impact in the target environment is very low.",
+      "category_justification": "The smoke check no longer verifies the specific binary at the reported path — a behavioral regression from the old code that explicitly coupled the two.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 252,
+      "end_line": 253,
+      "message": "The function calls jq on the local CI runner to parse the repo-side manifest but does not guard against jq being absent. The old probe checked for jq availability inside the container with 'command -v jq'. Missing jq on the runner produces an error that fails at the shell command-not-found level, which then causes the $() subshell to exit, which surfaces as 'Failed to load runtime binary manifest entries for … from …' — a misleading message that does not identify the actual cause.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "While technically true that there's no jq guard on the runner, jq is used pervasively throughout the script on the CI runner without guards (lines 259-261, 451, 454, 487-488, 580-586) — this is the pre-existing pattern. The old guard was for jq inside the container, a different environment. No new unique risk is introduced at lines 252-253.",
+      "severity_justification": "jq is standard on CI runners; missing jq would break many other parts of the same script first, making this a non-issue in practice.",
+      "category_justification": "The concern is about missing tool availability producing a misleading error message.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 293,
+      "end_line": 297,
+      "message": "For non-wrapper binary resolution, gce_ssh (not gce_ssh_lastline) is used to capture binary_path, and the SSH noise-stripping tail -1 is applied only later inside append_runtime_bin_line. If gcloud emits keygen output to stdout (the documented reason gce_ssh_lastline exists), binary_path in scope between the assignment and the append call contains the noisy multi-line string. While the failure check at line 296 (|| fail) is unaffected because it tests exit code, the inconsistency with the established gce_ssh_lastline pattern is a latent reliability risk if the probe ever outputs more than one meaningful line.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: gce_ssh is used at line 295 instead of the established gce_ssh_lastline pattern, with tail -1 deferred to line 297. The binary_path variable between lines 294-297 holds potentially noisy multi-line content. The script's own documentation (lines 38-44) explains exactly why gce_ssh_lastline exists. The inconsistency is real and introduced by this PR.",
+      "severity_justification": "No current breakage: binary_path is only used in the append call where tail -1 is applied, and the probe emits exactly one meaningful line. The risk is latent — only triggered if the probe output changes or SSH noise lands on stdout.",
+      "category_justification": "Inconsistency with the established gce_ssh_lastline pattern creates a latent noise-contamination risk for the captured binary_path variable.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 138,
+      "end_line": 148,
+      "message": "build_target_arch_command for image mode produces 'sudo docker run --rm --entrypoint dpkg IMAGE --print-architecture', which requires dpkg to be discoverable on PATH inside the sandbox image. If a future sandbox image uses a non-Debian base (Alpine, distroless, etc.) that lacks dpkg, the arch detection fails with an opaque 'Failed to detect deployed architecture' error rather than a clear missing-tool message. Using 'docker image inspect IMAGE --format {{.Architecture}}' instead would determine the arch from image metadata without requiring any specific tooling inside the image.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is technically correct about dpkg requiring a Debian base, but the runtime-binaries.json manifest shows all system-installed binaries are explicitly tagged 'debian-bookworm', meaning the sandbox image is architecturally required to be Debian-based. The dpkg dependency is consistent with the design. The docker inspect alternative is a valid improvement suggestion but this is a hypothetical future-state concern, not a current bug.",
+      "severity_justification": "No current breakage; the sandbox image is Debian-based by design. Risk only materializes if the image base is changed while the manifest still references debian-bookworm packages.",
+      "category_justification": "Concerns robustness of arch detection against future image changes.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 240,
+      "end_line": 255,
+      "message": "The function verifies the manifest file exists inside the deployed image (test -f) but then reads the actual list of required binaries from the repo-local manifest (runtime_binary_manifest_in_repo). For the sandbox image — which has an independent build lifecycle and can lag the repo — this means verification checks the repo's current expectations, not what the image was built with. A binary newly added to the repo manifest would cause a false failure against an older sandbox image; a binary removed from the manifest would be silently skipped even if the image still ships it. The old probe ran inside the image and read the image's own manifest, so repo/image divergence was self-correcting.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 242 checks test -f on the image manifest (existence only) but line 252 reads the repo-local manifest for the binary list. The sandbox image has an independent build lifecycle per the PR context. A binary newly added to the repo manifest causes a false failure against an older sandbox image; a binary removed from the manifest is silently skipped. The old code read the image's own manifest so divergence was self-correcting.",
+      "severity_justification": "The sandbox image verification can produce false failures when the sandbox image lags the repo manifest, breaking the verify step during otherwise-healthy deployments and masking genuine regressions in the other direction.",
+      "category_justification": "The verification logic tests repo expectations against a potentially mismatched image, producing false positives and false negatives that undermine the purpose of the check.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 284,
+      "end_line": 294,
+      "message": "The here-document for `nonwrapper_probe` is never used. All binaries are now processed via direct `docker exec` calls in the `if [[ \"${wrapper_type}\" == \"node-entrypoint\" ]]` block or the `else` block which was added to handle non-wrapper binaries through a similar direct execution path. This `nonwrapper_probe` variable and its associated logic appear to be remnants of a previous implementation that have not been removed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The nonwrapper_probe heredoc is actively used. Non-wrapper binaries fall through after the continue in the wrapper block, and nonwrapper_probe -> nonwrapper_probe_escaped -> nonwrapper_command -> gce_ssh at line 295 is the live code path for them. The finding incorrectly claims this is dead code.",
+      "severity_justification": "The finding is factually wrong; no action needed.",
+      "category_justification": "The finding frames this as dead code removal, which is a maintainability concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 321,
+      "end_line": 349,
+      "message": "The verify_runtime_binaries_for_target function includes a command (build_target_wrapper_test_command) for testing if wrappers are executable, but does not guard against non-existent binaries or shells in the case of provision failures, potentially causing silent failures.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim of silent failures is factually incorrect. gce_ssh on the wrapper_test_command is followed by || fail with a descriptive error message at line 268. test -x returns non-zero for missing or non-executable files, which triggers the explicit fail call. Every code path in the wrapper block has explicit || fail error handling.",
+      "severity_justification": "The finding is factually wrong; the code correctly handles the failure case.",
+      "category_justification": "The finding concerns error handling and failure detection.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 63,
+      "end_line": 70,
+      "message": "The normalize_runtime_arch function does not handle edge architecture inputs (e.g., armhf, ppc64le, etc.), and its current implementation limits flexibility for multi-arch scenarios.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The manifest (runtime-binaries.json) only defines amd64 and arm64 entries. The function correctly handles exactly the architectures the project supports and explicitly errors on unsupported ones. The finding is generic boilerplate about hypothetical architectures not present in any project configuration.",
+      "severity_justification": "No impact on the actual deployment targets; purely hypothetical concern.",
+      "category_justification": "The finding is about flexibility/extensibility of the function.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 302,
+      "end_line": 319,
+      "message": "The defined error handling within build_target_wrapper_test_command and build_target_direct_exec_command functions lacks fail-safe logic for unrecognized modes, allowing inconsistent behavior for unsupported modes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Both functions use *) return 1 for unrecognized modes, consistent with every other builder function in the file. All call sites use || fail with descriptive messages to handle the return 1. The finding incorrectly claims there is no fail-safe logic — return 1 plus || fail IS the fail-safe logic.",
+      "severity_justification": "The finding is factually incorrect; the pattern is correct and consistent.",
+      "category_justification": "The finding concerns error handling for unrecognized inputs.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 228,
+      "end_line": 241,
+      "message": "The build_direct_exec_smoke_command implementation does not comprehensively sanitize binary paths or arguments, increasing the risk of injection vulnerabilities if an attacker gains control of manifest data.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "binary_path and all smoke args are passed through printf '%q' for proper shell quoting. The complexity guard explicitly rejects shell metacharacters before any execution. The manifest is a repo-local checked-in file, not user-controlled runtime input. The finding is a generic injection warning without a demonstrated exploit path in this codebase.",
+      "severity_justification": "No concrete vulnerability demonstrated; the quoting mechanisms in place are correct for the threat model.",
+      "category_justification": "The finding concerns injection risk from manifest data.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 612,
+      "end_line": 651,
+      "message": "The Google Workspace credentials path validation does not ensure environment consistency and does not check for duplicate credentials or path conflicts, which can lead to runtime errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The referenced lines (612-651) contain MongoDB MCP checks, not GWS credential validation. The claims about 'environment consistency' and 'duplicate credentials' are generic boilerplate with no concrete failure path identified. The actual GWS credential code has multiple validation layers including prefix checks, regex sanitization, and live auth status verification.",
+      "severity_justification": "The finding is factually wrong about both the line numbers and the code's behavior.",
+      "category_justification": "The finding concerns credential path validation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 521,
+      "end_line": 554,
+      "message": "The browser sandboxing checks assume a static browser image reference; this method lacks adaptability to dynamic browser configurations or updates defined in configuration management.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "sandbox_browser_image is dynamically sourced from the deployed container's own resolved runtime config via gce_ssh node --input-type=module executing resolveSandboxConfigForAgent(loadConfig()). The finding incorrectly claims the image reference is static when it is read live from the deployed application's configuration.",
+      "severity_justification": "The finding is factually wrong about the code's behavior.",
+      "category_justification": "The finding concerns adaptability of configuration handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 712,
+      "end_line": 725,
+      "message": "The MongoDB MCP crash checks rely on hardcoded log signature matching rather than more flexible pattern detection tools, limiting the ability to future-proof the script against new log patterns.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The referenced lines 712-725 do not exist in the file. The actual check at lines 636-646 uses exact string matching for two specific known crash signatures, which is correct and intentional. The finding is generic boilerplate ('hardcoded strings are inflexible') with no concrete issue identified.",
+      "severity_justification": "The finding is factually wrong about the line numbers and makes only a generic style observation.",
+      "category_justification": "The finding concerns hardcoded strings versus flexible pattern matching.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 81,
+      "end_line": 88,
+      "message": "The gce_ssh function does not validate the integrity of the commands passed into it, presenting a potential injection vulnerability if the input isn't strictly controlled upstream.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is generic boilerplate security advice. gce_ssh is an internal helper that takes a pre-built command string — it is not a public API and does not accept user-controlled input. All commands passed to it are constructed by builder functions that use printf '%q' quoting and complexity guards, or are literal strings hardcoded in the script. The finding does not demonstrate any concrete data flow from untrusted input to gce_ssh.",
+      "severity_justification": "No exploitable path exists; all call sites pass either hardcoded strings or builder-function output with proper quoting. The finding is a generic assertion.",
+      "category_justification": "The finding concerns a potential injection vulnerability in the SSH command execution helper.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/verify.sh",
+      "start_line": 277,
+      "end_line": 280,
+      "message": "This generated probe escapes the double quotes around the manifest binary name, so the remote shell receives commands like `command -v \\\"jq\\\"` and searches for a binary literally named `\"jq\"`. That makes every non-wrapper runtime entry fail as `missing_binary` even when the binary is installed. The local interpolation should produce a normally quoted or safely single-quoted binary name without preserving backslashes in the remote script.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified experimentally: the unquoted heredoc (<<SH) preserves \\\" as literal backslash+double-quote in the generated script. When sh executes `binary_path=\"$(command -v \\\"jq\\\" || true)\"`, command -v looks for a binary named \"jq\" (with literal quote characters), finds nothing, binary_path is empty, and the probe exits with missing_binary:jq. The correct invocation without escaped quotes finds /usr/bin/jq correctly. This affects every non-wrapper binary entry.",
+      "severity_justification": "All non-wrapper runtime binary checks will report missing_binary even on a healthy deployment, causing every verify run to fail for standard binaries.",
+      "category_justification": "A shell escaping error in the heredoc causes the generated probe script to search for binaries with literal quote characters in their names, producing incorrect missing_binary failures.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

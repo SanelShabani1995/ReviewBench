@@ -1,0 +1,491 @@
+{
+  "pr_key": "Tzeusy_butlers_997-6890b2bc",
+  "pr": {
+    "repo": "https://github.com/Tzeusy/butlers",
+    "pr_number": 997,
+    "base": "a7a601663f6a31cb94418d546b12afe5a7723292",
+    "head": "6890b2bc42112f30abf93e0285d348cafe12ad7a"
+  },
+  "findings": [
+    {
+      "file": "src/butlers/api/routers/qa.py",
+      "start_line": 1055,
+      "end_line": 1059,
+      "message": "The `patrols_completed` filter now includes `skipped_overlap` rows (only 'running' and 'error' are excluded), while `clean_count` only counts `status = 'clean'`. `skipped_overlap` records are no-op patrol ticks that never ran — including them in the denominator silently deflates `success_rate`. The old query explicitly excluded `skipped_overlap` from the patrols count. Fix: add `skipped_overlap` back to the NOT IN exclusion list, or add it to a separate exclusion filter.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the SQL at lines 1055-1059: `patrols_completed` uses `NOT IN ('running', 'error')` which includes `skipped_overlap` rows in the denominator. The diff shows the old query explicitly excluded `skipped_overlap` from patrol counts. `clean_count` only counts `status = 'clean'`, so `skipped_overlap` rows inflate the denominator without contributing to the numerator, silently deflating `success_rate`.",
+      "severity_justification": "The success rate metric will be systematically understated whenever `skipped_overlap` patrols occur, giving users a misleadingly pessimistic view of QA health in the analytics chart.",
+      "category_justification": "Logic error in the SQL query causes incorrect computation of success_rate metric.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/butlers/api/routers/qa.py",
+      "start_line": 1129,
+      "end_line": 1134,
+      "message": "`_handle_force_patrol()` can return `{'status': 'error', 'reason': '...'}` (e.g., when `_run_patrol_body` catches an exception — see `qa/__init__.py` line 988). The check `result.get('status') not in ('skipped',)` treats 'error' as accepted=True, producing a response like 'Patrol triggered: error (0 findings)' — which is both misleading to the caller and incorrect. The accepted condition should also exclude 'error' (and any other non-success terminal statuses).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in qa/__init__.py line 1018: `_run_patrol_body` returns `{'status': 'error', 'reason': error_msg}` on exception. In force_patrol (qa.py ~line 1129), `accepted = result.get('status') not in ('skipped',)` evaluates 'error' as True, producing misleading 'Patrol triggered: error (0 findings)' message when the patrol actually failed.",
+      "severity_justification": "Misleading UI feedback when a patrol errors — shows accepted=True and a confusing message — but no data is corrupted and the patrol error is recorded separately. Impact is cosmetic/UX.",
+      "category_justification": "Logic error in the accepted condition: error status from the callable is incorrectly treated as a successful acceptance.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/butlers/api/routers/qa.py",
+      "start_line": 1085,
+      "end_line": 1095,
+      "message": "The two SQL queries in `get_qa_trends` each call `now()` independently. A patrol row inserted between the two evaluations will appear in the source breakdown but not in the daily aggregates (or vice versa), making the chart data inconsistent within a single API response. Both queries should use a single precomputed UTC boundary timestamp (e.g., `datetime.now(UTC)` computed in Python and passed as a bind parameter) so the window is identical across both queries.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: both queries independently call `now()` in separate pool.fetch() calls. The daily boundary `date_trunc('day', now() AT TIME ZONE 'UTC')` could theoretically differ between the two queries if they straddle midnight UTC, causing a patrol to appear in one result set but not the other within the same API response.",
+      "severity_justification": "The inconsistency only materializes if two sequential DB queries straddle midnight UTC — an extremely rare timing window. In practice both calls complete within milliseconds and produce the same truncated day boundary. The fix (precompute the boundary in Python) is straightforward but the real-world impact is negligible.",
+      "category_justification": "Temporal inconsistency between two independent queries within a single API response, a data-consistency/reliability concern rather than a logic bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 436,
+      "end_line": 437,
+      "message": "`useQaInvestigations({ limit: 100 })` fetches without a status filter and with no pagination. The API's max limit is 100, and the default ordering is `created_at DESC`. As terminal investigations accumulate over time, older active investigations in any Kanban column will be silently dropped from the board without any indicator to the user. The component shows no total count, no 'N of M' label, and no overflow signal, so the Kanban will appear complete while actually being truncated.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the API endpoint has `limit: int = Query(20, ge=1, le=100)` with `ORDER BY created_at DESC`. The frontend calls `useQaInvestigations({ limit: 100 })` with no status filter, no total count display, and no overflow signal. As investigations accumulate (especially terminal ones which are never purged), older active investigations will be silently absent from the Kanban board.",
+      "severity_justification": "This is a display-only limitation on a dashboard component. Investigations won't be lost from the database, and in typical usage the limit of 100 gives reasonable runway before the issue manifests. However, when it does occur, users will get an incomplete picture with no indication of truncation.",
+      "category_justification": "Silent data truncation in a UI component that presents itself as complete — a functional correctness issue in the Kanban view.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 410,
+      "end_line": 416,
+      "message": "`inv.pr_url` is included in the `QaInvestigation` type and returned by the backend, but `InvestigationCard` renders `PR #{inv.pr_number}` as a plain `<p>` element, not as a link. Users cannot navigate to the PR from the Kanban card. `pr_url` should be used to wrap the PR number in an `<a href>` or Radix `Link`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: lines 410-412 show `inv.pr_number` renders as a plain `<p>` element while `inv.pr_url` is available in the QaInvestigation type but unused. The card is wrapped in a router Link to the investigation detail page, but the PR number itself is not a clickable link to the PR.",
+      "severity_justification": "Minor UX gap — the PR number is visible but not clickable to the PR. Users can still reach the investigation detail page via the card. No data is wrong or missing, just a missed convenience affordance.",
+      "category_justification": "Available data (pr_url) is not leveraged to provide the expected navigation affordance — a UI completeness concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/hooks/use-qa.ts",
+      "start_line": 193,
+      "end_line": 201,
+      "message": "`useForceQaPatrol` invalidates four query caches unconditionally in `onSuccess`, even when the server returns `accepted=false` (standalone mode, skipped patrol, etc.). This triggers four unnecessary refetch round-trips when no patrol actually ran. The `onSuccess` handler receives the response payload — invalidation should be conditioned on `resp.data?.accepted === true`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the `onSuccess` handler in `useForceQaPatrol` (lines 197-202) takes no parameters and unconditionally invalidates four query caches, regardless of whether `resp.data?.accepted` is true or false. When patrol is skipped or in standalone mode, this triggers four unnecessary network refetches.",
+      "severity_justification": "Causes up to four unnecessary API refetch round-trips when the patrol was not actually triggered (standalone mode or skipped). This is wasteful but has no correctness impact — the refetched data will simply be unchanged. The performance impact is minor for a dashboard.",
+      "category_justification": "Unnecessary cache invalidation and refetch round-trips triggered even when no data has changed.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 662,
+      "end_line": 675,
+      "message": "`ForcePatrolButton` displays the message text with `mutation.isError` controlling the color. When the server returns a 202 with `accepted=false` (e.g., standalone mode message 'Force patrol is only supported when the QA daemon is running in-process.'), `mutation.isError` is `false` so the text renders in `text-muted-foreground` — visually identical to a success message. The button provides no signal that the action had no effect. The `accepted` field from the response should drive the styling, not the HTTP error flag.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 683 uses `mutation.isError ? 'text-destructive' : 'text-muted-foreground'` for styling. When the server returns 202 with `accepted=false`, `mutation.isError` is false and the informational/warning message renders in the same visual style as a success message, giving no indication the action had no effect.",
+      "severity_justification": "A UX feedback gap — the user pressing 'Force Patrol Now' in standalone mode sees a muted-color message that looks like success, with no visual signal the patrol didn't actually run. Misleading but not data-corrupting.",
+      "category_justification": "The wrong condition drives UI styling, causing incorrect visual feedback that misrepresents the outcome of the action.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/butlers/api/routers/qa.py",
+      "start_line": 54,
+      "end_line": 62,
+      "message": "`_get_force_patrol_fn` and the `force_patrol_fn` parameter on the endpoint are completely untyped. The endpoint calls `await force_patrol_fn()`, assuming an async callable, but nothing enforces or validates this at injection time via `app.dependency_overrides`. If a synchronous callable is wired, `await` raises `TypeError`, which is caught by the broad `except Exception` and surfaced as a cryptic 503 with a UUID error code rather than a clear misconfiguration signal. Add a type annotation `Callable[[], Coroutine[Any, Any, dict]] | None` and validate the callable is a coroutine function before awaiting it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_get_force_patrol_fn` (line 54) and `force_patrol_fn` parameter (line 1113) are completely untyped. `await force_patrol_fn()` at line 1127 would raise TypeError if a sync callable is injected, caught by the broad `except Exception` and surfaced as a cryptic 503 with UUID. The intended callable `_handle_force_patrol` is async, so this is low practical risk but is a genuine type safety gap.",
+      "severity_justification": "The intended usage path always injects an async callable (`_handle_force_patrol`). A misconfiguration would produce a logged 503 rather than silent failure. The fix (adding type annotation and asyncio.iscoroutinefunction check) is straightforward but the real-world risk is minimal since this is internal daemon wiring.",
+      "category_justification": "Missing type annotations on an internal dependency injection point, with a latent misuse risk if a sync callable is accidentally wired.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/api/test_api_qa.py",
+      "start_line": 1268,
+      "end_line": 1270,
+      "message": "The `test_returns_503_when_db_unavailable` test for `TestGetQaTrends` was removed without replacement. The endpoint still calls `_shared_pool(db)` which raises HTTP 503 when the shared pool is unavailable — this path remains exercised in production but is now completely untested. Other endpoint test classes (patrols, known-issues, investigations) all retain their 503 tests; trends is the only one where this coverage was dropped.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `TestGetQaTrends` (line 1269) contains 5 tests but none test the 503/db-unavailable path. Other test classes (TestListInvestigations line 759, TestUndismissKnownIssue line 1140, TestListDismissals line 1405, TestDeleteDismissal line 1451) all retain their 503 tests. The trends endpoint still calls `_shared_pool(db)` making the 503 path reachable in production.",
+      "severity_justification": "Missing test coverage for a well-understood error path that's consistently tested everywhere else. The production code is correct; only the test coverage was dropped. Low severity as the 503 behavior itself is exercised by other endpoint tests against the same `_shared_pool` helper.",
+      "category_justification": "A coverage gap introduced by this PR — the 503 error path for trends was covered in the old test suite and was dropped without replacement.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 341,
+      "end_line": 341,
+      "message": "The `handleClick` function in `ForcePatrolButton` sets `lastMsg` with `resp.data?.message`, but the backend's success response (`status=findings_dispatched`) doesn't include a `message` field. The `patrol_result` dictionary returned by `_fake_force_patrol` in tests only has `status`, `patrol_id`, etc. This will result in the generic fallback message \"Patrol triggered\" being shown instead of a more informative one.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `ForcePatrolResponse` Pydantic model explicitly includes `message: str` (line 249). The endpoint constructs the message string itself (lines 1130-1135) using `result.get('status')` and `result.get('findings_count', 0)` from the callable's return dict — it does not pass through a `message` field from the callable. The frontend's `resp.data?.message` will always receive a non-null string from the backend.",
+      "severity_justification": "The finding is factually incorrect about the backend response shape.",
+      "category_justification": "The claim is about incorrect response field handling.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/butlers/api/routers/qa.py",
+      "start_line": 427,
+      "end_line": 432,
+      "message": "The success message for a forced patrol is constructed with fields that may not exist in the result dictionary. The code uses `result.get('status', 'unknown')` and `result.get('findings_count', 0)`, but the corresponding test mock (`_fake_force_patrol` in `tests/api/test_api_qa.py`) only includes `findings_count` and not `status` in the `patrol_result` dictionary it returns. This will lead to the message always showing `status: unknown`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims `status` is not in the `patrol_result` dict returned by `_fake_force_patrol`, but line 1178 explicitly shows `'status': 'findings_dispatched'` in the dict. The finding is factually incorrect — both `status` and `findings_count` are present in the mock.",
+      "severity_justification": "The finding is factually wrong about the test mock contents.",
+      "category_justification": "The claim relates to a potential runtime error in message construction.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/butlers/api/routers/qa.py",
+      "start_line": 1058,
+      "end_line": 1058,
+      "message": "The `force_patrol` endpoint is defined to return a 202 status code, but the test `test_returns_503_when_force_patrol_fn_raises` asserts a 503 status code when the injected function raises an exception. The actual implementation raises an `HTTPException` with status 503, which is correct, but this contradicts the `status_code=202` in the decorator, which is meant for the successful acceptance path.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "In FastAPI, `status_code` in the route decorator sets the default success response code only. `HTTPException` with a different status code independently overrides it for error paths. Having `status_code=202` for success and raising `HTTPException(status_code=503)` for errors is entirely correct and standard FastAPI usage — there is no contradiction.",
+      "severity_justification": "The finding is factually incorrect about FastAPI behavior.",
+      "category_justification": "The claim relates to HTTP status code behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 481,
+      "end_line": 481,
+      "message": "The `useQaTrends` hook is called without arguments, defaulting to fetching 7 days of data. However, the `Success Rate (7d)` and `Source Breakdown (7d)` card titles hardcode \"7d\", which will be misleading if the default in the hook ever changes. The number of days should be passed explicitly (e.g., `useQaTrends(7)`) to ensure the UI and data request are consistent.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims `useQaTrends` is called without arguments, but line 705 clearly shows `useQaTrends(7)` — the explicit `7` argument is already passed. The UI titles '7d' and the hook call are already consistent.",
+      "severity_justification": "The finding is factually incorrect about the code.",
+      "category_justification": "The concern was about consistency between UI labels and data fetch parameters.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/api/client.ts",
+      "start_line": 23,
+      "end_line": 25,
+      "message": "The `getQaTrends` function does not validate the `days` parameter. If a negative or excessively large value is passed, it may lead to unexpected behavior or unnecessary database load. Consider bounding the `days` parameter at the frontend to a practical range.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The backend already validates `days` with `Query(7, ge=1, le=30)` and returns 422 for out-of-range values. Additionally, `getQaTrends` is only called from `useQaTrends(7)` with a hardcoded value — there's no user-controlled input. Frontend validation would be purely redundant. The finding is also generic ('consider bounding') without identifying a concrete exploitable issue.",
+      "severity_justification": "No real risk: server-side validation is already in place and the parameter is hardcoded at the only call site.",
+      "category_justification": "The concern is about input validation and potential unexpected behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/api/client.ts",
+      "start_line": 29,
+      "end_line": 31,
+      "message": "The `forceQaPatrol` function lacks mechanism to handle common HTTP failures, such as network errors or server-side exceptions. This could result in unhandled promise rejections in consuming code. Consider applying a global error handler or specific error handling here.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`apiFetch` already handles HTTP failures by throwing a structured `ApiError` for non-2xx responses (lines 258-284 in client.ts). `useForceQaPatrol` uses TanStack Query's `useMutation` which catches promise rejections, and `ForcePatrolButton` has an explicit `onError` callback. The finding applies equally to every one of the ~300 other functions in client.ts that call `apiFetch` — it is generic boilerplate that identifies no specific issue with `forceQaPatrol`.",
+      "severity_justification": "No real gap: the existing error handling pattern via apiFetch + useMutation covers HTTP failures and surface them to the user.",
+      "category_justification": "The concern is about error handling for network/HTTP failures.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/butlers/api/routers/qa.py",
+      "start_line": 1137,
+      "end_line": 1143,
+      "message": "The broad `except Exception` block converts every error from the in-process callable into a 503. This means bugs in the callable (e.g., `KeyError`, `TypeError`, assertion errors) are reported as \"daemon unavailable\" instead of 500, which can hide real defects in observability and alerting. Consider catching expected daemon-unavailability errors specifically (e.g., a custom `DaemonUnavailableError`) and letting other exceptions propagate to the default 500 handler.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the broad `except Exception` at line 1137 converts all exceptions (including bugs like KeyError, TypeError) into 503 responses with a 'daemon unavailable' framing, as the finding claims. The `# noqa: BLE001` comment even acknowledges the intentional broad catch. While `logger.exception` preserves the traceback in logs, HTTP-layer status codes and alerting will misclassify programming errors as infrastructure unavailability.",
+      "severity_justification": "The issue affects observability and alerting accuracy but the actual error details are still logged. It won't cause incorrect behavior for end users, only potentially mislead operators/monitoring systems about the nature of failures.",
+      "category_justification": "The concern is about error categorization, observability, and appropriate HTTP status codes for different failure modes — a reliability/operational concern rather than a correctness bug.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/butlers/api/routers/qa.py",
+      "start_line": 1112,
+      "end_line": 1153,
+      "message": "The endpoint declares `status_code=202` (\"Accepted\"), but in standalone mode (no callable wired) and in the skipped path the response returns `accepted=False` with HTTP 202 — semantically contradictory: the server has not accepted the request for processing. Consider returning 200 (or 503 for standalone) in those cases and reserving 202 for actual queued/triggered patrols.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the endpoint unconditionally returns HTTP 202 for all paths including standalone mode (accepted=False, no action taken) and skipped patrol (accepted=False). RFC 9110 defines 202 as 'accepted for processing' — returning it when processing was explicitly not started or was rejected is semantically contradictory, as the finding claims.",
+      "severity_justification": "The body payload clearly communicates the actual outcome via `accepted` boolean, and the frontend code reads that field rather than the HTTP status. The semantic mismatch is real but has minimal practical impact for current consumers.",
+      "category_justification": "This is an HTTP status code / API contract design issue — the semantics of 202 vs the actual processing outcome — which falls squarely in API architecture.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/butlers/api/routers/qa.py",
+      "start_line": 1088,
+      "end_line": 1088,
+      "message": "The endpoint now labels this as a finding `count`, but it sums `occurrence_count`, which counts repeated occurrences inside a finding. Existing QA semantics and the previous trends implementation count one row per `qa_findings` record for per-source analytics, so this will overstate sources that aggregate repeated log/session occurrences.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the new query uses `SUM(occurrence_count)` while the old implementation used `COUNT(*)`. The log_scanner source explicitly increments occurrence_count for repeated fingerprints within a patrol, while butler_reports and session_records hardcode occurrence_count=1. This means log_scanner findings are systematically multiplied by their repetition rate in the chart, overstating its share relative to other sources. The UI labels this as 'Findings' which implies distinct finding records, not aggregated occurrences.",
+      "severity_justification": "The source breakdown chart will skew proportions toward log_scanner (which aggregates repeated occurrences) vs. butler_reports and session_records (which always have occurrence_count=1), making the chart misleading for operators trying to understand which discovery sources are producing the most issues.",
+      "category_justification": "The query computes a different metric than what the UI labels suggest and what the previous implementation computed — a semantic/logic error in the data aggregation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 564,
+      "end_line": 564,
+      "message": "This color wraps a CSS variable in `hsl(...)`, but the theme variable is defined as a full OKLCH color in `frontend/src/index.css` (for example `--primary: oklch(...)`). That makes the SVG color invalid, so the success chart stroke may not render with the intended theme color; use the variable directly instead of `hsl(var(...))`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct: `--primary` and `--chart-*` are all defined as `oklch(...)` values in index.css, so `hsl(var(--primary))` produces technically invalid CSS. However, this exact same pattern is used identically in pre-existing chart files (CostChart.tsx, VolumeTrendChart.tsx, TierBreakdownDonut.tsx), making it an established codebase pattern. The new code consistently follows the existing convention.",
+      "severity_justification": "The technical invalidity is real but the pattern is widespread in the codebase without apparent breakage reports — modern browsers likely handle this leniently. The visual impact (if any) would be subtle color rendering differences.",
+      "category_justification": "Invalid CSS color function composition — the CSS spec doesn't allow nesting `oklch()` inside `hsl()`, which may produce unexpected rendering.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 542,
+      "end_line": 543,
+      "message": "These gradient stop colors have the same invalid `hsl(var(--primary))` form while `--primary` is already a full OKLCH color in `frontend/src/index.css`, so the gradient fill can be ignored by the browser instead of using the theme color.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: lines 542-543 use `hsl(var(--primary))` in SVG gradient stops while `--primary` is defined as `oklch(...)` in index.css, producing technically invalid CSS. However, the identical pattern (`stopColor=\"hsl(var(--primary))\"`) is pre-existing in CostChart.tsx lines 93/98, making this an established codebase pattern rather than a new defect introduced by this PR.",
+      "severity_justification": "Same as Finding 4 — technically invalid CSS but the same pattern is widely used in existing chart components without reported breakage. Impact (if any) would be subtle gradient fill rendering differences.",
+      "category_justification": "Invalid CSS color function nesting — same root cause as Finding 4, just in SVG gradient stop elements.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 579,
+      "end_line": 583,
+      "message": "These chart color constants wrap OKLCH theme variables in `hsl(...)` (see `frontend/src/index.css` where `--chart-*` is defined as `oklch(...)`). The resulting SVG fill values are invalid CSS colors, so the source breakdown bars may not render with the intended palette.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `--chart-1` through `--chart-5` are all defined as `oklch(...)` values in index.css, so `hsl(var(--chart-*))` produces invalid CSS. Importantly, unlike the `--primary` pattern (which appears in pre-existing CostChart.tsx/VolumeTrendChart.tsx), no other existing file uses `hsl(var(--chart-*))` — this pattern is entirely new in this PR with no pre-existing codebase precedent.",
+      "severity_justification": "The invalid CSS would cause the bar chart colors to fall back to browser defaults rather than the intended palette. While purely visual with no functional impact, the chart may render with incorrect or missing colors.",
+      "category_justification": "Same root cause as Findings 4 and 5 — invalid CSS color function nesting, producing potentially incorrect SVG fill values.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 705,
+      "end_line": 705,
+      "message": "The trends query does not read `isError`, so a failed `/api/qa/trends` request falls through to the “No trend data available” empty state. That hides backend/API failures as if there simply were no data, unlike the other QA panels on this page that surface load errors.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 705 destructures only `data` and `isLoading` from `useQaTrends()`, omitting `isError`. The render logic at lines 840-868 falls through to 'No trend data available' when `trends` is undefined (which happens on fetch error). This is inconsistent with `useQaSummary()` and `useQaPatrols()` which both destructure `isError`, and with `InvestigationPipeline`/`KnownIssuesPanel` which both explicitly surface error states.",
+      "severity_justification": "API errors for the trends charts silently show as empty state rather than an error message. This makes debugging harder for operators, but it's a chart display issue with no data integrity or functional consequence — the rest of the page still works.",
+      "category_justification": "Missing error state handling causes silent failure — a reliability/fault-tolerance issue in the UI's error surfacing.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/api/test_api_qa.py",
+      "start_line": 1309,
+      "end_line": 1311,
+      "message": "The source breakdown test only asserts that the API passes through a pre-aggregated `count` value, so it doesn't catch whether the SQL is counting finding rows or summing `occurrence_count`. Add a case with an `occurrence_count > 1` finding to lock down the intended “findings per source” behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the test mocks post-aggregation SQL result rows directly (`_make_source_row` returns `{source_type, count}`), so it only validates pass-through of the pre-built count value. The actual SQL aggregation behavior (COUNT(*) vs SUM(occurrence_count)) is untested, and a bug here would not be caught. This directly relates to the semantic issue identified in Finding 3.",
+      "severity_justification": "This is a test coverage gap — the missing coverage allows the SUM(occurrence_count) vs COUNT(*) semantic issue to go undetected. Low severity because it's a testing gap rather than a runtime bug, and the fix would require integration-level tests beyond the current mock-based unit test architecture.",
+      "category_justification": "The finding is about missing test coverage for SQL aggregation semantics — a testing gap rather than a production code defect.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/api/test_api_qa.py",
+      "start_line": 1283,
+      "end_line": 1287,
+      "message": "The new success-rate tests cover clean vs completed counts, but they don't cover `skipped_overlap`, which is a valid QA patrol status recorded when a tick is skipped rather than completed. Without that case, the regression where skipped rows are counted as completed patrols is not caught.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the new SQL counts `patrols_completed` as `NOT IN ('running', 'error')`, so `skipped_overlap` patrols ARE counted as completed but not as `clean`, diluting success_rate. The old code explicitly excluded `skipped_overlap` from the patrol count. No test in the new `TestGetQaTrends` suite covers `skipped_overlap` rows — confirmed by zero occurrences of 'skipped_overlap' in the test file. This is both a behavioral regression from the old implementation and an untested edge case.",
+      "severity_justification": "The `skipped_overlap` inclusion dilutes success_rate in the trend chart when patrol skips occur, making it slightly pessimistic. This is a data accuracy issue for a dashboard metric, not a data integrity or security concern.",
+      "category_justification": "The finding identifies a missing test case for a known valid status value — a testing coverage gap that would allow the skipped_overlap behavior regression to go undetected.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

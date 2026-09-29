@@ -1,0 +1,371 @@
+{
+  "pr_key": "s205109_AHKFlowApp_35-9ec13217",
+  "pr": {
+    "repo": "https://github.com/s205109/AHKFlowApp",
+    "pr_number": 35,
+    "base": "b39f97c4b144b32609705cdfa57c7dca981373eb",
+    "head": "9ec13217fb700d3289ce4a293c17e287bacdff1c"
+  },
+  "findings": [
+    {
+      "file": "tests/AHKFlowApp.Infrastructure.Tests/Persistence/TestMessageTests.cs",
+      "start_line": 14,
+      "end_line": 22,
+      "message": "If `context.Database.MigrateAsync()` throws, the `AppDbContext` created on line 19 is never disposed. The callers use `await using AppDbContext context = await CreateMigratedContextAsync(...)`, but `await using` only calls `DisposeAsync()` on a successfully returned value — an exception bypasses it entirely. The context (and its underlying SQL connection) leaks. Fix by wrapping the migrate call in try/catch that disposes and rethrows.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at lines 19–21 creates an AppDbContext then calls MigrateAsync(); if MigrateAsync() throws, the context is never returned and the caller's `await using` declaration never executes DisposeAsync. The DbContext and its pooled SQL connection leak. This is factually verifiable from the code.",
+      "severity_justification": "This is test code; the SqlContainerFixture is torn down at the end of the collection run, which closes all connections naturally. MigrateAsync failures are also rare with EnableRetryOnFailure configured. The leak is real but consequence is minimal in practice.",
+      "category_justification": "The issue is a resource management/disposal bug — a DbContext and its connection are leaked on exception paths.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.Infrastructure/Persistence/Configurations/TestMessageConfiguration.cs",
+      "start_line": 18,
+      "end_line": 23,
+      "message": "`HasData()` bakes the seed record `{Id=1, Message=\"hello test record\"}` into the EF Core migration, which is applied to every environment — including production. This is test scaffolding masquerading as real seed data. Any deployment that runs migrations will permanently insert this record into the production database. Seed data in migrations should only be used for required reference/lookup data, not test records.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: TestMessageConfiguration.HasData() bakes {Id=1, Message='hello test record'} into the Initial migration via InsertData, which runs unconditionally in every environment including production. The entity name and message value confirm this is test scaffolding, not legitimate reference data.",
+      "severity_justification": "Any deployment to production will permanently insert a junk 'hello test record' row. While the TestMessage entity itself is scaffolding and unlikely to reach real production in its current form, the practice of embedding test data in migrations is architecturally wrong and sets a bad precedent. If the entity ever persists into a real feature, this seed row follows along.",
+      "category_justification": "The code causes incorrect production behavior — inserting test-only data into every environment's database via an unconditional migration.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.Infrastructure/Migrations/20260407204315_Initial.cs",
+      "start_line": 28,
+      "end_line": 32,
+      "message": "The `InsertData` call in the migration UP body inserts the test seed row into every environment. If this migration is ever run against a production database, the `TestMessages` table will contain `Id=1, Message=\"hello test record\"`. This is a consequence of the `HasData()` call in `TestMessageConfiguration` — both need to be removed together. The migration `Down()` correctly drops the whole table, but any environment that has already applied this migration will retain the spurious data until manually cleaned.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: lines 28-32 of the migration contain migrationBuilder.InsertData inserting the test row {Id=1, Message='hello test record'} unconditionally. The observation that Down() drops the table (rather than deleting the specific row) is also correct. The finding is factually accurate and adds specific detail about remediation needing both the HasData() and the migration InsertData removed.",
+      "severity_justification": "Same issue as the HasData finding — test data baked into a production migration. Medium because it produces junk data in every deployed environment and could cause ID-1 conflicts if the entity is ever extended with real seed data.",
+      "category_justification": "Unconditional insertion of test data into production database via migration is incorrect behavior for a production system.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.Domain/Entities/TestMessage.cs",
+      "start_line": 1,
+      "end_line": 8,
+      "message": "`TestMessage` is scaffolding added purely to validate EF Core migrations, not a real domain concept (the domain glossary lists Hotstring, Hotkey, Profile, Script, Trigger, Replacement — nothing called TestMessage). Placing it in `AHKFlowApp.Domain.Entities` and registering it as `AppDbContext.TestMessages` makes it part of the permanent production schema and data model. Once applied, the `TestMessages` table exists in every deployed environment and any future API/tooling scan (OData, GraphQL scaffolding, Swagger, etc.) will expose it as a real resource.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: TestMessage is explicitly described in the plan doc as scaffolding to validate EF Core, is absent from the domain glossary in AGENTS.md, yet is committed to AHKFlowApp.Domain.Entities with a public DbSet in AppDbContext. No controller currently exposes it, so the scanning concern is speculative, but the entity pollutes the production domain and schema permanently.",
+      "severity_justification": "Scaffolding entities in the production domain/schema is a real architectural problem — TestMessages table exists in every deployed environment, the DbSet is public and accessible to any future code, and removing it later requires a new migration. The concern is distinct from and broader than the seed data issue.",
+      "category_justification": "The issue is about permanently committing a non-domain scaffolding entity into the production data model and public DbContext interface, which is an architectural/schema boundary concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.Domain/Entities/TestMessage.cs",
+      "start_line": 7,
+      "end_line": 7,
+      "message": "`CreatedAt` is typed as `DateTime`. SQL Server's `datetime2` column does not store timezone information; EF Core reads it back as `DateTimeKind.Unspecified`. The test in `PersistsCreatedAt` stores `DateTime.UtcNow` (Kind=Utc) and reads it back as Unspecified, which only passes because `BeCloseTo` compares raw ticks. Any downstream code that calls `.ToUniversalTime()` on the persisted value will produce incorrect results (treating Unspecified as local time). `DateTimeOffset` is the correct type for a timestamp that must survive a SQL Server round-trip with correct UTC semantics.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: DateTime with datetime2 loses DateTimeKind on EF Core round-trip (returns Unspecified), the test only passes because BeCloseTo is tick-based and ignores Kind, and the rest of the codebase uses DateTimeOffset for timestamps (HealthResponse models). The finding correctly identifies a real type correctness issue.",
+      "severity_justification": "TestMessage is scaffolding with no downstream consumers of CreatedAt. The type mismatch would only matter if the entity became a real domain object used by production code. The test masks the issue but passes correctly.",
+      "category_justification": "DateTime vs DateTimeOffset is a correctness issue — data round-tripping through SQL Server loses timezone information, and calling ToUniversalTime() on the read-back value would produce wrong results.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.API/Program.cs",
+      "start_line": 68,
+      "end_line": 72,
+      "message": "The `catch (SqlException ex) when (ex.Number == 1801)` block suppresses error 1801 (\"Database already exists\") with the comment \"migrations already applied\", but that assumption is wrong. Error 1801 is raised when `CREATE DATABASE` is called on an existing database — it says nothing about whether migrations have been applied. If the database was created externally (e.g., an empty container volume) but has never been migrated, this catch will swallow the exception, `MigrateAsync()` will not finish applying migrations, and the app will start against an unmigrated schema with subsequent queries failing at runtime rather than at startup.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim that 1801 doesn't imply migrations are applied is factually correct. However, the described failure scenario (empty unmigrated DB + 1801) is mechanically unlikely since EF Core's CreateIfNotExistsAsync checks existence before issuing CREATE DATABASE, so an existing unmigrated DB would not throw 1801 — it would just apply migrations. The real risk is a concurrent-startup race condition. The assumption in the comment is wrong regardless.",
+      "severity_justification": "The catch is in a Development-only code path. The described failure scenario (unmigrated DB throwing 1801) doesn't match EF Core's actual behavior. The real risk (race condition) is also development-only and low-probability.",
+      "category_justification": "The catch block encodes a logically incorrect assumption — that error 1801 implies migrations are already applied — which could mask startup problems in edge cases.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.API/Program.cs",
+      "start_line": 68,
+      "end_line": 73,
+      "message": "The catch block for general exceptions during migration logs the error but does not exit the application. If migrations fail for any reason other than a `SqlException`, the application will continue to start with a potentially invalid database schema, which could lead to runtime errors. The `throw;` statement ensures the application fails fast if migrations cannot be applied.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at lines 73-76 already contains `throw;` — the exception is rethrown, causing the application to fail fast. The finding's claim that 'the application will continue to start' is factually wrong. The finding even contradicts itself by recommending `throw;` as the fix when that statement is already present.",
+      "severity_justification": "The finding is incorrect so severity is assessed on the FP itself — low, as it is a misreading of the code with no actual risk.",
+      "category_justification": "The finding makes an incorrect claim about the control flow of the exception handling code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.Infrastructure.Tests/Persistence/TestMessageTests.cs",
+      "start_line": 12,
+      "end_line": 19,
+      "message": "The test helper method `CreateMigratedContextAsync` creates a new database context but does not validate if the connection string database exists or ensure cleanup of the database after the test, potentially leading to resource leaks or inconsistent test states.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both claims are incorrect: MigrateAsync() creates the database if absent so no pre-validation is needed, and cleanup is handled by SqlContainerFixture.DisposeAsync() tearing down the entire container. Tests use unique database names preventing cross-test contamination. The finding is generic advice that doesn't match the actual test design.",
+      "severity_justification": "The finding is factually incorrect, so no real risk exists.",
+      "category_justification": "The finding is about test helper design and cleanup patterns.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.API.Tests/Middleware/GlobalExceptionMiddlewareTests.cs",
+      "start_line": 24,
+      "end_line": 59,
+      "message": "Factory-level setup for testing problem details in `GlobalExceptionMiddlewareTests` is repeated for every test. This violates DRY principles and creates an opportunity for inconsistent configurations between tests.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The two test methods genuinely repeat identical ConfigureServices and Configure middleware setup. The spec doc's instruction to add AddProblemDetails to 'both tests' demonstrates the concrete drift risk. The finding is factually correct about the duplication and names the specific code.",
+      "severity_justification": "The duplicated block is small (5 lines), and the tests are functionally correct today. The drift risk is real but low-probability for a two-test class. Pure maintainability concern with no current bug.",
+      "category_justification": "The finding is about code duplication and the structural risk of configuration divergence between tests — a DRY/readability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.API/Program.cs",
+      "start_line": 58,
+      "end_line": 68,
+      "message": "The migration logic in Program.cs logs an informational message when skipping migrations (`Database already exists`). This might not provide enough granularity for operations or debugging contexts where further insight is needed (e.g., verifying schema versions match).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is generic boilerplate — 'this log message might not provide enough detail' could be said about virtually any informational log statement in any codebase. It doesn't identify a specific failure mode, name concrete missing information, or demonstrate a scenario where this logging gap causes a real problem.",
+      "severity_justification": "Even if taken as valid, the suggestion is cosmetic — adding more context to a log message in a development-only code path.",
+      "category_justification": "The suggestion is about log verbosity/observability, a maintainability/operational concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.Infrastructure/Persistence/AppDbContext.cs",
+      "start_line": 5,
+      "end_line": 7,
+      "message": "The public DbSet<TestMessage> property exposes the database schema directly, which might be acceptable for some use cases, but it lacks access control or abstraction. This increases the risk of unintentional misuse or data corruption.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding recommends adding abstraction over DbSet, which directly contradicts the project's explicitly documented 'No repository pattern' convention in AGENTS.md. Public DbSet in AppDbContext is the intentional architectural choice. The finding is generic EF Core boilerplate that ignores the project's own conventions.",
+      "severity_justification": "Even considered in isolation, this is standard EF Core design and the finding identifies no concrete misuse scenario. No real risk.",
+      "category_justification": "The finding is about data access abstraction and encapsulation of the DbContext interface.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.Domain/Entities/TestMessage.cs",
+      "start_line": 3,
+      "end_line": 7,
+      "message": "This production entity/migration work is not described by the PR title or description, which frame the change as disposing test factories and switching a test helper to `MigrateAsync`. Adding a new domain entity and database table is a functional schema change, so the PR description should call it out explicitly or the unrelated changes should be split out.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the diff contains a new domain entity (TestMessage.cs), EF Core migration creating a TestMessages table, TestMessageConfiguration, AppDbContext changes, Program.cs logging additions, and doc files — none of which are mentioned in the PR title ('fix: dispose WebApplicationFactory...and use async MigrateAsync') or description. The description only covers two test infrastructure fixes. The finding is factually correct.",
+      "severity_justification": "The code itself is correct; this is a PR hygiene issue. The missing description doesn't introduce bugs or risk, but the undescribed schema migration could surprise reviewers who expect only the two described fixes.",
+      "category_justification": "The issue is about the PR description failing to document the full scope of changes — specifically omitting a functional schema change from the description.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/superpowers/plans/2026-04-07-database-foundation-ef-core.md",
+      "start_line": 87,
+      "end_line": 91,
+      "message": "This example still documents `context.Database.Migrate()` even though the surrounding text says the tests use `MigrateAsync()` and the implementation was changed to avoid blocking async tests. The plan should be updated so future readers do not copy the blocking version back in.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at lines 87-91 of the plan doc (a new file added in this PR): the code snippet uses synchronous `context.Database.Migrate()`, while the actual TestMessageTests.cs in this same PR uses `await context.Database.MigrateAsync()`. The doc was introduced by this PR and already contains the pattern the PR claims to fix.",
+      "severity_justification": "The plan document is a historical implementation guide in docs/superpowers/plans/ and is unlikely to be actively referenced for ongoing development. The risk of someone copying the blocking pattern from it is low, but non-zero. No production code or test behavior is affected.",
+      "category_justification": "The issue is stale/incorrect code in a documentation plan file — a code example that doesn't match the actual implementation it describes.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/superpowers/plans/2026-04-07-database-foundation-ef-core.md",
+      "start_line": 98,
+      "end_line": 98,
+      "message": "This snippet calls the old synchronous helper. To stay consistent with the async implementation and the paragraph above, the example should await the async helper instead of showing `CreateMigratedContext(...)`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 98: the plan doc's code snippet calls `CreateMigratedContext(...)` (synchronous, no await) on a line that uses `await using`, within an async test method — contradicting the fix made in the actual implementation which uses `await CreateMigratedContextAsync(...)`. The doc was added in this PR.",
+      "severity_justification": "Same as Finding 2 — a historical plan document with stale example code. Low risk of real harm, but the inconsistency is real. This is the same root cause as Finding 2, just a different call site within the same snippet.",
+      "category_justification": "Stale code example in a plan/spec document that contradicts the actual implementation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/superpowers/plans/2026-04-07-database-foundation-ef-core.md",
+      "start_line": 106,
+      "end_line": 106,
+      "message": "This snippet calls the old synchronous helper. To stay consistent with the async implementation and the paragraph above, the example should await the async helper instead of showing `CreateMigratedContext(...)`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 106: the plan doc's snippet calls `CreateMigratedContext(...)` (no await) for `readContext` in the Assert block, again with `await using`, within an async test — same inconsistency as findings 2 and 3. The actual implementation uses `await CreateMigratedContextAsync(...)` at the equivalent location.",
+      "severity_justification": "Same as findings 2 and 3 — stale example code in a historical plan document. Negligible functional risk, but the example is internally inconsistent (await using without awaiting the factory call).",
+      "category_justification": "Stale code example in a plan doc, yet another call site within the same snippet that should use the async helper.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/superpowers/plans/2026-04-07-database-foundation-ef-core.md",
+      "start_line": 116,
+      "end_line": 116,
+      "message": "This snippet calls the old synchronous helper. To stay consistent with the async implementation and the paragraph above, the example should await the async helper instead of showing `CreateMigratedContext(...)`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 116: the plan doc's `Add_TestMessage_PersistsCreatedAt` snippet calls `CreateMigratedContext(...)` (no await) with `await using context`, same inconsistency as the prior findings. The actual TestMessageTests.cs uses `await CreateMigratedContextAsync(...)` at this equivalent location.",
+      "severity_justification": "Same as findings 2–4: stale example code in a historical plan document. The internally inconsistent `await using` + non-awaited factory is the same pattern repeated across all call sites in the snippet.",
+      "category_justification": "Another stale call site in the same plan doc code example — same root cause as findings 2, 3, and 4.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/superpowers/plans/2026-04-07-database-foundation-ef-core.md",
+      "start_line": 125,
+      "end_line": 125,
+      "message": "This snippet calls the old synchronous helper. To stay consistent with the async implementation and the paragraph above, the example should await the async helper instead of showing `CreateMigratedContext(...)`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 125: the plan doc's `Add_TestMessage_PersistsCreatedAt` Assert block calls `CreateMigratedContext(...)` (no await) with `await using readContext`, same inconsistency as findings 2–5. The actual TestMessageTests.cs uses `await CreateMigratedContextAsync(...)` at this equivalent location.",
+      "severity_justification": "Same as findings 2–5: stale example code in a historical plan document with internally inconsistent `await using` + non-awaited factory call. No production impact.",
+      "category_justification": "Another stale call site in the same plan doc code example — same root cause as findings 2–5, completing all four call sites in the snippet.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/superpowers/specs/2026-04-08-api-health-checks-problem-details-design.md",
+      "start_line": 272,
+      "end_line": 272,
+      "message": "This field type makes the sample fail to compile because the assignment below calls `WithWebHostBuilder(...)`, which returns `WebApplicationFactory<Program>` rather than `CustomWebApplicationFactory`. The documented field type should match the returned factory type so the test pattern is copyable.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `CustomWebApplicationFactory` is `sealed` and extends `WebApplicationFactory<Program>`. `WithWebHostBuilder()` returns `WebApplicationFactory<TEntryPoint>` (the base class), not the derived type. The spec doc at line 272 declares `private readonly CustomWebApplicationFactory _factory` and assigns `new CustomWebApplicationFactory(...).WithWebHostBuilder(...)` to it — this is a type mismatch that would fail to compile. The correct type is `WebApplicationFactory<Program>`, as used in `GlobalExceptionMiddlewareTests` in this same PR.",
+      "severity_justification": "The spec doc is an active design document guiding implementation of the next feature (backlog item 008). A developer following this pattern verbatim would produce non-compiling code and need to debug why before proceeding. It's a concrete correctness issue in a document that will be used.",
+      "category_justification": "The issue is a factually incorrect type in a spec document code sample — a compile-time error in the documented pattern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,471 @@
+{
+  "pr_key": "supa-magic_spm_19-c60d2e03",
+  "pr": {
+    "repo": "https://github.com/supa-magic/spm",
+    "pr_number": 19,
+    "base": "35ba12abad66326fe01c152803a23fc282368d67",
+    "head": "c60d2e03d217cbe8abaed6d12c4fb7b0bdb0049f"
+  },
+  "findings": [
+    {
+      "file": "src/commands/install.ts",
+      "start_line": 41,
+      "end_line": 48,
+      "message": "safePath uses `resolved.startsWith(baseDir)` without a trailing separator guard. If baseDir is `/tmp/spm/foo`, a resolved path of `/tmp/spm/foo-evil/file` passes the check because the string `/tmp/spm/foo-evil/file` starts with `/tmp/spm/foo`. An attacker who controls the skillset manifest can exploit this to write files outside the intended tmpDir by crafting file paths that traverse into a sibling directory whose name begins with the target directory's name.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified with Node.js: `resolved.startsWith(baseDir)` passes for `/tmp/spm/foo-evil/file` when baseDir is `/tmp/spm/foo`. A concrete exploit path exists: attacker sets `source: 'a'` (passes the `..` check in resolveSkillSource) and `files: ['../../foo-evil/payload']`, producing entry.path `a/../../foo-evil/payload`, which normalizes to `../foo-evil/payload` and resolves to a sibling directory outside baseDir, yet passes the startsWith check.",
+      "severity_justification": "The escape is confined to the OS temp directory (`/tmp/spm/`), limiting real-world damage — no project files are reachable. However, it is a demonstrable path traversal bypass that writes outside the intended directory, which should be fixed.",
+      "category_justification": "This is a path traversal vulnerability in a sandbox/guard function intended to prevent writes outside a designated directory.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/install.ts",
+      "start_line": 77,
+      "end_line": 77,
+      "message": "`skillset.name` from the untrusted remote manifest is passed directly to `join(tmpdir(), 'spm', skillset.name)`. Node's `path.join` normalises `..` segments: a name like `../evil` resolves to `/tmp/evil` instead of `/tmp/spm/evil`. Combined with the startsWith bypass in safePath, a crafted manifest can redirect the entire download to an arbitrary location on the filesystem.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: path.join normalizes `..` segments, so skillset.name='../evil' makes tmpDir='/tmp/evil' instead of '/tmp/spm/evil'. validateSkillset only checks that name is a string, no path sanitization. Confirmed with Node.js that join(tmpdir(), 'spm', '../evil') produces a path outside /tmp/spm/. An attacker-controlled manifest can redirect the entire download to an arbitrary directory.",
+      "severity_justification": "An attacker-controlled manifest can direct file writes to arbitrary filesystem locations writable by the process (e.g., ~/.bashrc, /etc/cron.d, web-writable dirs), not just a sibling temp directory. This is a standalone path traversal with broader impact than the safePath sibling issue.",
+      "category_justification": "Untrusted data (manifest name field) is used unsanitized in a filesystem path construction, enabling path traversal to write files to arbitrary locations.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/resolver/parse-identifier.ts",
+      "start_line": 3,
+      "end_line": 9,
+      "message": "`parseGitHubUrl` extracts the branch from the URL but discards it — `SkillIdentifier` has no `ref` field, so the branch is not returned. `resolveIdentifier` then unconditionally calls `fetchDefaultBranch`, meaning a URL like `https://github.com/owner/repo/tree/v1.2.3/path` silently installs from the default branch instead of `v1.2.3`. Users who supply a versioned or non-default-branch URL get different (and likely unintended) content.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the regex `/tree/[^/]+/` uses no capture group for the branch, so it's discarded. SkillIdentifier has no ref field. resolveIdentifier always calls fetchDefaultBranch unconditionally, meaning any versioned/non-default branch URL silently resolves to the default branch instead.",
+      "severity_justification": "Users providing a branch/tag/version URL get silently different content than specified — the installed skillset may be a different (likely newer) version than intended with no error or warning. This is a correctness issue affecting user intent.",
+      "category_justification": "The URL parsing feature is advertised as supporting branch-specific URLs but silently discards the branch, installing from the wrong ref without any error.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/resolver/resolve-skillset.ts",
+      "start_line": 7,
+      "end_line": 13,
+      "message": "The `./` relative-source branch performs no `..` check on the path extracted from `source`. A manifest can set `source: './../../../evil'`, which produces a basePath of `<skillsetDir>/../../../evil`. There is an `..` guard only for the bare-path branch (lines 33–37), leaving `./` paths unprotected. This allows a malicious manifest to direct downloads from arbitrary paths in the repository.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the `./` branch in resolveSkillSource has no `..` check, only the bare-path branch does. source='./../../../evil' produces basePath='skillsetDir/../../../evil'. GitHub raw content server resolves `..` in URLs (confirmed: 200 with redirected URL), so this allows downloading any file from the repository, not just the intended skill directory.",
+      "severity_justification": "Exploitable: a malicious manifest can direct downloads from any path within the same GitHub repository (e.g., source code, CI secrets committed to repo). Impact is bounded to the repository — cannot escape to other repos or the local filesystem via this vector alone.",
+      "category_justification": "Missing path traversal validation on a code path that constructs remote file fetch URLs from untrusted manifest data.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/resolver/resolve-skillset.ts",
+      "start_line": 65,
+      "end_line": 69,
+      "message": "Individual filenames in the `files` array are concatenated into the download path without any validation. A manifest can include entries like `['../../secret.md']`, causing the downloader to fetch files from paths outside the intended skill directory in the repository. Neither `resolveSkillSource` nor the file-loop sanitises `file` values.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: files entries are concatenated directly into the path at line 69 (`${resolved.basePath}/${file}`) and in the localFileTypes loop (`${skillsetDir}/${file}`) without any validation. GitHub raw content server resolves `..` (confirmed previously), so files: ['../../secret.md'] produces a valid fetch from outside the intended directory. No sanitization exists anywhere in the chain for individual file values.",
+      "severity_justification": "Same impact as the ./source traversal finding: allows fetching arbitrary files from within the repository. Bounded to the same repo, but the files array is a more accessible attack surface since source traversal checks exist for bare paths but file entries have no checks at all.",
+      "category_justification": "Untrusted file entries from a remote manifest are used unsanitized to construct remote fetch URLs, enabling path traversal within the repository.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/downloader/download-from-url.ts",
+      "start_line": 3,
+      "end_line": 13,
+      "message": "`downloadFromUrl` fetches any URL string without validation — including `http://` (cleartext), private/internal addresses (169.254.x, 10.x, 192.168.x), or non-GitHub hosts. The `UrlSource` type is already reachable from the downloader's public API. If a manifest or future code path feeds an untrusted URL here, it creates an SSRF vector that can reach internal services or leak cloud metadata endpoints.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "At this SHA, no code path routes untrusted manifest data to downloadFromUrl — install.ts only constructs GitHubSource objects. The UrlSource branch in downloadFile exists as part of the public API but is not triggered by any manifest input. The finding is a speculative/hypothetical SSRF concern about future code paths, not a concrete exploitable vulnerability in the current code.",
+      "severity_justification": "Even if taken at face value, the concern is about a currently unreachable code path. The function exists but requires a future code change to become exploitable.",
+      "category_justification": "The finding raises a potential SSRF concern about URL validation in a download function.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/install.ts",
+      "start_line": 58,
+      "end_line": 58,
+      "message": "`readConfig()` is called but its return value is discarded. The function either reads the existing `.spmrc.yml` or creates a new one with auto-detected providers. Silently ignoring the result means the install command never validates that the project is configured, and the config data (provider paths) is unavailable for the installer step, making any future use of it require re-reading the file.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: readConfig() returns { config: ProjectConfig, created: boolean } but the return value is silently dropped at install.ts line 58. The config data (provider paths) is needed for the installer step. The PR notes explicitly state the installer step is not yet implemented, but the call currently has no effect on execution — the data is thrown away and would need to be re-read when the installer is wired up.",
+      "severity_justification": "The installer step is not yet implemented, so there is no immediate behavioral bug. However it is wasteful and will need to be fixed when the installer is wired up.",
+      "category_justification": "The return value of a function is silently discarded, leaving code that produces no effect and will need to be revisited when the feature is completed.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/resolver/parse-identifier.ts",
+      "start_line": 9,
+      "end_line": 9,
+      "message": "The regular expression for parsing GitHub URLs is too strict. It requires the path to be `/tree/[^/]+/` but a valid GitHub repository URL might point to a subdirectory within a ref without the `/tree/` part if it's the default branch, or could use `/blob/` for a single file. For example, `https://github.com/owner/repo/main/path/to/skillset` is a valid URL but would be rejected by this regex. The current implementation only supports URLs with `.../tree/...` which is unnecessarily restrictive.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's core premise is incorrect: https://github.com/owner/repo/main/path is not a valid GitHub URL format (returns 404). GitHub exclusively uses /tree/branch/path for directory browsing (confirmed 200). The regex correctly requires /tree/ for the only real GitHub directory URL format. Rejecting /blob/ URLs is intentional and tested. The restriction is not 'unnecessarily strict' — it accurately models GitHub's actual URL scheme for directories.",
+      "severity_justification": "The finding describes a non-existent URL format as valid, so there is no real usability gap.",
+      "category_justification": "The finding makes a factually incorrect claim about what constitutes a valid GitHub URL format.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/resolver/resolve-skillset.ts",
+      "start_line": 34,
+      "end_line": 43,
+      "message": "The logic to handle relative paths from a skillset manifest does not account for the base path of the skillset itself within the repository. It constructs the skill path relative to the repository root, which is incorrect if the `spm.skillset.yml` file is located in a subdirectory. The skill's source path should be resolved relative to the directory containing the skillset manifest, not the repository root.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The behavior is intentional and explicitly documented by a test added in this PR named 'resolves bare path as repo-root relative'. The design distinguishes three path formats: `./` for manifest-relative, `@owner/repo/path` for cross-repo, and bare paths for repo-root-relative. The finding treats a deliberate design choice as a bug.",
+      "severity_justification": "Not a bug — the behavior is tested and intentional.",
+      "category_justification": "The finding makes a claim about incorrect path resolution behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/install.ts",
+      "start_line": 86,
+      "end_line": 92,
+      "message": "The install command downloads and writes all files concurrently using `Promise.all`. This can lead to excessive network connections and potential rate limiting from services like GitHub if a skillset contains a large number of files. A concurrency-limiting mechanism, such as a promise pool or a library like `p-limit`, should be used to control the number of simultaneous downloads.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is a generic 'add concurrency limiting to Promise.all' suggestion that could apply to any code using Promise.all for network requests. For this specific CLI tool installing small skillset files (typically tens of files), unbounded concurrency presents no realistic rate-limiting risk against GitHub's CDN. The suggestion is not code-specific enough to be actionable — it restates a general best practice without demonstrating a concrete issue.",
+      "severity_justification": "Even if taken seriously, rate limiting from concurrent downloads of a small skillset (tens of files) from GitHub's raw content CDN is not a realistic concern.",
+      "category_justification": "The finding is about concurrency control for network requests.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/downloader/read-local-file.ts",
+      "start_line": 1,
+      "end_line": 15,
+      "message": "The `readLocalFile` function directly reads from any file path provided in a `LocalSource`. Since `LocalSource` is created based on manifest files that can be authored by third parties, this introduces a security vulnerability. A malicious skillset could specify an arbitrary path like `/etc/passwd` or `~/.ssh/id_rsa`, and this function would attempt to read and expose its contents. All file access should be restricted to a safe, project-local directory.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "At this SHA, no code path constructs a LocalSource from manifest data — install.ts only ever creates GitHubSource. The finding's premise that LocalSource is 'created based on manifest files authored by third parties' is factually incorrect. LocalSource exists in the public API but is not reachable from any untrusted input in the current codebase. This is a speculative concern about a potential future code path.",
+      "severity_justification": "Not currently exploitable since there is no code path from manifest data to LocalSource construction.",
+      "category_justification": "The finding raises a file-read vulnerability concern about a download function.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/install.ts",
+      "start_line": 56,
+      "end_line": 56,
+      "message": "The temporary directory for downloads is created using `join(tmpdir(), 'spm', skillset.name)`. This can lead to conflicts or corrupted downloads if two different skillsets have the same `name` but are from different sources (e.g., `@org1/foo` and `@org2/foo`), or if the same skillset is installed with different versions simultaneously. The temporary directory name should incorporate more unique information, like the owner and repository, to avoid collisions.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 77: tmpDir = join(tmpdir(), 'spm', skillset.name) — only the manifest name is used. The location object (owner/repository) is in scope and not included. Two skillsets from @org1/repo and @org2/repo both declaring name: 'fsd' would share the same temp directory, causing file mixing across installs. The fix is straightforward: include owner/repository in the path.",
+      "severity_justification": "The CLI runs sequentially and the temp directory approach is explicitly noted as temporary in the PR. Collision requires two skillsets with identical name fields from different repos, which is low probability. No data loss or security impact — just potential mixing of temp files.",
+      "category_justification": "Temp directory collision between different skillsets sharing the same name can cause corrupted or mixed download artifacts.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/downloader/download-from-github.ts",
+      "start_line": 4,
+      "end_line": 4,
+      "message": "The function constructs the raw GitHub URL by simply joining path segments. This is unsafe because the `path` component, which comes from a skillset manifest, is not sanitized. A path containing `..` could be used to traverse up the directory structure in the URL, although `raw.githubusercontent.com` likely prevents this. However, it is best practice to sanitize or validate path segments before using them to construct URLs.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: source.path is interpolated directly into the raw GitHub URL with no sanitization. The finding's hedge that GitHub 'likely prevents' traversal is wrong — we verified GitHub raw content resolves `..` (200 response with normalized URL). The path originates from manifest data and can contain `..` segments, making this a real, exploitable issue.",
+      "severity_justification": "GitHub does resolve `..` in raw URLs (confirmed), so unsanitized paths from manifests can fetch arbitrary files from the repository. Same impact as Findings 4/5 but identified at the downloader layer.",
+      "category_justification": "Untrusted path data from a manifest is interpolated into a URL without sanitization, enabling path traversal to fetch unintended files.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/install.ts",
+      "start_line": 22,
+      "end_line": 32,
+      "message": "The `downloadEntries` function does not handle individual download failures. If any of the file downloads fail, the entire process stops. This is a potential correctness issue as partial progress would be lost.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Promise.all failing fast is correct behavior for an install operation. downloadEntries only downloads to memory — nothing is written to disk at that stage, so there is no partial disk state to lose. The outer try/catch handles the failure cleanly. Failing the entire install when any file is missing is standard install semantics (npm, pip) and preferable to a broken partial install.",
+      "severity_justification": "Even if viewed as a design issue, the impact is only requiring a full retry on failure, with no corrupted state.",
+      "category_justification": "The finding is about error handling behavior during download operations.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/install.ts",
+      "start_line": 34,
+      "end_line": 41,
+      "message": "The `safePath` function throws an error on path traversal, but this error is not specifically caught higher in the call chain. This could terminate the install process unexpectedly, potentially losing other progress.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim that the error 'is not specifically caught higher in the call chain' is incorrect. safePath is called inside an async lambda in Promise.all, which is awaited inside the outer try/catch block at the action level. Any thrown error propagates through Promise.all rejection, gets caught by catch(err), logs the message, and sets process.exitCode = 1 — a fully handled, clean failure path.",
+      "severity_justification": "The error is handled correctly; the finding's premise is wrong.",
+      "category_justification": "The finding is about error handling and propagation behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/resolver/resolve-skillset.ts",
+      "start_line": 12,
+      "end_line": 16,
+      "message": "The `resolveSkillSource` function assumes all `@`-prefixed paths are cross-repo sources. This could misinterpret nested paths within the same repo or cause conflicts if naming conventions change.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The @owner/repo/path convention is a deliberate, consistent design throughout the codebase (used in both parseIdentifier and resolveSkillSource). The finding provides no concrete example of a nested same-repo path that starts with @ or a real naming conflict. The concern about 'naming conventions changing' is purely speculative. The finding is too vague and hypothetical to be actionable.",
+      "severity_justification": "No concrete issue is demonstrated; purely speculative concern about a consistent, intentional design choice.",
+      "category_justification": "The finding is about design conventions and potential future conflicts in naming conventions.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/install.ts",
+      "start_line": 77,
+      "end_line": 77,
+      "message": "The PR description states that \"Downloaded files are stored in `.tmp/<skillset-name>/`\", but the code writes to the OS temp directory (`join(tmpdir(), 'spm', skillset.name)`), not a `.tmp/` directory in the project. Either the description or the implementation should be updated so they match.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The PR description explicitly states files go to `.tmp/<skillset-name>/`, but line 77 uses `join(tmpdir(), 'spm', skillset.name)` — the OS temp directory, not a project-local `.tmp/` folder. The discrepancy is clearly verifiable.",
+      "severity_justification": "This is a mismatch between PR description notes and implementation; it does not affect correctness or behavior, only documentation accuracy.",
+      "category_justification": "The finding is about a discrepancy between the PR description and the actual code behavior — a documentation inconsistency.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/resolver/resolve-skillset.ts",
+      "start_line": 33,
+      "end_line": 37,
+      "message": "Using `normalized.includes('..')` to detect path traversal will produce false positives for legitimate path segments that merely contain the substring `..`, such as `foo..bar/file` or filenames like `my..skill`. A more precise check would split on `/` and test whether any segment equals `..` (e.g. `normalized.split('/').includes('..')`).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code uses `normalized.includes('..')` which does incorrectly reject legitimate path segments containing `..` as a substring (e.g. `foo..bar`). The suggested fix `normalized.split('/').includes('..')` or equivalent segment-level check is more precise and correct.",
+      "severity_justification": "Skill source paths with `..` embedded in a segment name (not as a traversal sequence) are extremely unlikely in practice, so false positives are improbable. The existing check is over-broad but the real-world impact is negligible.",
+      "category_justification": "The check produces incorrect results (false positives) for valid input that contains `..` as a substring within a path segment rather than as a traversal operator.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/install.ts",
+      "start_line": 16,
+      "end_line": 21,
+      "message": "This conversion makes every resolved file a GitHub download, so the new `UrlSource` and `LocalSource` downloader paths are not reachable from `spm install`. A manifest source that is a raw URL or local file path will be treated as a GitHub repository path by the resolver/install pipeline, which means the PR's advertised raw URL/local-file install support does not work end-to-end.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`toGitHubSource` is called unconditionally for every `FileEntry` in `downloadEntries`. `FileEntry` has no `kind` field, so the resolver cannot signal URL or local sources. The `UrlSource`/`LocalSource` handlers exist in the downloader but are unreachable from `spm install` — only directly testable via unit tests. The PR's advertised URL/local support is not wired end-to-end.",
+      "severity_justification": "The feature is advertised in the PR description but the URL and local-file download paths are dead code in the install pipeline. Any future code that relies on those paths being exercised via `spm install` will silently use GitHub instead.",
+      "category_justification": "The install command's behavior diverges from the PR's stated intent: URL and local-file sources are never dispatched correctly through the install flow.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/install.ts",
+      "start_line": 29,
+      "end_line": 31,
+      "message": "Cross-repository skill entries are downloaded using the original skillset repository's `ref`. `resolveSkillset` can return entries whose `owner`/`repository` differ from `location`, but `toGitHubSource(entry, location.ref)` still reuses the source skillset ref; if the dependency repo has a different default branch or lacks that branch, downloads will fail or fetch the wrong content. Each GitHub entry needs an appropriate ref for its own repository.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`resolveSkillSource` produces `FileEntry` objects with different `owner`/`repository` for `@owner/repo/path` cross-repo sources. `FileEntry` has no `ref` field. `downloadEntries` calls `toGitHubSource(entry, location.ref)` for every entry, blindly applying the source skillset's ref to cross-repo entries. If the dependency repository has a different default branch name, the download will fail with a 404.",
+      "severity_justification": "Cross-repo skill downloads will silently use the wrong ref or fail entirely if the dependency's default branch differs from the source skillset's ref. This is a correctness bug for a supported feature, but only manifests when cross-repo skills are actually used.",
+      "category_justification": "The ref used for cross-repo file downloads is incorrect — it applies the source skillset's ref to a different repository that may not have that branch.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/install.ts",
+      "start_line": 77,
+      "end_line": 77,
+      "message": "This writes downloads under the OS temp directory (`tmpdir()/spm/<name>`), while the PR description and notes say files are stored in the project `.tmp/<skillset-name>/`. That mismatch changes where users should look for downloaded files and may leave data in a system temp location instead of the project workspace.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 77 uses `join(tmpdir(), 'spm', skillset.name)` which is the OS temp dir, not a project-local `.tmp/` folder. The PR description explicitly states files go to `.tmp/<skillset-name>/`. The discrepancy is verifiable and affects where users expect to find downloaded files.",
+      "severity_justification": "At this stage downloads are a staging step only (installer step not yet implemented), so the exact temp location has minimal practical impact. It's a mismatch between stated intent and implementation, but not a blocking issue.",
+      "category_justification": "The finding is about a mismatch between stated behavior in the PR description and the actual implementation — a documentation/specification inconsistency.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/integration/cli.test.ts",
+      "start_line": 48,
+      "end_line": 50,
+      "message": "The new install integration test can pass while the command fails: `test-skillset` is not a valid identifier, so `parseIdentifier` rejects it, the action sets `exitCode = 1`, and the test only checks that the pre-error \"Resolving\" log was printed. Assert a successful exit and use a valid/mocked install path so this test actually verifies the new install flow.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`test-skillset` fails `parseIdentifier` validation (no `@` prefix, not a GitHub URL), so the command throws and sets exitCode=1. The `info('Resolving...')` line fires before `resolveIdentifier` is called, so stdout always contains the expected string regardless of failure. The test never checks exit code and passes even when the command errors out.",
+      "severity_justification": "This is a meaningless test — it provides false confidence that the install flow works while actually only confirming that one logging call fires before a guaranteed parse error. Any regression in the actual install path would go undetected.",
+      "category_justification": "The finding identifies a test that passes under failure conditions, providing no real coverage of the install workflow.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "package.json",
+      "start_line": 3,
+      "end_line": 3,
+      "message": "The package version was bumped, but `package-lock.json` still records the root package as `0.1.0` at both the top level and `packages[\"\"]`. Please regenerate/update the lockfile so npm metadata stays consistent with `package.json`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`package.json` version is `0.2.0` after the PR's bump, but `package-lock.json` lines 3 and 9 both still record `0.1.0`. The lockfile was not regenerated after the version change.",
+      "severity_justification": "The version field in `package-lock.json` is largely metadata for the root package; it doesn't affect dependency resolution or installation of third-party packages. It's an inconsistency but has no functional impact.",
+      "category_justification": "The lockfile is out of sync with `package.json` — a consistency/housekeeping issue with no behavioral consequence.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

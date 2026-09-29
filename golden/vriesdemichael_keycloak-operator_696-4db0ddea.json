@@ -1,0 +1,431 @@
+{
+  "pr_key": "vriesdemichael_keycloak-operator_696-4db0ddea",
+  "pr": {
+    "repo": "https://github.com/vriesdemichael/keycloak-operator",
+    "pr_number": 696,
+    "base": "bd0524bce599ccc367a4481f9b792305a8b074a1",
+    "head": "4db0ddeaea75e5d1d1a312473465153ed8f60661"
+  },
+  "findings": [
+    {
+      "file": "tools/migration-toolkit/internal/userimport/kubeclient.go",
+      "start_line": 155,
+      "end_line": 175,
+      "message": "decodeSecretKey silently corrupts passwords that happen to look like base64. The Kubernetes client library already base64-decodes secret.Data — the bytes are always the raw value. The isBase64 heuristic has many false positives: any password whose length is divisible by 4 and contains only [A-Za-z0-9+/=] (e.g. 'Test', 'Pass', any 16-char alphanumeric token) will be double-decoded into garbage bytes, causing authentication failures with no useful error. Remove the double-decode entirely; just return string(raw).",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The actual code at SHA 4db0ddea has `decodeSecretKey` (lines 169-197) with an `isBase64` heuristic that double-decodes Kubernetes secret values. The Kubernetes client already base64-decodes `secret.Data`, so this produces corrupt credentials for any password that happens to match the heuristic (length divisible by 4, charset [A-Za-z0-9+/=]). Common passwords like 'Test', 'Pass', or 16-char alphanumeric tokens would be silently corrupted, causing authentication failures with no useful diagnostic.",
+      "severity_justification": "Silent credential corruption causes authentication failures with no actionable error. Any user whose admin password happens to match the heuristic will be completely unable to use cluster-mode credential resolution, with no diagnostic pointing to the real cause.",
+      "category_justification": "Logic error: the heuristic double-decodes already-decoded Kubernetes secret data, producing garbage credentials.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/kubeclient.go",
+      "start_line": 140,
+      "end_line": 155,
+      "message": "resolveURL always returns a cluster-internal URL when status.endpoints is populated, making the command fail for all normal cases when run outside the cluster. The operator sets both status.endpoints.admin and status.endpoints.public to 'http://{name}-keycloak.{namespace}.svc.cluster.local:8080' (confirmed in keycloak_reconciler.py). The comment even acknowledges the tool runs outside the cluster, but then picks the internal URL first. Since a Ready Keycloak always has endpoints populated, the spec.hostname fallback (the only potentially external URL) is never reached unless --server-url is explicitly provided.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The operator sets status.endpoints.admin and status.endpoints.public to cluster-internal URLs (http://{name}-keycloak.{namespace}.svc.cluster.local:8080) as confirmed in keycloak_reconciler.py lines 464-474. The resolveURL function in the committed code tries Endpoints.Admin first, which is always populated for Ready instances, so the spec.Hostname fallback is never reached. The cluster-mode resolution will always produce an unreachable URL when run outside the cluster.",
+      "severity_justification": "The cluster-mode credential resolution (the default, promoted path) will always return an internal cluster URL, causing connection failures for all out-of-cluster users. The tool is effectively broken in its primary mode unless --server-url is explicitly provided, which negates the benefit of cluster-mode resolution.",
+      "category_justification": "Logic error in URL resolution priority: internal service URLs are always selected over potentially external URLs, making the tool unusable outside the cluster without an explicit override.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/importer.go",
+      "start_line": 83,
+      "end_line": 86,
+      "message": "When importBatch returns a hard error (network failure, HTTP 5xx, etc.), ImportUsers returns nil for result, discarding all accumulated progress from previously completed batches. The caller in import_users.go checks result != nil before printing the summary, so the user sees no summary at all — they cannot tell how many batches completed or how many users were already imported before the failure. Returning the accumulated result alongside the error (matching the errors>0 path at lines 93-99) would preserve this diagnostic information.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the actual code: importBatch hard errors return `nil, error` (line 83-85) and token refresh failures also return `nil, error`, discarding accumulated batch progress. The caller's printImportSummary guards with `result == nil` (line 171), so no summary is shown. The errors>0 path (lines 93-99) correctly returns `result, error`. This is a concrete inconsistency confirmed in both files.",
+      "severity_justification": "This is a diagnostic/UX issue, not a correctness bug — the import operation itself fails the same way either way. The user loses batch progress information that would help them understand how far the import got, but the fix is straightforward and the workaround is to check logs for per-batch progress messages.",
+      "category_justification": "Inconsistent error return convention between two error paths in the same function, causing degraded diagnostic output but not incorrect behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/importer.go",
+      "start_line": 47,
+      "end_line": 48,
+      "message": "result.Batches is set to the total number of planned batches upfront, not the number actually completed. If the import fails on batch 3 of 10, the summary prints 'Batches: 10' which is misleading — the operator cannot tell how far the import progressed. The field should be incremented inside the loop after each successful batch.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: result.Batches is set to len(batches) before the loop starts. When the errors>0 path returns result early (e.g. after 3 of 10 batches), the summary prints 'Batches: 10' even though only 3 completed. The finding is factually accurate.",
+      "severity_justification": "Purely a diagnostic/UX issue in the summary output. The per-batch progress messages printed during the loop still allow the operator to infer progress. Only affects the errors>0 early-exit path since hard errors return nil (no summary printed). No operational impact on the import itself.",
+      "category_justification": "Misleading field semantics in the result struct — Batches represents planned batches rather than completed batches, creating ambiguity in the summary output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/importer.go",
+      "start_line": 52,
+      "end_line": 57,
+      "message": "ImportUsers uses fmt.Printf directly instead of writing through a configurable writer. The calling code in import_users.go uses cmd.Printf (cobra's output writer, which can be redirected in tests), but the library function bypasses it entirely. This makes the batch progress output unredirectable and untestable, and mixes two different output channels in the same command's stdout.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed in the actual code: importer.go uses fmt.Printf directly at lines 55-60 and 70, while import_users.go consistently uses cmd.Printf. ImportOptions has no Out io.Writer field. The mixing of output channels is real and verified.",
+      "severity_justification": "Purely a testability and design concern — the tool functions correctly. Progress messages go to stdout either way in normal CLI use. The main cost is that unit tests for ImportUsers cannot capture or assert on the batch progress output.",
+      "category_justification": "Inconsistent output channel usage between library and command layers, reducing testability and violating the dependency injection pattern used elsewhere in the command layer.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/importer.go",
+      "start_line": 97,
+      "end_line": 102,
+      "message": "http.DefaultClient has no timeout set, meaning any HTTP request (authentication or batch import) can hang indefinitely. The context is passed via NewRequestWithContext, but context.Background() has no deadline. A large batch (500 users) sent to an overloaded Keycloak could stall the process permanently. A custom http.Client with a reasonable timeout (e.g. 5 minutes for imports) should be used.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: importer.go uses http.DefaultClient at lines 120 and 174, which has no timeout. The command layer uses context.Background() with no deadline. The diff version added a 5-minute timeout via a custom http.Client, but this was not preserved in the final committed code at SHA 4db0ddea.",
+      "severity_justification": "A large batch import to an overloaded or unreachable Keycloak can hang the CLI process indefinitely with no timeout or deadline. For a migration tool processing 50k users across 100 batches, a single stalled request would block indefinitely. Users would need to manually kill the process.",
+      "category_justification": "Missing timeout on HTTP client can cause the tool to hang indefinitely, a classic reliability concern for network-dependent code.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/importer.go",
+      "start_line": 196,
+      "end_line": 206,
+      "message": "Error detail collection from batch results is incomplete: only results with action 'ERROR' or 'FAILED' are captured, but Keycloak's Partial Import API response does not document these specific action strings — the documented values are 'ADDED', 'SKIPPED', and 'OVERWRITTEN'. If the actual error action string differs (e.g. 'ERROR' is never used by Keycloak), ErrorDetails will always be empty even when Errors > 0, giving the operator no useful diagnostic on failure.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding correctly identifies that 'ERROR' is not a valid Keycloak Partial Import action string (the actual enum is ADDED/SKIPPED/OVERWRITTEN/FAILED), making the 'ERROR' check dead code. However, 'FAILED' is the correct Keycloak string for failed items, so ErrorDetails would not always be empty — the finding overstates the severity. The real risk is the narrower case where Keycloak increments errors without producing results entries.",
+      "severity_justification": "The 'FAILED' action string check is correct, so error details would be captured for normal failure cases. The 'ERROR' string being checked is dead code but harmless. The scenario of errors>0 with empty ErrorDetails exists but requires unusual Keycloak behavior. The practical impact is limited to missing details in edge cases.",
+      "category_justification": "Incorrect assumption about external API response values — one of the action strings checked ('ERROR') is not a documented Keycloak value, representing a correctness issue in the error detail parsing logic.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/cmd/import_users.go",
+      "start_line": 111,
+      "end_line": 113,
+      "message": "The usingExplicitCreds check triggers the explicit credentials path when either --username OR --password is set (not both). If a user accidentally provides only --username without --password, the code silently bypasses the cluster credential resolution path and falls into ResolveFromFlags which then fails with '--password is required'. This is surprising because the intent is clearly to use cluster resolution when neither flag is provided, but a typo of providing only one flag silently skips cluster resolution with a confusing error message.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: usingExplicitCreds uses || at line 113, so providing only --username triggers explicit mode and falls through to ResolveFromFlags which fails with '--password is required' wrapped as 'resolving credentials from flags: --password is required'. Cluster resolution is silently skipped when only one flag is provided.",
+      "severity_justification": "The error message, though wrapped, still conveys what went wrong. The user needs to read the error carefully to understand why they got 'resolving credentials from flags' when they thought they were using cluster mode. This is a UX confusion issue, not a data loss or correctness bug. The fix is a one-character change from || to &&.",
+      "category_justification": "Logic error in the credential mode selection condition — OR should be AND for correct 'both-or-neither' semantics for a paired flag set.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/kubeclient.go",
+      "start_line": 162,
+      "end_line": 175,
+      "message": "isBase64 only checks the standard base64 alphabet (+, /, =) but not the URL-safe variant (-, _). This is inconsistent with the stated goal of detecting double-encoded secrets, since some secret management tools produce URL-safe base64. More critically, the function returns true for any string of length divisible by 4 containing alphanumeric characters only — this includes common short passwords and tokens, producing false positives that corrupt valid credentials.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The false-positive credential corruption issue is factually confirmed in the code — same underlying bug as finding #1. The URL-safe base64 gap claim is also technically correct (-, _ not checked). Both claims are verifiable in the isBase64 function at lines 185-197 of the actual committed code.",
+      "severity_justification": "Same as finding #1: silent credential corruption for common passwords/tokens whose length is divisible by 4 and contain only alphanumeric chars, causing authentication failures with no useful diagnostic.",
+      "category_justification": "False-positive heuristic in isBase64 causes double-decoding of valid credentials, corrupting them silently.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/cmd/import_users.go",
+      "start_line": 139,
+      "end_line": 145,
+      "message": "When falling back to the current Kubernetes context's namespace, the resolved namespace `ns` is printed to the user, but the user is not informed which namespace was chosen if they did not specify one. This can be confusing if the user's active context is not what they expect. The log message should clarify when it's using a default namespace from the environment.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The namespace is printed in the output message at lines 137-138 regardless of whether it was explicitly provided or auto-resolved. The claim that 'the user is not informed which namespace was chosen' is factually incorrect — the namespace is always shown. The finding is suggesting a cosmetic distinction between explicit vs. auto-resolved namespace sources, which is sub-threshold.",
+      "severity_justification": "Even if accepted as valid, this would be a minor UX clarity improvement with no operational impact.",
+      "category_justification": "Cosmetic suggestion about log message clarity.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/kubeclient.go",
+      "start_line": 28,
+      "end_line": 28,
+      "message": "A new `kubernetes.Clientset` is created via `kubernetes.NewForConfig` but is never used. The code only uses the dynamic client for fetching the CRD and a manually constructed `coreClient` for secrets. This `coreClient` is redundant as the `kubernetes.Clientset` already provides access to the CoreV1 API. The unused client should be removed and the existing `clientset` should be used for secret access to simplify the code.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim that 'a kubernetes.Clientset is created but never used' is factually incorrect. coreClient (created via kubernetes.NewForConfig) is actively used at line 104 for coreClient.CoreV1().Secrets(namespace).Get(). There is no separate unused Clientset. The dynamic client is correctly used for CRD access (custom resources require dynamic or generated clients, not the typed Clientset).",
+      "severity_justification": "Factually incorrect finding — no unused client exists.",
+      "category_justification": "The finding is about code simplification/redundancy, a maintainability concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/importer.go",
+      "start_line": 139,
+      "end_line": 139,
+      "message": "The `authenticate` function returns `time.Time{}` as the expiry time on error. The caller at `importer.go:94` receives this zero time value but proceeds to use it in a time comparison `time.Until(expiry) < 30*time.Second`, which will behave unexpectedly. While the error is handled correctly, the function should return `time.Time{}` to signal an invalid timestamp, and callers should be aware of this.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The zero time.Time{} from a failed authenticate call is never used in the time.Until(expiry) comparison. Both error paths after authenticate (initial call at line 64-66, and refresh at lines 75-78) return immediately from ImportUsers, so expiry with a zero value never reaches the comparison at line 73. The finding's own premise ('the error is handled correctly') contradicts its conclusion.",
+      "severity_justification": "Even if the concern were valid, it would cause an immediate token re-authentication attempt at the start of each batch rather than a crash — low impact.",
+      "category_justification": "The finding claims a logic error in how the zero time value propagates, but the error handling prevents this from occurring.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/kubeclient.go",
+      "start_line": 85,
+      "end_line": 91,
+      "message": "The error message says `status.endpoints is empty and spec.hostname is not set`, but `resolveURL` actually consults `status.endpoints.admin`, `status.endpoints.public`, `status.endpoints.internal`, and `spec.hostname`. If, for example, only `status.endpoints.internal` is set (which is a likely scenario for an in-cluster URL the toolkit can't reach), this message will still claim \"status.endpoints is empty\" which is misleading for debugging. Consider listing which specific fields were inspected.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`resolveURL` returns immediately when `status.endpoints.internal` has value; error path unreachable",
+      "severity_justification": "This is a diagnostic message quality issue — it won't cause incorrect behavior, but it will produce a misleading error message that makes debugging harder when only the internal endpoint is set.",
+      "category_justification": "The finding is about the accuracy/clarity of a debug error message, which is a code quality/readability concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/importer.go",
+      "start_line": 157,
+      "end_line": 160,
+      "message": "The two map keys are inconsistently aligned by gofmt rules — `\"users\":` has two trailing spaces of padding while `\"ifResourceExists\":` has none, which means the values are not column-aligned and `gofmt` will rewrite this. Aligning both colons or running `gofmt` will fix it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified by running gofmt: the committed file differs from gofmt output at line 158 ('users' key has one extra space) and also at lines 199/202 (struct field alignment). The code is not gofmt-compliant. The finding's 'two trailing spaces' description is slightly imprecise but the core claim is correct.",
+      "severity_justification": "Pure formatting issue with no behavioral impact. Standard in Go projects but negligible consequence if left unaddressed.",
+      "category_justification": "Code style and formatting compliance with gofmt conventions.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/importer.go",
+      "start_line": 104,
+      "end_line": 118,
+      "message": "The token request omits a `client_secret`, which is correct only if the `admin-cli` client in the master realm is configured as a public client (the default). If an operator has hardened `admin-cli` to confidential, authentication will fail with no actionable error. This is a known operational footgun for migration tools — consider documenting this assumption in the command's `Long` help (or in the `import-users` reference docs) so users hitting `invalid_client` errors have a starting point.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: the authenticate function sends client_id=admin-cli with no client_secret, relying on admin-cli being a public client. Neither the command Long description, the import-users docs, nor the ADR document this assumption. Users who have hardened admin-cli to confidential will get an opaque 401 with no diagnostic guidance.",
+      "severity_justification": "The default Keycloak configuration has admin-cli as a public client, so this affects only hardened installations. The fix is purely documentation — no code change needed. Low operational risk for most users.",
+      "category_justification": "The finding is about an undocumented operational assumption in the command's help text and reference docs, not a code correctness issue.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/kubeclient.go",
+      "start_line": 25,
+      "end_line": 30,
+      "message": "Storing the admin password as a plain `string` field in `ResolvedTarget` (passed around freely and printed via `fmt.Printf(\"  Username:  %s\\n\", opts.Target.Username)` in the dry-run path, etc.) is fine for usernames but means the password lives in process memory and may end up in stack traces, panic dumps, or accidental logs. While this is a CLI tool, consider at least clearing the field after `authenticate` succeeds, or wrapping in a small type whose `String()`/`Format` methods redact the value to avoid accidental exposure in future code changes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The password is only used in one place: form.Set(\"password\", target.Password) to build the token request body. It is never printed, logged, or included in any error message. The finding's claim of exposure via fmt.Printf is factually incorrect (only the username is printed). The remaining concern about plain-string credentials in memory is generic advice applicable to any CLI tool handling credentials, with no concrete exploitable path in this code.",
+      "severity_justification": "Even if taken as valid, the risk is theoretical — no concrete exploit path exists in the current code, and this is a short-lived CLI process.",
+      "category_justification": "The finding is framed as a credential exposure / secret handling concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/kubeclient.go",
+      "start_line": 169,
+      "end_line": 182,
+      "message": "The new credential resolution logic is not covered by tests, which is how the double-decoding issue in `decodeSecretKey` can slip through. Please add unit coverage for normally decoded Kubernetes Secret data, including values that are valid base64-looking plaintext, and for missing keys.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: no tests exist for kubeclient.go. The decodeSecretKey function has a real correctness bug — it double-decodes values that happen to look like base64 (e.g., 'admin123' → garbage bytes), silently corrupting credentials. The Kubernetes client always returns pre-decoded secret data, making the heuristic both wrong and dangerous. Running the isBase64 logic against common passwords confirms it triggers for standard alphanumeric passwords of length divisible by 4.",
+      "severity_justification": "Any user whose Keycloak admin password is alphanumeric and has a length divisible by 4 (e.g., 'admin123') will have their credentials silently corrupted, causing the import to fail with an opaque 401 authentication error. The tool would be broken for a significant fraction of real-world deployments.",
+      "category_justification": "The finding's primary ask is for test coverage of kubeclient.go, while identifying the concrete bug that the missing tests allow to persist.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/internal/userimport/importer.go",
+      "start_line": 64,
+      "end_line": 80,
+      "message": "Only the chunk helper is tested, but the new import behavior itself (token acquisition, request payload, status handling, and `errors > 0` failure behavior) is untested. Please add `httptest` coverage for `ImportUsers`/`importBatch`, especially because this code performs non-atomic writes to Keycloak.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: importer_test.go only tests the chunk helper. ImportUsers, importBatch, and authenticate have no coverage. The errors>0 failure path, 403/409 special-casing, token refresh logic, and request payload construction are all untested for a function that performs non-atomic writes to production Keycloak.",
+      "severity_justification": "The core import functionality of this PR is completely untested. Given the non-atomic nature of the writes and the hard-fail-on-errors behavior, bugs in these paths could silently partially import users or fail with confusing errors. Medium rather than high because the tool is used manually and failures are visible to the operator.",
+      "category_justification": "The finding is about missing test coverage for the primary business logic of the new command.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/how-to/migration-toolkit.md",
+      "start_line": 231,
+      "end_line": 248,
+      "message": "The docs place `--server-url` only under explicit credentials, but the cluster resolver also accepts it and it can be required when the Keycloak status endpoints are cluster-local service DNS. The operator currently sets both `status.endpoints.admin` and `public` to `http://<name>-keycloak.<namespace>.svc.cluster.local:8080` in `src/keycloak_operator/services/keycloak_reconciler.py:464-466`, so users running the toolkit outside the cluster may need this override even while using cluster credentials.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "All claims verified: --server-url is passed to ResolveFromCluster as serverURLOverride (line 35, 81-82 of kubeclient.go); the operator sets status.endpoints.admin and status.endpoints.public to cluster-local svc DNS (keycloak_reconciler.py:464-466); resolveURL consults those fields first. The docs show cluster-mode examples with no --server-url, which will fail for any user running the tool from outside the cluster against a default operator deployment.",
+      "severity_justification": "The default cluster-mode workflow shown in docs would fail for any out-of-cluster usage against a standard operator installation, since all status.endpoints values are cluster-internal DNS. Users would get confusing connection errors with no hint that --server-url is needed.",
+      "category_justification": "The issue is a misleading documentation omission — --server-url is applicable to and frequently needed in cluster mode but only documented under the explicit-credentials section.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/cmd/import_users.go",
+      "start_line": 150,
+      "end_line": 159,
+      "message": "The command starts importing immediately after resolving the Keycloak instance, but it never verifies that the target realm and referenced clients have been materialized first. That was an explicit requirement of the linked issue, and without a preflight check user imports with client role mappings can partially fail after earlier batches/users have already been written.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Issue #490 requirement #1 explicitly says 'Check if the realm and clients are already materialized in keycloak.' The committed code has no such check — it goes straight from credential resolution to ImportUsers. This can cause partial imports when client role mappings reference non-existent clients: earlier batches succeed and are committed, later batches fail, and SKIP mode on re-run skips already-imported users while still failing on the bad mappings.",
+      "severity_justification": "Can cause hard-to-recover partial import states when client role mappings exist and clients haven't been provisioned yet. However, the typical documented workflow (deploy realm/clients first, then import users) reduces the likelihood in practice.",
+      "category_justification": "A required behavioral check from the linked issue is missing, causing incorrect partial-import behavior when preconditions aren't met.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tools/migration-toolkit/cmd/import_users.go",
+      "start_line": 113,
+      "end_line": 115,
+      "message": "The documentation says exactly one credential mode must be chosen, but the implementation accepts `--keycloak` together with `--username`/`--password` and silently ignores the cluster flags. Please either reject mixed modes here or update the docs so users do not think their `--keycloak` value is being used.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: docs line 251 says 'Exactly one mode must be chosen', implying mixing is invalid. The code at line 113 silently ignores --keycloak when --username or --password is set, with no validation or warning. A user providing both sets of flags would believe their keycloak CR is being used (including the Ready-state check), but it is silently bypassed.",
+      "severity_justification": "The behavior is predictable and safe in practice (explicit creds take priority consistently), but the docs contract is violated and the CR readiness check is silently skipped, which could matter in edge cases. Low rather than medium because the explicit-wins rule is intuitive even if undocumented.",
+      "category_justification": "There is a concrete discrepancy between the documented contract ('exactly one mode must be chosen') and the implementation (silent priority with no validation of mutual exclusivity).",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

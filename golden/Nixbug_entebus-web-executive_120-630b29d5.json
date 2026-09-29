@@ -1,0 +1,731 @@
+{
+  "pr_key": "Nixbug_entebus-web-executive_120-630b29d5",
+  "pr": {
+    "repo": "https://github.com/Nixbug/entebus-web-executive",
+    "pr_number": 120,
+    "base": "a204e1b2c070fda02e100de55c0bc34c4659f538",
+    "head": "630b29d5edbd4c8db61a14f6e33f8b70d57b3d5f"
+  },
+  "findings": [
+    {
+      "file": "src/lib/schemas.ts",
+      "start_line": 153,
+      "end_line": 157,
+      "message": "companySchema still requires `ownerName` as a non-optional field, but the PR removed `ownerName` from the Company type and from `prepareForValidation` in company-detail.config.ts. When the user tries to save company details via the edit sidebar, Zod will always return a validation error ('Owner name is required') because the field is never provided to the schema. The schema was not updated to match the new data model.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The companySchema still requires `ownerName` as a non-optional field, but `prepareForValidation` in company-detail.config.ts (updated in this PR) no longer provides it. This means any attempt to save a company edit will always fail Zod validation with 'Owner name is required'. Verified against the actual code.",
+      "severity_justification": "This is a blocking bug: every save/edit of company details will always fail validation because the schema requires a field that is never passed to it.",
+      "category_justification": "The schema was not updated to match the new data model, causing a logic error that breaks the edit flow.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/routes/company/+page.svelte",
+      "start_line": 83,
+      "end_line": 94,
+      "message": "formattedCompanyData is only populated when `Array.isArray(apiData)` is true. The code also explicitly handles the case where `(apiData as any)?.total` exists (suggesting the API may return a paginated wrapper object like `{results: [...], total: N}`). If the API does return a non-array wrapper, `(Array.isArray(apiData) ? apiData : []).map(...)` yields `[]`, so formattedCompanyData will be empty while totalItems is correctly set. This results in a pagination bar showing N items with zero rows displayed — silent data loss.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding correctly identifies that formattedCompanyData is populated only when Array.isArray(apiData) is true, while totalItems is set from (apiData as any)?.total independently. If the API returns a wrapper object with a total field, formattedCompanyData would be empty while totalItems would be N, causing a pagination bar showing N items with zero rows displayed.",
+      "severity_justification": "Would cause silent data loss if the API returns a paginated wrapper object. However the same pattern exists in the pre-existing landmark page which works, suggesting the API currently returns plain arrays, so this likely does not manifest in practice.",
+      "category_justification": "The data extraction and pagination count logic are inconsistent and would not both work correctly if the API returns a wrapper object rather than a plain array.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/components/DynamicDetailSidebar.svelte",
+      "start_line": 529,
+      "end_line": 543,
+      "message": "DynamicDetailSidebar is a generic component used across multiple entity types, but this code hardcodes special behavior for `field.key === 'location'`. If any other entity type (present or future) includes a `location` field in its detail config, it will trigger WKT parsing and attempt to render a map link. Other such entities (e.g. bus stops, which have a `location` field) would be affected, showing the wrong UI for their location field.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Hardcoding field.key === 'location' in a generic component is a real design concern verified against the code. While no other current entity config has a location key, any future entity with a WKT location field would incorrectly trigger the map modal UI. The parseWKTPoint guard partially mitigates for non-WKT values but does not fully protect against WKT-formatted location values in other entities.",
+      "severity_justification": "No current entity configs other than company have a location key, so there is no immediate breakage. The risk is purely forward-looking and partially mitigated by the parseWKTPoint guard.",
+      "category_justification": "Hardcoding entity-specific logic in a generic reusable component violates the component's genericity and creates a maintenance trap for future entity types.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/components/company-components/CompanyLocationMap.svelte",
+      "start_line": 96,
+      "end_line": 120,
+      "message": "`latitude` and `longitude` props are only read during `onMount`. There are no reactive statements (`$:`) to update the map center or marker when props change after mount. The parent works around this by toggling `showLocationMap` false→true via `setTimeout(0)` to force a full remount, which causes a visible flash of the modal closing and reopening each time a user opens a different location. The component should implement reactive prop handling using `$:` blocks.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "All claims verified: latitude/longitude are only consumed in onMount with no reactive $: blocks, and the parent uses showLocationMap = false followed by setTimeout(() => showLocationMap = true, 0) to force a full remount rather than reacting to prop changes. This causes a visible flash on each modal open.",
+      "severity_justification": "The workaround functions correctly in the current usage pattern where there is one location per company. The flash occurs when toggling the modal open but is a UX degradation rather than a functional failure.",
+      "category_justification": "The component ignores prop changes after mount and forces callers to use a brittle remount workaround, which is a code quality and design issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/routes/company/+page.svelte",
+      "start_line": 111,
+      "end_line": 112,
+      "message": "When the API response doesn't include a `total` field and `apiData.length === itemsPerPage`, the code sets `totalItems = fetchedCount + 1`. This is an arbitrary estimate that shows an incorrect count in the Pagination component (e.g. displaying '11 items' when there may be exactly 10 or many more). The off-by-one estimate could also cause the Pagination component to briefly show an extra page that returns no data.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The totalItems = fetchedCount + 1 estimate is factually verified in the code. When exactly 10 items are returned, totalPages = ceil(11/10) = 2, showing a clickable page 2 that returns 0 items. The claim about 'displaying 11 items' is inaccurate since Pagination doesn't render the count, but the extra empty page concern is real. The auto-correction (apiData.length === 0 redirects to page 1) partially mitigates this.",
+      "severity_justification": "The auto-correction handles the empty page case so it causes a UX annoyance rather than data loss. The same pattern exists identically in the pre-existing landmark page.",
+      "category_justification": "The estimate logic produces an incorrect totalItems value that causes a phantom pagination page, representing a logic error in pagination state management.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/routes/company/+page.svelte",
+      "start_line": 59,
+      "end_line": 61,
+      "message": "At the start of every `fetchCompanies` call, `totalItems` is immediately reset to 0. Since `{#if totalItems > 0 || hasNextPage}` controls pagination visibility, the pagination widget disappears and the table effectively goes blank for every search, filter, or page change while the new request is in-flight. Existing results should remain visible until the new data arrives.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: totalItems and hasNextPage are reset to 0/false at the start of fetchCompanies, causing the pagination widget to disappear on every in-flight request. The claim that the table goes blank overstates it since formattedCompanyData is not reset and old rows remain visible under the semi-transparent spinner overlay.",
+      "severity_justification": "The pagination flash is a minor UX degradation. Old data stays visible under the spinner overlay and the same pattern exists in the pre-existing landmark page.",
+      "category_justification": "This is a UX concern about loading state management — old data should remain visible with pagination intact during transitions rather than resetting state eagerly.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/components/company-components/LocationMapModal.svelte",
+      "start_line": 18,
+      "end_line": 20,
+      "message": "`closeModal()` sets `isOpen = false`, but `isOpen` is a prop with no `bind:` in the parent. This mutation has no effect on the parent's state. The `$: if (isOpen && !localOpen) { localOpen = true; }` reactive statement only syncs in one direction (open, not close), so if the parent passes `isOpen={true}` and the component internally closes via `localOpen = false`, the next Svelte reconciliation will re-open the modal because `isOpen` is still `true` in the parent. The modal should dispatch the close event only and let the parent manage `isOpen`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The prop mutation anti-pattern and one-directional sync are real design issues. closeModal sets isOpen=false but without bind: this has no effect on parent state. The reactive $: if (isOpen && !localOpen) only syncs open direction. The described re-open bug does not manifest in practice because dispatch('close') fires synchronously before Svelte reconciliation and the {#if showLocationMap} wrapper destroys the component, but the design is fragile.",
+      "severity_justification": "The anti-pattern is harmless in current usage due to the {#if} wrapper and synchronous event dispatch, but the design would cause the described re-open bug if the usage pattern changed.",
+      "category_justification": "Mutating a prop without bind: and implementing one-directional state sync is a Svelte anti-pattern that makes the component fragile and harder to reason about.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/configs/company-detail.config.ts",
+      "start_line": 97,
+      "end_line": 107,
+      "message": "The `location` field is `editable: true` with `type: 'text'`, meaning users can type anything into it. The backend stores it as a WKT POINT string, but the schema (`cleanString` with min 2 chars) does not validate the WKT format. A user can enter a plain string like 'Mumbai', which passes validation and saves, but the map view falls back to showing raw text (`<p>` element) with no error feedback. The schema should validate WKT format, or the field should be made non-editable.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: location field is editable:true with type text, companySchema uses cleanString which only validates length and spacing with no WKT format check, and DynamicDetailSidebar silently falls back to plain text display for non-WKT values with no user feedback. A user can freely enter plain strings that pass validation but break the map feature.",
+      "severity_justification": "The save logic is currently unimplemented (TODO), so no actual backend corruption occurs in this PR. But when save is implemented, users will be able to corrupt the location field with arbitrary strings that silently break the map view with no error feedback.",
+      "category_justification": "Schema validation does not match the expected data format for the field, creating a gap between what is accepted and what the UI can properly display.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/components/DynamicDetailSidebar.svelte",
+      "start_line": 189,
+      "end_line": 192,
+      "message": "The use of `setTimeout(..., 0)` to show the `LocationMapModal` is a workaround for Svelte's state update batching. A more idiomatic approach is to use `tick()` from the 'svelte' package. This ensures that the component's props are updated before it is rendered, making the code clearer and less prone to timing issues. The current implementation sets `showLocationMap` to `false` and then immediately to `true` in a timeout, which is confusing.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the code uses setTimeout(..., 0) to toggle showLocationMap false then true, forcing a remount of LocationMapModal. Using Svelte's tick() is the idiomatic alternative for waiting for DOM updates, making the intent clearer. The setTimeout approach is a recognized anti-pattern in Svelte codebases.",
+      "severity_justification": "The current implementation works correctly — the setTimeout(0) achieves the remount effect. This is a code quality/style concern with negligible functional impact.",
+      "category_justification": "Using setTimeout(0) instead of tick() is a non-idiomatic Svelte pattern that obscures intent and is slightly fragile compared to the framework-provided alternative.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/components/company-components/CompanyLocationMap.svelte",
+      "start_line": 34,
+      "end_line": 34,
+      "message": "The `escapeHtml` function is defined but never used. The only potential usage is for `providerAttribution`, but it's passed directly to the `XYZ` source constructor without being sanitized. This poses a potential cross-site scripting (XSS) risk if the attribution string contains malicious HTML, as OpenLayers might render it. The function should be applied to `providerAttribution` before use.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. escapeHtml IS used in createSource: attributions: providerAttribution ? escapeHtml(providerAttribution) : undefined. The attribution is sanitized before being passed to the XYZ constructor, directly contradicting both claims that the function is unused and that providerAttribution is passed without sanitization.",
+      "severity_justification": "If the finding were true, XSS via attribution would be a real concern. But since the claim is wrong, the severity reflects the incorrectness of the finding rather than any actual risk.",
+      "category_justification": "The finding frames this as an XSS vulnerability via unsanitized attribution rendering in OpenLayers.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/configs/company-detail.config.ts",
+      "start_line": 11,
+      "end_line": 11,
+      "message": "The `dashboardLink` is constructed using `data.apiId`, which can be `null`. The `encodeURIComponent` function will convert `null` to the string \"null\", leading to a malformed URL like `/company/dashboard?name=...&id=null&status=...`. This could cause navigation errors or issues on the target dashboard page. A null check should be performed on `apiId` before creating the link.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding incorrectly claims null apiId produces 'null' in the URL. The code uses `data.apiId ?? ''` — the nullish coalescing operator replaces null/undefined with an empty string before passing to String() and encodeURIComponent(), so the URL gets id= (empty) rather than id=null.",
+      "severity_justification": "The specific claim about a null string in the URL is wrong. An empty id parameter is a minor concern but far less severe than the malformed URL described.",
+      "category_justification": "The finding concerns a potential URL construction bug, which falls under correctness.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/types/type.ts",
+      "start_line": 32,
+      "end_line": 32,
+      "message": "The `apiId` field in the `Company` type is optional and can be `number | null`. However, other parts of the application, such as `getCompanyDetailConfig`, expect it to be present for constructing URLs. This can lead to runtime errors if `apiId` is missing. The field should be made non-optional if it's a required identifier for a company.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims apiId being optional leads to runtime errors, but the only usage in getCompanyDetailConfig already guards with `data.apiId ?? ''`. There is no unguarded access to apiId anywhere in the codebase, so the runtime error claim is not substantiated by the actual code.",
+      "severity_justification": "Even if the concern were valid, the actual effect would be an empty id parameter in a URL rather than a crash.",
+      "category_justification": "The finding concerns potential runtime errors from optional field access.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/routes/company/+page.svelte",
+      "start_line": 204,
+      "end_line": 221,
+      "message": "The form for adding a new company is missing fields for `description`, which is part of the `Company` type. This can lead to inconsistent data, as newly created companies will have an empty description. All relevant fields should be included in the creation form to ensure data integrity.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The form submission is not implemented (just alert('Form submitted')), so no actual data is created and no inconsistency can occur. Additionally, description is not in companySchema, indicating it is not a required creation field. The finding is generic — the Company type including description does not mean every creation form must include it.",
+      "severity_justification": "Even if the concern were valid, description being absent from a creation form is a minor UX/product concern rather than a data integrity failure, especially since it could be edited afterwards.",
+      "category_justification": "The finding is about potential data inconsistency from a missing form field.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/services/company.ts",
+      "start_line": 23,
+      "end_line": 23,
+      "message": "The `status_list` and `type_list` query parameters are constructed using `String(status)` and `String(type)` without checking if the values are `undefined`. If `status` or `type` is `undefined`, it will be converted to the string \"undefined\", resulting in an incorrect API request (e.g., `status_list=undefined`). The code should only append these parameters if the values are not `undefined`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. Both status and type are guarded with `!== undefined` checks before being appended: `if (status !== undefined) params.append(...)` and `if (type !== undefined) params.append(...)`. The undefined-to-string conversion concern does not apply.",
+      "severity_justification": "The claim is wrong — the actual code already has the guard the finding requests.",
+      "category_justification": "The finding concerns incorrect API parameter construction from undefined values.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/services/company.ts",
+      "start_line": 22,
+      "end_line": 39,
+      "message": "No validation is performed on `apiFetch` response data before accessing its properties, assuming it matches the API contract. This could lead to runtime errors if the API responds with an unexpected structure.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "This is a generic best practice recommendation that applies equally to every service in the codebase. The pattern (TypeScript types from OpenAPI + res.ok check + no runtime validation) is identical in the pre-existing landmark, executive, and other services. The finding names the file but could be copy-pasted verbatim to any service file in the project.",
+      "severity_justification": "The concern is theoretical — no specific unexpected response structure or concrete runtime error path is demonstrated.",
+      "category_justification": "The finding concerns handling of unexpected API response structures.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/components/DynamicDetailSidebar.svelte",
+      "start_line": 278,
+      "end_line": 298,
+      "message": "Parsing WKT coordinates lacks robust error handling. Invalid inputs may cause null assignments without clear feedback to the user. Implement error notifications if parsing fails.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding ignores the existing {:else} fallback that displays the raw location text when WKT parsing fails. The map button is only rendered when parseWKTPoint returns non-null, so openLocationMap is never called with invalid WKT in normal flow. The recommendation for error notifications is generic and does not identify a concrete unhandled failure path.",
+      "severity_justification": "The current code handles invalid WKT gracefully by showing raw text. There is no silent failure in the user-facing flow.",
+      "category_justification": "The finding is a generic code quality suggestion about error handling without identifying a specific unhandled failure scenario.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/components/company-components/CompanyLocationMap.svelte",
+      "start_line": 35,
+      "end_line": 52,
+      "message": "The `createLocationLayer` function relies on external props (`latitude`, `longitude`) without validating them. Invalid or out-of-bound values might result in errors when creating the `Point` geometry.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Coordinates reaching CompanyLocationMap are already validated as valid numbers by parseWKTPoint (regex + isNaN check). Out-of-range but numeric coordinates do not cause errors in OpenLayers — fromLonLat and Point geometry handle them gracefully with no exceptions. The finding's claim of errors when creating Point geometry is not demonstrated.",
+      "severity_justification": "Even with out-of-range coordinates, the worst case is the map showing an unexpected location, not a runtime error or crash.",
+      "category_justification": "The finding concerns potential runtime errors from unvalidated inputs.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/components/company-components/LocationMapModal.svelte",
+      "start_line": 48,
+      "end_line": 56,
+      "message": "The `latitude` and `longitude` props are processed without validation. Invalid or non-numeric values could affect the map's rendering behavior or lead to runtime errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same as finding 17 — latitude and longitude reaching LocationMapModal are already validated as numeric by parseWKTPoint (regex + isNaN check) in DynamicDetailSidebar before being set. The props are typed as number in TypeScript. The finding makes a generic 'validate inputs' claim without demonstrating a specific path where non-numeric values could reach this component.",
+      "severity_justification": "The upstream parseWKTPoint already ensures values are valid numbers before they reach this component. No concrete error scenario is demonstrated.",
+      "category_justification": "The finding concerns potential runtime errors from unvalidated numeric inputs.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/routes/company/+page.svelte",
+      "start_line": 340,
+      "end_line": 346,
+      "message": "The search placeholder in `SearchFilterBar` is updated but still mentions 'owner name' and 'phone,' which were removed from search functionality. This could confuse users by suggesting unsupported search keys.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. The PR explicitly changed the placeholder from 'Search by company name, ID, owner name, or phone...' to 'Search by company name, ID...' — owner name and phone are not present in the current placeholder text.",
+      "severity_justification": "The finding describes a problem that does not exist in the code at this SHA.",
+      "category_justification": "The finding makes a factually wrong claim about the current state of the placeholder text.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/constants.ts",
+      "start_line": 59,
+      "end_line": 61,
+      "message": "The `COMPANY_TYPE_VALUE_BY_LABEL` map does not handle case-insensitivity for input strings, leading to potential mismatches in the `fetchCompanies` API call.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding describes a theoretical case mismatch that cannot occur in practice. activeFilters.type is populated only from the SearchFilterBar dropdown options, which come directly from COMPANY_TYPE_FILTER_OPTIONS built from Object.values(COMPANY_TYPE_LABEL_BY_VALUE) — the exact same strings used as keys in COMPANY_TYPE_VALUE_BY_LABEL. There is no free-text input path.",
+      "severity_justification": "No actual mismatch is possible given the controlled dropdown source of filter values.",
+      "category_justification": "The finding concerns a potential data lookup mismatch in the filter-to-API parameter mapping.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/constants.ts",
+      "start_line": 84,
+      "end_line": 86,
+      "message": "The `COMPANY_STATUS_VALUE_BY_LABEL` map also fails to account for case-insensitivity, which may lead to issues when filtering with user-provided inputs.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same reasoning as finding 20. activeFilters.status is populated only from the SearchFilterBar dropdown using COMPANY_STATUS_FILTER_OPTIONS, which is built from Object.values(COMPANY_STATUS_LABEL_BY_VALUE) — the exact same strings used as keys in COMPANY_STATUS_VALUE_BY_LABEL. There is no free-text user input path that could produce a case mismatch.",
+      "severity_justification": "No actual mismatch is possible given the controlled dropdown source of filter values.",
+      "category_justification": "The finding concerns a potential data lookup mismatch in the filter-to-API parameter mapping.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/routes/company/+page.svelte",
+      "start_line": 175,
+      "end_line": 176,
+      "message": "The `handleApiError` usage in `fetchCompanies` does not differentiate between network errors and logical API errors. Improving error specificity would enhance user feedback.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "This is a generic 'improve error handling' recommendation that applies identically to every catch block in the codebase. The exact same handleApiError + toast.error pattern is used in the pre-existing landmark, bus stop, and other pages. No specific scenario where the lack of differentiation causes a concrete problem is demonstrated.",
+      "severity_justification": "The current error handling follows the established codebase pattern and provides a reasonable user-facing error message. The improvement suggested is cosmetic at best.",
+      "category_justification": "The finding is a vague suggestion to improve error message specificity without identifying a concrete failure mode.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/configs/company-detail.config.ts",
+      "start_line": 128,
+      "end_line": 134,
+      "message": "The Company type now omits `ownerName`, `email`, and `phone`, and `prepareForValidation` only returns `name`, `address`, `location`, and `type`. However, `companySchema` in `src/lib/schemas.ts` still defines `ownerName` as a required field (with `min(2)` validation) along with `email`/`phone`. As a result, validating a company edit through this detail config will always fail because `ownerName` is missing/empty. The `companySchema` needs to be updated to reflect the new Company shape (likely removing `ownerName`/`email`/`phone` and adding `description`), otherwise editing companies will be broken.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `companySchema` still declares `ownerName` as a required `cleanString` field (min 2 chars), but the new `prepareForValidation` in `company-detail.config.ts` only supplies `name`, `address`, `location`, and `type`. This will cause Zod validation to fail on every company edit attempt, breaking the save workflow entirely.",
+      "severity_justification": "Company editing is completely broken — validation will always fail because the required `ownerName` field is never supplied. This is a user-facing data-mutation failure on a primary workflow.",
+      "category_justification": "This is a logic error: the schema and the data preparation are out of sync, causing incorrect/broken validation behavior.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/services/company.ts",
+      "start_line": 19,
+      "end_line": 29,
+      "message": "The `status` and `type` parameters are typed as single `number`, but the query parameter names are `status_list` and `type_list`, which strongly suggests the backend accepts comma-separated lists (matching the convention in `landmark.ts` where `type_list?: number[]` is joined with `,`). Consider accepting `number | number[]` (or `number[]`) and joining with `.join(',')` so multiple statuses/types can be filtered at once and the API contract is honored consistently.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `landmark.ts` uses `type_list?: number[]` joined with `.join(',')`, while `company.ts` uses `status?: number` / `type?: number` (singles) despite appending to `status_list`/`type_list`. The naming convention and existing service pattern both indicate these should accept arrays.",
+      "severity_justification": "The current filter UI only selects one value at a time so this doesn't break functionality today, but it diverges from the established service pattern and would require a refactor to support multi-select filtering later.",
+      "category_justification": "This is an API contract / function signature inconsistency between two service modules that both interface with list-style backend parameters.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/services/company.ts",
+      "start_line": 17,
+      "end_line": 26,
+      "message": "The `id` query parameter is typed as `string` here, but other services in this codebase consistently type backend record ids as `number` (e.g. `landmark.ts:27` types `id?: number`, and elsewhere ids are appended via `String(id)`). For consistency and to avoid passing arbitrary strings to a numeric ID endpoint, consider changing `id?: string` to `id?: number` and stringifying when appending to the params.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `landmark.ts` uses `id?: number`, `executive-role.ts` uses `id?: number`, `executive-account.ts` uses `id: number` — all stringify when appending. `company.ts` uniquely types `id` as `string`, diverging from the established codebase convention.",
+      "severity_justification": "The `id` parameter is not actually used in any current call site (the page only passes search/filter/pagination params), so no functional breakage occurs. It's a consistency/type-safety concern.",
+      "category_justification": "This is a naming/type convention inconsistency across service modules — no runtime behavior is currently affected.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/routes/company/+page.svelte",
+      "start_line": 209,
+      "end_line": 209,
+      "message": "The add-company form's `type` options were updated to `['Other', 'Private', 'Government']`, but the listing's filter options (built from `COMPANY_TYPE_LABEL_BY_VALUE`) order them as `Other, Private, Government`, and the detail config (lines 69) orders them as `['Private', 'Government', 'Other']`. These three places present the same enum in three different orders, which is inconsistent for users. Consider sourcing the form options from `COMPANY_TYPE_LABEL_BY_VALUE` (excluding the \"All Types\" entry) so the order stays in sync everywhere.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the form has `['Other', 'Private', 'Government']`, the detail config has `['Private', 'Government', 'Other']`, and the filter dropdown uses `COMPANY_TYPE_LABEL_BY_VALUE` order (Other, Private, Government). Three different orderings of the same enum exist across these locations.",
+      "severity_justification": "This is a UX consistency issue — users see different orderings of the same options in different contexts. No functional breakage occurs since the values themselves are correct, but it's a minor inconsistency that could be confusing.",
+      "category_justification": "This is a DRY/consistency concern: the same enum options are duplicated in three places with diverging order, creating drift risk.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/components/company-components/CompanyLocationMap.svelte",
+      "start_line": 54,
+      "end_line": 58,
+      "message": "`escapeHtml` is applied to `providerAttribution` before passing it to OpenLayers' `attributions` option. OpenLayers expects raw HTML/text for attributions and renders it directly; HTML-escaping the entire attribution string (including any intentional `<a>` tags) will display escaped markup like `&lt;a href=...&gt;` literally on the map instead of rendering a proper attribution link. If the goal is to sanitize untrusted input, consider sanitizing at the source/config level rather than escaping the whole string here, or document that attributions must be plain text.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: OpenLayers does render attribution strings as HTML, so escaping them would break `<a>` links in attributions. The claim is technically correct. However, the same pattern exists deliberately in `MapOL.svelte` with an explicit XSS-prevention comment, and `CompanyLocationMap` copies it. The XYZ branch is also never triggered since no caller passes `providerUrl`/`providerAttribution`.",
+      "severity_justification": "The XYZ tile provider path is never exercised in the current codebase (default empty string), so there's no immediate user-visible breakage. If custom providers were added with HTML attributions in the future, they'd display escaped text rather than proper links.",
+      "category_justification": "Escaping HTML attribution strings is semantically incorrect for OpenLayers, which expects HTML in that field — the fix conflicts with the intended rendering behavior.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/routes/company/+page.svelte",
+      "start_line": 185,
+      "end_line": 189,
+      "message": "The add-company form no longer provides `ownerName`, `email`, or `phone`, but it still passes `companySchema`, which requires `ownerName`. CreationForm validates the whole schema against only the rendered fields, so submitting this modal will fail validation with an error for a field the user cannot fill.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `CreationForm.handleSubmit()` runs `schema.safeParse(formData)` on the full `companySchema`. The form fields were trimmed to exclude `ownerName`, so it will be absent from `formData`, triggering the required `cleanString` min(2) validation failure. The error can never be cleared by the user since the field isn't rendered, blocking form submission entirely.",
+      "severity_justification": "The add-company modal is completely broken — it will never successfully submit because validation always fails on a field the user cannot see or fill in.",
+      "category_justification": "Logic error: the schema and form fields are out of sync, causing an unresolvable validation failure on every submission attempt.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/configs/company-detail.config.ts",
+      "start_line": 129,
+      "end_line": 134,
+      "message": "This validation payload omits `ownerName`, while `companySchema` still requires it. As a result, saving any company detail edit will fail validation even when all visible fields are filled, and the error is dropped because `ownerName` is no longer in the detail config.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to Finding 1 — already verified: `prepareForValidation` in `company-detail.config.ts` only supplies `name`, `address`, `location`, `type`, while `companySchema` still requires `ownerName` via `cleanString().min(2)`. This will cause every company edit save to fail validation.",
+      "severity_justification": "Company editing is completely broken — saving will always fail because the required `ownerName` field is never supplied to validation.",
+      "category_justification": "Logic error: schema and data preparation are out of sync, causing broken validation on every save attempt.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/components/company-components/LocationMapModal.svelte",
+      "start_line": 61,
+      "end_line": 62,
+      "message": "The dialog-level `on:keydown|stopPropagation` prevents Escape key events from reaching the window handler whenever focus is inside the modal, so the advertised Escape-to-close behavior does not work for keyboard users after they interact with the dialog content.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `on:keydown|stopPropagation` on `modal-content` calls `event.stopPropagation()` on all keydown events, which prevents them from bubbling to the window. Since the Escape handler is exclusively on `<svelte:window on:keydown={handleKeydown}>`, it will never fire when focus is inside the modal (which is the normal state when the modal is open, given `tabindex=\"0\"` on the dialog div).",
+      "severity_justification": "Escape-to-close is an expected modal behavior and a WCAG keyboard accessibility requirement. It silently fails whenever the user has interacted with the dialog, with no alternative keyboard path to close it other than finding and activating the close button.",
+      "category_justification": "This breaks keyboard navigation — specifically the advertised Escape-to-close behavior — which is an accessibility and UX concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/components/company-components/CompanyLocationMap.svelte",
+      "start_line": 14,
+      "end_line": 16,
+      "message": "These OpenLayers style imports are not used anywhere in the component. With the repository's recommended ESLint TypeScript/Svelte configuration, unused imports are reported by the linter, so this new file can fail `npm run lint`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `CircleStyle`, `Fill`, and `Stroke` are imported at lines 14–16 but never referenced anywhere else in `CompanyLocationMap.svelte`. The ESLint config uses `ts.configs.recommended` which includes `@typescript-eslint/no-unused-vars` with no overrides to disable it, so these would be flagged.",
+      "severity_justification": "Unused imports are a code hygiene issue and may cause lint failures in CI, but have no runtime impact.",
+      "category_justification": "Dead code / unused imports that clutter the file and can break lint checks.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/constants.ts",
+      "start_line": 121,
+      "end_line": 124,
+      "message": "This new label is propagated in the dashboard link, but `src/routes/company/dashboard/+page.svelte` only renders messages for `Validating`, `Verified`, and `Suspended`. Companies with backend status 1 will therefore arrive as `Under Verification` and show no status message on the dashboard unless the dashboard is updated or the label stays compatible.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `dashboard/+page.svelte` checks `companyStatus == 'Validating'` / `'Verified'` / `'Suspended'`. The PR changes `COMPANY_STATUS_LABEL_BY_VALUE[1]` to `'Under Verification'` (not `'Validating'`), which is passed via `titleCase()` into the dashboard link URL param. No branch matches `'Under Verification'`, so the status section renders nothing for companies with backend status 1.",
+      "severity_justification": "Companies in the default/under-review state (status 1) silently show no status indicator on the dashboard page, degrading a user-facing informational display without any error or fallback.",
+      "category_justification": "The label change breaks a string match in the dashboard, causing incorrect rendering (missing status display) for a specific company state.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/configs/company-detail.config.ts",
+      "start_line": 13,
+      "end_line": 13,
+      "message": "Changing the dashboard URL to pass the raw `apiId` breaks the existing company-scoped dashboard pages: they read `?id=` and compare it directly to dummy data `companyId` values such as `COMP-001` (for example `src/routes/company/operator-account/+page.svelte:33`). Passing `1` instead of `COMP-1`/`COMP-001` makes those pages filter to empty results.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: dashboard link now passes `String(data.apiId ?? '')` (e.g. `'1'`) as `?id=`, but operator-account, vehicles, operator-role, and service-route pages all filter dummy data by `o.companyId === companyId` where dummy `companyId` values are `'COMP-001'` etc. The numeric id never matches, producing empty results on all company sub-pages.",
+      "severity_justification": "All company-scoped dashboard sub-pages (operators, vehicles, roles, routes) will silently show empty data for every real company, breaking the primary navigation flow from the company listing into company details.",
+      "category_justification": "The id format change creates a broken string comparison, causing incorrect data filtering across multiple pages.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/dummy-data.ts",
+      "start_line": 90,
+      "end_line": 91,
+      "message": "Removing the `companies` export leaves the `Company` type imported at the top of this file with no remaining usages. The repository's ESLint configuration reports unused imports, so this will cause lint failures unless the stale type import is removed too.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `Company` is the only reference on line 2 of the import block and the diff removed the entire `companies` array that used it. No other usage of `Company` exists in the file. `ts.configs.recommended` includes `@typescript-eslint/no-unused-vars` with no overrides, so this stale type import would be flagged.",
+      "severity_justification": "This is a lint hygiene issue — no runtime impact, but it would cause a lint failure in CI.",
+      "category_justification": "Dead/stale import left behind after removing the code that used it.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/routes/company/+page.svelte",
+      "start_line": 303,
+      "end_line": 304,
+      "message": "This empty state is shown solely from `formattedCompanyData.length`, so on the initial API load the mobile view can render “No Companies found” while the request is still in progress. Other server-backed listings gate this on `!loading` (for example `src/routes/landmark/+page.svelte:437`) to avoid a false empty state.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `formattedCompanyData` initializes to `[]` and `loading` initializes to `false`; `fetchCompanies()` is called async in `onMount`. On the first render tick, `formattedCompanyData.length === 0` is true with no loading guard, so 'No Companies found' flashes. The landmark page at line 437 explicitly uses `!loading && formattedLandmarkData.length === 0` to prevent this same issue.",
+      "severity_justification": "A brief flash of 'No Companies found' on mobile before data loads is a minor UX issue — jarring but not functionally breaking.",
+      "category_justification": "The condition incorrectly shows an empty state during the loading phase, contrary to the intended behavior demonstrated by the landmark page pattern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/routes/company/+page.svelte",
+      "start_line": 258,
+      "end_line": 259,
+      "message": "Because `formattedCompanyData` starts empty and is populated asynchronously, the desktop table will render its empty-state message during the initial fetch. Consider hiding the table empty state while `loading` is true, as this page now uses server-loaded data rather than preloaded dummy data.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `ListingTable.svelte` renders its empty state purely on `data.length === 0` with no loading awareness. The company page passes `formattedCompanyData` (initialized to `[]`) directly, and `loading` starts as `false`. On the first render tick before `fetchCompanies()` executes, the desktop table shows 'No Companies found'. This is the same root cause as Finding 13 but for the desktop view.",
+      "severity_justification": "A brief flash of 'No Companies found' before data loads is a minor UX issue — not functionally breaking, but visually jarring on the desktop view.",
+      "category_justification": "The empty state renders incorrectly during the loading phase due to missing loading guard, producing a misleading UI state.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

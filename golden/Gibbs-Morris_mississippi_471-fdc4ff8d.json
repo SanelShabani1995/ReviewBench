@@ -1,0 +1,455 @@
+{
+  "pr_key": "Gibbs-Morris_mississippi_471-fdc4ff8d",
+  "pr": {
+    "repo": "https://github.com/Gibbs-Morris/mississippi",
+    "pr_number": 471,
+    "base": "1e026c703d10ddd7abc724ff86ec75bea0aa23e6",
+    "head": "fdc4ff8d1579a24e830cd636317d62d959eb0d40"
+  },
+  "findings": [
+    {
+      "file": "samples/Spring/Spring.Gateway/SpringSagaAccessRequestContextFilter.cs",
+      "start_line": 13,
+      "end_line": 66,
+      "message": "SpringSagaAccessRequestContextFilter implements IOutgoingGrainCallFilter to propagate the caller fingerprint via Orleans RequestContext, but it is never registered anywhere in the Orleans client setup (no AddOutgoingGrainCallFilter call exists in Program.cs or anywhere in the gateway). The Program.cs instead uses inline ASP.NET middleware to set RequestContext directly. This class is dead code that does nothing, and its existence creates confusion about which mechanism actually propagates the fingerprint.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: SpringSagaAccessRequestContextFilter is never registered with AddOutgoingGrainCallFilter anywhere in the gateway. Program.cs uses inline ASP.NET middleware to propagate the fingerprint into Orleans RequestContext instead. The class exists in isolation with no registration, making it dead code that does nothing.",
+      "severity_justification": "The fingerprint propagation still works correctly via the inline middleware, so there is no functional regression. The dead code is a maintainability issue that could mislead future developers about which mechanism is active.",
+      "category_justification": "Dead code that creates confusion about which mechanism propagates the caller fingerprint, but causes no runtime behavior change.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaRecoveryCheckpoint.cs",
+      "start_line": 97,
+      "end_line": 104,
+      "message": "SagaRecoveryCheckpoint.ReminderArmed is a serialized field ([Id(14)]) that is never set to true by any reducer. Every reducer that touches it sets it to false (ClearPending, StartedReducer, ResumeBlockedReducer). No reducer ever writes true. The field occupies space in every persisted checkpoint snapshot but carries no information. SagaRuntimeStatus.ReminderArmed is computed dynamically from the disposition in SagaRecoveryService and does not read from this field. Any future code that reads checkpoint.ReminderArmed to determine whether a reminder is armed will always see false.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: every reducer that touches ReminderArmed sets it to false (SagaRecoveryCheckpointReducerState, SagaRecoveryCheckpointStartedReducer, SagaRecoveryCheckpointResumeBlockedReducer). All other reducers don't mention it at all. SagaRecoveryService.cs computes ReminderArmed dynamically from resumeDisposition (line 271) without reading the checkpoint field. The checkpoint field is always false and carries no information.",
+      "severity_justification": "No current bug since SagaRuntimeStatus.ReminderArmed is computed correctly from disposition, but the always-false persisted field is misleading and could cause incorrect behavior if future code reads checkpoint.ReminderArmed to decide whether a reminder is armed.",
+      "category_justification": "The field's intent is to record whether a reminder is currently armed, but its value is always false regardless of actual reminder state — a correctness gap between the field's documented purpose and its actual behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaRecoveryService.cs",
+      "start_line": 67,
+      "end_line": 68,
+      "message": "The constructor captures recoveryOptions.Value into the field RecoveryOptions (a snapshot), then immediately wraps it in Options.Create(RecoveryOptions) to pass to the Planner. Options.Create produces a frozen IOptions<T> wrapping the already-resolved snapshot. The planner therefore always receives a frozen snapshot regardless of whether SagaRecoveryOptions is reconfigured after startup. While SagaRecoveryService is transient so each injection gets a fresh snapshot, if hot-reload changes ForceManualOnly or Enabled between request handling and planner construction they can diverge in unexpected ways. The planner should receive the live IOptions<SagaRecoveryOptions> rather than a frozen wrapper.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The divergence concern is incorrect. IOptions<T> does not support hot-reload (that requires IOptionsMonitor<T>), so the value cannot change between request handling and planner construction. Additionally, both assignments happen synchronously in the same constructor call, so there is no temporal gap in which divergence could occur. The finding's specific claim about hot-reload divergence does not apply to IOptions<T> semantics.",
+      "severity_justification": "Even if one accepts the underlying maintainability concern (manually constructing the Planner instead of injecting it), there is no actual behavioral divergence possible with IOptions<T>.",
+      "category_justification": "The finding makes a factual claim about runtime divergence behavior due to options snapshot semantics.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaReminderHandler.cs",
+      "start_line": 90,
+      "end_line": 93,
+      "message": "checkpoint! null-forgiving is used when calling CreateResumeCommand(plan, checkpoint!, ...) without an explicit null guard at this point. The code relies on the invariant that checkpoint is null only when plan.Disposition is NoAction or Terminal (which trigger an early return above). If the Plan method is ever modified to return ExecuteStep, Blocked, CompleteSaga, or CompensateSaga for a null checkpoint, this silently becomes a NullReferenceException at runtime. An explicit null check or restructuring so checkpoint is asserted non-null before this branch would make the invariant explicit and safe.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`CreateResumeCommand` has `ThrowIfNull(checkpoint)` + `Plan()` returns `NoAction` for null",
+      "severity_justification": "The current code is correct and won't throw. The risk is future breakage if the Plan() method is modified to return actionable dispositions without also guarding against null checkpoints. This is a maintainability/defensive programming concern rather than an active bug.",
+      "category_justification": "Fragile implicit invariant that could cause a NullReferenceException if the planning logic is changed, affecting runtime reliability.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaOrchestrationEffect.cs",
+      "start_line": 99,
+      "end_line": 123,
+      "message": "SagaStepFailed is listed in CanHandle (line 101-102) as a handled event type, but its handler always returns AsyncEnumerable.Empty<object>() (line 122). This means every SagaStepFailed event dispatched to this effect is claimed as handled but produces no output. The actual compensation work is driven by the SagaCompensating event emitted immediately after SagaStepFailed by ExecuteStepAsync. Keeping SagaStepFailed in CanHandle causes the framework to route every step failure through this effect unnecessarily; removing it from the CanHandle list would be correct.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: SagaStepFailed is listed in CanHandle but the HandleAsync switch returns AsyncEnumerable.Empty<object>() for it. Compensation is driven by the SagaCompensating event yielded in the same sequence, not by a SagaStepFailed handler. The claim is factually correct.",
+      "severity_justification": "No active bug since returning an empty enumerable is harmless. The issue is dead/misleading CanHandle routing that could interfere with framework exclusive-routing semantics or mislead future readers, but has no current behavioral impact.",
+      "category_justification": "SagaStepFailed in CanHandle is dead code that produces no output, creating confusion about why it's there and making the class harder to reason about.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/Spring/Spring.Gateway/Program.cs",
+      "start_line": 44,
+      "end_line": 44,
+      "message": "SagaRecoveryOptions is bound from configuration but ValidateOnStart() is not called in the gateway, unlike in Spring.Runtime/Program.cs where ValidateOnStart() is present. If the gateway's SagaRecovery configuration section is missing or has invalid values (e.g., negative MaxAutomaticAttempts, zero ReminderPeriod), the misconfiguration is not detected at startup. The SagaRecoveryService and its embedded Planner use these options when computing runtime-status dispositions on the gateway side, so a misconfigured gateway could report incorrect ResumeDisposition values to operators without any startup failure.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: gateway Program.cs line 45 binds SagaRecoveryOptions without ValidateOnStart(), while the runtime uses ValidateOnStart() with a custom validator. The consistency gap is real and introduced by this PR. However, the severity impact is overstated — gateway-side SagaRecoveryService only uses boolean Enabled/ForceManualOnly fields, while the validated settings (MaxAutomaticAttempts, ReminderPeriod) are runtime-only.",
+      "severity_justification": "The missing ValidateOnStart() won't cause incorrect ResumeDisposition values in practice since the fields relevant to gateway operation (Enabled, ForceManualOnly) are booleans with safe defaults. The validator's real rules only apply to reminder scheduling, a runtime concern.",
+      "category_justification": "Missing startup validation that could allow misconfigured options to pass silently, even if the practical impact is limited to non-gateway-relevant settings.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaRecoveryCoordinator.cs",
+      "start_line": 179,
+      "end_line": 192,
+      "message": "SagaRecoveryCoordinator.ResumeAsync executes a ResumeSagaCommand without passing an accessContextFingerprint (uses the default null). This is correct for reminder-driven resumes (SagaResumeSource.Reminder), where no caller fingerprint exists. However, if this method is ever called from a user-facing path, the checkpoint's AccessContextFingerprint would not be updated, silently breaking the ownership model. The method signature and callers don't make it clear this method is reminder-only, and SagaRecoveryService.ResumeAsync (the manual path) correctly passes a fingerprint through a different code path. Adding an explicit parameter or restricting this path to Reminder source would prevent misuse.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: SagaRecoveryCoordinator.ResumeAsync passes no accessContextFingerprint to CreateResumeCommand (null by default), and the method signature doesn't accept one. However, the method has zero callers at this SHA — neither the reminder handler nor the manual-resume path uses it. The risk is hypothetical future misuse of an API design gap on an internal sealed class.",
+      "severity_justification": "Currently dead code on an internal sealed class with no callers. The correct paths (SagaReminderHandler and SagaRecoveryService) are already in place. The risk materializes only if someone adds a caller to this unused method in the future.",
+      "category_justification": "API design concern on an internal method that lacks a fingerprint parameter, creating a latent misuse risk if future callers don't realize the limitation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/Spring/Spring.Gateway/SpringSagaGatewayRegistrations.cs",
+      "start_line": 36,
+      "end_line": 42,
+      "message": "ResolveDomainType uses Assembly.GetType(fullTypeName, throwOnError: true) with a hard-coded string type name. If the step classes in Spring.Domain are moved to a different namespace or renamed (a common refactoring), this call will throw TypeLoadException at gateway startup with an opaque error message. The gateway must duplicate the internal type names of the domain assembly that it references. This tight coupling to private type names is fragile; the step types should be exposed through an interface or a well-known registration point rather than resolved by raw string name.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: SpringSagaGatewayRegistrations.ResolveDomainType uses hard-coded fully-qualified type name strings to resolve internal step types via Assembly.GetType(..., throwOnError: true). Any rename or namespace move of the step classes will cause TypeLoadException at gateway startup. This tight coupling to private type names is real and introduced by this PR.",
+      "severity_justification": "The failure mode is fast and visible (startup TypeLoadException), not silent. The coupling is in a sample application, not production framework code. The fix would require non-trivial architectural changes to surface step type registration as domain-public API. Low impact but genuine fragility.",
+      "category_justification": "Hard-coded internal type name strings create tight coupling between the gateway and domain implementation details, making refactoring of step class names/namespaces fragile.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaRecoveryCheckpointStepCompensatedReducer.cs",
+      "start_line": 24,
+      "end_line": 28,
+      "message": "When SagaStepCompensated(StepIndex=0) is received, the reducer sets PendingStepIndex = eventData.StepIndex - 1 = -1. The SagaRecoveryPlanner.TryCreateBoundaryPlan then sees PendingStepIndex < 0 for Compensation direction and selects CompensateSaga (emitting SagaCompensated). However, for the same event processed in the SagaOrchestrationEffect via ExecutePreviousCompensationAsync, the code calls ExecuteCompensationAsync(state, compensatedStepIndex - 1 = -1), which also emits SagaCompensated. This means two code paths (the planner-driven coordinator and the direct orchestration effect) can both independently decide to emit SagaCompensated for the same terminal state. While the event sourcing model should handle duplicate terminal events, the double-emit path is a correctness risk if state reducers are not idempotent for SagaCompensated.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both double-emit paths are verified: the orchestration effect emits SagaCompensated via ExecuteCompensationAsync(-1) after SagaStepCompensated(0), and the reminder handler can also emit SagaCompensated when PendingStepIndex=-1 with Compensation direction. In crash recovery scenarios, both paths can fire. Current reducers are idempotent, mitigating immediate harm, but the architectural risk of duplicate terminal events is real.",
+      "severity_justification": "Current state reducers (SagaCompensatedReducer, checkpoint reducer) are idempotent, so duplicate SagaCompensated events cause no state corruption today. The risk is latent — affecting future projections or consumers that may not be idempotent for this event.",
+      "category_justification": "Architectural flaw where two independent code paths can both emit the same terminal event, relying on implicit idempotency as a safety net rather than explicit deduplication.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaRecoveryCheckpointMetadata.cs",
+      "start_line": 20,
+      "end_line": 41,
+      "message": "CheckpointReducerHash is computed by sorting the fully-qualified type names of the 10 checkpoint reducer classes and SHA-256 hashing them. This hash is stored in every SagaRecoveryCheckpoint snapshot and used to scope snapshot lookups (SagaRecoveryCheckpointAccessor.GetAsync). If any of the 10 reducer class names or the namespace changes (e.g., a refactoring rename), the hash changes and all existing checkpoint snapshots become invisible to the new code — the accessor will load null checkpoints for all in-flight sagas, causing them to return NoAction until the checkpoint is rebuilt from events. There is no migration path and no documentation of this risk. The hash should be a stable, manually managed constant rather than derived from internal type names.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`SnapshotCacheGrain` rebuilds from event stream on mismatch",
+      "severity_justification": "A rename of any reducer class would silently stall recovery for all in-flight sagas until checkpoints are rebuilt from events. While event sourcing provides the rebuild path, sagas waiting on reminders for recovery would be stuck returning NoAction through multiple ticks. No documentation warns of this risk.",
+      "category_justification": "A common refactoring (rename) silently invalidates all persisted checkpoint snapshots and stalls recovery, without any migration path or failure signal.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Inlet.Runtime.Generators/SagaStatusReducersGenerator.cs",
+      "start_line": 99,
+      "end_line": 99,
+      "message": "**Severity:** MAJOR\n**Category:** Correctness\n**What’s wrong:** The generated operator-facing saga status reducers never emit `WorkflowMismatch`, so callers can still see a resumable state after step-definition drift even though the runtime recovery surface now fails closed.\n**Evidence:** This generator only defines `AutomaticPending`, `ManualInterventionRequired`, and `Terminal` resume-disposition assignments here, while `SagaRecoveryService` now returns `SagaResumeDisposition.WorkflowMismatch` for hash drift and invalid pending-step metadata. The Spring sample then consumes the generated `ResumeDisposition` as the actionable transfer-status surface, so the projection/UI can diverge from the runtime truth.\n**Fix:** Either propagate workflow-mismatch into the operator-facing status model, or stop using the generated status projection as the recovery decision surface and query `runtime-status` for actionable recovery state instead.\n**How to verify:** Start a saga, then change the ordered step definition so the stored `StepHash` is stale (or make the pending step index invalid). Confirm the operator-facing status surface and UI agree with `runtime-status` on `WorkflowMismatch` and do not offer a misleading resume path.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims the generator never emits WorkflowMismatch, but lines 97-98 define WorkflowMismatchAwareBlockedDisposition and lines 342-343 assign it to the SagaResumeBlocked status reducer. The generated IsWorkflowMismatch classifier handles the exact blocked-reason strings emitted by the runtime. WorkflowMismatch is propagated correctly through the SagaResumeBlocked event path.",
+      "severity_justification": "If the claim were true, it would be a significant correctness gap where the projection UI could mislead operators during workflow mismatch. Since it is false, severity is assigned to the potential issue class.",
+      "category_justification": "The finding alleges a correctness gap in the recovery status projection surface.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "BenjaminLGibbs",
+        "url": "https://github.com/Gibbs-Morris/mississippi/pull/471#discussion_r3035981320",
+        "created_at": "2026-04-04T19:56:18Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "fdc4ff8d1579a24e830cd636317d62d959eb0d40"
+      }
+    },
+    {
+      "file": "samples/Spring/Spring.Gateway/SpringSagaGatewayRegistrations.cs",
+      "start_line": 43,
+      "end_line": 43,
+      "message": "**Severity:** MAJOR\r\n**Category:** Correctness\r\n**What's wrong:** The gateway now hard-codes saga recovery metadata that the runtime generator already owns, which creates a second workflow-hash and recovery-planning authority.\r\n**Evidence:** AddSpringSagaRecoverySupport() manually repeats AddSagaRecoveryInfo<MoneyTransferSagaState>(...) and AddSagaStepInfo<MoneyTransferSagaState>(...), while SagaSiloRegistrationGenerator already emits the same metadata from saga attributes and SagaStepHash.Compute(...) includes step.StepType.FullName. A future step rename or policy change can update the runtime registration but leave this gateway copy stale, which makes runtime-status/manual-resume compute against a different workflow definition than the runtime host.\r\n**Fix:** Generate or share a single recovery-metadata provider that both runtime and gateway consume instead of duplicating the metadata in SpringSagaGatewayRegistrations.\r\n**How to verify:** Change a step policy or rename a step type in Spring and confirm gateway runtime-status/manual-resume still agree with the runtime hash/planner without any manual gateway updates.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the gateway manually duplicates the same AddSagaRecoveryInfo/AddSagaStepInfo calls that SagaSiloRegistrationGenerator owns. SagaStepHash.Compute includes StepType.FullName and recovery policies. If either side drifts, the gateway planner computes a different workflow hash than the runtime, producing incorrect WorkflowMismatch decisions on runtime-status/manual-resume surfaces.",
+      "severity_justification": "No active bug today, but any policy or naming change in the domain requires updating both the generated runtime registration and the manually-coded gateway copy, with no build-time enforcement. Drift causes incorrect operator-visible recovery decisions.",
+      "category_justification": "Duplication of authoritative metadata across two registration sites creates real drift risk that silently produces incorrect recovery decisions rather than a compile-time error.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "BenjaminLGibbs",
+        "url": "https://github.com/Gibbs-Morris/mississippi/pull/471#discussion_r3037338246",
+        "created_at": "2026-04-05T20:48:27Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "fdc4ff8d1579a24e830cd636317d62d959eb0d40"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/ResumeSagaCommandHandler.cs",
+      "start_line": 102,
+      "end_line": 102,
+      "message": "**Severity:** BLOCKER\r\n**Category:** Concurrency\r\n**What's wrong:** The resume command handler materializes a previously computed recovery plan without revalidating it against the current saga/checkpoint state.\r\n**Evidence:** SagaRecoveryService and SagaRecoveryCoordinator compute a plan from the checkpoint and then call ExecuteAsync(...), but HandleCore only rejects NotStarted and immediately turns the stale Disposition into SagaStepExecutionStarted, SagaCompleted, or SagaCompensated. If a reminder tick or another manual resume advances the saga between planning and command execution, this handler can emit a second recovery event against newer state.\r\n**Fix:** Carry an expected version, checkpoint hash, or pending-step token in ResumeSagaCommand and either call the versioned ExecuteAsync path or re-load plus validate Phase, PendingDirection, PendingStepIndex, and workflow hash before emitting recovery events.\r\n**How to verify:** Race a reminder tick and a manual resume against the same pending step; the loser should observe a no-op/conflict instead of a second SagaStepExecutionStarted.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: HandleCore only guards against NotStarted phase. SagaRecoveryService.ResumeAsync and SagaRecoveryCoordinator.ResumeAsync both load state in one grain call and send the command in another, with a window where the grain can process other messages (reminder ticks) between them. A stale ExecuteStep(N) command can arrive after step N has already completed, and HandleCore emits another SagaStepExecutionStarted(N) without re-validating LastCompletedStepIndex or current phase against the plan.",
+      "severity_justification": "Both money-transfer steps are explicitly ManualOnly due to non-idempotency. A racing reminder tick and manual resume can both trigger step execution. For financial operations this means double-withdrawal or double-deposit with no detection.",
+      "category_justification": "A stale recovery plan is applied against the current saga state without re-validation, potentially double-executing non-idempotent saga steps.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "BenjaminLGibbs",
+        "url": "https://github.com/Gibbs-Morris/mississippi/pull/471#discussion_r3037338249",
+        "created_at": "2026-04-05T20:48:27Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "fdc4ff8d1579a24e830cd636317d62d959eb0d40"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaRecoveryService.cs",
+      "start_line": 271,
+      "end_line": 271,
+      "message": "**Severity:** MAJOR\r\n**Category:** Observability\r\n**What's wrong:** ReminderArmed is reported as if it were the actual Orleans reminder state, but the value is only inferred from planner output.\r\n**Evidence:** GetRuntimeStatusAsync sets ReminderArmed = resumeDisposition is SagaResumeDisposition.AutomaticPending, while the checkpoint ReminderArmed flag is never set true by reducers or reconciliation. If reminder registration fails or is removed out-of-band, runtime status can still claim the reminder is armed even though no reminder exists.\r\n**Fix:** Either persist and update actual reminder registration state during reconciliation and return that, or rename the field to match the computed semantics (for example, AutomaticRecoveryEligible).\r\n**How to verify:** Force reminder registration to fail or remove the reminder after the saga becomes automatic-pending and confirm runtime-status no longer reports ReminderArmed = true.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ReminderArmed is set by SagaRecoveryService as 'resumeDisposition is AutomaticPending' with no Orleans reminder registry query. The field's documented semantics (reminder is currently armed) diverge from its actual computation (disposition is eligible for automatic retry). If the reminder reconciler fails or a reminder is removed, ReminderArmed is still true while no reminder exists.",
+      "severity_justification": "A misleading field can cause operators to wait for automatic recovery that won't arrive, but it doesn't corrupt saga state or block recovery paths — operators can still manually resume. The impact is observability/operational confusion rather than data loss.",
+      "category_justification": "The field name and doc comment claim semantics the implementation doesn't fulfill — the naming and documentation are incorrect relative to actual behavior.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "BenjaminLGibbs",
+        "url": "https://github.com/Gibbs-Morris/mississippi/pull/471#discussion_r3037338250",
+        "created_at": "2026-04-05T20:48:27Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "fdc4ff8d1579a24e830cd636317d62d959eb0d40"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaRecoveryService.cs",
+      "start_line": 315,
+      "end_line": 315,
+      "message": "**Severity:** MAJOR\r\n**Category:** Security\r\n**What's wrong:** Manual resume leaks saga existence to callers that the read surfaces intentionally hide.\r\n**Evidence:** GetStateAsync and GetRuntimeStatusAsync return null on authorization failure so generated reads fail closed with 404, but ResumeAsync returns a typed SagaResumeResponse { Disposition = Unauthorized }. A caller can therefore distinguish saga exists but I am not allowed from saga does not exist just by comparing POST /resume responses.\r\n**Fix:** Normalize unauthorized resume to the same fail-closed behavior as the read surfaces, or otherwise return the same public outcome for not-found and unauthorized.\r\n**How to verify:** Start a saga as user A, call GET runtime-status and POST resume as user B, and confirm both endpoints return the same non-revealing result.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: GetRuntimeStatusAsync and GetStateAsync return null on unauthorized access (→ 404), but ResumeAsync returns a non-null SagaResumeResponse with Disposition=Unauthorized (→ 200 OK). The generated controller only checks null for 404. An unauthorized caller can distinguish saga-exists-unauthorized from saga-not-found on the POST /resume endpoint, while the GET endpoints give no such signal.",
+      "severity_justification": "The only information disclosed is saga existence (not content). Exploiting it requires knowing or enumerating valid saga IDs (UUIDs). The authorization itself still holds — the caller cannot perform the resume — and the leaked data has limited standalone value. The inconsistency is real but the practical security risk is modest.",
+      "category_justification": "Information disclosure — saga existence is leaked to unauthorized callers through the POST /resume response, breaking the fail-closed invariant that the read surfaces deliberately implement.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "BenjaminLGibbs",
+        "url": "https://github.com/Gibbs-Morris/mississippi/pull/471#discussion_r3037338251",
+        "created_at": "2026-04-05T20:48:27Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "fdc4ff8d1579a24e830cd636317d62d959eb0d40"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaRecoveryService.cs",
+      "start_line": 334,
+      "end_line": 334,
+      "message": "**Severity:** MAJOR\r\n**Category:** Correctness\r\n**What's wrong:** Manual resume prefers the checkpoint fingerprint over the current caller fingerprint, so later resumes cannot record who actually resumed the saga.\r\n**Evidence:** ResumeAsync authorizes against SagaAccessContextProvider.GetFingerprint(), then passes checkpoint.AccessContextFingerprint ?? SagaAccessContextProvider.GetFingerprint() into CreateResumeCommand(...). The checkpoint reducers only update AccessContextFingerprint from event.AccessContextFingerprint, so once a fingerprint is stored, every subsequent manual resume keeps replaying the old value.\r\n**Fix:** Prefer the current caller fingerprint for manual resumes and only fall back to the checkpoint value when the current context has no fingerprint.\r\n**How to verify:** Use a custom authorizer that allows more than one operator, resume the same saga as operator A and then B, and confirm the checkpoint or runtime status reflects B after the second manual resume.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 334 uses checkpoint.AccessContextFingerprint ?? SagaAccessContextProvider.GetFingerprint(), preferring the stored (original) fingerprint. The checkpoint reducers then preserve it, so subsequent manual resumes by a different operator never record the actual resumer. The bug is real but dormant with DefaultSagaAccessAuthorizer (which only allows the original caller anyway). Impact requires a custom authorizer allowing multiple operators.",
+      "severity_justification": "With the DefaultSagaAccessAuthorizer (the default), only the fingerprint-matching caller can resume, so a different operator can never reach line 334. The bug only activates with a custom multi-operator authorizer, which is non-default and requires deliberate extension. The fix is a one-character precedence swap.",
+      "category_justification": "The fingerprint precedence is logically inverted — current caller should take precedence over stored checkpoint fingerprint for manual resumes, so the audit trail records who actually resumed.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "BenjaminLGibbs",
+        "url": "https://github.com/Gibbs-Morris/mississippi/pull/471#discussion_r3037338254",
+        "created_at": "2026-04-05T20:48:27Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "fdc4ff8d1579a24e830cd636317d62d959eb0d40"
+      }
+    },
+    {
+      "file": "src/Inlet.Gateway.Generators/SagaControllerGenerator.cs",
+      "start_line": 123,
+      "end_line": 127,
+      "message": "Adding `ISagaRecoveryService<TSaga>` as a required constructor dependency makes every generated saga controller depend on per-saga recovery metadata/services, but there is no corresponding generated gateway registration for `AddSagaRecoveryServices<TSaga>`, `AddSagaRecoveryInfo<TSaga>`, or `AddSagaStepInfo<TSaga>` (the only usage in this PR is the Spring sample's manual `AddSpringSagaRecoverySupport`). Existing gateway hosts that previously only registered controllers and aggregate support will fail DI activation for generated saga controllers after regeneration unless they hand-write this metadata wiring. The generator should emit or reference a gateway-safe registration path along with the new dependency.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: SagaControllerGenerator.cs line 126 emits ISagaRecoveryService<TSaga> as a required constructor parameter in generated controllers, but no gateway generator emits AddSagaRecoveryServices<TSaga>() or equivalent. The Spring sample only works because of manually written SpringSagaGatewayRegistrations.cs. Other gateway hosts regenerating controllers will get DI activation failures.",
+      "severity_justification": "Every generated saga controller in any gateway host that doesn't hand-write the recovery service registration will fail to activate at runtime, breaking all saga HTTP operations. This is a silent breaking change for existing gateway consumers that regenerate.",
+      "category_justification": "The issue is a missing DI registration that causes runtime activation failures, which is an operational/reliability concern rather than a logic error or security issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaRegistrations.cs",
+      "start_line": 48,
+      "end_line": 50,
+      "message": "The reminder handler/reconciler are registered unconditionally for every saga, and the reconciler depends on `IGrainReminderManager`/`IReminderRegistry`. Hosts that have sagas but have not configured an Orleans reminder provider (or have disabled/forced manual-only recovery via options) can still activate saga grains, but DI will now try to construct `SagaReminderReconciler<TSaga>` and fail before the options can short-circuit. Register these services only when reminder infrastructure is available, or make the reconciler tolerate a missing reminder registry so non-reminder/disabled hosts do not break on activation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The DI construction failure claim is incorrect. In Orleans silo hosts, IReminderRegistry is always registered by the reminders package regardless of reminder storage configuration, so GrainReminderManager and SagaReminderReconciler can be constructed. The 'options not short-circuiting' concern is intentional by design — tests explicitly verify that GetReminderAsync is still called when Enabled=false to clean up stale reminders.",
+      "severity_justification": "The scenario described (DI construction failure) doesn't occur in realistic Orleans silo deployments since IReminderRegistry is always available in the container.",
+      "category_justification": "The finding is about runtime DI activation failures and service registration concerns.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DomainModeling.Runtime/SagaRecoveryPlanner.cs",
+      "start_line": 176,
+      "end_line": 179,
+      "message": "Reminder execution planning does not enforce `MaxAutomaticAttempts`; only the reconciler uses that ceiling when deciding whether to register/update reminders. A stale reminder tick that is already registered (or races with reconciliation) will still be planned as `ExecuteStep` after the checkpoint's `AutomaticAttemptCount` has reached the configured limit, so the automatic-attempt ceiling is not actually enforced on the execution path. Include the attempt-count check in reminder planning/handling before materializing a resume command.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: SagaRecoveryPlanner.Plan() does not check AutomaticAttemptCount at any point. SagaReminderReconciler.ShouldArmReminder() checks the ceiling at line 154 but this only prevents registering new reminders. A stale reminder that already fired will invoke SagaReminderHandler → planner → ExecuteStep regardless of whether AutomaticAttemptCount has reached MaxAutomaticAttempts, bypassing the configured ceiling.",
+      "severity_justification": "The MaxAutomaticAttempts ceiling is a configured safety bound against excessive automatic retries, and a stale/racing reminder can bypass it, potentially executing non-idempotent Automatic-policy steps more times than intended. Mitigated by: ManualOnly steps still blocked; reconciler cleans up reminders post-tick.",
+      "category_justification": "The code behaves contrary to the documented intent of MaxAutomaticAttempts — the ceiling is supposed to limit automatic execution attempts but only gates reminder registration, not execution.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Inlet.Gateway.Generators/McpSagaToolsGenerator.cs",
+      "start_line": 481,
+      "end_line": 484,
+      "message": "Generated MCP saga tools now require `ISagaRecoveryService<TSaga>`, but the generators do not emit the gateway-side `AddSagaRecoveryServices<TSaga>`/recovery-info/step-info registrations needed to satisfy this dependency. Hosts that add generated MCP tools without hand-written per-saga recovery wiring will fail DI activation for these tools after regeneration, just like the generated controllers.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: McpSagaToolsGenerator.cs lines 473 and 484 emit ISagaRecoveryService<TSaga> as a required constructor dependency in generated MCP tool classes. No gateway generator (McpToolRegistrationGenerator.cs or others) emits AddSagaRecoveryServices<TSaga>() or recovery-info/step-info registrations. This is the same missing-DI-registration gap as Finding 1, applied to MCP tools.",
+      "severity_justification": "Any gateway host generating MCP saga tools without hand-writing per-saga recovery service registrations will fail at DI activation for those tools. The Spring sample only works because of manually written SpringSagaGatewayRegistrations.cs.",
+      "category_justification": "Missing DI registration causes runtime activation failure for all generated MCP saga tools in gateway hosts that don't add manual recovery service wiring.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Inlet.Runtime.Generators/SagaStatusReducersGenerator.cs",
+      "start_line": 188,
+      "end_line": 195,
+      "message": "This pending disposition only considers saga-level `RecoveryMode`, so a failed step with `SagaStepRecoveryPolicy.ManualOnly` is projected as `AutomaticPending`. The runtime planner/reconciler treats manual-only steps as requiring manual intervention and does not arm a reminder for them, so no later `SagaResumeBlocked` event is guaranteed to correct this projection. In the Spring sample both money-transfer steps are manual-only, which means the operator UI can keep showing automatic pending and hide the manual resume action after a step failure.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: MoneyTransferSagaState has no [SagaRecovery] attribute so saga-level RecoveryMode=Automatic. Generated SagaStepFailed reducer uses ManualAwarePendingDisposition which checks state.RecoveryMode (Automatic), not step-level policy (ManualOnly), so ResumeDisposition stays AutomaticPending after failure. The reconciler's ShouldArmReminder returns false (plan=Blocked, not ExecuteStep), so no reminder is armed and no SagaResumeBlocked is ever emitted to correct the projection. CanResumeTransfer gates on ManualInterventionRequired so the Resume button is permanently hidden.",
+      "severity_justification": "The Spring sample's primary operator recovery path is broken: after a ManualOnly step failure, the projection permanently shows AutomaticPending, no reminder fires, and the UI Resume Transfer button never appears. Operators cannot see they need to intervene or trigger manual resume through the UI.",
+      "category_justification": "The generated reducer logic is incorrect — it considers only saga-level RecoveryMode to set ResumeDisposition, ignoring step-level ManualOnly policy, producing a wrong disposition for the common mixed-mode configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

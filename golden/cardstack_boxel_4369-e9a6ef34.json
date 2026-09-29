@@ -1,0 +1,491 @@
+{
+  "pr_key": "cardstack_boxel_4369-e9a6ef34",
+  "pr": {
+    "repo": "https://github.com/cardstack/boxel",
+    "pr_number": 4369,
+    "base": "7848a41383a06db0ec0ebaabb603636306c0acaa",
+    "head": "e9a6ef340c9a6bee7b5872588c2b4af6d16d64cb"
+  },
+  "findings": [
+    {
+      "file": "packages/software-factory/src/issue-scheduler.ts",
+      "start_line": 234,
+      "end_line": 260,
+      "message": "ID format mismatch between `extractLinksToManyIds` and `mapCardToSchedulableIssue` breaks all dependency resolution. `card.id` from Boxel's search response is a full URL (e.g., `https://realm/Issues/abc`), confirmed by search-test.ts: `ids = results.data.map(e => e.id)` equals `[testRealm.url + 'test-card', ...]`. But `extractLinksToManyIds` extracts only the last two path segments from the relative `links.self` URL (e.g., `'../Issues/abc'` → `'Issues/abc'`). The `statusMap` in `getUnblockedIssues` is keyed by full URLs, so `statusMap.get('Issues/abc')` always returns `undefined`, which is treated as non-done, making every issue with `blockedBy` entries permanently blocked when loaded from a real realm.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified through code inspection and test evidence: `search-test.ts` confirms Boxel search returns full URL IDs (e.g., `testRealm.url + 'test-card'`). `mapCardToSchedulableIssue` extracts `card.id` as-is (full URL), so `statusMap` in `getUnblockedIssues` is keyed by full URLs. But `extractLinksToManyIds` strips `links.self` relative URLs (e.g., `../Issues/abc`) down to two-segment paths like `Issues/abc`. The lookup `statusMap.get('Issues/abc')` fails because the key is `https://realm/Issues/abc`, returning `undefined !== 'done'`, permanently blocking any issue with `blockedBy` entries when loaded from a real realm via `RealmIssueStore`.",
+      "severity_justification": "Completely breaks dependency resolution in production when using `RealmIssueStore`. Any issue with `blockedBy` entries will always appear blocked regardless of the blocker's actual status, making the two-issue dependency cascade (a core feature) non-functional in production. Unit tests pass only because mock stores use consistent short IDs.",
+      "category_justification": "Logic bug in `RealmIssueStore`/`mapCardToSchedulableIssue`: ID format mismatch between `card.id` (full URL) and IDs extracted from `links.self` relationships (path segments), causing dependency resolution to silently fail.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-loop.ts",
+      "start_line": 155,
+      "end_line": 173,
+      "message": "Early exit path returns `no_unblocked_issues` when all issues are already `done`. `hasUnblockedIssues()` returns false for any project where no issues are in `backlog`/`in_progress` state — including when all issues are already `done`. Since `hasAnyIssues()` then returns true, the code unconditionally returns `no_unblocked_issues`. A project where all issues are already completed before the loop starts gets the wrong outcome instead of `all_issues_done`. The two cases (`all done` vs `all blocked`) are not distinguished.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in code: `getUnblockedIssues()` only considers `backlog`/`in_progress` issues, so `hasUnblockedIssues()` returns false when all issues are `done`. In the early exit block (lines 170-185), `hasAnyIssues()` then returns true, unconditionally returning `no_unblocked_issues`. The all-done case and the all-blocked case are not distinguished. No test covers the all-done-before-start scenario.",
+      "severity_justification": "This only affects the pre-loop early exit path, not normal execution. In practice, the loop would only be re-run on an already-completed project as an edge case. The impact is a wrong outcome string; no data is corrupted and the loop terminates immediately in both cases.",
+      "category_justification": "Logic bug: incorrect outcome returned for an all-done project at the initial state check — `no_unblocked_issues` instead of `all_issues_done`.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-scheduler.ts",
+      "start_line": 278,
+      "end_line": 303,
+      "message": "`mapCardToSchedulableIssue` only maps scheduling fields and silently drops all card content fields. It returns an object with only `id`, `status`, `priority`, `blockedBy`, `order`, and `summary`, but not `title`, `description`, or any other content attributes the card may have. When the `IssueData` value is passed to `contextBuilder.buildForIssue`, the agent context lacks the content fields needed to understand what to implement. The existing `fetchCard` pattern in `factory-implement.ts` spreads all `doc.data.attributes` to preserve every field; this mapping should do the same.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `mapCardToSchedulableIssue` returns only `{id, status, priority, blockedBy, order, summary}`. The prompt template `ticket-implement.md` explicitly uses `{{issue.description}}` and `{{issue.checklist}}`, which are not mapped. The `fetchCard` pattern in `factory-implement.ts` spreads all `doc.data.attributes`. When loaded from a real realm via `RealmIssueStore`, the agent context would have blank descriptions/checklists, making the agent unable to know what to implement.",
+      "severity_justification": "The issue description is the core input for the agent's implementation work. A blank `{{issue.description}}` in the prompt would leave the agent without any instructions on what to build, causing fundamentally broken behavior in production.",
+      "category_justification": "Missing data mapping: `mapCardToSchedulableIssue` drops all content attributes (description, checklist, etc.) that the agent prompt template explicitly depends on.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-scheduler.ts",
+      "start_line": 187,
+      "end_line": 205,
+      "message": "`RealmIssueStore.listIssues()` silently swallows realm errors and returns an empty array. When `searchRealm` fails (e.g., network down, 401, 500), `result.ok` is false, a warning is logged, and `[]` is returned. The caller (`scheduler.loadIssues()`) sets `this.issues = []`. On the next `hasUnblockedIssues()` check, the loop exits. Depending on timing, this produces `all_issues_done` (if it happened on initial load via early-exit) instead of surfacing the error. The `refreshIssue` method correctly throws on failure; `listIssues` should do the same.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `listIssues()` logs a warning and returns `[]` on `searchRealm` failure (lines 197-201), while `refreshIssue()` throws on the same condition (lines 218-221). This inconsistency means a realm failure during `loadIssues()` silently sets `this.issues = []`, causing the loop to exit with `all_issues_done` (via the no-issues early exit path) rather than surfacing the error.",
+      "severity_justification": "A realm connectivity failure silently produces a false-success `all_issues_done` outcome instead of an error. This masks operational failures and could lead to false confidence that work completed when it never ran. No data is corrupted but the error signal is completely lost.",
+      "category_justification": "Inconsistent error handling: failure in `listIssues()` is swallowed and produces a misleading success outcome rather than propagating the error to the caller.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-scheduler.ts",
+      "start_line": 142,
+      "end_line": 155,
+      "message": "Unknown blocker IDs are treated as permanently blocking with no recovery path. In `getUnblockedIssues`, `statusMap.get(blockerId)` returns `undefined` for any blocker ID not present in the loaded issue list. Since `undefined !== 'done'`, the dependent issue is treated as blocked. This affects orphaned references (e.g., issues from external projects, deleted issues, or cross-realm dependencies) and will also be triggered by the ID format mismatch noted separately. There is no logging or warning when an unknown blocker ID is encountered, making debugging very difficult.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `statusMap.get(blockerId)` returns `undefined` for IDs not in the loaded issue list; `undefined !== 'done'` silently blocks the dependent issue. There is no warning or log emitted when an unknown blocker ID is encountered. This affects deleted issues, cross-realm dependencies, and — as the finding notes — is also the outcome of the ID format mismatch in Finding 1.",
+      "severity_justification": "The conservative treatment of unknown blockers as not-done is actually a reasonable default (prevents running work with unresolved dependencies). The real concern is the missing diagnostic logging. Practically, the impact is debugging difficulty rather than data corruption or crashes.",
+      "category_justification": "Missing observability: an operational condition (unresolvable blocker ID) is silently treated as blocking with no warning, making it very hard to diagnose why issues are stuck.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-loop.ts",
+      "start_line": 243,
+      "end_line": 260,
+      "message": "Inner loop has no exit condition for `review` status. If an agent transitions an issue to `review` (a valid `IssueStatus`), neither the `done` nor `blocked` branch is triggered. The inner loop continues running the agent on the same issue until `maxIterationsPerIssue` is reached, at which point the issue is added to `exhaustedIssues`. This is likely unintended — a `review` status should probably exit the inner loop similar to `blocked`, rather than burning iterations.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `IssueStatus` in `factory-agent-types.ts` defines 5 statuses including `'review'`. The inner loop exit checks (lines 246-260) only handle `'done'` and `'blocked'`. A `'review'` status burns all remaining iterations and exits as `max_iterations`, adding to `exhaustedIssues` — clearly unintended behavior for a status that semantically means 'awaiting human review, not agent work'.",
+      "severity_justification": "If an agent transitions an issue to `review`, the loop wastes up to `maxIterationsPerIssue - 1` additional agent turns (which may cost money/time and produce unwanted side effects), then marks the issue as exhausted rather than pausing it for review. The feature (`review` status) is broken in this context.",
+      "category_justification": "Missing exit condition: `review` is a valid `IssueStatus` whose semantics (awaiting human review) should trigger inner-loop exit, but the inner loop has no handler for it.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-loop.ts",
+      "start_line": 273,
+      "end_line": 295,
+      "message": "Outcome determination after outer loop uses vacuous truth for `allDone`. `issueResults.every(r => r.exitReason === 'done')` returns `true` when `issueResults` is empty (no issues were processed). However, the post-loop path can be reached with an empty `issueResults` after a `loadIssues()` reload mid-loop returns issues that are all in non-schedulable states (e.g., all in `review`). In that case `allDone = true`, `hasExhausted = false`, and `outcome = 'all_issues_done'` is returned even though unresolved issues remain.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`issueResults.push()` is unconditionally called before `scheduler.loadIssues()` in each outer cycle, so a mid-loop reload returning all non-schedulable issues cannot produce empty `issueResults`. `pickNextIssue()` and `hasUnblockedIssues()` use the same `getUnblockedIssues()` method and cannot disagree in single-threaded execution, ruling out the empty-issueResults path via the `!issue` guard. The vacuous truth is a real code smell but the specific harmful outcome path described is not reachable.",
+      "severity_justification": "The described failure scenario is not achievable in practice, so there is no real risk. The underlying code smell (vacuous truth) is real but harmless here.",
+      "category_justification": "The finding claims a specific logic path that misreads the order of operations (push before reload), making it a factually incorrect claim about code behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-scheduler.ts",
+      "start_line": 207,
+      "end_line": 226,
+      "message": "`RealmIssueStore.refreshIssue` filters by `eq: { id: issueId }` where `issueId` is the full card URL. The Boxel `eq` filter matches card attribute fields stored in `search_doc`, not the JSON:API resource identifier. Unless the Issue card type has an explicit attribute named `id` that stores the full card URL, this filter will match nothing, and `refreshIssue` will throw `'not found'` for every issue. The correct approach would be to fetch the card by URL directly (using `readFile`) rather than searching by an attribute value.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Refuted by `index-query-engine-test.ts` line 913-945: `id` IS stored in `search_doc` and the `in: { id: [fullUrl, ...] }` filter works with full card URLs. The realm search-test also confirms this for the HTTP endpoint. `eq: { id: issueId }` follows the same code path and will work correctly when `issueId` is a full URL. The finding's premise that `id` must be an explicit card attribute to be filterable is wrong.",
+      "severity_justification": "The finding is factually incorrect; `refreshIssue` with `eq: { id: fullUrl }` works as intended.",
+      "category_justification": "The finding makes an incorrect claim about how Boxel's search filter handles the `id` field.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-loop.ts",
+      "start_line": 298,
+      "end_line": 298,
+      "message": "The `summary` property of an `Issue` is optional. If it's missing, `issue.summary ?? issue.id` will result in `issue.id` being assigned to `issueSummary`. This is inconsistent with other logging in the file which uses `issueSummaryLabel` and provides a more descriptive default like `\"ISS-001\" — \"<summary>\"` or just `\"ISS-001\"`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually correct that there's inconsistency — line 277 uses `issue.summary ?? issue.id` while logging uses `issueSummaryLabel`. But `issueSummary` in `IssueIterationResult` is a stored result field with a different purpose from the log label formatter. Using `issue.id` as a fallback is a reasonable default for a stored result field (not a display bug). This is a trivial cosmetic preference with no real impact, below the threshold for a meaningful finding.",
+      "severity_justification": "Purely cosmetic: when `summary` is absent, callers of `IssueLoopResult` get `issue.id` as the summary string. No behavior is broken.",
+      "category_justification": "Minor style inconsistency between stored result field fallback and the log label helper, no functional impact.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-scheduler.ts",
+      "start_line": 113,
+      "end_line": 116,
+      "message": "When `refreshIssueState` updates an issue in the internal `this.issues` list, it finds the index and replaces the item. However, if the issue to be refreshed is not found in the list (e.g., a new issue created by another process that wasn't present during the initial `loadIssues`), it is silently ignored instead of being added to the list. This could lead to inconsistent state.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The only call site for `refreshIssueState` (issue-loop.ts:243) always passes the current `issue` which was obtained from `scheduler.pickNextIssue()`, guaranteeing it exists in `this.issues`. The `idx < 0` path is unreachable in practice. New issues created mid-loop are handled by `loadIssues()` at the end of each outer cycle, not `refreshIssueState`. The described 'new issue created by another process' scenario does not apply here.",
+      "severity_justification": "The described failure mode is unreachable via current call sites, so there is no practical impact.",
+      "category_justification": "The finding is about potential inconsistent state from a silent no-op, which would be a reliability concern if reachable.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/tests/issue-loop.test.ts",
+      "start_line": 692,
+      "end_line": 747,
+      "message": "The test 'agent creates new issues that are picked up by outer loop' directly manipulates the mock store's internal state (`store.issues.push(...)`) to simulate a new issue being created. This makes the test brittle and dependent on the mock's implementation details. It would be better to simulate this through an agent tool call that adds the issue to the store, which would more accurately reflect the intended behavior of the system.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: the test monkey-patches `store.listIssues` and directly mutates `store.issues` to simulate mid-loop issue creation. This couples the test to the mock's internal implementation and makes it fragile to refactoring. The approach is specific and identifiable, not generic advice.",
+      "severity_justification": "The test still exercises the correct behavior (outer loop reloads issues after each cycle). The brittleness is real but the risk of it silently breaking is low, and it only affects test code.",
+      "category_justification": "Test design issue: direct mutation of mock internals and monkey-patching rather than using a proper mock API or test fixture.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-scheduler.ts",
+      "start_line": 149,
+      "end_line": 156,
+      "message": "The sorting logic in `pickNextIssue` does not account for ties in `order`. If two issues have the same priority and order, they will be considered equivalent, which could lead to non-deterministic behavior. This should either be explicitly documented as an intentional choice or include a tiebreaker.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: two issues with identical `priority` and `order` produce a 0 return from the comparator. While modern Node.js/V8 uses stable sort (ES2019), the comparator's contract is not self-documenting about this case. The `order` field is explicitly described as a tiebreaker in the JSDoc but has no further tiebreaker itself.",
+      "severity_justification": "In practice, Node.js 12+ stable sort makes this deterministic based on insertion order. The risk of observable non-determinism is low, and having two issues with identical priority and order is an unusual case the user should avoid by design.",
+      "category_justification": "Missing documentation or final tiebreaker in sorting logic — a clarity and defensive programming concern rather than a functional bug.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-loop.ts",
+      "start_line": 220,
+      "end_line": 230,
+      "message": "The inner loop of `runIssueLoop` does not verify that a newly constructed context is valid before proceeding to agent execution. If `contextBuilder.buildForIssue` returns an invalid context (e.g., missing required fields), the agent might fail unpredictably. Validate or assert context validity after construction.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is a generic defensive-programming suggestion that could apply to any async function call. It identifies no specific missing field, no concrete failure scenario, and no evidence that `buildForIssue` could return an invalid context that the current TypeScript types and internal checks wouldn't catch. Phase 1's `factory-loop.ts` uses the identical unvalidated pattern, so this is not a new concern introduced by this PR. The suggestion to 'validate or assert context validity' is boilerplate with no codebase-specific substance.",
+      "severity_justification": "No concrete failure mode is identified; the suggestion is entirely theoretical.",
+      "category_justification": "The finding is about missing defensive validation of a returned value.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-loop.ts",
+      "start_line": 262,
+      "end_line": 264,
+      "message": "The `validator.validate()` invocation does not have a fallback for when the validator throws an exception (e.g., unexpected input or transient errors). This could cause the `runIssueLoop` function to terminate early without cleaning up ongoing state, such as `exhaustedIssues` or resetting the scheduler.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The pattern is consistent with the rest of the codebase — no awaited call in `issue-loop.ts` or `factory-loop.ts` has error handling. The 'cleanup' described (`exhaustedIssues`, scheduler state) is in-memory local state with no actual cleanup requirement; it is garbage collected on throw. The finding is a generic 'add try/catch' suggestion that applies equally to every other async call in the loop and names no concrete consequence specific to the validator.",
+      "severity_justification": "No real cleanup requirement exists for the mentioned state; the consequence is simply an unhandled promise rejection bubbling up, which is the same for all other unguarded awaited calls.",
+      "category_justification": "The finding is about missing error handling around an async operation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-scheduler.ts",
+      "start_line": 266,
+      "end_line": 273,
+      "message": "The `refreshIssueState` method updates the internal `issues` array directly without any synchronization, which can lead to race conditions if multiple calls to `refreshIssueState` are made concurrently in certain runtime environments.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "JavaScript/Node.js is single-threaded; there are no concurrent mutations to `this.issues` between awaits. The `findIndex` and array assignment after the `await issueStore.refreshIssue()` call execute synchronously with no interleaving possible. The finding applies a multi-threaded concurrency model that doesn't exist in this runtime. `refreshIssueState` is also only ever called sequentially (awaited) in the inner loop.",
+      "severity_justification": "Race conditions are not possible in single-threaded JavaScript, making this concern moot in the target runtime.",
+      "category_justification": "The finding is about a concurrency hazard that does not exist in Node.js's execution model.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-scheduler.ts",
+      "start_line": 324,
+      "end_line": 336,
+      "message": "The `extractLinksToManyIds` helper assumes that all relationships are structured as `links.self`, but does not guard against malformed or missing fields. If the realm data includes unexpected relationship structures, this could throw runtime errors or silently produce incorrect output.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The function is actually well-guarded: `if (!relationships) return []` handles missing relationships; `rel?.links?.self` uses optional chaining at every level; `typeof linkUrl === 'string' && linkUrl.length > 0` filters all non-string values including null/undefined. No path throws on malformed data. The finding's claim that it 'could throw runtime errors' is incorrect.",
+      "severity_justification": "The finding is factually wrong about runtime errors; the code handles malformed input gracefully via optional chaining and type guards.",
+      "category_justification": "The finding is about missing defensive guards, but the guards are already present.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-loop.ts",
+      "start_line": 169,
+      "end_line": 173,
+      "message": "The `hasUnblockedIssues` function is called in both the `while` condition and within the loop body without caching its result. This results in redundant evaluations, which could lead to minor performance inefficiencies, especially for large issue lists.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The loop body does not call `hasUnblockedIssues` again — it calls `pickNextIssue` instead, so there is no redundant double evaluation per iteration. Even if there were, the performance concern is trivially negligible: this loop orchestrates AI agent calls and HTTP realm requests, making any in-memory array filter cost irrelevant at any realistic issue count.",
+      "severity_justification": "No real performance issue exists at any realistic scale for this orchestration loop.",
+      "category_justification": "The finding is about unnecessary computation from repeated evaluations.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-loop.ts",
+      "start_line": 281,
+      "end_line": 285,
+      "message": "The logging statement in the inner loop does not differentiate between validation states, which could make failure scenarios harder to debug. Consider adding more detailed logs for each step of the validation process.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`formatValidation` already differentiates: it reports `passed (N steps)` on success and `FAILED — <step> (N errors), ...` listing each failing step individually on failure. The finding's claim that it 'does not differentiate between validation states' is factually incorrect. The suggestion to add 'more detailed logs for each step' is a generic improvement preference with no specific gap identified.",
+      "severity_justification": "The logging already provides step-level failure detail; no diagnostic gap exists.",
+      "category_justification": "The finding is about logging verbosity, which is a documentation/observability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-loop.ts",
+      "start_line": 292,
+      "end_line": 306,
+      "message": "The outcome computation can misclassify a successful run as `max_outer_cycles`. The `while` condition exits when `outerCycles < maxOuterCycles` is false, which happens as soon as `outerCycles == maxOuterCycles`. If the last cycle within the budget actually finishes all remaining issues, the loop will exit with `outerCycles === maxOuterCycles` and `outerCycles >= maxOuterCycles` will evaluate to `true`, overriding the real outcome (`all_issues_done`).\n\nConsider distinguishing \"loop exited because the cycle limit was hit while work remained\" from \"loop happened to use exactly the limit\". For example, only report `max_outer_cycles` when there are still unblocked issues left at the time the limit is reached.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the while loop increments outerCycles at the start of each body, and after a natural completion of all issues in exactly maxOuterCycles cycles, outerCycles === maxOuterCycles causes the post-loop check `outerCycles >= maxOuterCycles` to return 'max_outer_cycles' instead of 'all_issues_done'. The finding is factually correct.",
+      "severity_justification": "Requires exactly maxOuterCycles (default 50) issues to complete successfully to trigger — low probability edge case. The consequence is a misleading outcome label, not data corruption or wrong behavior.",
+      "category_justification": "The outcome computation returns the wrong enum value in a specific but verifiable edge case, misclassifying a successful run as a limit-exceeded run.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-loop.ts",
+      "start_line": 247,
+      "end_line": 252,
+      "message": "The loop exits as `done` solely based on the refreshed issue status, even when the validation that just ran failed. Because validation happens after the agent turn, an agent can mark the issue done before seeing those results, causing `runIssueLoop` to report `all_issues_done` with a failing `lastValidation` instead of feeding the failures into another iteration.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the inner loop exits on `issue.status === 'done'` without checking `validationResults.passed`. Validation runs after the agent turn, so an agent can mark done before validation reveals new failures. This produces `exitReason: 'done'` with `lastValidation.passed === false`, making the `all_issues_done` outcome misleading.",
+      "severity_justification": "Callers rely on the outcome to judge work quality. Reporting `all_issues_done` when validations fail is a correctness issue that could mask broken code artifacts. Impact is currently limited since the real validator (CS-10675) is a placeholder, but the bug will activate when it is wired in.",
+      "category_justification": "The loop exit logic produces an incorrect outcome classification when validation fails after the agent marks done — a logic error in control flow.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/tests/issue-loop.test.ts",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "This new test module is not imported by `tests/index.ts`, and `scripts/test.ts` runs QUnit only against `tests/index.ts`. As a result, the issue-loop tests are not executed by `pnpm test:node` despite being added in this PR.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: tests/index.ts has explicit per-file imports and neither issue-loop.test.ts nor issue-scheduler.test.ts appear in it. scripts/test.ts runs `qunit ... tests/index.ts`, so both new test files are silently skipped by pnpm test:node.",
+      "severity_justification": "25 new unit/integration tests were added with the explicit intent of verifying the new loop logic, but none of them run in CI. The PR description claims test coverage that doesn't actually exist, so regressions in the new code would go undetected.",
+      "category_justification": "The test files exist but are excluded from the test runner due to a missing import in the test entry point.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/tests/issue-scheduler.test.ts",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "This new test module is not imported by `tests/index.ts`, and `scripts/test.ts` runs QUnit only against `tests/index.ts`. As a result, the issue-scheduler tests are not executed by `pnpm test:node` despite being added in this PR.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in prior investigation: tests/index.ts has no import for issue-scheduler.test.ts, and scripts/test.ts runs `qunit ... tests/index.ts` exclusively, so the 14 issue-scheduler unit tests are never executed by pnpm test:node.",
+      "severity_justification": "14 unit tests covering IssueScheduler's core logic (pickNextIssue, hasUnblockedIssues, refreshIssueState) provide no CI coverage because they never run. Regressions in the scheduler would go undetected.",
+      "category_justification": "Test file exists but is excluded from the test runner due to a missing import in the test entry point.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-loop.ts",
+      "start_line": 294,
+      "end_line": 295,
+      "message": "This classifies any run that completes exactly `maxOuterCycles` cycles as `max_outer_cycles`, even if the loop stopped because there are no unblocked issues left. For example, with `maxOuterCycles: 1` and one issue that completes successfully, the result is reported as hitting the guard instead of `all_issues_done`; the code needs to distinguish whether the guard actually prevented another cycle.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Duplicate of Finding 1, verified against the same code. The `if (outerCycles >= maxOuterCycles)` check at outcome determination fires whenever outerCycles equals maxOuterCycles, regardless of whether the limit caused the exit or all work completed naturally on the last cycle. The maxOuterCycles:1 example makes the bug concrete and easy to reproduce.",
+      "severity_justification": "Same as Finding 1 — wrong outcome label in an edge case, no data corruption or behavioral failure. The maxOuterCycles:1 example is more illustrative but the practical impact remains a misleading result string.",
+      "category_justification": "Incorrect outcome classification due to a boundary condition in the post-loop guard check.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/software-factory/src/issue-scheduler.ts",
+      "start_line": 67,
+      "end_line": 72,
+      "message": "The selection algorithm documentation says `ready`, but the implementation and `IssueStatus` type use `backlog` as the selectable status. This mismatch makes it unclear which status callers should set for new issues.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the JSDoc comment says 'Filter to status = ready | in_progress' and the sort comment says 'in_progress before ready', but IssueStatus has no 'ready' value — only 'backlog'. The implementation correctly filters on 'backlog', making the documentation stale/incorrect. A caller reading the docs would not know to set status='backlog' for new issues.",
+      "severity_justification": "The implementation is correct; only the documentation is wrong. However, this creates genuine confusion for callers about which status to assign new issues, and the mismatch between doc and type is a concrete inconsistency.",
+      "category_justification": "The discrepancy is between the JSDoc algorithm description and the actual status value used — a documentation accuracy issue rather than a behavioral bug.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

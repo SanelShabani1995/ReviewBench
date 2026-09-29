@@ -1,0 +1,631 @@
+{
+  "pr_key": "psalm_psalm-plugin-laravel_674-f3566085",
+  "pr": {
+    "repo": "https://github.com/psalm/psalm-plugin-laravel",
+    "pr_number": 674,
+    "base": "867705a441207cb064eaa8f7b9f6bd6c40edd9cc",
+    "head": "f356608500e6cac425185e592a796c0cd640dfea"
+  },
+  "findings": [
+    {
+      "file": "stubs/common/Http/Request.stubphp",
+      "start_line": 29,
+      "end_line": 35,
+      "message": "The `@template TDefault of object` constraint on `route()` is too restrictive. The actual Laravel `route($param, $default = null)` method accepts any type as a default (strings, integers, null are all common). This is a regression from the pre-PR `@template TDefault` without a bound: users calling `$request->route('id', 'fallback')` or `$request->route('count', 0)` will now get Psalm type errors for passing non-object defaults.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The stub at line 30 shows `@template TDefault of object`, which restricts TDefault to objects only. This is confirmed in the file. The PR diff shows this was changed from the prior unbounded `@template TDefault`. Common uses like `$request->route('id', 0)` or `$request->route('slug', 'fallback')` would produce Psalm errors since int/string are not objects, making this a real regression.",
+      "severity_justification": "Users calling `route()` with scalar defaults (strings, ints, null) would get false-positive Psalm errors, reducing the plugin's utility and trust.",
+      "category_justification": "The stub incorrectly constrains the template type bound, causing incorrect type errors for valid code patterns.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFilterHandler.php",
+      "start_line": 115,
+      "end_line": 140,
+      "message": "`removeFalsyTypes` does not handle `TBool`. When TValue contains `bool` (the `TBool` atomic, representing both `true` and `false`), it passes through `narrowAtomic` unchanged because `TBool` is neither `TNull` nor `TFalse`. As a result, `Collection<int, bool>->filter()` is not narrowed to `Collection<int, true>`, even though `array_filter` removes `false`. The `TFalse` check only catches a literal `false` type, not the combined `bool` atomic.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code at lines 122-124 only checks for `TNull` and `TFalse` instanceof checks. `TBool` (which Psalm uses to represent the `bool` type) is not handled and not mentioned in the class docblock as a known gap. A `Collection<int, bool>` would not narrow to `Collection<int, true>` after `->filter()`, even though `array_filter` removes `false`.",
+      "severity_justification": "The case of `Collection<int, bool>` is uncommon in practice. The handler's stated 80/20 goal focuses on removing null/false from map results, and `TBool` is a less frequent TValue type. The missing narrowing is a gap but not a regression or breakage.",
+      "category_justification": "The handler produces an incorrect (un-narrowed) return type for a specific input type, producing a false type inference result.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFilterHandler.php",
+      "start_line": 133,
+      "end_line": 137,
+      "message": "When all atomic types in TValue are falsy (e.g., `Collection<int, null|false>`), `$filtered` ends up empty and `removeFalsyTypes` returns `null`. The handler then also returns `null`, so Psalm falls back to its default type — which still includes `null|false`. The narrowed type for this case should be `Collection<int, never>`. Returning `null` here silently abandons the narrowing and produces a wrong (un-narrowed) type.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the code: when `$filtered === []` (all atomics were falsy types), `removeFalsyTypes` returns `null` (line 135-137), and the handler at line 70-72 also returns `null`, causing Psalm to fall back to its default un-narrowed type. For `Collection<int, null|false>`, the correct narrowed return is `Collection<int, never>`, but instead the handler silently abandons narrowing and leaves the type as `Collection<int, null|false>`.",
+      "severity_justification": "`Collection<int, null|false>` as a TValue is an extremely uncommon real-world pattern. The incorrect fallback to the un-narrowed type is a genuine bug but has negligible practical impact.",
+      "category_justification": "The handler produces an incorrect (un-narrowed) return type for a specific edge case, falling back to Psalm's default instead of returning `Collection<int, never>`.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Eloquent/Builder.stubphp",
+      "start_line": 593,
+      "end_line": 601,
+      "message": "`@psalm-variadic` on `with($relations, $callback = null)` makes `$callback` the variadic parameter, not `$relations`. Before this PR, the stub had a single `$relations` param with `@psalm-variadic`, allowing `->with('rel1', 'rel2', 'rel3')` to be interpreted as multiple relations. Now that `$callback` is the second explicit param, `->with('rel1', 'rel2')` is interpreted as passing `'rel2'` variadically as the callback, not as a second relation. This changes what Psalm accepts vs. what the actual API semantics intend.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The current stub has `@psalm-variadic` on `with($relations, $callback = null)` which per Psalm semantics makes `$callback` the variadic position (the last parameter), not `$relations`. This means `->with('rel1', 'rel2')` is typed as passing `'rel2'` as callback, not as a second relation. The finding's claim about the pre-PR state is wrong (the old stub had no `@psalm-variadic`), but the core technical concern about the new annotation's placement is correct.",
+      "severity_justification": "In practice, Laravel users pass multiple relations as an array (`->with(['rel1', 'rel2'])`), not as multiple positional string args. The misplaced `@psalm-variadic` would only cause issues for the uncommon `->with('rel1', 'rel2')` calling pattern.",
+      "category_justification": "The `@psalm-variadic` annotation is applied to the wrong parameter position, producing incorrect type semantics for the `with()` stub.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Foundation/Console/Kernel.stubphp",
+      "start_line": 18,
+      "end_line": 22,
+      "message": "`Foundation\\Console\\Kernel::call()` declares `$command` as `\\Symfony\\Component\\Console\\Command\\Command|string`, but the `Contracts\\Console\\Kernel` interface it implements (see Contracts/Console/Kernel.stubphp line 20) declares `$command` as `string` only. Psalm may report this as an interface implementation mismatch. More importantly, the taint sink `@psalm-taint-sink shell $command` is declared for both, but when a caller passes a `Command` object, any taint carried on string variables won't flow through the widened parameter type — creating a gap in taint analysis for the object-based call path.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The interface declares `$command` with no PHP type hint (untyped, just a `@param string` docblock), so from Psalm's perspective the interface accepts any type. The concrete `call(Command|string $command)` narrowing is not flagged as a mismatch by Psalm in user code. Psalm doesn't validate stubs for implementation correctness against their interfaces. The stubs accurately reflect the actual Laravel API. The taint gap for Command objects is a speculative concern without a concrete exploitable path.",
+      "severity_justification": "Even if the claim were valid, the practical impact would be limited — the Command object call path is not a realistic user-controlled shell injection vector.",
+      "category_justification": "The finding is about an alleged type mismatch between interface and implementation stubs that would affect Psalm's analysis.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Query/Builder.stubphp",
+      "start_line": 403,
+      "end_line": 425,
+      "message": "`insertUsing()` and `insertOrIgnoreUsing()` are declared as returning `int`, while the other write-operation stubs in the same file (`update`, `increment`, `decrement`, `getCountForPagination`) all return `int<0, max>`. These methods return the number of rows inserted, which is always ≥ 0. The inconsistency means Psalm won't enforce the non-negative guarantee for these two methods.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `insertUsing()` (line 408) and `insertOrIgnoreUsing()` (line 420) declare `@return int` while `update`, `increment`, `decrement`, `count`, and `getCountForPagination` all return `int<0, max>`. Both insert methods return affected row counts which are always ≥ 0, making `int<0, max>` the correct narrowed type, consistent with the other write methods.",
+      "severity_justification": "The inconsistency means Psalm won't propagate the non-negative guarantee for these two methods, but this rarely affects real-world analysis — callers of `insertUsing` seldom need to prove the result is non-negative.",
+      "category_justification": "This is an inconsistency in type annotation precision within the same file — a style/convention issue that reduces uniform type coverage rather than causing incorrect behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFlattenHandler.php",
+      "start_line": 56,
+      "end_line": 60,
+      "message": "`collapse()` is always treated as a single-level flatten, but `LazyCollection::collapse()` is included in `getClassLikeNames()` without verifying that its implementation behaves identically to `Collection::collapse()`. The comment in the handler only explains why `EloquentCollection` is excluded. If a future Laravel version changes `LazyCollection::collapse()` to use `toBase()` (as EloquentCollection does), this handler would return a wrong type with `is_static: true` for LazyCollection subclasses.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is entirely speculative — it posits a hypothetical future change to `LazyCollection::collapse()` that doesn't exist currently. The current Laravel implementation of `LazyCollection::collapse()` does not call `toBase()`, so the handler is correct today. The finding cannot be verified against the code at the given SHA because the described issue doesn't exist yet.",
+      "severity_justification": "Even if the hypothetical scenario were to materialize in a future Laravel version, the plugin would need updating anyway. This is not a current bug.",
+      "category_justification": "The concern is about long-term maintenance drift risk rather than a current bug or logic error.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFilterHandler.php",
+      "start_line": 118,
+      "end_line": 118,
+      "message": "The method `removeFalsyTypes` is annotated with `@psalm-mutation-free`, but `getCallArgs()` is not a pure function. This annotation will cause errors in Psalm 6 and above. Removing the annotation is required for compatibility.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`removeFalsyTypes` does not call `getCallArgs()`. The method only calls `$type->getAtomicTypes()` and `self::narrowAtomic()`. The finding incorrectly attributes the Psalm 6 `getCallArgs()` mutation-free issue to this method. The PR already addressed the `@psalm-mutation-free`/`getCallArgs()` incompatibility in the methods that actually call `getCallArgs()`.",
+      "severity_justification": "The claim is factually incorrect, so there is no actual issue here.",
+      "category_justification": "The finding makes an incorrect factual claim about what code `removeFalsyTypes` calls.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFlattenHandler.php",
+      "start_line": 116,
+      "end_line": 116,
+      "message": "The method `extractInnerValue` is annotated with `@psalm-mutation-free`, but it's not clear that all methods it calls (e.g., `isSingle`, `getSingleAtomic`, `getGenericValueType`) are mutation-free. This annotation can cause issues with Psalm 6+ if any part of the call chain is impure. The annotation should be removed for compatibility and to avoid potential analysis errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is speculative — 'it's not clear' is not a verifiable claim. `extractInnerValue` calls read-only type inspection methods (`isSingle`, `getSingleAtomic`, `getGenericValueType`) that don't mutate state. The Psalm 6 compatibility issue documented in the PR is specifically about `getCallArgs()`, not these methods. The PR already passes Psalm with 0 errors, confirming there's no actual compatibility issue.",
+      "severity_justification": "Even if the annotation were problematic, removing it would only affect Psalm's analysis of the plugin itself, not user code.",
+      "category_justification": "The finding concerns a potential Psalm 6 compatibility issue with annotation semantics.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Query/Builder.stubphp",
+      "start_line": 105,
+      "end_line": 105,
+      "message": "The `where` method has a `@psalm-taint-sink sql $operator` annotation, which was removed in this diff. However, Laravel allows the `$operator` parameter to be an SQL fragment (e.g., when using operators like `LIKE`). Re-introducing the `@psalm-taint-sink sql $operator` annotation is necessary to properly track SQL injection risks originating from this parameter.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Laravel validates `$operator` against a hardcoded allowlist in `Grammar::$operators`. User-controlled values that aren't in the list are rejected or treated as the value argument (falling back to `=`). There is no concrete exploitable SQL injection path through `$operator`. The removal of the taint annotation was intentional to reduce false positives. The finding asserts a general risk without demonstrating a real exploitation path.",
+      "severity_justification": "The operator parameter in Laravel's where() is constrained by an internal allowlist, making SQL injection through this vector infeasible in practice.",
+      "category_justification": "The finding is about a taint annotation for SQL injection tracking.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFilterHandler.php",
+      "start_line": 109,
+      "end_line": 109,
+      "message": "The `isCalledWithoutCallback` method checks for `filter(null)`, but doesn't handle `filter($callback)` where `$callback` is a variable that is provably `null`. Psalm's type inference could provide the type of `$args[0]->value`. The check could be extended to handle cases where the argument's type is `TNull`, not just a literal `null` constant.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code at line 96-99 only detects `null` as a literal `ConstFetch` AST node. A variable typed as `TNull` by Psalm is not detected, so `->filter($nullVar)` won't trigger narrowing when `$nullVar` is provably null. This is a real gap in the handler's coverage.",
+      "severity_justification": "The missing case (`filter($varTypedAsNull)`) is extremely uncommon in real-world code. The handler already covers the dominant patterns (no args, literal null). The practical impact of the gap is negligible.",
+      "category_justification": "The handler fails to narrow a type in a valid scenario where the argument is provably null, producing a less precise return type than possible.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFlattenHandler.php",
+      "start_line": 86,
+      "end_line": 86,
+      "message": "`extractLiteralDepth` only handles integer literals (`LNumber`). If a constant or class constant is used for the depth (e.g., `flatten(self::DEFAULT_DEPTH)`), this will not be resolved. The handler could be improved to resolve simple constant values to provide better type narrowing in those cases.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `extractLiteralDepth` only handles `LNumber` nodes and explicitly documents returning `null` for non-literal expressions. A call like `flatten(self::DEPTH)` won't be narrowed. The gap is real.",
+      "severity_justification": "Using a named constant for flatten depth is a rare pattern. When not narrowed, the handler safely falls back to Psalm's default type rather than producing an incorrect type. This is a minor coverage gap with negligible practical impact.",
+      "category_justification": "This is an improvement suggestion for extending coverage of an existing feature — not a bug but a documented limitation with low impact.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Eloquent/Builder.stubphp",
+      "start_line": 341,
+      "end_line": 341,
+      "message": "The return type for `firstOrCreate` is documented as `TModel`, but the method can also return the builder instance (`self<TModel>`) in some cases, similar to `firstOrNew`. The previous stub version `TModel|self<TModel>` was more accurate. Changing it to `TModel` could lead to incorrect type inference where a builder instance is returned but a model is expected.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Laravel's `firstOrCreate()` always returns a model instance — it either calls `->first()` (Model or null path leads to create) or creates a new model. It never returns `self<TModel>` (a Builder). The previous `TModel|self<TModel>` annotation was incorrect and forced callers to handle a builder return that's impossible at runtime. Changing to `TModel` is an improvement in accuracy, not a regression.",
+      "severity_justification": "The finding's suggested revert would re-introduce a false return type, potentially causing callers to unnecessarily guard against a builder return that never occurs.",
+      "category_justification": "The finding makes an incorrect claim about Laravel's `firstOrCreate` return behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFilterHandler.php",
+      "start_line": 121,
+      "end_line": 134,
+      "message": "The removeFalsyTypes method does not handle numeric falsy values (0, 0.0). While this is intentional as mentioned in the comments, it introduces an implicit assumption that users are aware of this limitation, which might not be documented clearly in the external behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The limitation is explicitly documented in the class-level docblock ('Not covered (intentionally, 80/20): Numeric falsy types (0, 0.0) are not narrowed — Psalm has no `non-zero-int` atomic type...') and again in the `narrowAtomic` method docblock. The finding's premise that it 'might not be documented clearly' is factually incorrect.",
+      "severity_justification": "Even if accepted, this would be a purely cosmetic documentation suggestion with no behavioral impact.",
+      "category_justification": "The finding is about documentation clarity for a known limitation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFlattenHandler.php",
+      "start_line": 91,
+      "end_line": 114,
+      "message": "The extractInnerValue method skips handling union TValues with multiple atomic types, returning null in such cases. While this simplifies the implementation, it leaves unsupported cases that might be valid for certain real-world collections, potentially causing unexpected behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Returning `null` from `extractInnerValue` causes the handler to return `null`, making Psalm fall back to its default type — this is safe and conservative, not 'unexpected behavior'. The limitation is acknowledged inline with a comment. The finding is a generic improvement suggestion without identifying a concrete bug or incorrect type inference.",
+      "severity_justification": "The fallback to Psalm's default type is correct behavior; no incorrect types are produced.",
+      "category_justification": "This is a coverage gap suggestion rather than an actual defect.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Eloquent/Builder.stubphp",
+      "start_line": 314,
+      "end_line": 321,
+      "message": "The findSole method does not account for scenarios where multiple records are returned, and relies on exceptions. This could result in unintuitive runtime behavior where users might expect an empty collection rather than an exception.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The stub correctly documents `@throws ModelNotFoundException` and `@throws MultipleRecordsFoundException`, accurately mirroring Laravel's actual `findSole()` API. The finding is a generic opinion about Laravel's API design (exceptions vs. empty collection), not a verifiable issue with the stub's type annotations. This cannot be actionably addressed in the plugin.",
+      "severity_justification": "No code change is warranted — the stub accurately represents the real API behavior.",
+      "category_justification": "The finding is essentially a complaint about API documentation/design rather than a real defect.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Http/Request.stubphp",
+      "start_line": 128,
+      "end_line": 135,
+      "message": "The fullUrlWithQuery method directly takes user-controlled input without any validation or sanitization, which may lead to issues like HTTP parameter pollution if the inputs are not carefully controlled.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding misreads the stub's purpose. `fullUrlWithQuery($query)` takes a developer-supplied `$query` array to build a URL based on the current request. The `@psalm-taint-source input` annotation correctly marks the *return value* as tainted (since the base URL comes from user-controlled request). The concern about HTTP parameter pollution is a generic API-design claim that doesn't demonstrate a concrete exploitable vulnerability in this stub.",
+      "severity_justification": "The finding is based on a misunderstanding of the stub semantics and raises no concrete vulnerability.",
+      "category_justification": "The finding is framed as a security concern about input validation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Foundation/Console/Kernel.stubphp",
+      "start_line": 18,
+      "end_line": 24,
+      "message": "The call method introduces a shell taint sink on the $command parameter. While this is explicitly marked, it is critical to ensure that external inputs are sanitized before usage to prevent command injection vulnerabilities.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding restates the purpose of the `@psalm-taint-sink shell` annotation without identifying a concrete exploitable vulnerability or a specific data flow from untrusted input to this sink. The annotation itself is the sanitization enforcement mechanism — it instructs Psalm to warn when tainted data reaches `$command`. This is a generic boilerplate security advisory with no actionable code-specific content.",
+      "severity_justification": "No concrete vulnerability is identified; the annotation is working as intended.",
+      "category_justification": "The finding is framed as a security concern about command injection.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Plugin.php",
+      "start_line": 11,
+      "end_line": 14,
+      "message": "The new `Collections\\CollectionFilterHandler` and `Collections\\CollectionFlattenHandler` imports are inserted between `Auth\\AuthHandler` and `Auth\\GuardHandler`, interleaving with the Auth namespace group and breaking the alphabetical/grouped import ordering used throughout the file. Move both Collections imports below the Auth group (after `Auth\\RequestHandler`), to a position consistent with the registration order (which already places them between the Eloquent and Helpers groups on lines 180-183).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in Plugin.php: lines 10-13 show CollectionFilterHandler and CollectionFlattenHandler inserted between Auth\\AuthHandler and Auth\\GuardHandler, breaking the Auth namespace group. The rest of the file uses consistent namespace-grouped ordering (Application, Auth, Eloquent, Helpers). The Collections imports should appear after the Auth group, consistent with where they're registered.",
+      "severity_justification": "Pure import ordering issue with no runtime impact; purely cosmetic/convention violation.",
+      "category_justification": "This is a code style/ordering inconsistency with the established import grouping convention in the file.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Schema/ColumnDefinition.stubphp",
+      "start_line": 49,
+      "end_line": 104,
+      "message": "These parameter declarations use implicit nullable types (e.g. `bool|string $indexName = null`, `string|Expression $expression = null`). Implicit nullable parameter types have been deprecated since PHP 8.4. Since `composer.json` requires `php: ^8.2`, these stubs will produce deprecation notices when parsed under PHP 8.4+. Either change the default to a non-null value (e.g. `= false` for `bool|string`) to match Laravel's actual signatures, or make the types explicitly nullable (e.g. `bool|string|null $indexName = null`). The sibling stub `ForeignIdColumnDefinition.stubphp` (lines 30, 33) already uses the explicit `?string` form.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in ColumnDefinition.stubphp: fulltext(), generatedAs(), index(), spatialIndex(), unique(), vectorIndex() all use implicit nullable (e.g. bool|string $indexName = null without |null). PHP 8.4 deprecated this pattern. composer.json requires ^8.2 so PHP 8.4 is in scope. ForeignIdColumnDefinition sibling uses explicit ?string forms, confirming the inconsistency.",
+      "severity_justification": "These stubs will produce deprecation notices under PHP 8.4+ (which is within the supported range ^8.2), causing noise or CI failures when Psalm parses them. Not immediately breaking but a real forward-compatibility issue.",
+      "category_justification": "Forward-compatibility issue that will cause deprecation warnings under a supported PHP version.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Eloquent/Builder.stubphp",
+      "start_line": 370,
+      "end_line": 371,
+      "message": "This narrows `sole()`'s `$columns` parameter to lists only, but the previous stub allowed a single column string (including `'*'`), and Laravel forwards this argument to `get($columns)`, which supports both arrays and strings. This will produce false positives for valid calls such as `sole('id')` or `sole('*')`; keep the scalar column form in the docblock.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified via git history: previous stub (HEAD~2) had `@param array<int, (model-property<TModel>|'*')>|model-property<TModel>|'*'` supporting both scalar and array forms. The new stub restricts to `list<non-empty-string>` only, dropping the scalar form. Laravel's sole() forwards $columns to get(), which accepts string|array. Valid calls like ->sole('id') or ->sole('*') would produce false positives.",
+      "severity_justification": "Will cause false positive Psalm errors for valid single-column sole() calls, which is the main purpose of this plugin — avoiding false positives.",
+      "category_justification": "The stub incorrectly narrows the accepted type, causing Psalm to flag valid code as an error.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFilterHandler.php",
+      "start_line": 49,
+      "end_line": 58,
+      "message": "This new return-type narrowing is not covered by the existing type tests: the collection test suite has no `filter()` cases, so regressions in callback/no-callback handling or TValue narrowing would not be caught. Please add a type test covering `filter()` without a callback (and with an explicit callback/null as applicable).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: CollectionTypeTests.phpt has zero filter(), flatten(), or collapse() test cases. The new CollectionFilterHandler introduces type narrowing for filter() without callback, but no type tests cover this behavior. Regressions would not be caught.",
+      "severity_justification": "Missing tests for new handler logic means regressions in type narrowing (which is the core purpose of this plugin) would go undetected. Not blocking but meaningful coverage gap.",
+      "category_justification": "The finding is specifically about missing test coverage for newly introduced handler logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFlattenHandler.php",
+      "start_line": 55,
+      "end_line": 57,
+      "message": "This handler introduces custom inference for `flatten(1)` and `collapse()`, but the existing collection type tests contain no `flatten` or `collapse` cases. Please add type tests for both methods, including the unsupported depths returning the default type, so this provider's edge cases are exercised.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Already verified: CollectionTypeTests.phpt has zero flatten() or collapse() test cases. The new CollectionFlattenHandler introduces depth-aware type narrowing for these methods but has no type tests covering the supported depth=1/collapse case, unsupported depth cases, or the fallback-to-default behavior.",
+      "severity_justification": "Missing tests for new handler logic means regressions in type narrowing would go undetected. Same impact level as finding 4 — meaningful coverage gap for new non-trivial logic.",
+      "category_justification": "The finding is specifically about missing test coverage for newly introduced CollectionFlattenHandler logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Schema/ColumnDefinition.stubphp",
+      "start_line": 14,
+      "end_line": 16,
+      "message": "The stub explains these methods are dispatched through `Fluent::__call()`, but the stubbed class does not extend `Illuminate\\Support\\Fluent` as the real schema definition class does. Registering this stub can drop the inherited Fluent API from `ColumnDefinition`; keep the real parent in the stub while adding these explicit methods.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding misunderstands Psalm stub semantics. Psalm merges stub definitions with the vendor source — omitting 'extends Fluent' in the stub does NOT drop the parent class from Psalm's knowledge. The established pattern throughout this codebase is to omit parent class declarations in stubs (Database\\Query\\Builder, Database\\Schema\\Builder, Routing\\Route, etc.), and tests all pass. No evidence the stub overwrites the inheritance.",
+      "severity_justification": "Even if the concern were valid, it would produce false positives for Fluent methods — but the claim itself is incorrect given Psalm's merge behavior.",
+      "category_justification": "The finding claims a correctness issue in how the stub interacts with Psalm's class resolution.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Schema/ForeignKeyDefinition.stubphp",
+      "start_line": 12,
+      "end_line": 14,
+      "message": "Like `ColumnDefinition`, this real schema definition is a Fluent object; the comment references dispatch through `Fluent::__call()`, but the stubbed class omits the `Illuminate\\Support\\Fluent` parent. That can remove inherited Fluent behavior from Psalm's view of `ForeignKeyDefinition`; keep the real parent class in the stub.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same reasoning as Finding 6: Psalm merges stub definitions with vendor source, so omitting 'extends Fluent' in the stub does not drop the parent from Psalm's view. The codebase-wide pattern of omitting parent classes in stubs (Database\\Query\\Builder, Database\\Schema\\Builder, Routing\\Route, etc.) is intentional and all tests pass.",
+      "severity_justification": "Even if valid, the concern would only produce false positives for Fluent methods — but the claim is incorrect per Psalm's merge behavior.",
+      "category_justification": "The finding claims a correctness issue in how the stub interacts with Psalm's class resolution.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Eloquent/Concerns/QueriesRelationships.stubphp",
+      "start_line": 37,
+      "end_line": 43,
+      "message": "`orWhereBelongsTo()` delegates to the same belongs-to filtering as `whereBelongsTo()`, and the stub just above allows either a single model or an Eloquent collection. Narrowing this overload to only `Model` will reject valid calls that pass a collection of related models; mirror the `whereBelongsTo()` parameter type here.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "orWhereBelongsTo() is a thin wrapper that calls whereBelongsTo($related, $relationshipName, 'or'). The stub's own whereBelongsTo() accepts Model|Collection<int, Model>. Narrowing orWhereBelongsTo() to only Model would cause false positives for valid calls passing a collection of related models. The claim is specific, logically sound, and references exact methods in the stub.",
+      "severity_justification": "Valid calls passing a collection to orWhereBelongsTo() would be flagged as errors by Psalm, creating false positives — directly counter to the plugin's purpose.",
+      "category_justification": "The stub incorrectly narrows the accepted parameter type, causing Psalm to flag valid code.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Query/Builder.stubphp",
+      "start_line": 257,
+      "end_line": 267,
+      "message": "This stub exposes a `selectExpression()` method that is not part of Laravel's supported `Illuminate\\Database\\Query\\Builder` API (the existing methods are `selectRaw()`/`selectSub()`). Adding a non-existent method to a common stub lets Psalm accept calls that will fail at runtime; remove it unless there is a version-gated Laravel method to target.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "selectExpression() is present in the 4.x (master) branch stub (confirmed via git ls-tree origin/master showing the blob contains the method). The method was intentionally added for Laravel ^11.35||^12.0 which is the required version range. The finding's claim that it's not part of Laravel's API is contradicted by the deliberate inclusion in both branches.",
+      "severity_justification": "If the claim were correct, it would let Psalm silently accept invalid method calls — but since the method appears to be real for the target Laravel versions, severity is assessed on the FP itself.",
+      "category_justification": "The finding makes a factual claim about whether a method exists in the API.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Query/Builder.stubphp",
+      "start_line": 340,
+      "end_line": 353,
+      "message": "`straightJoinSub()` is not a method on Laravel's query builder in the supported framework versions; callers can use `joinSub()` with the appropriate join type instead. Stubbing it in `common` will cause Psalm to allow method calls that are fatal at runtime.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "straightJoinSub() is present in the 4.x (master) branch stub (blob 3f98158 line 369), indicating it was deliberately added for the supported Laravel versions (^11.35||^12.0). STRAIGHT_JOIN is a valid MySQL join type and Laravel added this builder method. The finding's claim that the method doesn't exist appears incorrect.",
+      "severity_justification": "If the claim were correct, it would let Psalm silently accept invalid method calls — but the method appears real for target versions.",
+      "category_justification": "The finding makes a factual claim about whether a method exists in the API.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Eloquent/Builder.stubphp",
+      "start_line": 354,
+      "end_line": 358,
+      "message": "`firstOrCreate()`'s `$values` argument is an array in the Laravel builder API, and the adjacent `firstOrNew()` stub keeps that same shape. Allowing a `Closure` here makes Psalm accept calls that will fail against the native `array $values` parameter; the closure overload belongs to `firstOr()`, not `firstOrCreate()`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The relationship stubs (BelongsToMany, HasOneOrMany) define firstOrCreate() with array-only $values, and the adjacent firstOrNew() also uses array-only. Only Builder::firstOrCreate() has \\Closure|array, which is inconsistent. The finding's argument that closures belong to firstOr() not firstOrCreate() is supported by the stub's own patterns across files. The Closure overload would cause Psalm to accept calls that fail at runtime if Laravel's actual API is array-only.",
+      "severity_justification": "Would cause Psalm to silently accept invalid closure arguments to firstOrCreate(), defeating the plugin's purpose and potentially masking bugs.",
+      "category_justification": "The stub accepts a parameter type that the real Laravel API likely doesn't support, creating false negatives for invalid code.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "stubs/common/Database/Eloquent/Builder.stubphp",
+      "start_line": 674,
+      "end_line": 678,
+      "message": "`createOrFirst()` has the same `$values` shape as `firstOrCreate()` in Laravel: an array of attributes to merge when creating. Stubbing it as `Closure|array` will hide runtime type errors for callers that pass a closure; keep this parameter as `array`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same issue as Finding 11. The $values parameter in Eloquent creation methods (firstOrCreate, createOrFirst) is semantically an attributes array to merge when creating, not a callback. The Closure overload makes Psalm accept calls that would fail at runtime if Laravel's actual signature is array-only. No cross-stub evidence here (createOrFirst only appears in Builder.stubphp), but the same logical argument holds as for firstOrCreate.",
+      "severity_justification": "Would cause Psalm to silently accept invalid closure arguments to createOrFirst(), hiding runtime type errors.",
+      "category_justification": "The stub accepts a parameter type that the real Laravel API likely doesn't support, creating false negatives for invalid code.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFlattenHandler.php",
+      "start_line": 74,
+      "end_line": 78,
+      "message": "This also applies `Collection<int, V>` to `collapse()`, but `collapse()` preserves string keys from the nested arrays/collections whereas `flatten(1)` discards keys. For a collection of arrays keyed by strings, the returned collection can have string keys, so forcing `int` here will produce false positives when callers iterate or access by those keys.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct. Laravel's collapse() uses array_merge semantics which preserves string keys (only re-indexes int keys), while flatten(1) uses Arr::flatten → array_values which discards all keys. The handler's assertion that they're equivalent is wrong, and applying Type::getInt() as the key type for collapse() results would produce false positives for string-keyed nested arrays. The claim is verifiable from knowledge of array_merge vs array_values behavior.",
+      "severity_justification": "Typing collapse() return as Collection<int, V> would flag valid string-key access as Psalm errors, creating false positives — directly counter to the plugin's purpose.",
+      "category_justification": "The handler infers an incorrect key type for the collapse() return, producing false positive type errors.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "pr_key": "axios_axios_10836-9cd706cc",
+  "pr": {
+    "repo": "https://github.com/axios/axios",
+    "pr_number": 10836,
+    "base": "90ae1993e0eaa39ccccbaa25957bb23cc5676df7",
+    "head": "9cd706ccb836c581371c760b4c6a5c61c656ea1f"
+  },
+  "findings": [
+    {
+      "file": "README.md",
+      "start_line": 498,
+      "end_line": 510,
+      "message": "The added code inside the `try` block has no indentation relative to the block — all statements sit at column 0 while the surrounding `try {` and `} catch` are indented by 2 spaces. This makes the documentation example visually misleading, suggesting the statements are outside the try/catch block rather than inside it, which is actively confusing for developers reading the example.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified from both the diff and the checked-out file: the new code inside the try block sits at column 0 while the enclosing try/catch is indented 2 spaces, visually implying the statements are outside the try block.",
+      "severity_justification": "Documentation examples are copied by developers; broken indentation actively misleads readers about code structure, undermining the very clarity the PR claims to improve.",
+      "category_justification": "The issue is in README.md — incorrect indentation in a code example that misrepresents structure to readers.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 498,
+      "end_line": 507,
+      "message": "This new async/await example is now nearly identical to the promise-chain example immediately above (lines 478–493), which already demonstrates the `params` option. The previous `axios.get('/user?ID=12345')` was intentionally a minimal example showcasing async/await syntax (the comment on line 495 says \"Want to use async/await?\"), not the `params` option. Duplicating the `params` example here removes the simpler illustration of async/await without adding new information. Consider keeping the example concise or aligning with the PR description's claim of mirroring instead of duplicating.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the promise-chain example immediately above already uses `params: { ID: 12345 }`. The original async/await example used `'/user?ID=12345'` as a deliberately minimal form. The PR makes both examples nearly identical, removing the useful contrast and the simple illustration of async/await syntax.",
+      "severity_justification": "Documentation-only change with no behavioral impact, but it reduces the educational value of the examples by duplicating content that was previously complementary.",
+      "category_justification": "The finding is about the quality and clarity of README documentation examples — specifically redundancy between two code samples.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

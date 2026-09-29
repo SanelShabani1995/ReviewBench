@@ -1,0 +1,231 @@
+{
+  "pr_key": "Martian-Engineering_lossless-claw_307-9b9a04b6",
+  "pr": {
+    "repo": "https://github.com/Martian-Engineering/lossless-claw",
+    "pr_number": 307,
+    "base": "4906c6283a4033f34397bf527ae4a5c40adccdfc",
+    "head": "9b9a04b6a5af7b0f8e7437ca6a2eb58aaf91e428"
+  },
+  "findings": [
+    {
+      "file": "src/engine.ts",
+      "start_line": 1267,
+      "end_line": 1268,
+      "message": "Dead code: `?? 0.05` and `?? 0.8` fallbacks are unreachable. `LcmConfig` declares `leafSkipReductionThreshold: number` and `leafBudgetHeadroomFactor: number` as required (non-optional) fields, so these `??` right-hand sides are never evaluated. This silently misrepresents where the effective defaults come from and could mislead future maintainers who change the `LcmConfig` type to optional without updating these lines.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `LcmConfig` declares `leafSkipReductionThreshold: number` and `leafBudgetHeadroomFactor: number` as required (non-optional) fields at lines 65–70 of src/db/config.ts. The `?? 0.05` and `?? 0.8` fallbacks in engine.ts lines 1267–1268 are therefore unreachable — TypeScript will never evaluate the RHS of `??` for a non-nullable `number`. The finding is factually correct.",
+      "severity_justification": "No runtime behavior is affected since `resolveLcmConfig` already guarantees the fields are populated with the correct defaults. The issue is misleading code that misrepresents where defaults originate, but causes no functional bug.",
+      "category_justification": "Dead/unreachable code that misleads future maintainers about the source of defaults — a maintainability concern with no runtime impact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/compaction.ts",
+      "start_line": 531,
+      "end_line": 531,
+      "message": "`estimatedReduction = perPassRawTokens - this.config.leafTargetTokens` can be negative when `leafTargetTokens` exceeds `perPassRawTokens` (i.e., the target is larger than the chunk being processed). This negative value is propagated into the exported `LeafTriggerResult.context.estimatedReduction` field on both the cache-aware skip path (line 544) and the final `shouldCompact: true` path (line 552). Callers reading the context field for monitoring or downstream decisions see a value like -1900, which implies compaction would increase token count rather than reduce it — semantically wrong. The cache-aware skip guard correctly requires `estimatedReduction > 0` so skipping behavior is safe, but the exported diagnostic data is misleading.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `estimatedReduction = perPassRawTokens - this.config.leafTargetTokens` can yield a negative value. The cache-aware skip guard guards with `estimatedReduction > 0` so skipping is safe, but the final `shouldCompact: true` return at the end of the function exports this potentially negative value in `context.estimatedReduction`. A caller monitoring compaction decisions via this field would see a semantically wrong value (negative reduction implies token count increase). The test case in `lcm-integration.test.ts` for `estimatedReduction <= 0` even describes this scenario explicitly.",
+      "severity_justification": "No behavioral bug — the guard correctly requires `estimatedReduction > 0` before skipping. Impact is limited to misleading diagnostic/telemetry data in the exported context object. The test suite even documents this scenario as expected behavior.",
+      "category_justification": "The issue is semantically wrong diagnostic data in an exported field used for monitoring/telemetry, not a logic bug in the skip decision itself.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/compaction.ts",
+      "start_line": 475,
+      "end_line": 476,
+      "message": "When both guards are disabled (`rawHeadroomFactor <= 0 && reductionThreshold <= 0`), the early return `{ shouldCompact: true, rawTokensOutsideTail, threshold }` omits the `context` field. Every other `shouldCompact: true` return path (lines 549–552) includes `context`. The afterTurn log at `engine.ts:2724` conditionally renders `leafTrigger.context ?`, so no crash occurs, but diagnostic data (assembled token count, budget pressure) is silently lost when both guards are off. Any telemetry or monitoring that expects `context` when `shouldCompact` is true will receive incomplete data in this configuration.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the early-return at lines 475-476 (both guards disabled) returns `{ shouldCompact: true, rawTokensOutsideTail, threshold }` without a `context` field, while the final `shouldCompact: true` path always includes `context`. The log at engine.ts:2724 guards with `leafTrigger.context ?` preventing a crash, but diagnostic data is silently absent when both guards are disabled.",
+      "severity_justification": "No crash or behavioral bug occurs due to the guard in the log statement. Impact is limited to missing telemetry/diagnostic data in a configuration where both guards are explicitly disabled (an unusual, non-default state).",
+      "category_justification": "Inconsistency in exported diagnostic data across `shouldCompact: true` return paths — a maintainability/observability concern with no behavioral impact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/compaction.ts",
+      "start_line": 501,
+      "end_line": 503,
+      "message": "`budgetCeiling = Math.floor(headroomFactor * this.config.contextThreshold * tokenBudget)` applies a hidden `contextThreshold` multiplier (default 0.75). With default values, `leafBudgetHeadroomFactor=0.8` produces a ceiling of only 0.6 × tokenBudget (60%), not 80%. Setting `leafBudgetHeadroomFactor=1.0` still yields a ceiling of 75% of tokenBudget — a user can never get a ceiling above `contextThreshold × budget`. The config name and README description do not make the `contextThreshold` factor obvious. Users who interpret `leafBudgetHeadroomFactor` as \"fraction of total budget\" will set values that produce much tighter ceilings than expected, causing leaf compaction to be skipped far earlier than intended.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the formula `Math.floor(headroomFactor * this.config.contextThreshold * tokenBudget)` is confirmed in code. With defaults (headroomFactor=0.8, contextThreshold=0.75), the ceiling is 0.6 × tokenBudget — not 80% of budget as the name implies. The README description says 'fraction of the budget ceiling' without defining 'budget ceiling', which a user would reasonably interpret as the raw tokenBudget. The openclaw.plugin.json is correctly documented ('fraction of contextThreshold × tokenBudget'), but this inconsistency across documentation surfaces, combined with the misleading config name, means users configuring via the README env var table will get much tighter ceilings than expected.",
+      "severity_justification": "Users who configure `LCM_LEAF_BUDGET_HEADROOM_FACTOR` based on the README description will get compaction behavior that is much more aggressive than intended — at factor=1.0 the ceiling is still only 75% of tokenBudget, not 100%. This affects the primary purpose of the feature (controlling when leaf compaction is skipped) and the README is the primary user-facing documentation surface.",
+      "category_justification": "The core issue is a mismatch between documentation (README says 'fraction of the budget ceiling', ambiguously) and actual behavior (fraction of contextThreshold × tokenBudget). The openclaw.plugin.json is correct, but the README is misleading.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/engine.ts",
+      "start_line": 2868,
+      "end_line": 2868,
+      "message": "The engine-layer `evaluateLeafTrigger` calls `this.compaction.evaluateLeafTrigger(conversation.conversationId, tokenBudget, liveContextTokens)` without passing `precomputedTokenCount`. This triggers a `getContextTokenCount` DB read inside `compaction.evaluateLeafTrigger`. When the result is `shouldCompact=true` and `compactLeafAsync` runs, `_compactLeafImpl` then performs another `getContextTokenCount` read to get `tokensBefore`. The optimization comment in `evaluateLeafTrigger` — \"Reuse a precomputed token count when the caller already fetched it (avoids a duplicate getContextTokenCount DB read)\" — only benefits the internal calls from `_compactLeafImpl` and `compactFullSweep`. The outer engine-level call is always doing an extra unnecessary DB round-trip, which matters under rapid ingestion where `afterTurn` fires frequently.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: engine.ts line 2868 calls `this.compaction.evaluateLeafTrigger(conversationId, tokenBudget, liveContextTokens)` without `precomputedTokenCount`, so `compaction.evaluateLeafTrigger` unconditionally does a `getContextTokenCount` DB read (line 483). Then `compactLeafAsync` → `compaction.compactLeaf` does another `getContextTokenCount` at line 737 before calling `evaluateLeafTrigger` again (this time with precomputedTokenCount). The optimization comment's scope is narrower than stated — it only avoids a *third* read inside the compaction methods, not the extra read at the engine call site. The engine-level `evaluateLeafTrigger` in `afterTurn` always incurs this extra DB round-trip.",
+      "severity_justification": "This is a performance concern on a best-effort background operation (`afterTurn` calls are async and non-blocking). The extra DB read is real but low-cost for SQLite-backed stores, and occurs only when the headroom/reduction guards are active (i.e., not the early-exit path). Not a correctness issue.",
+      "category_justification": "Extra unnecessary DB read on a hot path (`afterTurn`) due to the engine-level call not passing available token count data through.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/engine.ts",
+      "start_line": 2746,
+      "end_line": 2755,
+      "message": "The `afterTurn` path fires `compactLeafAsync` (queued, not awaited) and then awaits `compact()` with the same pre-compaction `liveContextTokens` as `currentTokenCount`. Because both operations share the session queue, `compactLeafAsync` always runs before `compact()`. After leaf compaction reduces stored tokens, `compact()` calls `compaction.evaluate(conversationId, tokenBudget, liveContextTokens)`, which computes `max(storedTokens_post_leaf, liveContextTokens_pre_compact)`. If `liveContextTokens` exceeds `contextThreshold × tokenBudget`, `evaluate()` returns `shouldCompact=true`, and `compactFullSweep` is entered — even though the leaf pass has already addressed the situation. Inside `compactFullSweep`, `rawTokensOutsideTail=0` causes an immediate early exit with `actionTaken=false`. Direct callers of the public `compact()` API who pass a freshly-measured `currentTokenCount` that is slightly over threshold (a common integration pattern) can receive `ok=false, reason: \"live context still exceeds target\"` even when prior leaf compaction in the same queue handled the excess. This creates a spurious failure signal for integrators who inspect the return value.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The mechanics described are mostly correct, but the primary consequence (afterTurn's compact() returning ok=false) is irrelevant because afterTurn wraps compact() in a try/catch and discards the return value entirely (lines 2746-2757). The secondary scenario (direct callers getting ok=false) was already possible before this PR — direct callers could always pass currentTokenCount and encounter queued leaf work. The PR does not introduce any new observable failure mode for consumers of the API.",
+      "severity_justification": "Even if the described scenario were a TP, the afterTurn path discards the return value making it a non-issue, and the direct-caller scenario is an edge case that was pre-existing.",
+      "category_justification": "The finding is about potentially spurious failure signals from the compact() API return value.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/db/config.ts",
+      "start_line": 288,
+      "end_line": 294,
+      "message": "The `clamp01` function is redundant. The same clamping logic is already implemented directly in `CompactionEngine.evaluateLeafTrigger` for `headroomFactor` and `reductionThreshold`. Defining it once and using it in both places would reduce code duplication and ensure consistency.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`clamp01` in `db/config.ts` is a private module-local helper (unexported) used for input sanitization at config resolution time. The clamping in `compaction.ts`'s `evaluateLeafTrigger` is in a different module serving runtime safety. Sharing the function would require either exporting `clamp01` (inappropriate coupling from compaction.ts → db/config.ts) or creating a new shared utility. The two instances serve different purposes at different layers and cannot be trivially deduplicated — the finding treats separate module concerns as a simple DRY violation.",
+      "severity_justification": "Even if considered valid, this is a trivial 2-line function appearing in two separate modules for different purposes. No behavioral impact.",
+      "category_justification": "The suggestion is about deduplication/DRY across modules.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/compaction.ts",
+      "start_line": 507,
+      "end_line": 515,
+      "message": "The `evaluateLeafTrigger` call inside `compactFullSweep` passes `input.currentTokenCount` but `compactFullSweep` is never called with `currentTokenCount` as a parameter. It's only defined on the `CompactLeafInput` type. This means `input.currentTokenCount` will always be undefined here, so the live token count logic is not being used for full sweep compactions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually wrong. `compact()` includes `currentTokenCount?: number` in its input type (line 564 of compaction.ts), and calls `this.compactFullSweep(input)` passing the same `input` object directly. `compactFullSweep` also has `currentTokenCount?: number` in its own type (line 730). The PR explicitly added `currentTokenCount` to both types and the engine passes it from `engine.compact()`. The live token count IS correctly flowing through to full sweep compactions.",
+      "severity_justification": "Incorrect claim — no real issue exists in the code.",
+      "category_justification": "The finding alleges a data-flow gap that would prevent live token counts from being used in full sweep compactions.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/compaction.ts",
+      "start_line": 499,
+      "end_line": 499,
+      "message": "The method signature for `compact` is missing the `currentTokenCount` parameter, but it's passed in the call from `compactFullSweep` within `LcmContextEngine`. While this might not cause a runtime error in JavaScript, it indicates a discrepancy between the method's definition and its usage, and the value is not being utilized within `compact`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims `compact()` is missing `currentTokenCount` in its signature, but this is factually wrong. The method at line 559 clearly declares `currentTokenCount?: number` in its input type (visible at line 564). This parameter was explicitly added by this PR. The value is passed directly to `compactFullSweep(input)` and is utilized there.",
+      "severity_justification": "Incorrect claim — no real issue exists.",
+      "category_justification": "The finding alleges a missing parameter that is actually present in the code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/lcm-integration.test.ts",
+      "start_line": 3615,
+      "end_line": 3627,
+      "message": "This test would still pass if the implementation regressed to using all `rawTokensOutsideTail` for `estimatedReduction`: with these numbers both the capped estimate (17,600) and uncapped estimate (77,600) exceed 5% of the 100,000-token context, so `shouldCompact` is true either way. To cover the per-pass cap, choose a case where the capped estimate falls below the reduction threshold but the uncapped estimate would exceed it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The test comment itself acknowledges the uncapped estimate (77,600) would 'also pass' — both the capped and uncapped estimates exceed 5% of 100,000 (=5,000), so the assertion `shouldCompact=true` holds regardless of whether the per-pass cap is applied. The test does not actually verify that the cap is necessary for correctness.",
+      "severity_justification": "This is a test coverage gap, not a production bug. The implementation in compaction.ts correctly uses `min(rawTokensOutsideTail, threshold)` for the per-pass estimate; only the test fails to distinguish correct from incorrect behavior here.",
+      "category_justification": "The finding is about a test case that does not effectively exercise the behavioral difference it claims to verify — a test design/coverage issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/engine.test.ts",
+      "start_line": 5122,
+      "end_line": 5124,
+      "message": "This assertion does not verify the behavior described by the test name or PR summary. The production call always includes `currentTokenCount: observedTokens`, so when no value is provided the property is present with value `undefined`; reading `callArg.currentTokenCount` cannot distinguish that from the property being omitted. If omission/no undefined leakage matters, assert property presence with `hasOwnProperty`/`in` or change the production call to conditionally spread the field.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The production code at engine.ts:2951 unconditionally passes `currentTokenCount: observedTokens` to compactLeaf, so when no currentTokenCount is provided the property is present as `undefined` on the call arg object — not omitted. The test's assertion `expect(callArg!.currentTokenCount).toBeUndefined()` passes whether the property exists-with-undefined or is absent entirely, so it cannot verify the 'no undefined leakage' behavior the PR claims. The assertion `'in' callArg` or `hasOwnProperty` would expose this.",
+      "severity_justification": "The behavioral gap between `{currentTokenCount: undefined}` and omitting the key is unlikely to affect runtime correctness since downstream code guards on `typeof value !== 'number'`, but the test misrepresents what it actually verifies, and the PR description's claim about 'no undefined leakage' is factually incorrect.",
+      "category_justification": "The finding is about a test assertion that doesn't distinguish property presence from property absence, failing to verify the stated behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

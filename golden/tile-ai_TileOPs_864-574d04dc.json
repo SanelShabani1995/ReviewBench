@@ -1,0 +1,347 @@
+{
+  "pr_key": "tile-ai_TileOPs_864-574d04dc",
+  "pr": {
+    "repo": "https://github.com/tile-ai/TileOPs",
+    "pr_number": 864,
+    "base": "517d9438a608dd59a5f4ee08bdc746958beb6cce",
+    "head": "574d04dc2f085ff0251de6893488afc4dfe7822c"
+  },
+  "findings": [
+    {
+      "file": "scripts/validate_manifest.py",
+      "start_line": 860,
+      "end_line": 862,
+      "message": "`_is_spec_only()` default inverted from 'implemented' to 'spec-only'. Previously, entries without an explicit `status` field were treated as implemented and received full L0-L4 validation. Now they silently receive only L0 (schema) validation. Any new manifest entry for an implemented op that omits `status` will pass CI without signature, shape, dtype, or benchmark checks. This is a fail-open change for the CI gate.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The behavioral inversion is factually correct and verifiable. Old behavior: absent status → implemented → L0-L4. New behavior: absent status → spec-only → L0 only. The orchestrator confirms that spec-only entries skip L1-L4. Any new implemented op without explicit `status: implemented` will silently pass CI with only schema checks.",
+      "severity_justification": "Creates a fail-open CI gate: implemented ops that omit `status` bypass signature, shape, dtype, and benchmark validation. This is a realistic mistake for authors adding new entries, and could let incorrect implementations slip through CI undetected.",
+      "category_justification": "The issue affects CI validation integrity — the correctness of the validation gate, not a logic bug in the op itself. It's an operational/build-pipeline concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/validate_manifest.py",
+      "start_line": 717,
+      "end_line": 722,
+      "message": "`_check_dtype_combos_same_as_identity` is placed in `check_l3` (L3/dtype), which only runs for implemented ops. The same_as identity constraint in `dtype_combos` is a spec-correctness property — it validates that the declared interface is self-consistent, independent of implementation status. Spec-only ops with invalid dtype_combos (e.g., `{x: float16, w: bfloat16}` where `w = same_as(x)`) will pass CI without triggering the new check. This defeats the purpose of adding the check for entries currently under development.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: `_check_dtype_combos_same_as_identity` lives in `check_l3`, and the orchestrator skips L1-L4 (including L3) for spec-only entries. Combined with the PR's change making absent-status default to spec-only, new entries will never have the same_as identity check applied until explicitly marked `implemented`. The inconsistency is a pure spec-declaration error that belongs in L0 schema validation.",
+      "severity_justification": "The new enforcement mechanism introduced by this PR is partially neutered by the status-default change. Spec-only entries (now the default) can have internally inconsistent dtype_combos that pass CI indefinitely. The impact is bounded — errors will be caught when the op is promoted to `implemented` — but the protection is weakest when entries are most likely to have errors (early development).",
+      "category_justification": "Affects the correctness and coverage of the CI validation gate. The check is placed at the wrong level given the new default status, reducing the reliability of manifest validation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/validate_manifest.py",
+      "start_line": 663,
+      "end_line": 692,
+      "message": "`_check_dtype_combos_same_as_identity` produces false positives when `same_as` references are chained. If `v = same_as(k)` and `k = same_as(q)`, the function builds `same_as_map = {k: q, v: k}`. For a valid combo `{q: float16, v: float16}` (k omitted since it's always identical to q), the check for the `v → k` binding fires 'v without its reference k — cannot verify identity' even though v's dtype is transitively consistent with q. The check only verifies one-hop identity without resolving chained references. While chained `same_as` doesn't appear in the current manifest, it is not explicitly rejected by the validator, making this a latent correctness bug.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The logic analysis is correct: with chained same_as (k=same_as(q), v=same_as(k)), same_as_map={k:q, v:k}. For a valid combo {q:float16, v:float16} omitting k, the check fires a false 'without its reference' error for v→k binding even though v's dtype is transitively consistent. The validator does not reject chained same_as references, confirming the latent bug is reachable. No chained same_as exists in the current manifest.",
+      "severity_justification": "Purely latent: no chained same_as exists in the current manifest and it's unusual to write them. If it did occur, the result is a false positive error — over-rejection rather than silent acceptance — which is annoying but not dangerous.",
+      "category_justification": "The check produces a false positive for a valid dtype_combos entry when same_as references are chained, making the logic factually incorrect for that case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/validate_manifest.py",
+      "start_line": 629,
+      "end_line": 643,
+      "message": "`_validate_dtype_token` validates `same_as(ref)` only by checking that `ref` is a known tensor name; it does not verify that `ref` is a free-typed (non-same_as-bound) tensor. This allows chained `same_as` references (e.g., `b: same_as(a)` where `a: same_as(x)`) to pass L3 without any error or warning. Combined with the identity-check logic in `_check_dtype_combos_same_as_identity`, this can produce false-positive errors for valid dtype_combos that omit intermediate same_as-bound tensors.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`_validate_dtype_token` only checks `ref not in tensor_names` and returns None (no error) when ref exists. It does not check whether ref is itself a same_as-bound tensor, so chained same_as (b=same_as(a), a=same_as(x)) passes L3 validation. This is verifiable directly from the code. The finding correctly identifies the missing guard and its downstream consequence with `_check_dtype_combos_same_as_identity`.",
+      "severity_justification": "No chained same_as exists in the current manifest and it is an unusual pattern — authors typically reference the root typed tensor directly. The consequence is false-positive errors (over-rejection) rather than silent acceptance of bad data.",
+      "category_justification": "Missing validation logic allows structurally invalid manifest declarations to pass L3, and interacts incorrectly with the identity-check logic producing false positives.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/validate_manifest.py",
+      "start_line": 646,
+      "end_line": 661,
+      "message": "`_build_same_as_map` silently skips the case where the `dtype` field is absent on a tensor (returning `\"\"` via `attrs.get(\"dtype\", \"\")`), but does not guard against `attrs` being a non-dict (e.g., a string or None). Although `check_l0` validates tensor attrs are dicts and `check_l3` only runs after L0 passes, `_build_same_as_map` is a public-facing utility with no defensive isinstance check, making it unsafe to call in isolation and fragile against future callers that haven't pre-validated.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The function is module-private (underscore prefix), not public-facing. Its only call site is check_l3, which runs after L0 validates that all tensor attrs are dicts. The only crash scenario (--levels dtype without schema) would fail earlier in check_l3's own unguarded attrs.get() at line 709, which predates this PR. The finding describes a generic defensive coding preference rather than a concrete vulnerability.",
+      "severity_justification": "Even if accepted as valid, the issue has negligible real-world impact — only reachable via --levels dtype on malformed YAML that bypasses L0.",
+      "category_justification": "The concern is about defensive error handling in a utility function.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/manifest.md",
+      "start_line": 50,
+      "end_line": 52,
+      "message": "R8 now states 'No shape aliasing' and explicitly forbids `shape: \"same_as(ref)\"`, but the validator's L0 schema check never inspects the value of the `shape` field for `same_as` syntax. A manifest author can write `shape: \"same_as(x)\"` and pass all CI validation levels. The new rule is documented but not enforced. The validator needs an L0 check that rejects any tensor `shape` field whose value matches `_SAME_AS_RE`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the validator never inspects the value of the `shape` field. `check_l0` checks `dtype`, `layout`, and `type` fields on tensors, but there is no grep match for any code reading `attrs['shape']` or `attrs.get('shape')`. A manifest entry with `shape: \"same_as(x)\"` passes all CI validation levels. R8 explicitly forbids this in the docs but enforcement is absent.",
+      "severity_justification": "The PR introduces a new rule (R8: no shape aliasing) and converts existing examples away from `shape: same_as(ref)`, but without validator enforcement an author can still write `shape: same_as(ref)` and pass CI. The gap between documented rule and enforced rule creates drift risk.",
+      "category_justification": "The CI validation gate does not enforce the newly documented rule, reducing its reliability as a correctness check for the manifest.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/test_validate_manifest.py",
+      "start_line": 729,
+      "end_line": 731,
+      "message": "The comment in `test_check_op_scopes_to_single_op` says 'other_op: implemented (not spec-only)' for an entry built with `_make_entry()` (no explicit `status`). With the `_is_spec_only()` default change in this PR, that entry is now treated as spec-only, making the comment factually wrong. The test still passes because `other_op` is excluded by `check_op`, but the stated rationale ('if validated, L1 would fail trying to import a missing module') is no longer accurate — L1 would be skipped anyway since the entry is now spec-only.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_make_entry()` does not include a `status` field. With the PR's `_is_spec_only()` default change, `other_entry = _make_entry(...)` is now treated as spec-only, not implemented. The comment at line 719-720 says 'implemented (not spec-only)' and claims 'L1 would fail trying to import a missing module' — both are now factually incorrect since spec-only entries skip L1-L4.",
+      "severity_justification": "The test still passes and the behavior is correct (other_op is excluded by check_op). The issue is a stale comment that gives wrong rationale, not a functional bug.",
+      "category_justification": "The finding is about a stale/wrong code comment that was made incorrect by the PR's default-status change.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/validate_manifest.py",
+      "start_line": 612,
+      "end_line": 622,
+      "message": "The function `_build_same_as_map` only considers dtypes that are *exactly* `same_as(ref)`. It ignores composite dtypes like `\"float16 | same_as(x)\"`. If a `dtype_combos` entry specified `x: 'float16'`, this function would not know that `w` (with dtype `same_as(x) | float32`) should also be `float16`. The check `_check_dtype_combos_same_as_identity` would then fail to enforce the identity constraint for this combination, as `w` would not be in its `same_as_map`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The behavior described is correct, not a bug. `_build_same_as_map` intentionally skips composite dtypes (documented in its docstring). For `w: 'float16 | same_as(x)'`, the semantic meaning is 'w may be float16 OR same dtype as x' — not a strict identity constraint requiring w to match x. A dtype_combo with w=float16 and x=bfloat16 is valid because float16 is independently allowed. The design choice is intentional and documented. No composite same_as dtypes exist in the manifest.",
+      "severity_justification": "Even if accepted, composite same_as dtypes don't appear anywhere in the manifest, and the enforcement gap is based on a misreading of the dtype semantics.",
+      "category_justification": "The finding makes a factually incorrect claim about what the correct behavior should be for composite same_as dtype expressions.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/validate_manifest.py",
+      "start_line": 643,
+      "end_line": 643,
+      "message": "The check for `combo` being a dict is performed inside the loop over `same_as_map`. If `dtype_combos` contains a non-dict item (e.g. `[[\"float16\", \"float16\"]]` instead of `[{\"x\": \"float16\", \"w\": \"float16\"}]`), the `isinstance` check will be repeated for every tensor in the `same_as_map`, which is inefficient. This check should be moved to before the `for tensor, ref in same_as_map.items()` loop.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's claim is factually incorrect. `isinstance(combo, dict)` is already at the top of the outer loop (over dtype_combos entries), before the inner loop over same_as_map. For a non-dict combo, the check fires once and `continue` skips the inner loop entirely — it is not repeated per tensor in same_as_map. The code is already structured the way the finding suggests it should be.",
+      "severity_justification": "The finding describes a non-existent inefficiency; the code structure is already optimal for this case.",
+      "category_justification": "The finding is framed as an inefficiency concern about redundant isinstance checks.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/manifest.md",
+      "start_line": 70,
+      "end_line": 70,
+      "message": "This changes the documented default from implemented to spec-only, but the validator still treats spec-only as opt-in (`_is_spec_only()` only returns true for explicit `status: \"spec-only\"`). That makes the repo-level design doc inconsistent with the actual enforcement path. Restore the previous default here (and in `.claude/domain-rules/manifest-spec.md`), or intentionally change validator/schema behavior in the same PR so the design and implementation move together.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's claim that 'the validator still treats spec-only as opt-in' is factually incorrect. The PR changes `_is_spec_only()` from `entry.get('status') == 'spec-only'` to `entry.get('status', 'spec-only') == 'spec-only'`, explicitly making absent-status default to spec-only. The docs and validator are aligned in this PR, not inconsistent.",
+      "severity_justification": "The concern about doc/implementation alignment is legitimate in principle but the premise is wrong — both were changed in sync.",
+      "category_justification": "The finding is about inconsistency between documentation and implementation, though the premise is factually incorrect.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "Ibuki-wind",
+        "url": "https://github.com/tile-ai/TileOPs/pull/864#discussion_r3055053100",
+        "created_at": "2026-04-09T01:41:22Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "574d04dc2f085ff0251de6893488afc4dfe7822c"
+      }
+    },
+    {
+      "file": "scripts/validate_manifest.py",
+      "start_line": 676,
+      "end_line": 676,
+      "message": "R3a says `same_as`-bound tensors do not contribute independent axes to `dtype_combos`, but this check only compares values when both the dependent tensor and its reference are present. It still accepts invalid combos like `{w: float16}` for `w: same_as(x)`, which reintroduces `w` as an apparent independent axis. Reject combos where a `same_as`-bound tensor appears without its reference tensor, and add a regression test for that case in `tests/test_validate_manifest.py`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Both claims are factually incorrect. The `elif t_in and not r_in` branch at line 685 explicitly rejects combos where a same_as-bound tensor appears without its reference, emitting a 'without its reference' error. The PR also adds `test_dtype_combos_same_as_partial_combo_fails` which tests exactly this scenario and asserts the error is present.",
+      "severity_justification": "The finding describes a non-existent gap; the code and tests correctly handle the case.",
+      "category_justification": "The finding incorrectly claims a correctness gap in the validation logic.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "Ibuki-wind",
+        "url": "https://github.com/tile-ai/TileOPs/pull/864#discussion_r3055053102",
+        "created_at": "2026-04-09T01:41:22Z",
+        "alignment": "code_changed",
+        "original_commit": "24aec556b38d4228d9e4faa7086a1080d510d94f",
+        "original_start_line": 676,
+        "original_end_line": 676
+      }
+    },
+    {
+      "file": "scripts/validate_manifest.py",
+      "start_line": 676,
+      "end_line": 676,
+      "message": "This still only checks equality when both the dependent tensor and its reference appear in the combo. The PR's own R3a wording is stronger: `same_as`-bound tensors do not contribute independent axes to `dtype_combos`. Right now `check_l3()` still accepts `dtype_combos=[{\"w\": \"float16\"}]` for `w: same_as(x)`; I verified that against this PR head and it returns `[]`. That keeps the semantic hole open. Reject combos where a same_as-bound tensor appears without its reference tensor, and add a regression test that fails on this exact partial-combo case.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Directly executed `check_l3` with `dtype_combos=[{'w': 'float16'}]` for `w: same_as(x)` — it returns a non-empty error list, not `[]`. The `elif t_in and not r_in` branch at line 685 catches exactly this partial-combo case. The PR also adds `test_dtype_combos_same_as_partial_combo_fails` which tests and confirms this behavior. The finding's empirical claim of personal verification returning `[]` is incorrect.",
+      "severity_justification": "The claimed gap does not exist; the code handles the case and the test passes.",
+      "category_justification": "The finding incorrectly claims a correctness gap in validation logic that is demonstrably not present.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "Ibuki-wind",
+        "url": "https://github.com/tile-ai/TileOPs/pull/864#discussion_r3055072977",
+        "created_at": "2026-04-09T01:49:01Z",
+        "alignment": "code_changed",
+        "original_commit": "24aec556b38d4228d9e4faa7086a1080d510d94f",
+        "original_start_line": 676,
+        "original_end_line": 676
+      }
+    },
+    {
+      "file": "docs/manifest.md",
+      "start_line": 152,
+      "end_line": 155,
+      "message": "The Workloads section no longer states that each workload entry must include `dtypes`, but `check_l0()` still treats missing `workloads[i].dtypes` as a schema error. Please keep the spec aligned with the validator by documenting `dtypes` as a required workload field here.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The PR rewrote the Workloads section removing the field table (which previously listed dtypes as required), replacing it with just a YAML example. check_l0() at line 182-184 still enforces `dtypes` as a required field. The docs no longer explicitly state this requirement, creating a spec/validator misalignment.",
+      "severity_justification": "Documentation-only gap — the example still shows dtypes and the validator still enforces it, so no behavioral issue. Authors consulting only the doc may miss that dtypes is required, but the validator will catch it.",
+      "category_justification": "The issue is a documentation specification gap: the spec no longer documents dtypes as required while the validator still enforces it as a schema requirement.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/manifest.md",
+      "start_line": 170,
+      "end_line": 172,
+      "message": "This now documents `elem_bytes`, shape-name auto-binding, and `roofline.vars` evaluation as current behavior, but `tileops/manifest.py::eval_roofline` only evaluates `flops`/`bytes` against caller-supplied variables and does not process tensor shapes or `vars`. Please keep the previous implementation caveat or update the evaluator in the same PR.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The old docs had explicit 'not yet implemented' caveats for elem_bytes auto-injection, shape name auto-binding, and vars evaluation. The PR removed all of them and presents these as current behavior. eval_roofline() only accepts caller-supplied scalar variables (verified in manifest.py lines 129-180) and does not process vars or auto-bind shape names.",
+      "severity_justification": "Removes important implementation caveats, making unimplemented features appear functional. Authors writing new ops with vars blocks expecting auto-evaluation will be silently wrong — their roofline expressions will fail unless they supply variables manually.",
+      "category_justification": "The issue is inaccurate documentation that misrepresents the current implementation state of eval_roofline.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/manifest.md",
+      "start_line": 329,
+      "end_line": 330,
+      "message": "The L3 description omits the new `dtype_combos` `same_as` identity check added in this PR. Since L3 now does more than validate dtype strings/references, the validation table should mention identity enforcement so users know mismatched or partial combos are rejected.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The validation table at line 329 describes L3 as only checking dtype strings/references. The PR adds _check_dtype_combos_same_as_identity() to check_l3() which also enforces same_as identity constraints in dtype_combos, but the table description is not updated to reflect this.",
+      "severity_justification": "Documentation-only gap. The validator behavior is correct; users may just not know about this enforcement from the table alone, though R3/R3a in the Rules section does explain the same_as identity constraint.",
+      "category_justification": "The table description of L3 is incomplete relative to the actual validator behavior introduced in this PR.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/validate_manifest.py",
+      "start_line": 717,
+      "end_line": 723,
+      "message": "The new `dtype_combos` path only checks equality between `same_as`-bound tensors; it still never validates that combo values are strings or recognized dtype tokens. As a result, `dtype_combos: [{x: not_a_dtype, w: not_a_dtype}]` passes L3 as long as the values match, even though these entries are now part of dtype validation and are the exhaustive supported dtype set.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: check_l0 only validates dtype_combos entries as dicts with known tensor keys; check_l3 only checks same_as identity equality. No code calls _validate_dtype_token on the actual dtype string values inside dtype_combos entries. A combo like {x: 'not_a_dtype', w: 'not_a_dtype'} passes both L0 and L3.",
+      "severity_justification": "A validation gap that only affects malformed manifests with unrecognized dtype tokens in combos. Such entries would fail at runtime when the op is exercised. The PR does not regress anything — it is a pre-existing gap made more visible by adding adjacent validation.",
+      "category_justification": "The validator claims to check dtypes at L3 but has a gap where dtype_combos values are never validated as recognized dtype tokens, making the check incomplete.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

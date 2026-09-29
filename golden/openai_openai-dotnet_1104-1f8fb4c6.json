@@ -1,0 +1,397 @@
+{
+  "pr_key": "openai_openai-dotnet_1104-1f8fb4c6",
+  "pr": {
+    "repo": "https://github.com/openai/openai-dotnet",
+    "pr_number": 1104,
+    "base": "e89f79ca1d3be326b1703c7bc188297f47a20272",
+    "head": "1f8fb4c6455a2553565cee371e57c276a9110a53"
+  },
+  "findings": [
+    {
+      "file": "src/Custom/OpenAIClient.cs",
+      "start_line": 339,
+      "end_line": 346,
+      "message": "GetResponsesClient() populates OrganizationId, ProjectId, and UserAgentApplicationId on the new ResponsesClientOptions, but the ResponsesClient(ClientPipeline, ResponsesClientOptions) constructor only reads options.Endpoint — the other three fields are silently discarded. These header values are already baked into the shared Pipeline; copying them into the options object is dead code that falsely implies they have an effect on the returned client.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the `ResponsesClient(ClientPipeline, ResponsesClientOptions)` constructor only reads `options.Endpoint`; OrganizationId, ProjectId, and UserAgentApplicationId set in `GetResponsesClient()` are silently discarded. The pipeline already carries those header policies, so behavior is correct, but the three extra property assignments are dead code that falsely implies they affect the returned client.",
+      "severity_justification": "No behavioral bug — the shared pipeline already has the correct headers baked in, so the returned ResponsesClient works as expected. The issue is misleading dead code rather than incorrect operation.",
+      "category_justification": "The problem is dead code that misleads readers about what the constructor does with the extra fields, not a runtime correctness or security issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Responses/ResponsesClient.cs",
+      "start_line": 52,
+      "end_line": 52,
+      "message": "Breaking API change: the public constructor ResponsesClient(ApiKeyCredential credential, ResponsesClientOptions options) previously accepted OpenAIClientOptions (confirmed from pre-PR api/ snapshot). No backward-compatible overload accepting OpenAIClientOptions and no [Obsolete] attribute were added, so any caller compiled against the previous version will break at runtime, and existing source code will fail to compile without changes.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The entire ResponsesClient class is decorated with [Experimental(\"OPENAI001\")] in the generated partial, which is the standard .NET mechanism signaling the API is unstable and subject to breaking changes. The project README explicitly states experimental APIs are 'subject to change' and callers must suppress OPENAI001. No backward-compat overload or [Obsolete] attribute is needed for intentional breaking changes in an explicitly experimental API.",
+      "severity_justification": "While the API change is real, the [Experimental] attribute covers it contractually; if this were not experimental it would be a high-severity concern.",
+      "category_justification": "The finding is about a public constructor signature change and its backward compatibility implications.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Responses/ResponsesClient.cs",
+      "start_line": 68,
+      "end_line": 68,
+      "message": "Breaking API change: same as above for ResponsesClient(AuthenticationPolicy authenticationPolicy, ResponsesClientOptions options) — previously took OpenAIClientOptions. No compat overload provided.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same as Finding 2: the entire ResponsesClient class is [Experimental(\"OPENAI001\")], which is the contractual signal in this codebase that the API is unstable and subject to breaking changes. No backward-compat overload is required for intentionally changed experimental APIs.",
+      "severity_justification": "If not for the [Experimental] attribute this would be a significant breaking change, but the attribute covers it contractually.",
+      "category_justification": "Concerns a public constructor signature change and backward compatibility.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Responses/ResponsesClient.cs",
+      "start_line": 86,
+      "end_line": 86,
+      "message": "Breaking API change: the protected internal ResponsesClient(ClientPipeline pipeline, ResponsesClientOptions options) constructor previously accepted OpenAIClientOptions. Subclasses that override or call this constructor chain will fail to compile without changes, with no migration path provided.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical reasoning to Findings 2 and 3: the entire ResponsesClient class carries [Experimental(\"OPENAI001\")], which is the contractual signal that the API is unstable and subject to breaking changes. Even the protected internal constructor is covered by this experimental designation. No backward-compat overload is required.",
+      "severity_justification": "Would be significant for subclassers if not for the [Experimental] attribute, which covers it contractually.",
+      "category_justification": "Concerns a protected internal constructor signature change and its implications for subclasses.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Utility/OpenAIClientUtilities.cs",
+      "start_line": 45,
+      "end_line": 45,
+      "message": "TelemetryDetails is now constructed with typeof(OpenAIClientUtilities).Assembly for all clients (OpenAIClient, RealtimeClient, ResponsesClient). Previously each client used its own options type's assembly (e.g. typeof(OpenAIClientOptions).Assembly, typeof(RealtimeClientOptions).Assembly). Since all types live in the same assembly this produces identical User-Agent strings today, but the intent — using the assembly of the type most visible to the consuming library — is lost, making future assembly splits silently break telemetry without any compile-time signal.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually verified: old code used typeof(OpenAIClientOptions).Assembly and typeof(RealtimeClientOptions).Assembly; new code uses typeof(OpenAIClientUtilities).Assembly for all clients. Single .csproj confirms all types are in the same assembly today, so no current functional difference. The shift from using the consumer-visible type's assembly to an internal utilities class is a real (if currently harmless) change in approach.",
+      "severity_justification": "No current behavioral impact since all types share one assembly. The future-split risk is speculative and no assembly split is indicated in the codebase.",
+      "category_justification": "This is a code structure and intent concern about telemetry assembly resolution, not a runtime bug or security issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Responses/ResponsesClientOptions.cs",
+      "start_line": 84,
+      "end_line": 87,
+      "message": "The Endpoint config binding silently swallows relative URIs: Uri.TryCreate with UriKind.Absolute returns false for a relative URI string, causing the property to stay null and the client to fall back to the default endpoint with no warning or error. This same pattern exists in OpenAIClientOptions, but introducing it in a second place perpetuates a footgun where a misconfigured endpoint is silently ignored.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: Uri.TryCreate with UriKind.Absolute silently ignores relative URIs (or URIs missing scheme), leaving Endpoint null and causing silent fallback to the default endpoint. Same pattern confirmed in OpenAIClientOptions. The PR introduces a second copy of this behavior in the new ResponsesClientOptions internal config-binding constructor.",
+      "severity_justification": "Affects only the internal config-binding constructor path; absolute URIs are semantically correct for endpoints; the silent fallback is arguably intentional. No direct data loss or security issue, but can cause hard-to-debug misconfiguration.",
+      "category_justification": "Silent failure on misconfigured input affecting fault tolerance and debuggability, not a security or pure correctness issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Responses/ResponsesClientOptions.cs",
+      "start_line": 75,
+      "end_line": 77,
+      "message": "The public default constructor ResponsesClientOptions() has no XML documentation, while the internal config-binding constructor directly above it does. More importantly, the class is non-sealed and derives from ClientPipelineOptions. Any subclass that adds new properties would not have them bound during config-based construction via the internal IConfigurationSection constructor, creating a silent configuration gap for users who subclass to extend options.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both claims verified: (1) the public default constructor has no XML doc (trivially true, matches OpenAIClientOptions pattern); (2) the class is non-sealed with an internal IConfigurationSection constructor, and ResponsesClientSettings.BindCore hardcodes 'new ResponsesClientOptions(optionsSection)', so subclassers can't get their extended properties bound through this path. Both issues are real, though the subclassing concern mirrors the pre-existing OpenAIClientOptions design.",
+      "severity_justification": "The doc comment absence is trivial/consistent. The subclassing gap is a real design limitation but requires a non-obvious usage pattern (subclassing + config binding together) and matches the pre-existing OpenAIClientOptions design — no regression introduced.",
+      "category_justification": "Both issues are code quality/design concerns: missing documentation and a design limitation for subclassers, not runtime correctness or security issues.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Utility/OpenAITestEnvironment.cs",
+      "start_line": 178,
+      "end_line": 185,
+      "message": "CreateResponsesClientOptions(OpenAIClientOptions options) only copies the four named properties. If OpenAIClientOptions ever gains additional ClientPipelineOptions-level settings (RetryPolicy, NetworkTimeout, Transport), they will silently not propagate to the ResponsesClient in tests, diverging test behavior from production use. The same omission exists in RealtimeClientOptions.FromClientOptions, establishing a brittle pattern.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ResponsesToolTests.cs calls GetProxiedOpenAIClient<ResponsesClient>(options: new() { NetworkTimeout = TimeSpan.FromMinutes(5) }) in three tests. GetProxiedOpenAIClient runs InstrumentClientOptions then GetTestClient, which calls CreateResponsesClientOptions — copying only 4 named properties and silently dropping NetworkTimeout and any test transport. Those tests will run the ResponsesClient with default timeout instead of 5 minutes, and potentially without the test transport.",
+      "severity_justification": "Concrete existing tests set NetworkTimeout for long-running image operations and the timeout is silently dropped, potentially causing flaky test failures or recording/playback breakage. This is an active test correctness issue, not just a speculative future concern.",
+      "category_justification": "The issue directly affects test correctness — test-specific configuration (NetworkTimeout, transport) set on OpenAIClientOptions is not propagated when constructing the ResponsesClient in the test environment.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/OpenAIClient.cs",
+      "start_line": 348,
+      "end_line": 354,
+      "message": "When constructing `ResponsesClientOptions` from `_options` (which is of type `OpenAIClientOptions`), the properties inherited from `ClientPipelineOptions` (like `RetryPolicy`, `Transport`, etc.) are not being copied over. This means that custom pipeline settings configured on the `OpenAIClient` will be lost when creating a `ResponsesClient` via `GetResponsesClient()`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "GetResponsesClient() passes the OpenAIClient's already-constructed Pipeline directly to ResponsesClient(ClientPipeline, ResponsesClientOptions). That constructor assigns Pipeline = pipeline — no new pipeline is built from the ResponsesClientOptions. RetryPolicy, Transport, NetworkTimeout etc. are already baked into the Pipeline object and are fully preserved in the returned ResponsesClient.",
+      "severity_justification": "The claim is factually incorrect — no pipeline settings are lost. The finding is FP.",
+      "category_justification": "The finding asserts a runtime behavior (settings being lost) that does not actually occur.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Responses/ResponsesClientOptions.cs",
+      "start_line": 1,
+      "end_line": 104,
+      "message": "The new `ResponsesClientOptions` class duplicates properties (`Endpoint`, `OrganizationId`, etc.) and logic from `OpenAIClientOptions` but is missing several properties like `DeploymentName`, `IncludeExceptionMessages`, and `Version`. While `DeploymentName` might be specific to certain clients, the others seem generally applicable. This will lead to divergent and inconsistent behavior between `OpenAIClient` and sub-clients derived from it. A better approach would be to have `ResponsesClientOptions` inherit from `OpenAIClientOptions` to ensure consistency and avoid code duplication.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually incorrect: OpenAIClientOptions in this codebase has exactly four properties (Endpoint, OrganizationId, ProjectId, UserAgentApplicationId), all of which are present in ResponsesClientOptions. The claimed missing properties DeploymentName, IncludeExceptionMessages, and Version do not exist in OpenAIClientOptions or anywhere in the non-generated source.",
+      "severity_justification": "The finding is based on properties that don't exist in the codebase, making it entirely incorrect.",
+      "category_justification": "The finding concerns API design — property parity and inheritance between options classes.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Realtime/RealtimeClient.cs",
+      "start_line": 77,
+      "end_line": 77,
+      "message": "The call `OpenAIClientUtilities.CreatePipeline(authenticationPolicy, options, options.UserAgentApplicationId, options.OrganizationId, options.ProjectId)` passes `options` (of type `RealtimeClientOptions`) directly to `ClientPipeline.Create`. This is incorrect because `RealtimeClientOptions` does not inherit from `ClientPipelineOptions`, which is what `ClientPipeline.Create` expects. This will cause a compilation error.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "RealtimeClientOptions is declared as 'public class RealtimeClientOptions : ClientPipelineOptions' in src/Custom/Realtime/RealtimeClientOptions.cs. It does inherit from ClientPipelineOptions, so passing it to ClientPipeline.Create (which expects ClientPipelineOptions) is valid. No compilation error occurs.",
+      "severity_justification": "The finding is factually incorrect; the code compiles and works correctly.",
+      "category_justification": "The finding makes a claim about a compilation error that does not exist.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Utility/OpenAIClientUtilities.cs",
+      "start_line": 21,
+      "end_line": 29,
+      "message": "When creating the API key authentication policy, there's no validation to ensure that the credential's token is not null or empty. This could lead to a runtime failure when the policy is actually used.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The method already calls Argument.AssertNotNull(credential) guarding against null. ApiKeyCredential from System.ClientModel validates the key string in its own constructor — callers like ResponsesClient(string apiKey) create ApiKeyCredential(apiKey) which enforces non-null/non-empty. The finding is generic boilerplate that doesn't demonstrate a concrete path where an invalid key reaches this method.",
+      "severity_justification": "No concrete vulnerability; the type system and ApiKeyCredential constructor enforce key validity before this method is reachable with an empty key.",
+      "category_justification": "The finding frames this as a security validation concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Responses/ResponsesClientOptions.cs",
+      "start_line": 17,
+      "end_line": 21,
+      "message": "The Endpoint property setter does not validate the Uri format or ensure that it points to a secure HTTPS endpoint. Using an invalid or insecure endpoint could cause runtime errors or security vulnerabilities.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "OpenAIClientOptions.Endpoint has the exact same setter pattern with no URI or HTTPS validation — ResponsesClientOptions is consistent with the established codebase convention. The finding is generic boilerplate ('validate URI, enforce HTTPS') with no concrete exploitable vulnerability demonstrated. HTTP endpoints are legitimately needed for test proxies and non-HTTPS environments.",
+      "severity_justification": "Generic boilerplate advice with no concrete attack path; same pattern used throughout the codebase intentionally.",
+      "category_justification": "The finding frames this as a security concern about endpoint validation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Responses/ResponsesClientOptions.cs",
+      "start_line": 62,
+      "end_line": 70,
+      "message": "The ProjectId property setter lacks validation to check the maximum allowed length or format for project IDs. Setting invalid project IDs could lead to API request failures.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "OpenAIClientOptions.ProjectId has the identical setter with no format or length validation, matching the established codebase pattern. The finding is generic boilerplate — it names no specific maximum length or format rule from the OpenAI API spec, and doesn't demonstrate a concrete failure path beyond 'the API might reject it'.",
+      "severity_justification": "Purely generic input validation advice with no concrete format constraint identified; the API itself is the enforcement point.",
+      "category_justification": "The finding is about input validation on a property setter.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Utility/OpenAIClientUtilities.cs",
+      "start_line": 46,
+      "end_line": 59,
+      "message": "The CreateAddCustomHeadersPolicy method does not sanitize inputs (e.g., trimming strings or ensuring no invalid characters). Malformed organization IDs, project IDs, or user agent values could cause HTTP header generation issues.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic boilerplate input sanitization advice. The same pattern (unsanitized string passed directly to message.Request.Headers.Set) was present in the pre-PR code for both OpenAIClient and RealtimeClient. No specific malformed input or exploitation path is demonstrated; HTTP transport layers handle or reject invalid header values.",
+      "severity_justification": "No concrete vulnerability or exploit path shown; pre-existing pattern throughout the codebase.",
+      "category_justification": "The finding frames this as an input sanitization/security concern for HTTP headers.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Responses/ResponsesClientOptions.cs",
+      "start_line": 31,
+      "end_line": 35,
+      "message": "The OrganizationId property setter does not enforce constraints on the format or length of organization IDs. Invalid organization IDs may cause billing errors or quota issues.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical generic boilerplate as findings 13 and 14. OpenAIClientOptions.OrganizationId has the exact same setter with no format or length validation. No specific format constraint or length limit from the OpenAI API is referenced. The API server is the enforcement point for ID validity.",
+      "severity_justification": "Generic input validation advice with no concrete constraint identified; matches established codebase pattern throughout.",
+      "category_justification": "The finding is about input validation on a property setter.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Responses/ResponsesClient.cs",
+      "start_line": 48,
+      "end_line": 53,
+      "message": "The constructor of ResponsesClient initializes its options with new ResponsesClientOptions() instead of reusing or extending an existing OpenAIClientOptions instance. This may lead to configuration inconsistencies if options are dynamically passed at runtime.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is generic and vague — it says using new ResponsesClientOptions() 'may lead to configuration inconsistencies if options are dynamically passed at runtime' without identifying any specific runtime scenario or concrete inconsistency. The PR's stated goal is exactly to make ResponsesClient self-contained with its own options type, so using new ResponsesClientOptions() is intentional design. No specific bug or misconfiguration path is demonstrated.",
+      "severity_justification": "Vague concern with no concrete failure scenario identified; matches the intentional design of the PR.",
+      "category_justification": "The finding is about the options type used in a constructor, touching API design choices.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Custom/Responses/ResponsesClient.cs",
+      "start_line": 636,
+      "end_line": 636,
+      "message": "Should we factor these out into a `Shared` area and link them in as shared source?   While the duplication that we have is reasonable given \"Responses\" and \"all the other things\"  that would allow us to share it between both areas and also expand in the future.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The referenced line 636 does not exist — the file has only 623 lines, making the finding unverifiable. The text is also phrased as a vague open question ('Should we factor these out?') without identifying specific code, types, or a concrete problem. It is generic architectural brainstorming rather than a specific actionable finding.",
+      "severity_justification": "Even if taken as a design suggestion, it is too vague to act on without more context about what specifically should be shared.",
+      "category_justification": "The suggestion is about code sharing and reducing duplication, a maintainability concern.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "jsquire",
+        "url": "https://github.com/openai/openai-dotnet/pull/1104#discussion_r3089911402",
+        "created_at": "2026-04-15T23:07:54Z",
+        "alignment": "code_changed",
+        "original_commit": "bcd68e19960ca3c226afa181029943d13ebf219c",
+        "original_start_line": 636,
+        "original_end_line": 636
+      }
+    },
+    {
+      "file": "src/Custom/OpenAIClient.cs",
+      "start_line": 339,
+      "end_line": 345,
+      "message": "The new Responses-specific conversion path in GetResponsesClient is not covered by tests. Other top-level subclient creation is exercised (for example, ChatTests.HelloWorldWithTopLevelClient uses OpenAIClient.GetChatClient), but there is no corresponding GetResponsesClient coverage to verify that endpoint/header settings are preserved through this new options translation.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: no test file calls `OpenAIClient.GetResponsesClient()`. Existing `ResponsesClient` tests use `GetProxiedOpenAIClient<ResponsesClient>()`, which routes through `GetTestClient` → direct `new ResponsesClient(credential, ...)` construction, bypassing the new options-translation path entirely. The `ChatTests.HelloWorldWithTopLevelClient` / `GetChatClient` comparison is also accurate.",
+      "severity_justification": "The translation is simple (4 property assignments) and the pipeline-accepting constructor only actually reads `Endpoint` from the options, limiting the blast radius. The risk of a silent regression is low but non-zero.",
+      "category_justification": "The finding is specifically about missing test coverage for a newly introduced code path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

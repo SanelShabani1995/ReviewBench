@@ -1,0 +1,681 @@
+{
+  "pr_key": "muir_libschema_353-0cc504c4",
+  "pr": {
+    "repo": "https://github.com/muir/libschema",
+    "pr_number": 353,
+    "base": "f9d69f0f9766ca274c340cbc0d21c05ad81c856c",
+    "head": "0cc504c4ac335d0db754ce9682ea8b77d6b0ae90"
+  },
+  "findings": [
+    {
+      "file": "apply.go",
+      "start_line": 462,
+      "end_line": 468,
+      "message": "When `UnlockMigrationsTable` fails inside `Reconnect`, `d.migrationsLocked` is not set to false before returning. The inner `err :=` variable shadows the named return, but the control flow returns early leaving `d.migrationsLocked = true`. When the error propagates to the deferred `d.unlock()` call, it will attempt `UnlockMigrationsTable` a second time on an already-partially-unlocked or broken state, potentially masking the original error or causing a spurious 'not locked' error from the driver.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `d.migrationsLocked` is not set to false when `UnlockMigrationsTable` fails inside `Reconnect` (the `return err` precedes `d.migrationsLocked = false`). MySQL's UnlockMigrationsTable always clears `p.lockTx` via a defer, so the subsequent `unlock()` call in the Migrate defer sees `d.migrationsLocked=true` and calls UnlockMigrationsTable again, receiving a spurious 'not locked' error. The characterization of the original error being masked is slightly off (it's actually the second error that's dropped), but the inconsistent state and double-unlock are genuine.",
+      "severity_justification": "The inconsistency occurs only in an error recovery path where Reconnect is already failing; the original error is still correctly propagated to callers. The spurious second unlock attempt fails silently without corrupting data or causing visible misbehavior.",
+      "category_justification": "This is an error-handling/state-consistency issue in a failure recovery path — the driver lock state becomes inconsistent when Reconnect fails, potentially causing a spurious subsequent error.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 352,
+      "end_line": 357,
+      "message": "There is no guard preventing `ReconnectAfter()` from being applied to an `Asynchronous()` migration. When async migrations run in a background goroutine (after `Migrate()` has returned), `Reconnect` replaces `d.db` from that goroutine. Any caller that uses `d.DB()` concurrently on the main goroutine will race against the goroutine writing `d.db = db` at line 475, with no synchronization protecting the field.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: no guard prevents combining ReconnectAfter() with Asynchronous(); d.db has no mutex protection; Reconnect writes d.db = db from the async goroutine without synchronization while d.DB() can be called concurrently from application code after Migrate() returns.",
+      "severity_justification": "A genuine data race on d.db, triggering undefined behavior per Go memory model. In practice requires the unusual combination of Asynchronous()+ReconnectAfter(), but the race would be flagged by the race detector and could cause crashes or corruption in the DB pointer read.",
+      "category_justification": "Concurrency/data race issue — unsynchronized access to shared mutable state across goroutines.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 475,
+      "end_line": 476,
+      "message": "`d.db` is read by `d.DB()` (a public method) and written by `Reconnect` with no mutex or synchronization. If `Reconnect` is triggered from an async migration goroutine while the caller reads `d.DB()` on the main goroutine, this is a data race. The `Database` struct has no field-level locking for `db`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: d.db is written in Reconnect (line 475) and read by d.DB() with no mutex or synchronization anywhere in the Database struct. Reconnect can be invoked from the async goroutine (asyncMigrate → doOneMigration → Reconnect), creating a genuine data race with concurrent callers of d.DB().",
+      "severity_justification": "A real data race per Go memory model — the race detector would flag it. Requires the Asynchronous+ReconnectAfter combination to trigger, which is unusual but not prohibited.",
+      "category_justification": "Concurrency issue: unsynchronized concurrent read/write of a shared pointer field across goroutines.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lssinglestore/singlestore.go",
+      "start_line": 68,
+      "end_line": 77,
+      "message": "`schema.NewDatabaseWithOpener` always returns `nil` for the database pointer on error (both error paths return `nil, err`). The `if database != nil` guard at line 70 is therefore always false on error — the cleanup code inside it is dead and never executes. This is misleading and masks any future change to `NewDatabaseWithOpener` that might return a partial database on error.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: NewDatabaseWithOpener always returns nil on error (both error paths: opener failure and NewDatabase failure). The `if database != nil` guard in singlestore.go line 70 is therefore dead code that never executes. The cleanup is also already done inside NewDatabaseWithOpener.",
+      "severity_justification": "Dead code — no actual bug since cleanup is already handled inside NewDatabaseWithOpener. It's misleading and could cause confusion if NewDatabaseWithOpener's contract were ever changed, but no current behavioral impact.",
+      "category_justification": "Dead/misleading defensive code that doesn't execute, reducing code clarity.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lssinglestore/singlestore.go",
+      "start_line": 84,
+      "end_line": 89,
+      "message": "If `lsmysql.New` fails after the database has been opened with `NewDatabaseWithOpener`, the error path closes `database.DB()` when `optDB == nil`. However, at this point `d.reconnect` was set to `optOpener` inside `NewDatabaseWithOpener`, so the db being closed is the one owned by `database`. But the `database` object is already registered in the schema (via `NewDatabaseWithOpener`), and is returned as `nil` to the caller, leaving a dangling schema registration that cannot be cleaned up.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The premise is false: lsmysql.New cannot fail when called with WithDatabase(database) set. In newMaybeWithOpener, m.database != nil causes the switch to take the first branch which unconditionally returns d, m, nil — no error path exists. The cleanup code at lines 84-89 is dead code that can never execute, making the claim about dangling schema registration untriggerable.",
+      "severity_justification": "Even if the described scenario were possible, the concern about dangling schema registration is a minor structural issue; the larger risk is the dead cleanup code which is a maintainability concern.",
+      "category_justification": "The finding makes a factual claim about error handling behavior that is incorrect given the actual code path.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lsmysql/mysql.go",
+      "start_line": 124,
+      "end_line": 132,
+      "message": "When `skipDatabase=true` (via `WithoutDatabase`) and `maybeDB` is nil, `maybeOpener()` is called. If `maybeOpener` is nil (e.g., `lsmysql.NewWithOpener(..., nil, WithoutDatabase)`), this causes an immediate nil function pointer panic. The old code stored nil in `m.db` which would panic later on use; the new code panics at this site with no clear error message.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: old code set m.db = nil and skipped database creation, deferring any nil-panic to later use. New code calls maybeOpener() when maybeDB is nil in the skipDatabase branch — if maybeOpener is also nil (valid call: New with nil db + WithoutDatabase), this panics immediately with a nil function dereference. The behavior regression is real.",
+      "severity_justification": "Only affects the unusual combination of WithoutDatabase + nil db/opener, which was already broken (panics later). Behavior change is fail-fast rather than silent nil storage — arguably safer but less clear error. No realistic production code should hit this path.",
+      "category_justification": "A runtime panic in a construction/initialization path — a reliability regression from the old behavior of deferred nil-dereference.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 447,
+      "end_line": 489,
+      "message": "`Reconnect` is exported as a public method on `Database`, but it manipulates internal migration state (`d.migrationsLocked`, `d.unknownMigrations`, `d.db`) that is only valid during a `Migrate()` call. Calling it outside of a migration sequence (e.g., after `Migrate()` returns) can corrupt migration state. No documentation or runtime guard prevents this misuse.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Tracing the code: when Reconnect is called post-migration (migrationsLocked=false, no goroutine running), it cleanly closes the old connection and opens a new one without touching d.unknownMigrations or d.migrationsLocked. No corruption occurs. The method is intentionally exported as part of the new public API (both CanReconnect and Reconnect are deliberate additions). The concurrent scenario concern is already covered by Findings 2 and 3.",
+      "severity_justification": "No actual corruption demonstrated for the described scenario; the finding conflates intentional API design with misuse risk.",
+      "category_justification": "The concern is about whether an exported method appropriately documents its intended use context, which is an API design question.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lsmysql/mysql.go",
+      "start_line": 85,
+      "end_line": 90,
+      "message": "`WithDatabase` is a new exported `MySQLOpt` function that immediately dereferences the `database` parameter (`database.Options.SchemaOverride`) with no nil check. Passing nil will cause an immediate nil pointer dereference panic. Since this is part of the public API, it should guard against nil input.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the closure returned by WithDatabase dereferences database.Options.SchemaOverride unconditionally. Passing nil panics inside the library internals (inside opt(m) in newMaybeWithOpener) with a confusing stack trace. The finding is factually correct.",
+      "severity_justification": "Passing nil to WithDatabase is a clear programming error — the function semantics require a valid database. No realistic usage path in the codebase passes nil. The fix is trivial but the impact is limited to an unusual caller mistake.",
+      "category_justification": "Unguarded nil dereference in a public API function that produces a panic rather than a proper error.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 477,
+      "end_line": 486,
+      "message": "After a successful reconnect, `LoadStatus` is called which calls `m.Base().SetStatus(status)` on all known migrations from the tracking table. This resets status for migrations that were already applied and whose in-memory state was used for sequencing decisions. If any migration's status in the DB differs from the in-memory state (e.g., due to concurrent runner or partial failure), re-loading mid-sequence could silently re-execute migrations already marked done in memory.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "In the sync path, the forward-only loop cannot revisit already-processed migrations even if LoadStatus resets their status. In the async path, LoadStatus would only reset a migration to done=false if the DB shows done=false, which cannot happen in normal operation because successful migration commits set done=true in DB before DoOneMigration returns. The described scenario requires DB inconsistency or driver bugs, not normal operation.",
+      "severity_justification": "Even if the claim were correct, it requires extraordinary circumstances like external DB modification or driver bugs, not anything the reconnect logic itself introduces.",
+      "category_justification": "The finding is about potential incorrect re-execution of migrations due to state management during reconnect.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 257,
+      "end_line": 268,
+      "message": "When `ReconnectAfter()` is set but the database was not created with `NewDatabaseWithOpener`, `doOneMigration` logs 'migration not supported' and returns an error without running the migration. However, the migration is never actually attempted, so marking it with `SetNote(\"applied\", false)` and `SetNote(\"reason\", \"not supported\")` is misleading — the correct framing is a configuration error, not a migration that was evaluated and skipped.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the code sets SetNote(reason, not supported) for what is actually a configuration error (database not created with opener capability). The migration was never run. The notes mirror the IsMigrationSupported pattern but the two cases are semantically different. The error message is clear but the notes are misleading to consumers of the note metadata.",
+      "severity_justification": "No behavioral impact — the error is correctly returned regardless. Only affects the accuracy of supplementary note metadata surfaced to OnMigrationFailure callbacks or log inspection.",
+      "category_justification": "Misleading note content in error reporting code — a framing/terminology issue rather than a correctness or reliability problem.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "api.go",
+      "start_line": 223,
+      "end_line": 232,
+      "message": "The function `NewDatabaseWithOpener` calls `NewDatabase` which also creates a `*libschema.Database`. If `NewDatabase` returns an error, `NewDatabaseWithOpener` closes the `*sql.DB` connection but does not clean up the partially constructed `Database` object that might have been returned along with the error. This could lead to a resource leak if the caller receives a non-nil `Database` object with a nil `error` and does not close it.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "NewDatabase only returns nil for the *Database pointer when it returns an error (the only error path is the duplicate name check returning nil, err). NewDatabaseWithOpener correctly handles this case. The premise that NewDatabase could return a non-nil *Database alongside a non-nil error is factually incorrect.",
+      "severity_justification": "No actual resource leak exists; the finding is based on a misreading of NewDatabase's return behavior.",
+      "category_justification": "The finding makes an incorrect factual claim about possible return values from NewDatabase.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lsmysql/mysql.go",
+      "start_line": 130,
+      "end_line": 135,
+      "message": "In `newMaybeWithOpener`, if `maybeOpener` is provided and the call to `schema.NewDatabaseWithOpener` fails, the `*sql.DB` connection opened inside `NewDatabaseWithOpener` is not closed. `NewDatabaseWithOpener` only closes the connection on its own errors, not when passing errors up from `NewDatabase`. This will lead to a leaked database connection.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's premise is factually wrong. NewDatabaseWithOpener explicitly calls _ = db.Close() when s.NewDatabase returns an error (api.go line 233). The connection is correctly closed in that error path. There is no leak.",
+      "severity_justification": "No actual leak exists; the finding misreads the code.",
+      "category_justification": "The finding claims a resource leak, which would be a reliability concern if true.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 328,
+      "end_line": 331,
+      "message": "In `doOneMigration`, if `m.Base().repeatUntilNoOp` is true, the loop is incorrectly exited with `break` after the first successful execution, regardless of whether `rowsAffected` was zero or not. The loop should only break if `rowsAffected == 0`. This prevents the migration from repeating until no more rows are affected, which is the intended behavior of `RepeatUntilNoOp`.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding misreads the control flow. The outer `break` at line 350 is only reachable when repeatUntilNoOp is false — when repeatUntilNoOp is true, the if-block always terminates with either `break` (rowsAffected==0) or `continue` (rowsAffected>0), so control never falls through to the outer break. The loop correctly repeats until no rows are affected.",
+      "severity_justification": "If the claim were true it would be a serious correctness bug breaking the RepeatUntilNoOp feature entirely, but the claim is factually wrong.",
+      "category_justification": "The finding claims a logic error in loop termination for RepeatUntilNoOp migrations.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 425,
+      "end_line": 431,
+      "message": "In `CanReconnect`, if `d.Options.Overrides.MigrateDSN` is set, the function returns `false`, preventing reconnection. However, there's no check for this condition before a `ReconnectAfter` migration is run. This will cause the migration to fail at runtime with a \"reconnect not supported\" error, which could be caught earlier during the planning phase.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim 'there's no check for this condition before a ReconnectAfter migration is run' is factually wrong. The check at lines 257-268 in doOneMigration explicitly prevents the migration from being executed when !CanReconnect(). The suggestion to validate earlier during prepare is a reasonable enhancement but the finding presents a missing check where one already exists.",
+      "severity_justification": "The check exists and works correctly; the migration is never run when CanReconnect() returns false. Earlier detection would be slightly better UX but is an enhancement, not a bug fix.",
+      "category_justification": "The finding is about error detection timing in the migration execution pipeline.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lsmysql/mysql.go",
+      "start_line": 115,
+      "end_line": 121,
+      "message": "In `newMaybeWithOpener` for MySQL, when `m.skipDatabase` is true, a new `*sql.DB` connection is opened via `maybeOpener()` but it is never closed if there are no subsequent errors. This will result in a leaked database connection.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The opened connection is stored in m.optDB and accessible via mysql.DB(). The NewWithOpener docstring explicitly states it is the caller's responsibility to call mysql.DB().Close(). This is intentional caller-managed lifetime, not a leak. The finding conflates documented caller responsibility with an unmanaged resource.",
+      "severity_justification": "No actual leak given the documented API contract; the finding mischaracterizes caller-owned lifetime as missing cleanup.",
+      "category_justification": "The finding claims a resource (connection) leak in the library code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 254,
+      "end_line": 267,
+      "message": "The logic for handling migrations requiring reconnect is missing validation for cases where `d.reconnect` is `nil` but `ReconnectAfter` is specified. This could cause a runtime panic in production if improperly configured.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The validation the finding says is missing already exists at lines 257-268. CanReconnect() returns false when d.reconnect is nil, which triggers the guard before the migration runs, returning a clear error. There is no panic path for this scenario.",
+      "severity_justification": "No actual issue — the described scenario is properly handled with a clear error return.",
+      "category_justification": "The finding makes an incorrect factual claim about missing validation and potential panic.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 471,
+      "end_line": 504,
+      "message": "The `Reconnect` method closes the existing database connection before acquiring a new one. If reconnect fails, the method does not attempt to restore the previous connection, leaving the `Database` in a partially broken state.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's core premise is factually wrong: Reconnect acquires the new connection first via d.reconnect(), then closes the old one. If d.reconnect() fails, d.db is completely untouched and still valid. The partially broken state concern only applies to the unusual case where d.db.Close() itself fails, which is not the scenario the finding describes.",
+      "severity_justification": "The described scenario is based on a wrong understanding of the code's order of operations. The real edge case (d.db.Close() failure) is rare and results in an error return that halts migration.",
+      "category_justification": "The finding is about error recovery and state consistency in a connection management operation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 486,
+      "end_line": 503,
+      "message": "When a migration is relocked after a failed reconnect, the method does not check the state of the previous migration locks, leading to a possible deadlock scenario in concurrent environments.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The old advisory lock is explicitly released via UnlockMigrationsTable (RELEASE_LOCK + lockTx=nil) before any relocking attempt. There is no unchecked previous lock state. The 'deadlock' claim is unsubstantiated — MySQL advisory locks can cause indefinite blocking when contended but not classical cyclic deadlocks, and that behavior is not new to this code path.",
+      "severity_justification": "No actual deadlock mechanism is demonstrated; the finding is speculative and factually mischaracterizes both the lock release sequence and the nature of MySQL advisory locks.",
+      "category_justification": "The finding is about concurrent lock management and potential blocking behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lsmysql/mysql.go",
+      "start_line": 47,
+      "end_line": 67,
+      "message": "The implementation of `ColumnDefault` does not use parameterized SQL queries. This creates an increased risk of SQL injection attacks, especially if `table` or `column` are user-controlled.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "ColumnDefault uses parameterized queries with ? placeholders and separate arguments to QueryRow — the standard database/sql approach. The finding is factually wrong about missing parameterization and also references the wrong file (mysql.go instead of skip.go).",
+      "severity_justification": "No actual SQL injection risk exists since parameterized queries are used correctly.",
+      "category_justification": "The finding claims a SQL injection vulnerability.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lsmysql/mysql.go",
+      "start_line": 69,
+      "end_line": 89,
+      "message": "The `HasPrimaryKey` method's query uses untrusted string concatenation and directly interpolates the table name, exposing the system to SQL injection vulnerabilities.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "HasPrimaryKey uses parameterized queries with ? placeholders — both database and table are passed as separate arguments to QueryRow, not interpolated into the SQL string. The finding's claim of 'string concatenation' and 'direct interpolation' is factually wrong. The finding also references the wrong file (mysql.go instead of skip.go).",
+      "severity_justification": "No actual SQL injection vulnerability exists; parameterized queries are used correctly.",
+      "category_justification": "The finding claims a SQL injection vulnerability.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lsmysql/mysql.go",
+      "start_line": 91,
+      "end_line": 111,
+      "message": "Similarly to `ColumnDefault`, the `ColumnIsInPrimaryKey` function is at risk of SQL injection, as it does not sanitize or use proper prepared statements for query variables.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "ColumnIsInPrimaryKey uses parameterized queries with ? placeholders — database, table, and column are all passed as separate arguments to QueryRow, not interpolated into the SQL string. The finding's claim of missing prepared statements is factually wrong. The finding also references the wrong file (mysql.go instead of skip.go).",
+      "severity_justification": "No SQL injection risk exists; the parameterized query approach is used correctly throughout.",
+      "category_justification": "The finding claims a SQL injection vulnerability.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lssinglestore/singlestore.go",
+      "start_line": 271,
+      "end_line": 283,
+      "message": "The new connection handling logic for SingleStore fails to initialize or clean up properly during error handling in `newMaybeWithOpener`, which can lead to leaks in connection resources.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The referenced lines 271-283 are in GetTableConstraint, not newMaybeWithOpener. Analysis of the actual newMaybeWithOpener error paths shows no connection leaks: NewDatabaseWithOpener handles its own cleanup, lsmysql.New cannot fail with WithDatabase set, and caller-provided optDB is correctly left to the caller to close. The finding is vague and factually unsubstantiated.",
+      "severity_justification": "No actual connection leak demonstrated; finding references wrong lines and provides no specific leak scenario.",
+      "category_justification": "The finding claims a resource leak in connection management.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lssinglestore/singlestore.go",
+      "start_line": 287,
+      "end_line": 290,
+      "message": "The error message when failing to close a database connection does not specify or log the database name, making it harder to debug in multi-database setups.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Lines 287-290 are the asString() helper function with no connection close, no error handling, and no logging. The finding references completely wrong code. No error message about database close exists at those lines.",
+      "severity_justification": "Finding is based on incorrect line references and doesn't correspond to any actual code.",
+      "category_justification": "If the concern were real it would be about debug information quality in error messages.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "config.go",
+      "start_line": 24,
+      "end_line": 27,
+      "message": "The `OverrideOptions` struct notes that `MigrateDSN` is not compatible with `ReconnectAfter` migrations but does not enforce this constraint programmatically, leaving the potential for misconfiguration.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The incompatibility IS enforced programmatically: CanReconnect() returns false when MigrateDSN is set, and doOneMigration checks this at lines 257-268, returning a clear error before running any ReconnectAfter migration. The finding's claim of 'no programmatic enforcement' is factually incorrect.",
+      "severity_justification": "The constraint is enforced, just at migration execution time rather than options-validation time. No misconfiguration goes undetected.",
+      "category_justification": "The finding is about enforcement of a configuration constraint.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lspostgres/postgres.go",
+      "start_line": 43,
+      "end_line": 43,
+      "message": "curious, why postgres does not need opts setting?  or why it doesn't need a wrapper with those extra\n```\n\t\ttrackingSchemaTable: trackingSchemaTable,\n\t\tdialect:             classifysql.DialectMySQL,\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "This is a reviewer question asking why Postgres doesn't need MySQL-specific options, not a finding about a bug or issue. The Postgres driver is simpler by design with no dialect variants and no custom table quoter, so it correctly doesn't need those options. No code problem is identified.",
+      "severity_justification": "No actual issue identified — purely a curiosity question about architectural choices with no actionable fix.",
+      "category_justification": "The comment asks for explanation of why the design differs between Postgres and MySQL drivers, which is a documentation/understanding concern.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "suqin-haha",
+        "url": "https://github.com/muir/libschema/pull/353#discussion_r3089353532",
+        "created_at": "2026-04-15T21:04:00Z",
+        "alignment": "code_changed",
+        "original_commit": "678098e0d446deeb9e5f92de69f112a11855564a",
+        "original_start_line": 43,
+        "original_end_line": 43
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 464,
+      "end_line": 464,
+      "message": "um... if the lock doesn't meat to affect close() and open()\nthen\nis it a good idea to put lock in open and close wrapper function to avoid forgot? ",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is an informal, poorly worded question/suggestion from a reviewer asking whether locking should be wrapped in open/close helpers, not a substantive finding about a concrete code defect. It identifies no specific bug, race condition, or actionable problem beyond a vague 'what if we refactored'. It cannot be verified against code because there is no specific claim to verify.",
+      "severity_justification": "No concrete issue identified — the comment is an informal design musing with no demonstrated harm.",
+      "category_justification": "The suggestion is loosely about refactoring lock management into wrapper functions for safety, which is a code structure/maintainability concern.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "suqin-haha",
+        "url": "https://github.com/muir/libschema/pull/353#discussion_r3089452459",
+        "created_at": "2026-04-15T21:23:48Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "0cc504c4ac335d0db754ce9682ea8b77d6b0ae90"
+      }
+    },
+    {
+      "file": "lssinglestore/singlestore.go",
+      "start_line": 85,
+      "end_line": 90,
+      "message": "This error-handling branch is effectively dead code. `lsmysql.New` is called with `nil` for `db` and the `WithDatabase(database)` option. In `newMaybeWithOpener`, the `m.database != nil` switch case is taken first and unconditionally returns `(d, m, nil)`, so `err` here will always be `nil`. Either drop the dead branch or make the underlying `lsmysql.New` path return errors that actually need handling.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: lsmysql.New is called with nil db and WithDatabase(database) option. In lsmysql.newMaybeWithOpener, WithDatabase sets m.database, so the switch takes the `case m.database != nil` branch which just does `d = m.database` and returns nil error unconditionally. The error-handling block in lssinglestore/singlestore.go lines 86-90 is dead code.",
+      "severity_justification": "Dead code doesn't cause a bug but creates misleading code that implies an error is possible when it isn't, and could confuse future maintainers or mask refactoring needs.",
+      "category_justification": "Dead code — an error-handling branch that can never be triggered — is a code quality/maintainability concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 462,
+      "end_line": 468,
+      "message": "The inner `err := d.driver.UnlockMigrationsTable(...)` shadows the named return `err`. The code still works because `return err` with a named return assigns the value to the named variable that the deferred close func inspects, but the shadowing is fragile and easy to break in a future refactor (for example, replacing `return err` with a bare `return` would silently change behavior). Reusing the outer `err` here would make the intent clearer and the safety of the deferred db cleanup more obvious.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: in Reconnect(), the named return is `(err error)`, the defer checks `err != nil && db != nil`. Inside the UnlockMigrationsTable block, `err :=` shadows the named return. `return err` currently works correctly (sets named return via explicit return expression). But a future bare `return` refactor would leave named err nil, skip the deferred db.Close(), and leak the connection.",
+      "severity_justification": "Current behavior is correct; the risk is only realized by a future refactor. No bug today, but the pattern is non-obvious and fragile in a function with deferred cleanup.",
+      "category_justification": "The issue is about variable shadowing and code fragility — a maintainability concern — rather than a current correctness bug.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 483,
+      "end_line": 486,
+      "message": "If `LockMigrationsTable` succeeds during reconnect but `LoadStatus` then fails, the function returns an error while `d.migrationsLocked` is left set to `true` and `d.db` is the new connection. The caller (`doOneMigration`) returns `(true, err)`, propagating up through `migrate()`, whose deferred `unlock()` will then attempt to unlock on the new (open) connection — which is fine — but `d.unknownMigrations` may have been clobbered (the slice is overwritten before the error check). Consider only assigning `d.unknownMigrations` after the error check, so that a partial reload doesn't corrupt previously loaded state on failure.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The factual claim is correct: d.unknownMigrations is assigned before the error is checked in the multi-value assignment. However, since a LoadStatus failure during reconnect causes full migration abort, the stale value is never subsequently used in a harmful way in current code paths.",
+      "severity_justification": "The clobbered state has no practical effect in current code because the entire migration sequence is aborted on error before anything else reads unknownMigrations. The fix using a temp variable is good practice but actual risk is negligible.",
+      "category_justification": "The finding is about state mutation occurring before an error check, leaving object state in a partially-updated form on error paths.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lsmysql/mysql.go",
+      "start_line": 85,
+      "end_line": 90,
+      "message": "`WithDatabase` unconditionally overwrites `p.databaseName` with `database.Options.SchemaOverride`, even when that override is the empty string. If a caller composes options like `WithDatabase(...)` together with a future `WithDatabaseName(...)` (or applies options in a specific order), the empty override could silently clobber an intentionally set database name. Consider only assigning `databaseName` when `SchemaOverride != \"\"`, matching the prior behavior of the SingleStore code path that conditionally called `UseDatabase`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The described harm cannot occur in the current code. databaseName is zero-initialized to empty string, no other MySQLOpt sets databaseName to non-empty before WithDatabase, and there is no WithDatabaseName option. Setting databaseName to empty string is identical to not setting it. The concern about clobbering is purely hypothetical about future API additions.",
+      "severity_justification": "Even if classified as a real concern, this is minor style/future-proofing with no current behavioral impact.",
+      "category_justification": "The suggestion is about defensive coding for hypothetical future option composition.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lspostgres/config_test.go",
+      "start_line": 188,
+      "end_line": 191,
+      "message": "When `MigrateDSN` is set, `Schema.Migrate` replaces `dbase.DB()` with a new handle, so this cleanup path closes only the replacement handle and leaves the original `db` opened at the top of the helper unclosed. The helper should still close the original handle when `dbase.DB() != db` to avoid leaking test database connections.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: when MigrateDSN is set, apply.go replaces d.db with a new connection, so dbase.DB() returns that replacement. The PR changed the defer from closing the original `db` to closing `dbase.DB()`, meaning the original `db` opened at the top of doConfigMigrate is never closed in MigrateDSN test cases like TestOverrideMigrateDSNWithOneDatabase.",
+      "severity_justification": "Test-only resource leak of a database connection. Tests still pass correctly and Go's database/sql pool will eventually release connections, but it is a real leak introduced by the PR's refactoring of the cleanup logic.",
+      "category_justification": "This is a resource leak in a test helper function, not production code.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apply.go",
+      "start_line": 462,
+      "end_line": 466,
+      "message": "`Reconnect` drops the migration lock before the new connection is assigned and re-locked, creating a window where another process can acquire the lock and start applying the remaining migrations while this process is still inside the same `Migrate` call. That breaks the guarantee that the lock is held while migrations are in progress and can interleave migration execution across processes after every `ReconnectAfter` migration.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: in Reconnect(), UnlockMigrationsTable is called before the old connection is closed and before the new connection acquires the lock. Both Postgres (FOR UPDATE row lock in a tx) and MySQL (GET_LOCK advisory lock) release the lock at step 1, leaving a window where another process can acquire the lock and start running subsequent migrations concurrently.",
+      "severity_justification": "Breaks the fundamental exclusivity guarantee of the migration lock. In a multi-process environment (e.g. rolling deploy), another process could interleave migrations mid-sequence after any ReconnectAfter migration, potentially causing duplicate or out-of-order migration execution. However, this only manifests when multiple processes run migrations simultaneously, which is not always the case.",
+      "category_justification": "This is a concurrency/fault-tolerance issue — the lock safety guarantee is violated during reconnect, which can cause incorrect behavior in multi-process environments.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lspostgres/postgres.go",
+      "start_line": 48,
+      "end_line": 49,
+      "message": "This new Postgres opener path is not covered by the reconnect tests added in this PR, which only exercise MySQL and SingleStore. Since Postgres has a different lock implementation, add coverage that a `ReconnectAfter` migration created via `lspostgres.NewWithOpener` reopens the handle and can continue/finish migrations successfully.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: reconnect tests (lsmysql/reconnect_test.go) cover only MySQL and SingleStore. No test file in lspostgres/ exercises NewWithOpener or ReconnectAfter. The Postgres lock implementation (FOR UPDATE row lock in a tx) is different from MySQL advisory locks, making independent coverage meaningful.",
+      "severity_justification": "Missing test coverage for a new API path with a distinct lock implementation is a real gap, but it doesn't cause a current bug — it just means the Postgres reconnect path is untested.",
+      "category_justification": "The finding identifies a missing test case for new functionality in a driver with a distinct implementation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

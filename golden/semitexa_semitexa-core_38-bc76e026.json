@@ -1,0 +1,351 @@
+{
+  "pr_key": "semitexa_semitexa-core_38-bc76e026",
+  "pr": {
+    "repo": "https://github.com/semitexa/semitexa-core",
+    "pr_number": 38,
+    "base": "05cdd9b3642eb63c076e0cde70f3c3e5dd57d560",
+    "head": "bc76e026856d13bca75ff37165e419fec87b75eb"
+  },
+  "findings": [
+    {
+      "file": "src/Application.php",
+      "start_line": 313,
+      "end_line": 329,
+      "message": "logSessionPersistenceFailure() no longer wraps $logger->error() in a try/catch. If the logger implementation throws (e.g. a Redis-backed logger when Redis is unavailable), the exception now propagates uncaught through the outer catch block in finalizeSessionAndCookies(), bypassing the error_log() fallback and potentially losing the response entirely. The old code had a try/catch around both the container.get() and the logger.error() call, ensuring the fallback was always reached.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the old code wrapped both container.get() and logger.error() in a single try/catch with a fallback to error_log(). The new code only guards container.get() via has(), leaving logger.error() unprotected. If the logger throws (e.g., Redis logger during Redis outage), the exception propagates uncaught through the outer catch in finalizeSessionAndCookies() and up through handleRequest(), potentially aborting the HTTP response.",
+      "severity_justification": "Only triggers in a cascading failure scenario (session save fails AND logger throws), but when it does happen the response is lost entirely. In production with degraded infrastructure this is realistic.",
+      "category_justification": "This is an error-handling regression — a fault-tolerance mechanism (fallback to error_log) is no longer reliably reached when the logger itself throws.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Discovery/RouteRegistry.php",
+      "start_line": 38,
+      "end_line": 46,
+      "message": "The named index uses last-write-wins semantics: if two routes share the same name (e.g. a module base route and a tenant-scoped override both named 'error.404'), only the last registered one is stored. The old AttributeDiscovery::findRouteByName() returned the first match. Neither applied tenant filtering, but the semantics changed in a way that reverses which route wins. For the error.404 named route used in Application.php, this can silently return the wrong handler in multi-tenant deployments.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: old findRouteByName() returned the first match from iterating self::$routes; new findByName() uses a named index with last-write-wins (self::$namedIndex[$name] = $route overwriting on each call). Routes with the same name but different paths/scopes all reach RouteRegistry::register(), making only the last registration visible to findByName(). This silently reverses which route wins in multi-tenant scenarios with duplicate named routes.",
+      "severity_justification": "Silently returns the wrong route handler for named lookups (including the critical error.404 route) when duplicate named routes exist in multi-tenant deployments. Only affects cases where two routes genuinely share a name with different paths or scopes, but when it occurs the wrong handler runs without any error.",
+      "category_justification": "The lookup semantics changed from first-match to last-registration, producing different route resolution results for the same input — a behavioral correctness change.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Discovery/RouteRegistry.php",
+      "start_line": 104,
+      "end_line": 106,
+      "message": "findByName() performs no tenant filtering, while find() calls TenantModuleScopeResolver::selectRoutesForCurrentTenant() on all matches. Named route lookups (e.g. the error.404 route used in Application::handleRouteException and getNotFoundResponse) are therefore tenant-unaware. In a multi-tenant setup where different tenants register different error handlers under the same route name, the wrong handler can be dispatched.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The absence of tenant filtering in findByName() is factually correct and verifiable. find() calls TenantModuleScopeResolver::selectRoutesForCurrentTenant() while findByName() does not. Named lookups for error.404 can return the wrong tenant's handler in multi-tenant deployments. However, the old AttributeDiscovery::findRouteByName() also had no tenant filtering, so this is not introduced by the PR.",
+      "severity_justification": "In a multi-tenant deployment, error.404 and other named route lookups can dispatch the wrong handler silently. The impact is real but limited to multi-tenant setups with tenant-specific named routes.",
+      "category_justification": "Named route lookups produce tenant-incorrect results due to missing filtering, which is a behavioral correctness issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/PHPStan/Rules/ExecutionScopedWithoutAttributeRule.php",
+      "start_line": 47,
+      "end_line": 53,
+      "message": "CONTAINER_MANAGED_ATTRIBUTES contains only fully-qualified class names, unlike SCOPING_ATTRIBUTES and MUTABLE_INJECTION_ATTRIBUTES which include both FQN and short names. PHPStan's $attr->name->toString() returns the name as written in source; classes imported via 'use Semitexa\\Core\\Attributes\\AsService' and annotated as #[AsService] produce 'AsService', not the FQN. Since virtually all application code uses imported short names, isContainerManaged() returns false for nearly every class, making the entire expanded rule a near-no-op. SCOPING_ATTRIBUTES correctly added short-name entries in this same PR; CONTAINER_MANAGED_ATTRIBUTES was not updated consistently.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: CONTAINER_MANAGED_ATTRIBUTES contains only FQNs (e.g. 'Semitexa\\Core\\Attributes\\AsService') while SCOPING_ATTRIBUTES and MUTABLE_INJECTION_ATTRIBUTES include short names. Since $attr->name->toString() returns the source spelling, classes using 'use' imports with #[AsService] produce 'AsService', which isContainerManaged() does not match. The PR exacerbates this by removing the name-heuristic fallback, making the rule near-silent. The claim that SCOPING_ATTRIBUTES were updated in this PR is wrong (they were pre-existing), but the core CONTAINER_MANAGED_ATTRIBUTES bug is real.",
+      "severity_justification": "This is a static analysis rule only — no runtime behavior is affected. The consequence is that PHPStan fails to flag a class of real bugs (missing scoping attributes on InjectAsMutable classes), but existing code keeps running. Developers lose a safety net, not a feature.",
+      "category_justification": "The rule logic is factually incorrect: isContainerManaged() returns false for virtually all real classes due to the FQN-only list, making the rule a near-no-op.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Container/SemitexaContainer.php",
+      "start_line": 178,
+      "end_line": 186,
+      "message": "getOrNull() is added to SemitexaContainer but has no callers anywhere in the codebase. All Application.php call sites changed in this PR use the has()+get() pattern instead. The method is dead code and also diverges from the PSR ContainerInterface that Application.php depends on, since the container is injected as ContainerInterface (which doesn't declare getOrNull()), so the method is only reachable via a concrete-type reference.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: getOrNull() appears only at its definition in SemitexaContainer.php with zero callers anywhere in the codebase. Application.php types the container as ContainerInterface (PSR), so the method is unreachable via the standard interface. The PR's own refactoring used has()+get() everywhere instead of getOrNull().",
+      "severity_justification": "Dead code has no runtime impact; it's a maintainability concern. The method is harmless and could be useful in the future, but as written it adds API surface with no consumers.",
+      "category_justification": "The issue is dead/unused code — a method was added that is never called and is not reachable via the declared interface type.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Application.php",
+      "start_line": 143,
+      "end_line": 149,
+      "message": "The alternate root-path fallback ('/' vs '') in matchAndExecuteRoute() is now dead code. RouteRegistry::register() normalises empty-string paths to '/' when building the exact index, and RouteRegistry::find() normalises an incoming empty path to '/' before lookup. Both '/' and '' therefore resolve to the same 'GET:/' index key, so calling AttributeDiscovery::findRoute with the alternate path always produces the same result as the first call. The fallback and its comment are misleading.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: RouteRegistry::register() maps empty paths to '/' in the exact index, and find() normalizes incoming '' to '/' before lookup. Both '/' and '' produce identical index key 'METHOD:/', making the alternate-path fallback in matchAndExecuteRoute() unreachable — it can never succeed when the first lookup failed.",
+      "severity_justification": "Dead/misleading code only — no functional regression. The fallback silently does nothing, which preserves correct behavior since both paths already resolve identically.",
+      "category_justification": "The fallback block is dead code made obsolete by the RouteRegistry normalization introduced in this PR, and the comment incorrectly implies a real distinction still exists.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Application.php",
+      "start_line": 81,
+      "end_line": 84,
+      "message": "Replacing try/catch with has()+get() means a non-NotFoundException thrown by get() now propagates out of the constructor. For a readonly service this is safe (get() just returns from cache), but if EventDispatcherInterface is ever bound to an execution-scoped prototype, get() in the constructor (before any ExecutionContext is set) would trigger injectMutableProperties() and throw InjectionException. The old catch(\\Throwable) defended against this. The same pattern is repeated for LoggerInterface at line 185 and 315, where a logger whose get() path exercises injection logic could now crash request handling.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "EventDispatcher is annotated #[SatisfiesServiceContract], making it a readonly/worker-scoped service; get() returns a cached instance without invoking injectMutableProperties(). The InjectionException scenario requires binding EventDispatcher/Logger as execution-scoped, which is a design error that would exist independently of this PR. The old catch(Throwable) would have silently hidden that misuse; the new pattern correctly surfaces it. No concrete current issue exists.",
+      "severity_justification": "Even if the finding were TP, it only applies to a hypothetical future misuse scenario; current code is safe.",
+      "category_justification": "The concern is about exception propagation and error handling behavior in degraded/misconfigured scenarios.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Application.php",
+      "start_line": 286,
+      "end_line": 294,
+      "message": "The session handler is re-created and replaced on the `Application` instance (`$this->sessionHandler`), but this new handler is not used for subsequent requests. Each new request will get a fresh handler from `self::createSessionHandler()` in the constructor. If the goal is to replace a faulty handler for the lifetime of the worker, the new handler should be stored in a way that subsequent requests can use it (e.g., a static property or a shared service).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "SwooleBootstrap creates new Application() per request. The retry stores the recreated handler in $this->sessionHandler purely so the within-request retry can use it (session->setHandler() + session->save()). There is no intent to persist across requests, and none is needed — the next request creates a fresh Application/handler anyway. The finding misidentifies the code's purpose.",
+      "severity_justification": "Even if the finding were correct, the practical impact is low — only affects the second request with a broken session handler, where the constructor would simply recreate the same handler that failed.",
+      "category_justification": "The finding makes a claim about incorrect state management behavior, which is the correctness category.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Console/Command/LintScopingCommand.php",
+      "start_line": 80,
+      "end_line": 81,
+      "message": "The error message \"Add #[ExecutionScoped] so the container clones this class per request\" is slightly misleading. Other attributes like `#[AsPayloadHandler]` also imply execution scope. The message should suggest the broader set of scoping attributes to be more accurate.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`ExecutionScoped` is the correct role-neutral recommendation; others are specialized",
+      "severity_justification": "This is a console error message quality issue — it gives incomplete guidance but does correctly identify the problem class. No runtime behavior is affected.",
+      "category_justification": "The issue is an inaccurate/incomplete error message in a developer-facing CLI tool, which is a documentation/developer-experience concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Container/SemitexaContainer.php",
+      "start_line": 182,
+      "end_line": 182,
+      "message": "The documentation for `getOrNull` incorrectly references `NotFoundException`. The `get` method throws `Semitexa\\Core\\Exception\\NotFoundException`, but the `catch` block catches the PSR-11 `NotFoundException` (`Psr\\Container\\NotFoundExceptionInterface`). This could be confusing as it's not the exception `get()` is documented to throw, although it works due to inheritance. For clarity, the catch block should be more specific.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "SemitexaContainer is in namespace Semitexa\\Core\\Container and has no PSR NotFoundException import. The unqualified NotFoundException in the catch block resolves to Semitexa\\Core\\Container\\NotFoundException — the same class that get() throws. The finding incorrectly claims it catches the PSR-11 interface. The catch is precise and correct.",
+      "severity_justification": "The finding is factually incorrect, so there is no real issue to assess severity against.",
+      "category_justification": "The finding makes a factual claim about exception type resolution that is wrong.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Discovery/AttributeDiscovery.php",
+      "start_line": 139,
+      "end_line": 139,
+      "message": "`findRoute` calls `RouteRegistry::find`, which already performs tenant-scoping via `TenantModuleScopeResolver::selectRoutesForCurrentTenant`. However, if no route is found, `findRoute` returns `null` without attempting to find a route for an alternate path (e.g. `/` vs `''`), which was a behavior present in the previous implementation and seems to have been lost. This could be a regression.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The old findRoute() only normalized '' to '/' before lookup — it never tried alternate paths itself. The alternate-path fallback was always in Application::matchAndExecuteRoute(), not findRoute(). The new RouteRegistry::find() performs the same '' to '/' normalization. No behavior was removed from findRoute().",
+      "severity_justification": "The finding describes a regression that does not exist.",
+      "category_justification": "The finding makes a claim about missing behavior (alternate path lookup) that is factually incorrect.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Application.php",
+      "start_line": 268,
+      "end_line": 273,
+      "message": "In `finalizeSessionAndCookies`, validating only `SessionInterface` and `CookieJarInterface`'s presence without ensuring their proper implementation may result in runtime errors. This weakens the guarantee of safe operation when the provided dependencies do not match.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The instanceof Session check for $session is unchanged from before. The absence of an instanceof check on $cookieJar was pre-existing in both old and new code. Both dependencies are always set to concrete types in initSessionAndCookies() before this method runs. The finding is generic and does not identify a concrete new vulnerability introduced by this PR.",
+      "severity_justification": "Even if the concern were valid, the request-scoped container values are always set to concrete CookieJar and Session instances by initSessionAndCookies(), making a type mismatch impossible in practice.",
+      "category_justification": "The finding claims insufficient type validation could cause runtime errors.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Application.php",
+      "start_line": 317,
+      "end_line": 329,
+      "message": "Unconditional fallback from `LoggerInterface` to `error_log` retains functionality, but it lacks the ability to identify contexts or enrich error metadata fully. This can dilute operational observability.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The error_log fallback is intentional defensive behavior for when no logger is registered. The finding restates a general best practice ('structured logging is better than error_log') without identifying a specific code problem introduced by this PR. The same fallback existed in the old code. This is a generic observation that could be copy-pasted onto any codebase using error_log as a fallback.",
+      "severity_justification": "The fallback only activates when no logger is available at all, which is a degraded state. In normal operation the structured logger is used.",
+      "category_justification": "The finding is a general observability/logging quality concern with no specific actionable code change identified.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Console/Command/LintScopingCommand.php",
+      "start_line": 62,
+      "end_line": 68,
+      "message": "`hasMutableInjection` heavily relies on the `InjectAsMutable` reflection being accessible and stable, which may break visibility during edge scenarios like class loader tampering or forward compatibility breaks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is entirely hypothetical ('class loader tampering or forward compatibility breaks') and does not identify a concrete, verifiable issue in the actual code. ReflectionClass property attribute inspection is standard PHP and stable. The concern could be copy-pasted onto any code using PHP Reflection and is not specific to this codebase or this PR's changes.",
+      "severity_justification": "The described scenarios (class loader tampering, forward compatibility breaks) are speculative and not grounded in any concrete risk in this codebase.",
+      "category_justification": "The finding is about hypothetical runtime stability of reflection-based code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Container/SemitexaContainer.php",
+      "start_line": 175,
+      "end_line": 187,
+      "message": "`getOrNull` provides null-based dependency checks without surfacing strong documentation on scenarios where null is valid versus misconfiguration. This risks introducing unclear error boundaries elsewhere in call paths.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The docblock explicitly states the method is for optional dependencies where absence is valid. The finding does not identify a specific missing documentation detail or a concrete call path that is harmed. It is generic boilerplate about null-returning APIs that could apply to any ?object return type anywhere. Additionally, getOrNull has no callers, so there are no actual call paths to have unclear error boundaries.",
+      "severity_justification": "No callers exist and the docblock already states the intended use clearly.",
+      "category_justification": "The finding is about insufficient documentation on a method.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Discovery/AttributeDiscovery.php",
+      "start_line": 109,
+      "end_line": 112,
+      "message": "Confirmed scope refactors around Route-like hook delegates force minimal regression edge coverage versus pattern-matched behavior memory.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is incoherent word salad ('route-like hook delegates force minimal regression edge coverage versus pattern-matched behavior memory') that makes no verifiable claim about the actual code. It cannot be evaluated against any specific lines or logic in AttributeDiscovery.php and could not be acted upon by any engineer.",
+      "severity_justification": "No actionable claim is made, so there is no impact to assess.",
+      "category_justification": "The closest interpretation is a vague concern about test coverage for route pattern matching, but the finding is too incoherent to assign confidently.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Discovery/RouteRegistry.php",
+      "start_line": 131,
+      "end_line": 135,
+      "message": "This example documents inline placeholder syntax (`{type:js|css}`), but `compilePattern()` treats the entire contents as the parameter name and only applies constraints from the separate `requirements` array (for example `['type' => 'js|css']`). As written, the documented inline form would match any segment instead of `js|css`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the code: compilePattern() extracts everything between braces as the param name via '/\\{([^}]+)\\}/'. For '{type:js|css}', $paramName becomes 'type:js|css', which won't match the requirements key 'type'. The fallback '[^/]+' is used, so the inline syntax documented in the comment ('Supports requirements: \"/files/{type:js|css}\" uses the given pattern.') does not actually work as described.",
+      "severity_justification": "The mismatch is between a doc comment and actual behavior. The inline syntax is only claimed in this comment and not used elsewhere, so no real routing is broken. It is misleading but low impact.",
+      "category_justification": "The comment documents an inline syntax that doesn't work; the actual routing logic correctly uses the separate requirements array. This is a doc comment accuracy issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

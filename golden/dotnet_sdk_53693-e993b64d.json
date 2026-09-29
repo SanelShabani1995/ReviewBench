@@ -1,0 +1,215 @@
+{
+  "pr_key": "dotnet_sdk_53693-e993b64d",
+  "pr": {
+    "repo": "https://github.com/dotnet/sdk",
+    "pr_number": 53693,
+    "base": "96683a0ad81c5694820f7824342a4ca5079bdd64",
+    "head": "e993b64d1603f69af66f23ba32f54aadb2397067"
+  },
+  "findings": [
+    {
+      "file": "documentation/general/solution-publish.md",
+      "start_line": 13,
+      "end_line": 14,
+      "message": "The `-r`/RuntimeIdentifier description says the argument 'may not propagate to each project's build in the way you expect', but the SDK enforces a hard error (NETSDK1134) for `dotnet build MySolution.sln -r <rid>` via `_CheckForSolutionLevelRuntimeIdentifier` (Microsoft.NET.Sdk.Solution.targets). The actual behavior for dotnet build is a build-stopping error, not a silent mis-propagation. The doc dramatically understates the severity and misleads readers about what actually happens.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding claims NETSDK1134 causes a build-stopping error for the scenario documented, but `_CheckForSolutionLevelRuntimeIdentifier` only fires `BeforeTargets=\"Build;_MTPBuild\"` — it does not fire before `Publish`. The document is specifically about `dotnet publish`, where no hard error exists and the RID does propagate incorrectly. The finding incorrectly applies `dotnet build` behavior to `dotnet publish`.",
+      "severity_justification": "Even if the finding were correct, this is a documentation accuracy issue with limited user impact.",
+      "category_justification": "The finding is about whether the documentation accurately describes SDK behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "documentation/general/solution-publish.md",
+      "start_line": 13,
+      "end_line": 14,
+      "message": "`_CheckForSolutionLevelRuntimeIdentifier` only runs `BeforeTargets=\"Build;_MTPBuild\"` — it does NOT run before `Publish`. So `dotnet publish MySolution.sln -r <rid>` (the scenario this doc is warning about) emits no error or warning about the RuntimeIdentifier at all. The doc lumps the `-r` problem under a generic 'arguments don't flow' heading without distinguishing that the protection exists only for `dotnet build`, leaving users unaware there is zero enforcement for the publish path.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Confirmed: `_CheckForSolutionLevelRuntimeIdentifier` fires `BeforeTargets=\"Build;_MTPBuild\"` only — not before `Publish`. There is zero enforcement for `dotnet publish MySolution.sln -r <rid>`. The doc at the SHA uses vague language ('may not propagate') that doesn't distinguish the hard error on build vs. silent mis-behavior on publish, which is a real and verifiable documentation gap.",
+      "severity_justification": "The doc already advises against the pattern, so the practical impact is limited. Noting the enforcement asymmetry adds useful nuance but doesn't change the recommendation.",
+      "category_justification": "The finding is about accuracy and completeness of the documentation — specifically a missing distinction about SDK enforcement behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "documentation/general/solution-publish.md",
+      "start_line": 13,
+      "end_line": 13,
+      "message": "The phrase 'targets the solution entry point' is factually wrong. Solutions have no entry-point concept in MSBuild; a solution is just a list of projects. This language will confuse readers trying to understand where the RuntimeIdentifier actually lands.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "MSBuild solutions have no entry-point concept; the term 'targets the solution entry point' is factually wrong. CLI-set properties become global properties that propagate to all project invocations. The text at line 13 of the file at the SHA uses this incorrect terminology. The diff shows the PR is already replacing it with accurate language.",
+      "severity_justification": "Misleading technical phrasing in documentation, but the doc's practical advice (avoid the pattern) is unaffected. The PR already replaces this text.",
+      "category_justification": "Purely a documentation accuracy issue — incorrect technical description of how MSBuild global properties flow in solution builds.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "documentation/general/solution-publish.md",
+      "start_line": 27,
+      "end_line": 30,
+      "message": "The doc says `dotnet publish` emits a warning when `-o` is specified with a solution, but the warning resource (NETSDK1194) reads 'isn't supported when **building** a solution' — the message text says 'building', not 'publishing'. While `_CheckForSolutionLevelOutputPath` does run before `Publish` (verified in solution.targets), users who see the actual warning text will read 'building a solution' and be confused when they ran `dotnet publish`. The doc should quote or paraphrase the actual diagnostic accurately.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The doc at lines 27-30 only says 'dotnet publish already emits a warning when -o is specified together with a solution file' — it doesn't quote or paraphrase the warning text at all. This statement is factually accurate (NETSDK1194 fires before Publish). The finding points out that the SDK's warning text says 'building' rather than 'publishing', which is an SDK message quirk, not a documentation inaccuracy. The doc doesn't make any false claim about what the warning says.",
+      "severity_justification": "Even if taken as a valid suggestion, adding a quote or clarification about the warning's 'building' phrasing would be a minor documentation enhancement, not a fix for a real error.",
+      "category_justification": "The finding concerns the accuracy and completeness of documentation describing SDK diagnostic behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "documentation/general/solution-publish.md",
+      "start_line": 23,
+      "end_line": 25,
+      "message": "The race-condition claim ('if multiple projects are publishing simultaneously') only applies when MSBuild parallel builds are enabled (e.g. `/m` flag). By default, MSBuild evaluates solution projects sequentially; there is no simultaneous execution without explicit parallelism. Presenting this as an unconditional hazard is inaccurate and should be qualified as occurring only with parallel builds.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The dotnet CLI unconditionally passes `-maxcpucount` to MSBuild (confirmed in MSBuildForwardingAppWithoutLogging), which enables parallel project builds using all available processors by default. The finding's claim that parallelism requires an explicit /m flag is incorrect — for dotnet publish, parallel execution is the default, so the race condition described in the doc is a real, unconditional risk.",
+      "severity_justification": "The finding makes an incorrect technical claim and would cause a valid warning to be weakened or removed.",
+      "category_justification": "The finding is about the accuracy of a documentation statement regarding parallel build behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "documentation/general/solution-publish.md",
+      "start_line": 52,
+      "end_line": 53,
+      "message": "The PR description lists two items as completed for step 3: 'Note unnecessary-rebuild caveat and traversal-project alternative in step 3 (rainersigwald)'. Neither the traversal-project alternative nor the unnecessary-rebuild caveat appears anywhere in step 3 or the rest of the document. These were reviewed and agreed on by contributors but were not implemented.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The PR diff explicitly adds both the unnecessary-rebuild caveat ('will rebuild shared library projects once per RID') and the traversal-project alternative (with a link to the MSBuildSdks traversal README) to step 3. The finding incorrectly claims these items were not implemented.",
+      "severity_justification": "The finding is based on a factually incorrect reading of the diff.",
+      "category_justification": "The finding concerns documentation content.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "documentation/general/solution-publish.md",
+      "start_line": 69,
+      "end_line": 69,
+      "message": "The PR description lists 'Add `-f <tf>` to the final Avoid sentence (rainersigwald suggestion)' as a completed checkbox item, but the final sentence reads 'Avoid `dotnet publish MySolution.sln -r <rid>` or `dotnet publish MySolution.sln -o <dir>`' with no mention of `-f <tf>`. The `-f`/`--framework` flag was discussed in the body of the document as problematic but is absent from the summary guidance.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The PR diff's final line explicitly reads 'Avoid `dotnet publish MySolution.sln -r <rid>`, `dotnet publish MySolution.sln -f <tf>`, and `dotnet publish MySolution.sln -o <dir>`.' — `-f <tf>` is present. The finding is based on the pre-PR state of the checked-out file, not the state at the PR's diff.",
+      "severity_justification": "The finding makes an incorrect claim about the diff content.",
+      "category_justification": "The finding concerns whether a documentation addition was implemented.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "documentation/general/solution-publish.md",
+      "start_line": 44,
+      "end_line": 46,
+      "message": "Step 1 claims `dotnet build` is safe because 'the arguments flow more predictably across projects'. This is misleading: `dotnet build MySolution.sln -r <rid>` is a hard SDK error (NETSDK1134), not a case of arguments flowing predictably. The safety of step 1's example (`dotnet build MySolution.sln` with no extra args) is real, but the stated rationale is wrong.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim 'arguments flow more predictably' is an imprecise rationale. For `dotnet build MySolution.sln -r <rid>`, the actual outcome is NETSDK1134 (hard error), not predictable argument flow. A user reading this could reasonably (but wrongly) infer that adding CLI args like `-r` to `dotnet build MySolution.sln` will work predictably. The finding is factually grounded and identifies a specific, verifiable inaccuracy in the stated reasoning.",
+      "severity_justification": "The practical advice (use `dotnet build MySolution.sln` with no extra args) is correct; only the explanatory rationale is imprecise. No user will be misled into a harmful operation, but a technically aware reader could be confused about why build is safer.",
+      "category_justification": "The finding is about an inaccurate explanatory rationale in documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "documentation/general/solution-publish.md",
+      "start_line": 5,
+      "end_line": 5,
+      "message": "I'd probably just trim the second sentence.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a one-line personal preference ('I'd probably just trim the second sentence') with no reasoning, no identified problem, and no specific issue beyond informal taste. It meets the definition of a generic/boilerplate comment — the exact same text could be applied to any two-sentence paragraph in any document. It is not actionable or verifiable as a correctness or quality concern.",
+      "severity_justification": "Pure stylistic preference with no substantive issue even if taken at face value.",
+      "category_justification": "The comment is about documentation wording/length.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "marcpopMSFT",
+        "url": "https://github.com/dotnet/sdk/pull/53693#discussion_r3033927151",
+        "created_at": "2026-04-03T18:39:47Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "e993b64d1603f69af66f23ba32f54aadb2397067"
+      }
+    },
+    {
+      "file": "documentation/general/solution-publish.md",
+      "start_line": 11,
+      "end_line": 11,
+      "message": "This overstates the problem as arguments not being forwarded to projects. The CLI maps publish options into MSBuild properties/targets for the solution invocation (see `PublishCommandDefinition`/`PublishCommand` option forwarding); the failures are caused by solution-level semantics such as unsupported `RuntimeIdentifier` or shared output paths. The current wording can mislead readers about what actually happens.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in code: `-r` is forwarded via `RuntimeArgFunc` as `--property:RuntimeIdentifier=<rid>` and `-f` via `--property:TargetFramework=<tf>`, so arguments ARE passed as MSBuild global properties and DO flow to all projects in the solution. The document's claim that they 'are not correctly forwarded' is technically inaccurate. Additionally, the `-r` bullet within the same diff section explicitly says 'when a RID flows down to them' — directly contradicting the section header. The real problems are solution-level semantics (library projects expecting RID-specific restore assets that weren't produced, TF negotiation being bypassed), not a forwarding failure.",
+      "severity_justification": "This is a documentation inaccuracy in a newly added doc file. The conclusion and recommendations are still correct; only the mechanistic explanation of why publishing a solution fails is imprecise. Misleading but not harmful to users following the guidance.",
+      "category_justification": "The finding is about inaccurate/misleading prose in a documentation file explaining the technical mechanism of argument forwarding.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

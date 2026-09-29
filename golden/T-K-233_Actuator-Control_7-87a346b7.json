@@ -1,0 +1,411 @@
+{
+  "pr_key": "T-K-233_Actuator-Control_7-87a346b7",
+  "pr": {
+    "repo": "https://github.com/T-K-233/Actuator-Control",
+    "pr_number": 7,
+    "base": "963383f074645c7e813de775762395f9bc12d2f5",
+    "head": "87a346b7d0ed0d3b7ebcdce8a23453d8670e1964"
+  },
+  "findings": [
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 339,
+      "end_line": 343,
+      "message": "`clear_fault_status(motor)` is called before `transmit()` and `receive_status_frame()`. `receive_status_frame` always calls `_update_fault_status`, which will re-populate `_fault_status` based on whatever faults the motor reports in its response. If the motor is still faulted (the common scenario for `clear_fault=True`), the cleared cache is immediately re-populated, making the pre-transmit clear a no-op. The clear should happen after successfully receiving a clean response.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The pre-transmit `clear_fault_status(motor)` call is verifiably redundant: `receive_status_frame()` always calls `_update_fault_status()` which unconditionally replaces (or removes) the cached fault state based on the motor's actual response. If the motor is still faulted, the FAULT_REPORT path re-populates the cleared state. If the motor is clean, the normal path calls `_fault_status.pop(motor, None)` anyway. The pre-clear only 'sticks' in error paths where no valid response is received — which is also when you'd want the prior fault info preserved.",
+      "severity_justification": "The final fault state after `disable()` is always correct (it reflects the actual motor response), so there is no behavioral regression in normal usage. The issue is a design redundancy/potential confusion, not a data integrity bug.",
+      "category_justification": "The pre-clear is a no-op in the normal case and counterproductive (discards valid info) in the exception path — both are behavioral correctness concerns about the fault cache.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 336,
+      "end_line": 343,
+      "message": "`disable(clear_fault=True)` is intended to recover a faulted motor, but if the motor responds to the DISABLE command with a `FAULT_REPORT` frame (which is common when the motor is in a fault state), `receive_status_frame` raises `RuntimeError(f\"Received fault frame from {motor}\")` with no catch in `disable()`. This means the primary use-case for `clear_fault=True` — disabling a faulted motor — will always raise, making the feature essentially non-functional.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`receive_status_frame` unconditionally raises `RuntimeError` when it receives a `FAULT_REPORT` frame (verified at line 273). `disable()` has no try/except around `receive_status_frame()`. So if a faulted motor responds to the DISABLE+clear_fault command with a `FAULT_REPORT` (the plausible case for a motor that can't immediately clear its fault), the exception propagates to the caller, making `clear_fault=True` unusable for its primary purpose.",
+      "severity_justification": "The `clear_fault=True` parameter is a new feature introduced by this PR whose primary use-case (disabling a faulted motor) will raise an uncaught exception in the expected hardware response scenario, effectively making the feature non-functional without wrapping the call in try/except.",
+      "category_justification": "The logic error means the newly introduced feature does not work as intended — `disable(clear_fault=True)` raises instead of successfully handling the faulted motor case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 251,
+      "end_line": 251,
+      "message": "The PR changed `fault_stall_overload` from reading `(warning_value >> 14) & 0x01` (commit 963383f) to `(fault_value >> 14) & 0x01`. These are two different 32-bit words unpacked from the FAULT_REPORT payload. If the Robstride protocol places the stall/overload bit in `warning_value` at bit 14 (as the original driver had it), the new code silently reads a different, unrelated bit from `fault_value` instead and misses real stall conditions.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Public RobStride spec puts stall at bit 14 of fault word",
+      "severity_justification": "If incorrect, stall/overload faults on the motor will be silently missed (or a spurious unrelated fault from fault_value bit 14 would be misreported), which could lead to undetected motor damage or unexpected behavior during operation.",
+      "category_justification": "This is a protocol decoding bug — the stall/overload bit is extracted from the wrong 32-bit word in the fault frame, which will produce incorrect fault detection results.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 249,
+      "end_line": 273,
+      "message": "`struct.unpack(\"<LL\", data)` in the FAULT_REPORT branch requires exactly 8 bytes, but there is no length guard before this unpack. If a FAULT_REPORT frame arrives with fewer than 8 bytes of payload, this raises `struct.error` — an opaque low-level exception — instead of the clean `RuntimeError` with a descriptive message used elsewhere in the function.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `struct.unpack('<LL', data)` at line 249 has no preceding length check; the `len(data) != 8` guard at line 278 is placed after the FAULT_REPORT branch which always raises, so it never runs for FAULT_REPORT frames. A short FAULT_REPORT payload would raise `struct.error` instead of a descriptive RuntimeError. This is a real, verifiable issue.",
+      "severity_justification": "CAN hardware/protocol generally enforces fixed payload sizes, making this an unlikely runtime scenario. The impact is reduced error message quality rather than incorrect behavior or data loss.",
+      "category_justification": "This is a defensive coding / error handling gap — an unexpected input (short payload) produces an opaque low-level exception instead of a clean diagnostic message.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 275,
+      "end_line": 278,
+      "message": "`_update_fault_status` is called at line 275 before the `len(data) != 8` guard at line 277. If data has an invalid length, the fault cache is updated with the header-derived status bits and then an exception is raised. This leaves `_fault_status` in a partially-updated state reflecting a frame whose payload could not be decoded.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `_update_fault_status` is called at line 275 before the `len(data) != 8` guard at line 277. The original code (963383f) had no `_update_fault_status` call — this PR introduced it before the existing length check. On an invalid-length OPERATION_STATUS frame, the cache is updated with header-derived fault bits and then an exception is raised, leaving _fault_status modified on an error path.",
+      "severity_justification": "The fault bits being cached come from the valid frame header (extra_data), not the bad payload, so the update is not entirely incorrect. CAN protocol frames have fixed sizes making this a rare edge case. The issue is a code consistency concern rather than a meaningful correctness or data integrity bug.",
+      "category_justification": "This is an error-path state management issue — cached state is mutated before an exception is raised, leaving potentially inconsistent state for callers who catch the exception.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 272,
+      "end_line": 275,
+      "message": "Both call sites pass `list(dict.fromkeys(fault_list))` to `_update_fault_status`, which itself also performs `list(dict.fromkeys(statuses))` at line 84. The deduplication in `_update_fault_status` makes the pre-call dedup at both call sites redundant. More importantly, since `_update_fault_status` is the authority on dedup, callers may pass raw lists safely — the extra step at call sites creates a false impression that `_update_fault_status` requires pre-deduped input.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `_update_fault_status` performs `list(dict.fromkeys(statuses))` at line 84, and both call sites (lines 272, 275) also pre-deduplicate with `list(dict.fromkeys(fault_list))`. The double deduplication is redundant. The PR description even lists 'Apply dict.fromkeys dedup consistently on both _update_fault_status call sites' as a completed task, confirming the author introduced this intentionally without realizing the internal dedup already covers it.",
+      "severity_justification": "No behavioral impact — deduplication just runs twice. The concern is code clarity and a false signal to readers that callers must pre-deduplicate before passing to _update_fault_status.",
+      "category_justification": "Redundant double-deduplication is a code structure/clarity issue — the callee already encapsulates the dedup invariant, so the call-site duplication is unnecessary and misleading.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 258,
+      "end_line": 270,
+      "message": "When `communication_type == FAULT_REPORT`, `fault_list` already contains status bits extracted from the frame header (e.g. `overtemperature`, `undervoltage`, `gate driver fault`, `uncalibrated`) before entering this block. The FAULT_REPORT payload then appends the same strings again (e.g. `overtemperature`, `gate driver fault`, `undervoltage`, `uncalibrated`). Deduplication hides this but also silently conflates header-level status flags with payload fault codes that may have different semantics; a motor could be `overtemperature` in the header but have a separate `fault_overtemperature` in the payload that triggers shutdown logic.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: the same strings ('overtemperature', 'gate driver fault', 'undervoltage', 'uncalibrated', 'stall overload') can be appended to fault_list from both the header extra_data bits and the FAULT_REPORT payload bits. Dedup collapses these, silently conflating two sources that may encode different protocol semantics (summary status flag vs. shutdown-triggering fault code).",
+      "severity_justification": "In practice, Robstride's header status bits likely mirror payload fault codes in a FAULT_REPORT, making the overlap intentionally redundant. The concern is real but speculative without hardware protocol docs; no confirmed behavioral defect.",
+      "category_justification": "The issue is about potentially conflating two distinct protocol layers (header status summary vs. payload fault detail) into the same string representation, losing semantic precision in fault reporting.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 263,
+      "end_line": 263,
+      "message": "`_update_fault_status` is called, but this line is unreachable because a `RuntimeError` is raised unconditionally on the line just before it. As a result, faults from `FAULT_REPORT` frames are never recorded.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding has the execution order reversed. At lines 272-273, `_update_fault_status` is called first, then `raise RuntimeError` follows on the very next line. The call is not unreachable — it executes before the raise. The finding's claim that 'a RuntimeError is raised unconditionally on the line just before it' is factually wrong.",
+      "severity_justification": "If the finding were correct, it would represent a serious bug where FAULT_REPORT faults are never cached. Assigning high severity to the FP finding itself since the underlying concern (fault cache not being updated) would be critical if true.",
+      "category_justification": "The finding is about code reachability and whether the fault cache gets updated — a correctness concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 329,
+      "end_line": 329,
+      "message": "The `clear_fault` parameter is used to clear the locally cached fault status via `self.clear_fault_status(motor)`. However, the CAN frame sent to the device to disable it (and optionally clear faults on the device itself) does not correctly reflect this intent. The `clear_fault` flag is not used when constructing the data payload, so faults on the actuator are never cleared. The first byte of the data payload should likely be `0x01 if clear_fault else 0x00`.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims `clear_fault` is not used when constructing the data payload, but line 341 shows `struct.pack('<BBHL', 0x01 if clear_fault else 0x00, 0x00, 0x00, 0x00)` — the flag is explicitly used to set the first byte to 0x01 or 0x00. The finding's suggested fix is identical to what the code already does.",
+      "severity_justification": "If true, the hardware fault-clear command would never be sent to the actuator, making the feature non-functional. Assigning high severity to the FP since the underlying concern would be critical.",
+      "category_justification": "The finding is about whether the hardware fault-clear signal is correctly sent in the CAN frame data payload.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 190,
+      "end_line": 192,
+      "message": "A return path for `receive()` returning `None` appears to have been removed from `parse_frame`. If `receive()` returns `None` (e.g., on timeout), this method will raise a `TypeError` when it tries to access `frame.arbitration_id`. There should be a check for `frame is None`.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The removed `return None` was dead code — it was placed after a `while True:` block and was unreachable. The `receive()` method still returns `None` correctly from two paths inside the loop (deadline exhausted and no frame received). The finding references a non-existent `parse_frame` method and incorrectly claims a `None` handling regression was introduced.",
+      "severity_justification": "If the finding were correct — a `TypeError` on timeout — it would be a real runtime failure. Assigning medium because the underlying concern (None dereference) would be operationally significant but not a security or data integrity issue.",
+      "category_justification": "The finding is about a potential None dereference / missing return path, a control flow correctness concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 481,
+      "end_line": 481,
+      "message": "The method returns `list(self._fault_status.get(motor, []))`, which creates a new copy of the list. Since the list of statuses in `_fault_status` is already a new list created by `_update_fault_status`, this copy is unnecessary. Returning `self._fault_status.get(motor, [])` directly would be more efficient.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `list()` copy is intentional defensive programming to prevent callers from mutating the internal `_fault_status` cache. The same pattern is used consistently in the `motor is None` branch (`list(statuses)`). Returning the internal list directly (as suggested) would allow callers to corrupt the cache — the proposed 'optimization' would degrade the code.",
+      "severity_justification": "The finding raises a performance concern that is negligible (copying a small list of fault strings), and the suggested fix would actually introduce a correctness risk.",
+      "category_justification": "The finding is a style/efficiency suggestion that misunderstands the intent of defensive copying in public API methods.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 476,
+      "end_line": 476,
+      "message": "This line returns `{name: list(statuses) for name, statuses in self._fault_status.items()}`. The lists of statuses stored in `self._fault_status` are already new lists created by `_update_fault_status`. Creating another copy with `list(statuses)` is unnecessary and inefficient. A shallow copy of the dictionary via `self._fault_status.copy()` would be sufficient.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `list(statuses)` copies in the dict comprehension are intentional defensive programming. `self._fault_status.copy()` is only a shallow copy — it returns a new dict but the same mutable list objects as values, allowing callers to corrupt the internal cache by mutating the returned lists. The deep per-list copy is necessary for correct encapsulation.",
+      "severity_justification": "The finding raises a negligible performance concern and the suggested fix (`dict.copy()`) would actually introduce a state corruption risk by exposing the internal mutable lists.",
+      "category_justification": "The finding is a style/efficiency suggestion that misunderstands the protective intent of the deep copy pattern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 472,
+      "end_line": 479,
+      "message": "The 'read_fault_status' method retrieves fault data but does not lock or synchronize shared state, potentially causing race conditions if accessed concurrently.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`RobstrideBus` has no threading — grep confirms zero use of `thread`, `Thread`, `Lock`, or `asyncio` in `robstride.py`. Threading only appears in the unrelated `sito.py` backend. With no concurrent access path, there is no race condition risk to protect against. The finding is a generic concurrency boilerplate warning that does not apply to this class.",
+      "severity_justification": "Even if the concern were valid, the practical risk is low in a single-threaded synchronous CAN driver. The claim is unverifiable and inapplicable.",
+      "category_justification": "The finding is about thread safety and concurrent access — a reliability/concurrency concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 481,
+      "end_line": 488,
+      "message": "The 'clear_fault_status' method clears the entire fault dictionary when invoked globally but does not signal other components that this action occurred, leading to potential silent errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is generic boilerplate — it names no specific 'other component' that exists in the codebase and would need notification, and identifies no concrete silent error path. `RobstrideBus` has no event system, callbacks, or threading. The same comment could be pasted verbatim onto any state-clearing method in any project.",
+      "severity_justification": "Even if the concern had merit, there is no demonstrated concrete failure path in this single-threaded, callback-free design.",
+      "category_justification": "The finding is nominally about state management and coordination between components, which falls under reliability.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 238,
+      "end_line": 239,
+      "message": "Incorrect matching for 'communication_type not in' raises RuntimeError, but the exception message may not provide actionable guidance on what is wrong with the communication type received.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The error message `f'Invalid communication type: {communication_type}.'` already includes the received value, which is the most actionable diagnostic information. The finding offers no specific improvement, no concrete scenario where the message would fail to help, and no comparison to a better message. The critique 'may not provide actionable guidance' is generic boilerplate applicable to any exception in any codebase.",
+      "severity_justification": "Error message quality is minor and subjective; the current message already includes the received value.",
+      "category_justification": "The finding is about error message quality and developer experience, which is a maintainability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 476,
+      "end_line": 481,
+      "message": "`read_fault_status` returns a union type (`dict[str, list[str]] | list[str]`) depending on whether `motor` is provided. This forces callers to either branch on the return type or use `isinstance` checks, which is awkward and error-prone. Consider splitting into two methods (e.g., `read_fault_status(motor)` returning `list[str]` and `read_all_fault_status()` returning `dict[str, list[str]]`) for a clearer API contract.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The method at lines 476–481 is confirmed to return `dict[str, list[str]] | list[str]` based on whether `motor` is None. The finding is factually correct and raises a real, non-trivial API contract concern: callers must use isinstance checks or branching to handle the two return types, which is error-prone.",
+      "severity_justification": "This is a newly introduced public method with an overloaded return type. It's a design smell rather than a bug, and no existing callers are yet affected. The impact is confined to future callers of this method.",
+      "category_justification": "The finding is specifically about the public method's return type contract and API design — splitting an overloaded method into two clearly-typed methods.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 339,
+      "end_line": 343,
+      "message": "The local cache is cleared via `clear_fault_status(motor)` before `transmit` is called. If `transmit` (or the subsequent `receive_status_frame`) raises, the cached fault state has already been wiped even though the device was never sent the clear-fault command. Consider clearing the local cache only after the transmit/receive completes successfully.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `clear_fault_status(motor)` is called before `transmit` in the `disable` method. If `transmit` raises an exception (e.g., CAN bus error), the cached fault state has been wiped despite the device never receiving the clear-fault command. `receive_status_frame` would repopulate the cache on success or fault-frame receipt, but not if `transmit` never executes.",
+      "severity_justification": "The `transmit` raising is an uncommon failure path (CAN hardware error), and fault status data loss doesn't directly corrupt device state — the motor's actual hardware fault state is unaffected. The diagnostic information loss is unfortunate but not safety-critical in most use cases.",
+      "category_justification": "The cache clear happens in the wrong order relative to the operation it tracks — a logic ordering bug where a state mutation precedes the operation it's meant to accompany.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 272,
+      "end_line": 273,
+      "message": "The fault-report path now accumulates decoded statuses but raises an error that only includes the raw payload, whereas the previous code emitted the decoded fault names before raising. If callers/logging only see the exception, they lose the actionable fault cause unless they know to call `read_fault_status()` separately; include the decoded `fault_list` in this error or otherwise preserve that diagnostic information.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the raise RuntimeError at line 273 only includes raw bytes (`data!r`). The decoded fault_list is stored in the cache but not in the exception message. Prior code printed each decoded fault name before raising, so this PR regresses diagnostic visibility in the exception path.",
+      "severity_justification": "The decoded information is still accessible via read_fault_status() after catching the exception, so it is not lost entirely — just less convenient. Debugging is harder but not impossible. No behavioral or safety regression.",
+      "category_justification": "The issue is about diagnostic information quality in error messages — a developer experience and debugging concern rather than a logic bug or API contract violation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 275,
+      "end_line": 275,
+      "message": "Non-fault status flags are now only cached and are no longer surfaced to existing callers; the added `read_fault_status()` API is not used anywhere else in the codebase. Existing applications that relied on `receive_status_frame()`/`read_mit_state()` printing warnings will now silently continue through conditions such as uncalibrated, overtemperature, or undervoltage unless they are updated to poll the cache explicitly.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `read_fault_status()` is not called anywhere outside robstride.py. The example move_robstride.py calls `read_mit_state` in a loop but never checks fault status. The old code printed warnings to stdout unconditionally on every status frame; the new code silently caches them. Existing callers will no longer see any output for conditions like overtemperature or undervoltage.",
+      "severity_justification": "Silent failure for hardware fault conditions (overtemperature, undervoltage, uncalibrated) in a control loop is a real operational concern. A motor could be in a degraded state with no visible indication to the operator unless they proactively add polling code. This is a regression in observability for existing users.",
+      "category_justification": "The change removes unconditional fault notification from the normal control path, replacing it with a pull-based cache that no existing code consults — a fault tolerance and observability regression.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "actuator_control/robstride.py",
+      "start_line": 339,
+      "end_line": 343,
+      "message": "When `clear_fault=True`, the cached fault is removed before the disable/clear command is acknowledged. If `transmit()` or the following `receive_status_frame()` fails or times out, callers lose the last known fault status even though the actuator may not have cleared it; clear the local cache only after a successful response confirms the clear operation.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical to Finding 2 — confirmed that `clear_fault_status(motor)` is called before `transmit` at lines 339–343. If `transmit` or `receive_status_frame` raises, the local cache has been cleared even though the actuator may not have processed the clear command. The finding is factually correct and non-trivial.",
+      "severity_justification": "Same as Finding 2: transmit failure is an uncommon path, and the motor's actual hardware fault state is unaffected. The diagnostic information loss is unfortunate but not safety-critical in most use cases.",
+      "category_justification": "A logic ordering bug where state mutation (cache clear) precedes the operation it's meant to accompany, leaving state inconsistent on failure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

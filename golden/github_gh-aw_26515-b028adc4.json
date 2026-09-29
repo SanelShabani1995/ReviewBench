@@ -1,0 +1,235 @@
+{
+  "pr_key": "github_gh-aw_26515-b028adc4",
+  "pr": {
+    "repo": "https://github.com/github/gh-aw",
+    "pr_number": 26515,
+    "base": "f2874327b8838d9bed8bca7aef3ea2cdbc9b566f",
+    "head": "b028adc4e6f4c6003a4e5d2df4af674aad045fda"
+  },
+  "findings": [
+    {
+      "file": "pkg/cli/mcp_add.go",
+      "start_line": 364,
+      "end_line": 364,
+      "message": "The --transport flag help text advertises 'Docker' (capital D) but the runtime switch at line 173 only matches lowercase 'docker'. A user who follows the help text and passes --transport Docker will hit the default error path: 'unsupported transport type: Docker (supported: stdio, http, docker)'. The help text must use lowercase 'docker' to match what the code actually accepts, or the switch must be case-insensitive.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the switch at line 173 of mcp_add.go matches only lowercase 'docker'. The PR changed the help text from 'docker' to 'Docker' (capital D). A user following the help text and passing --transport Docker will hit the default error: 'unsupported transport type: Docker (supported: stdio, http, docker)'.",
+      "severity_justification": "The help text directly misleads users into a command that will fail at runtime. It's introduced by this PR — the prior lowercase 'docker' was actually correct.",
+      "category_justification": "The help text change creates a mismatch with what the code actually accepts, causing user-visible runtime errors.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/cli/tokens_bootstrap.go",
+      "start_line": 43,
+      "end_line": 43,
+      "message": "The --engine flag now lists 'custom' as a valid value, but 'custom' has no entry in EngineOptions and GetEngineOption(\"custom\") returns nil, so passing --engine custom returns no engine-specific secrets and silently does nothing useful. Meanwhile 'gemini' IS a recognized engine with a real secret (GEMINI_API_KEY) and a full EngineOptions entry, but it is not listed in the flag help text. The fix should replace 'custom' with 'gemini' (or add gemini alongside the others). The test added in secrets_command_test.go also asserts for 'custom', so the test would pass even though the behavior is unhelpful.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at SHA b028adc4: tokens_bootstrap.go line 43 says 'copilot, claude, codex, custom'. EngineOptions in engine_constants.go has copilot, claude, codex, gemini — no 'custom' entry. GetEngineOption('custom') returns nil, meaning --engine custom produces no secrets. The test also asserts 'custom' not 'gemini', so it passes but validates incorrect behavior. Gemini (with GEMINI_API_KEY) is the engine that should have been listed.",
+      "severity_justification": "Misleads users: --engine custom silently returns no secrets. The PR's intended fix (add gemini) was not implemented correctly — both the source and test use 'custom'.",
+      "category_justification": "The help text advertises 'custom' as a valid engine filter but it has no EngineOptions entry and produces no useful output, making the documented behavior incorrect.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/cli/secrets_command_test.go",
+      "start_line": 72,
+      "end_line": 87,
+      "message": "TestSecretsBootstrapEngineFlagIncludesCustom asserts the --engine flag contains 'custom', but 'custom' is not a recognized engine in GetEngineOption (EngineOptions only has copilot, claude, codex, gemini). This test will pass while a user passing --engine custom gets no engine-specific secrets back. The test should instead assert 'gemini' which is the actually-missing engine the PR description claims to fix.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Already verified in Finding 2 investigation: secrets_command_test.go lines 72-87 contain TestSecretsBootstrapEngineFlagIncludesCustom which asserts engineFlag.Usage contains 'custom'. EngineOptions has no 'custom' entry (only copilot, claude, codex, gemini). The test passes but validates that the wrong engine name is in the help text, masking the actual bug rather than catching it.",
+      "severity_justification": "The test actively validates incorrect behavior — it will keep passing while the source bug (custom instead of gemini) persists, preventing CI from catching the regression.",
+      "category_justification": "The finding is specifically about a test that validates the wrong value and thus fails to catch a real bug in the code under test.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "cmd/gh-aw/main_help_text_test.go",
+      "start_line": 12,
+      "end_line": 20,
+      "message": "TestRunCommandHelpTextConsistency uses assert.Equal to verify run and compile share the same --approve description. The test is correct as written (both flags now use the same text), but the test does not cover the upgrade command's --approve flag. If the upgrade command's flag text drifts in the future this cross-command invariant test will not catch it. Minor gap in the guardrail the PR explicitly added. Not critical but worth noting the test coverage boundary.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "upgrade_command_test.go (added by this same PR) already checks the upgrade --approve flag for 'When strict mode is active'. The finding's claim that drift in upgrade's --approve text would go undetected is inaccurate — a separate test guards that invariant. The only real gap is the lack of an equality assertion between upgrade and compile/run (it uses Contains instead), which is a very minor completeness concern that doesn't represent a meaningful regression risk.",
+      "severity_justification": "Even if the gap existed, it would only affect regression detection for help text, not runtime behavior.",
+      "category_justification": "The finding is about test coverage completeness.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/content/docs/setup/cli.md",
+      "start_line": 223,
+      "end_line": 223,
+      "message": "@copilot custom -> Gemini",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: docs/src/content/docs/setup/cli.md line 223 says '--engine (copilot, claude, codex, custom)'. The PR was supposed to add 'gemini' (per the PR diff and description), but both the docs and source code were changed to 'custom' instead. 'custom' is not a recognized engine in EngineOptions; 'gemini' is the engine with GEMINI_API_KEY that should appear here.",
+      "severity_justification": "The docs advertise an unsupported engine value while omitting the actually-supported gemini engine, misleading users consulting setup documentation.",
+      "category_justification": "The finding is about incorrect content in the setup docs — a supported engine (gemini) is omitted and an unsupported value (custom) is listed instead.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "pelikhan",
+        "url": "https://github.com/github/gh-aw/pull/26515#discussion_r3090024777",
+        "created_at": "2026-04-15T23:46:02Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "b028adc4e6f4c6003a4e5d2df4af674aad045fda"
+      }
+    },
+    {
+      "file": ".github/workflows/workflow-health-manager.lock.yml",
+      "start_line": 772,
+      "end_line": 772,
+      "message": "This PR includes large changes to many `.github/workflows/*.lock.yml` files that switch the Copilot driver invocation from `--prompt \"$(cat /tmp/gh-aw/aw-prompts/prompt.txt)\"` to `--prompt-file /tmp/gh-aw/aw-prompts/prompt.txt`. This is a substantive behavioral change to generated workflow lock files and is unrelated to (and not mentioned in) the stated PR purpose of \"Normalize CLI help text and setup docs\". Either these regenerated lock files should be moved to a separate PR scoped to the prompt-file change, or the PR description should be updated to document this change and explain the source-side change (in the compiler/templates) that produced it. As is, it is hard to review whether the new `--prompt-file` invocation is correct and consistent across all workflows.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the HEAD commit b028adc4 changes exclusively 126 .lock.yml files, all switching --prompt \"$(cat ...)\" to --prompt-file. The PR description mentions only CLI help text normalization with zero mention of this regeneration. The source-side compiler change (copilot_engine_execution.go already using --prompt-file) was from a prior PR #26492, and this recompile propagates it without acknowledgment.",
+      "severity_justification": "The --prompt-file behavioral change to Copilot invocations across 126 workflow files is substantive and invisible to reviewers focused on the stated PR purpose. If there were a bug in the prompt-file invocation, it would be easily missed. Not high because the source-side change was already in a reviewed prior PR.",
+      "category_justification": "This is a PR hygiene/scope concern: unrelated generated-file changes are mixed in without documentation, making review harder.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/content/docs/setup/cli.md",
+      "start_line": 606,
+      "end_line": 606,
+      "message": "The available tools list here is missing `audit-diff`. The authoritative tool set, asserted in `pkg/cli/mcp_server_tools_test.go:50`, is `status, compile, logs, audit, audit-diff, checks, mcp-inspect, add, update, fix`. Since this PR's stated purpose is documentation parity with the actual exposed tools and you are already editing this line to add `checks`, please also add `audit-diff` so the docs match the implementation.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: mcp_server_tools_test.go line 50 asserts the full tool set as [status, compile, logs, audit, audit-diff, checks, mcp-inspect, add, update, fix], and audit-diff is a real registered MCP tool (mcp_tools_privileged.go:392). The docs at line 606 list [status, compile, logs, audit, checks, mcp-inspect, add, update, fix], omitting audit-diff. This PR already edits this exact line to add checks, making the omission of audit-diff an incomplete fix.",
+      "severity_justification": "This is a documentation parity issue — the tool exists and works correctly, users consulting the docs just wouldn't know about audit-diff. Low impact in terms of functionality.",
+      "category_justification": "The issue is incomplete documentation of available MCP server tools — the authoritative list in tests differs from what docs advertise.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/workflow-health-manager.lock.yml",
+      "start_line": 772,
+      "end_line": 772,
+      "message": "This change to the generated lock file (`--prompt \"$(cat …)\"` → `--prompt-file …`) is unrelated to the stated scope of this PR (CLI help text and setup docs normalization). The PR description does not mention any prompt-passing changes, and similar edits appear in several other `*.lock.yml` files in this PR. These look like they were swept in from an unrelated regeneration. Please either revert the lock-file changes from this PR or update the PR description to cover them, so the change set stays reviewable and easy to revert if the help-text normalization needs to be rolled back independently.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: same facts as confirmed in Finding 1. Commit b028adc4 changes exclusively 126 .lock.yml files switching from --prompt \"$(cat ...)\" to --prompt-file, unrelated to the stated CLI help text normalization purpose, undocumented in the PR description, and in a separate commit from the actual fixes.",
+      "severity_justification": "The lock-file changes represent a substantive behavioral change to Copilot invocations across 126 workflow files. They are not mentioned, not scoped to the PR's stated purpose, and mixing them complicates independent rollback of either change. The --prompt-file change itself was reviewed separately in #26492, so the risk is moderate.",
+      "category_justification": "PR hygiene concern: unrelated generated-file changes mixed into the PR without documentation complicate reviewability and independent revertability.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/content/docs/setup/cli.md",
+      "start_line": 606,
+      "end_line": 606,
+      "message": "This documented tool list is still incomplete: the MCP server tests and registered tool set include `audit-diff` in addition to the tools listed here. Users relying on the setup page will not discover the `audit-diff` MCP tool.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same facts as verified in Finding 2: mcp_server_tools_test.go:50 asserts audit-diff as a registered tool, mcp_tools_privileged.go:392 registers it, and docs/src/content/docs/setup/cli.md:606 omits it from the Available Tools list despite this PR already editing that exact line.",
+      "severity_justification": "Documentation-only gap — the tool is implemented and functional, users just won't discover it from the setup page. Low operational impact.",
+      "category_justification": "The finding identifies a discrepancy between the documented available MCP tools and the actual registered tool set.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/cli/mcp_add_test.go",
+      "start_line": 160,
+      "end_line": 168,
+      "message": "This test asserts the misleading capitalized transport value even though `createMCPToolConfig` only accepts lowercase `docker`. The regression test should protect the copyable CLI enum value rather than locking in a value that fails validation.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: createMCPToolConfig line 173 uses a strict case-sensitive switch accepting only lowercase 'docker'. No strings.ToLower normalization exists in the transport handling path. The PR changed the flag description to 'Docker' (capital D) and the new test guards that capitalization. A user passing --transport Docker based on the help text would receive the error 'unsupported transport type: Docker (supported: stdio, http, docker)'.",
+      "severity_justification": "This is a user-facing bug where help text advertises a value that fails validation. The test introduced by this PR cements the mismatch, making it actively harder to fix. Users copying from help output will get confusing failures.",
+      "category_justification": "The help text contradicts the actual accepted values, causing user-visible validation failures when following the documented enum.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/workflow-health-manager.lock.yml",
+      "start_line": 772,
+      "end_line": 772,
+      "message": "This lock-file command change is not described in the PR metadata, which says the PR is limited to CLI help/setup docs/tests. Switching all generated workflows from `--prompt \"$(cat ...)\"` to `--prompt-file` is a functional behavior change and should either be explained/tested in this PR or split out so reviewers can assess it separately.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same facts verified in Findings 1 and 3: commit b028adc4 changes exclusively 126 .lock.yml files switching --prompt \"$(cat ...)\" to --prompt-file, this is undocumented in the PR description which states only CLI help text and setup docs normalization, and it constitutes a functional behavior change to Copilot invocations.",
+      "severity_justification": "The --prompt-file switch across 126 workflow files is a functional behavioral change (different argument passing mechanism for AI prompts) that is unreviewed in the context of this PR's stated scope. Moderate risk if the prompt-file mechanism has edge cases not covered by prior review.",
+      "category_justification": "PR scope/hygiene concern: undocumented functional changes mixed with unrelated help text normalization complicate review and independent revertability.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

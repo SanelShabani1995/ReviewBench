@@ -1,0 +1,251 @@
+{
+  "pr_key": "scorbo2_ext-sn-statistics_19-8ef352bd",
+  "pr": {
+    "repo": "https://github.com/scorbo2/ext-sn-statistics",
+    "pr_number": 19,
+    "base": "5165c1719d4a81eca84654760955663d297353c6",
+    "head": "8ef352bd1d5402b18b076bad6af7a34c96940e6a"
+  },
+  "findings": [
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 219,
+      "end_line": 234,
+      "message": "TOCTOU race condition in StatsDialogAction.actionPerformed(): getStatistics() is called outside the lock (line 219), then inside the synchronized block only `loading` is checked — not `statistics` again. Between the two, a loader completing on another thread can populate `statistics`. When StatsDialogAction then enters the lock, it sees `loading == false`, sets `statistics = null`, and starts a new load — discarding the just-completed fresh data and triggering an unnecessary full reload. The fix is to re-read `statistics` inside the lock before nulling it, and bail out if it's now non-null.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: getStatistics() is called outside the lock (line 221), and inside the subsequent synchronized block only `loading` is checked (line 230) before nulling `statistics` (line 236). A concurrent loader completing between those two points will set `statistics` to non-null and `loading` to false, causing the just-completed data to be discarded and a new load to start unnecessarily.",
+      "severity_justification": "Impact is limited: worst case is an unnecessary extra reload of statistics. No data corruption, no crash, no user-visible error — just wasted work in a narrow timing window.",
+      "category_justification": "This is a logic/concurrency correctness bug — a TOCTOU race condition causing incorrect program behavior (discarding valid data and triggering a spurious reload).",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 197,
+      "end_line": 202,
+      "message": "In StatsRefreshAction.actionPerformed(), `loading` is set to true and the lock released at line 197. If any of the subsequent lines (constructing StatisticsLoaderThread, ProgressListener, MultiProgressDialog, or calling runWorker()) throw an exception, `loading` is never reset to false. There is no try-finally guard. The result is that `loading` remains permanently true, silently blocking all future statistics load or refresh attempts until the application is restarted. The same defect exists in StatsDialogAction.actionPerformed() at the equivalent spot (lines 235–242).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: in both StatsRefreshAction and StatsDialogAction, `loading` is set to true and the lock released before Swing/loader construction and runWorker() calls that have no try-finally guard. An exception from any of those calls would leave `loading` permanently true, silently blocking all future statistics operations.",
+      "severity_justification": "The consequence is complete permanent loss of the statistics feature (until restart) with no user-visible error. While the triggering conditions (an exception during Swing dialog/thread construction) are unlikely in normal operation, the impact is disproportionately severe and silent.",
+      "category_justification": "This is a fault-tolerance/error-handling issue: lack of a try-finally guard that leaves the application in an unrecoverable state if an exception occurs.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 195,
+      "end_line": 195,
+      "message": "StatsRefreshAction sets `statistics = null` before the loader thread starts (line 195). If the user cancels the refresh, progressCanceled() calls setStatistics(null, false), which keeps statistics null. The previously-cached statistics — which were valid and fully loaded — are permanently lost. The user must wait through another full reload rather than simply keeping the pre-refresh data. A safer approach would be to save the old statistics reference before nulling it and restore it on cancel.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: StatsRefreshAction sets `statistics = null` at line 195 inside the synchronized block before launching the loader. progressCanceled() calls setStatistics(null, false), leaving statistics null permanently. Previously valid cached statistics are unrecoverably discarded on a user cancel.",
+      "severity_justification": "This is a UX regression — the user loses valid cached data they had before, requiring another full reload. There is no data corruption, crash, or security impact. The workaround (just reload again) is trivial.",
+      "category_justification": "The code does not preserve the old statistics on cancel, contradicting the reasonable expectation that canceling a refresh operation would leave the previous state intact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 263,
+      "end_line": 267,
+      "message": "progressCanceled() always shows 'Statistics gathering was canceled' regardless of why loading was aborted. StatisticsLoaderThread.run() catches all exceptions from worker futures and calls fireProgressCanceled() on any internal failure (see StatisticsLoaderThread lines 116–121), so progressCanceled() fires for both user-initiated cancellations and internal errors. Users who experience a worker crash see a misleading 'canceled' message instead of an indication that something went wrong.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: StatisticsLoaderThread.run() catches all exceptions and calls fireProgressCanceled() on internal failure (lines 116-121). ProgressListener.progressCanceled() always shows 'Statistics gathering was canceled.' with no way to distinguish user-cancel from internal error. loader.wasCanceled() is available but unused in the listener.",
+      "severity_justification": "Purely a messaging/UX issue — users get a misleading 'canceled' message on internal errors instead of an error message. The application state is correctly reset regardless. No data loss or crash.",
+      "category_justification": "The message shown to the user does not correctly reflect what actually happened — an internal error is incorrectly presented as a user cancellation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 189,
+      "end_line": 192,
+      "message": "When loading is already in progress, both StatsRefreshAction (lines 189-192) and StatsDialogAction (lines 227-230) silently log a warning and return without any user-visible feedback. The user clicks the button, nothing happens, and they have no way of knowing they need to wait for the in-progress load to complete or use the cancel button. At minimum, a brief informational message should be shown.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: both StatsRefreshAction (lines 189-192) and StatsDialogAction (lines 227-230) call log.warning() and return silently with no user-facing message when loading is true. The finding is factually correct about the missing user feedback.",
+      "severity_justification": "The MultiProgressDialog is likely modal (runWorker's true parameter is a common modal flag), so this code path is rarely reachable in normal use. When it is reached, the only harm is a confusing silent no-op for the user.",
+      "category_justification": "This is a UX feedback gap — user interaction produces no visible response, leaving the user without context to understand the application state.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 270,
+      "end_line": 276,
+      "message": "In progressComplete(), when showDialogOnComplete is true (initial dialog open flow), no feedback is given to the user if stats happen to be null and the dialog is not shown — setStatistics() guards the invokeLater call with `stats != null`, but there is no else branch to inform the user that nothing was displayed. While loader.getStatistics() currently always returns a non-null object, this creates a silent no-op path that would be invisible to users if the contract ever changes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding itself acknowledges loader.getStatistics() currently always returns non-null. Verified: StatisticsLoaderThread.getStatistics() unconditionally returns `new Statistics(...)`. The described silent no-op path cannot be triggered under the current code. The concern is purely speculative about a hypothetical future contract change, making it sub-threshold.",
+      "severity_justification": "Even if valid, this would only produce a silent no-op (no dialog shown, no message shown) in a scenario that cannot currently occur.",
+      "category_justification": "The concern is about a future defensive code gap — a missing fallback for a null return value that doesn't currently happen.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 94,
+      "end_line": 94,
+      "message": "The `setStatistics` method can be called from a background thread (`StatisticsLoaderThread`) but it constructs and shows a `StatisticsDialog` on the EDT via `SwingUtilities.invokeLater`. This can lead to a race condition where a user closes the main window (and the application) after the background thread has submitted the task to the EDT but before it executes. This will result in an `IllegalStateException` because the `StatisticsDialog` constructor indirectly calls `MainWindow.getInstance()`, which will return null if the window has been disposed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims IllegalStateException when MainWindow.getInstance() returns null, but JDialog(null, String, boolean) is valid Swing API and does not throw. setLocationRelativeTo(null) is also valid. The actual exception scenario described is factually incorrect.",
+      "severity_justification": "Even if the scenario occurred, the result would be a stray dialog appearing after the main window closes (harmless UX glitch), not an IllegalStateException crash.",
+      "category_justification": "The finding is about a potential runtime error in a cross-thread scenario involving Swing dialog construction.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 216,
+      "end_line": 216,
+      "message": "The `progressCanceled` method calls `getMessageUtil().info()` inside a `SwingUtilities.invokeLater()`. If the main window is closed before this code runs, `MainWindow.getInstance()` will return null, causing a `NullPointerException` when `getMessageUtil()` is called. The check for `MainWindow.getInstance() != null` should be performed inside the `invokeLater` runnable to avoid this race condition.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The scenario requires closing the main window while a modal progress dialog is active, which Swing's modal blocking prevents in normal use. Additionally, the exact NPE depends on MessageUtil's constructor behavior with a null owner, which can't be verified without its source. The finding is too speculative given the modal dialog design.",
+      "severity_justification": "Even if triggered, the consequence is an unhandled NPE in an invokeLater runnable after the main window is already closing — minimal real-world harm.",
+      "category_justification": "The concern is about a potential NPE in a cross-thread timing scenario involving lazy initialization and window lifecycle.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 222,
+      "end_line": 223,
+      "message": "The `progressComplete` method calls `getMessageUtil().info()` inside a `SwingUtilities.invokeLater()`. If the main window is closed before this code runs, `MainWindow.getInstance()` will return null, causing a `NullPointerException` when `getMessageUtil()` is called. The check for `MainWindow.getInstance() != null` should be performed inside the `invokeLater` runnable to avoid this race condition.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Substantively identical to the prior finding about getMessageUtil() in progressCanceled. The modal progress dialog prevents main window closure during loading, making the race window practically unreachable. The NPE claim depends on unverifiable MessageUtil constructor behavior. Same analysis and conclusion as Finding 8.",
+      "severity_justification": "Same as Finding 8: even if triggered, harm occurs only when the app is already shutting down. Negligible real-world impact.",
+      "category_justification": "Same category as Finding 8 — potential NPE from lazy initialization racing with window lifecycle in a cross-thread Swing pattern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 154,
+      "end_line": 161,
+      "message": "The `MessageUtil` instance is lazily initialized and stored in a non-volatile instance field `messageUtil`. Since inner classes like `StatsRefreshAction` and `ProgressListener` can be called from different threads, there is a risk of a race condition during the initialization of `messageUtil`, potentially leading to multiple instances being created or other threads seeing a partially constructed object. The `messageUtil` field should be declared `volatile`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Both calls to getMessageUtil() are inside SwingUtilities.invokeLater() lambdas (lines 268 and 277), meaning they execute exclusively on the EDT. There is no multi-threaded access to the messageUtil field, so the race condition and volatile requirement described do not apply.",
+      "severity_justification": "The described race condition does not exist; the finding is factually incorrect about which thread accesses the field.",
+      "category_justification": "The finding makes an incorrect claim about thread access patterns to a field, which is a factual correctness issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 44,
+      "end_line": 47,
+      "message": "The 'loading' field is accessed directly within synchronized blocks but is also read via the 'isLoading' method, creating potential inconsistencies if accessed concurrently without synchronization.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Every access to `loading` — including inside isLoading() — is wrapped in synchronized(lockObject). The finding's claim of unsynchronized access is factually incorrect; there are no bare reads or writes to the field outside the lock.",
+      "severity_justification": "The described inconsistency does not exist; all accesses are properly synchronized.",
+      "category_justification": "The finding makes an incorrect factual claim about synchronization of field accesses.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsExtension.java",
+      "start_line": 267,
+      "end_line": 267,
+      "message": "`progressCanceled()` clears the global loading flag while `StatisticsLoaderThread.run()` may still be waiting for other worker futures to finish; the loader fires cancellation from `chunkComplete()` before all parallel workers are stopped. This lets the user start another statistics load while the canceled one is still consuming CPU, defeating the single-loader guard.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in StatisticsLoaderThread.run(): all workers run in parallel; cancellation fires from chunkComplete() (called by one finishing worker) via fireProgressCanceled(), which triggers ProgressListener.progressCanceled() → setStatistics(null, false) → loading=false. But run() is still blocking on f.get() for the remaining futures. Since loading is now false, the single-loader guard is bypassed and a new load can start while old workers are still executing. The other five worker methods (loadGeneralStats, loadYearData, etc.) do not check wasCanceled and always run to completion, so they truly overlap with the new load.",
+      "severity_justification": "The guard intended to prevent concurrent loads is defeated, causing extra CPU usage. However there is no data corruption (each thread has its own instance fields; shared state is synchronized), and the old thread's results are discarded. Impact is wasted resources and violation of an explicit design invariant, not incorrect user-visible output.",
+      "category_justification": "A logical concurrency bug: the loading flag is cleared before the old thread finishes, breaking the single-loader invariant the code explicitly tries to enforce.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

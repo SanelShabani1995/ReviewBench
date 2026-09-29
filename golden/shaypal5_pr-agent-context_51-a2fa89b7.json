@@ -1,0 +1,71 @@
+{
+  "pr_key": "shaypal5_pr-agent-context_51-a2fa89b7",
+  "pr": {
+    "repo": "https://github.com/shaypal5/pr-agent-context",
+    "pr_number": 51,
+    "base": "ffba1ee697ab328c53a074476269c298fdd3f389",
+    "head": "a2fa89b78692d7026d34a60b81177fa557b69b93"
+  },
+  "findings": [
+    {
+      "file": "skills/release-flow/SKILL.md",
+      "start_line": 18,
+      "end_line": 18,
+      "message": "The validation command `ruff check pyproject.toml tests/test_version.py tests/fixtures/prompts/expected_comment.md` is wrong. Ruff is a Python linter and silently skips non-Python files; `pyproject.toml` (TOML) and `expected_comment.md` (Markdown) are not linted at all. Only `tests/test_version.py` is actually checked. pyproject.toml validation is done by `validate-pyproject` in the `pyproject-validate.yml` CI workflow, not ruff. The CI workflow itself runs `ruff check .`—the skill should match that pattern instead of naming specific non-Python files, to avoid false assurance that those files have been validated.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The SKILL.md at this SHA contains `ruff check pyproject.toml tests/test_version.py tests/fixtures/prompts/expected_comment.md`. Ruff is a Python linter that silently skips non-Python files; pyproject.toml and expected_comment.md are not checked by ruff. The CI workflow confirms the correct pattern is `ruff check .`, and pyproject.toml is validated by `validate-pyproject` in a separate workflow. The finding is factually correct about the false assurance this command creates.",
+      "severity_justification": "The only real harm is misleading documentation: the Python file is still linted, but the non-Python files are silently skipped, giving false assurance that those files were validated. No runtime behavior is affected.",
+      "category_justification": "The issue is in a skill playbook document — the ruff command in the validation step is inaccurate, misstating which files are actually linted.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "skills/release-flow/SKILL.md",
+      "start_line": 25,
+      "end_line": 25,
+      "message": "The instruction hardcodes 'the matching `v4` major tag', but `release-tags.yml` dynamically computes the major tag via `major_tag=\"${RELEASE_TAG%%.*}\"`. For a v5.0.0 release the workflow moves `v5`, not `v4`. Following this step literally during a future major release would create confusion and potentially lead a maintainer to manually retag `v4` instead of relying on the workflow.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The release-tags.yml workflow dynamically computes the major tag via `major_tag=\"${RELEASE_TAG%%.*}\"` — for v5.0.0 it would move `v5`, not `v4`. The SKILL.md hardcodes 'the matching `v4` major tag', which is currently accurate (project is at v4.x) but technically inaccurate about the workflow's behavior and would mislead a maintainer during a future major version bump.",
+      "severity_justification": "The project is currently at v4.x, so the hardcoded reference is correct right now. The actual instruction (rely on the workflow, don't manually retag) is sound. The risk materializes only if a major version bump occurs, and even then the workflow itself would do the right thing automatically.",
+      "category_justification": "The issue is inaccurate wording in a maintainer playbook document — it hardcodes a version-specific detail that the underlying workflow handles dynamically.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "AGENTS.md",
+      "start_line": 37,
+      "end_line": 37,
+      "message": "Same hardcoded version issue: 'Let `release-tags.yml` move the `v4` major tag' states a fixed version number that will be wrong for v5+ releases. The actual `release-tags.yml` dynamically extracts the major tag from the pushed semver tag, so the guidance should say 'the matching major tag' rather than pinning `v4`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "AGENTS.md line 35 contains 'Let `release-tags.yml` move the `v4` major tag' — the same hardcoded version issue as in SKILL.md. The release-tags.yml workflow is confirmed to dynamically derive the major tag via `major_tag=\"${RELEASE_TAG%%.*}\"`, so `v4` is inaccurate for any future major release. This is a distinct occurrence in a separate file.",
+      "severity_justification": "The project is currently at v4.x so the reference is accurate now. The core guidance (let the workflow handle it, don't manually retag) is correct. Risk only materializes on a future major bump, and the workflow itself would still behave correctly regardless.",
+      "category_justification": "Inaccurate wording in a maintainer guidance document — hardcodes a version-specific detail that the underlying workflow handles generically.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

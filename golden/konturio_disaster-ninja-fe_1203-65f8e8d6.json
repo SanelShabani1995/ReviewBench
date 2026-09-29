@@ -1,0 +1,311 @@
+{
+  "pr_key": "konturio_disaster-ninja-fe_1203-65f8e8d6",
+  "pr": {
+    "repo": "https://github.com/konturio/disaster-ninja-fe",
+    "pr_number": 1203,
+    "base": "75f9f78fbcd43ba62b3e1abfe56592e8b1786c3d",
+    "head": "65f8e8d6327ce9378c4f787a0f46319ce57ecf95"
+  },
+  "findings": [
+    {
+      "file": "src/widgets/FocusedGeometryEditor/index.ts",
+      "start_line": 67,
+      "end_line": 105,
+      "message": "Geometry permanently lost on error in 'draw' mode. When the user picks 'draw', `focusedGeometryAtom.reset()` is dispatched on line 69 before `await editPromise` on line 85. If any error occurs between these points (or during the await), execution falls to the `catch` block which only logs the error. The `restore` variable holding the previous geometry is never consulted in the catch path, so the user's pre-existing geometry is gone without recovery. The fix is to also restore from `restore` in the catch block when it is set.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the code: when mode='draw', focusedGeometryAtom.reset() is dispatched before awaiting editPromise. The catch block only logs the error and never checks or restores the `restore` variable. The user's pre-existing geometry is permanently lost on any error thrown during drawTools.edit().",
+      "severity_justification": "User data (previously drawn geometry) can be silently lost on an error path. It's a real data loss scenario, though it requires an error during draw tools operation which may be uncommon.",
+      "category_justification": "The restore logic for the error path is missing, causing incorrect behavior (data loss) compared to the stated intent of restoring previous geometry on cancellation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/index.ts",
+      "start_line": 80,
+      "end_line": 83,
+      "message": "`drawTools.edit()` always dispatches `activeDrawModeAtom.setDrawMode(drawModes.ModifyMode)` internally (src/core/draw_tools/index.ts line 59) and also dispatches `setIndexesForCurrentGeometryAtom.set(true)` (the 'hack to select all features'). Immediately after, a second `store.dispatch` overrides with `DrawPolygonMode`. These are two separate dispatch calls, creating two state transitions: null → ModifyMode → DrawPolygonMode. The draw layer briefly enters ModifyMode with 'select all features' state before being overridden. This causes unnecessary renders and potentially visual flicker. The `drawTools.edit()` API needs a way to specify the initial mode, or the mode override should be part of the same dispatch batch.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: drawTools.edit() dispatches a batch setting ModifyMode and select-all-features, then a separate store.dispatch immediately overrides with DrawPolygonMode. Two distinct state transitions occur, causing unnecessary renders and potentially applying the select-all-features hack for a frame before being overridden.",
+      "severity_justification": "Causes unnecessary state transitions and potential visual flicker, but has no functional impact on the end result. The workaround would require API changes to drawTools.edit().",
+      "category_justification": "The issue is about unnecessary state transitions and re-renders caused by two sequential dispatch calls instead of a single batched one.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/index.ts",
+      "start_line": 92,
+      "end_line": 98,
+      "message": "When the user picks 'draw', cancels without saving (result is empty), and geometry is restored from `restore`, `zoomToFocusedGeometry` is never called. The original code (before this PR) always called `zoomToFocusedGeometry` on activation, so the user was guaranteed to see the existing geometry. Now, after a cancelled draw session where the user may have panned away, the restored geometry could be completely off-screen with no indication of where it is.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the original code called zoomToFocusedGeometry unconditionally on activation. The new code only calls it in the 'edit' branch. When the user picks 'draw', cancels, and geometry is restored, zoomToFocusedGeometry is never called, leaving the restored geometry potentially off-screen.",
+      "severity_justification": "A UX regression — the user may not see their restored geometry after cancelling a draw session — but the data itself is preserved. User can manually pan/zoom to find it.",
+      "category_justification": "The behavior diverges from the original code's guarantee of zooming to existing geometry on activation, representing a regression in the expected UX flow.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/index.ts",
+      "start_line": 62,
+      "end_line": 65,
+      "message": "When the user dismisses the modal (choice is null), the code dispatches `setState('regular')` and returns early — before `enabledLayersAtom.delete` on line 78 is ever reached. However, the `finally` block at line 108 still fires and dispatches `enabledLayersAtom.set(FOCUSED_GEOMETRY_LOGICAL_LAYER_ID)`. Since the layer was never removed, this is usually idempotent (the `createSetAtom.set` guard checks `state.has(el)`). But if the focused geometry layer was legitimately disabled before the editor was opened (e.g., user hid it), the modal-dismiss path silently re-enables it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `return` inside a `try` block always triggers `finally`. The `set` guard (state.has check) makes it a no-op when the layer is already enabled, but if the focused geometry layer was previously disabled, dismissing the modal would silently re-enable it via the finally block without the corresponding delete ever having been called.",
+      "severity_justification": "Requires a specific edge case (focused geometry layer already disabled before editor activation) that is unlikely in normal usage. The common case (layer enabled) is handled correctly by the set guard.",
+      "category_justification": "The finally block's behavior is asymmetric relative to the early-return path introduced by this PR — it runs without the corresponding delete, potentially causing unintended state mutation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/index.ts",
+      "start_line": 92,
+      "end_line": 98,
+      "message": "`restore.geometry` is the object stored in `focusedGeometryAtom` state, which has an extra `hash` property injected by the `_update` action in `focusedGeometryAtom` (see model.ts: `const geometryWithHash = { ...geometry, hash }`). When passed to `setFocusedGeometry(restore.source, restore.geometry)`, the CRC32 hash is computed from `JSON.stringify({ geometry: geometryWithEmbeddedHash, source })`, including the old hash value in the input. The result is a hash of a hash, making the stored hash non-deterministic across multiple restore-then-cancel cycles. While the geometry data itself is correctly preserved, the `hash` used for deduplication becomes unreliable.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: restore.geometry contains an embedded hash property from the _update action. Passing it to setFocusedGeometry includes the old hash in the crc32 input, so each restore-then-cancel cycle produces a different hash from the same underlying geometry. This breaks the deduplication logic in the atom.",
+      "severity_justification": "The geometry data is correctly preserved. The only consequence is deduplication failure (spurious state updates) after repeated restore-then-cancel cycles, which is an edge case with minor practical impact.",
+      "category_justification": "The hash stored after restoration is computed from data containing a previous hash, making it semantically inconsistent with hashes computed from raw geometry — a logic error in the restore path.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/ChooseEditModeModal.tsx",
+      "start_line": 14,
+      "end_line": 15,
+      "message": "The `ModalDialog` has `onClose={() => onConfirm(null)}` and `GlobalModal` (in src/core/modal/index.tsx) separately wraps the component in `<Modal onCancel={onCancel}>` where `onCancel` also calls `state?.onConfirm(null)`. If the UI kit's `Modal.onCancel` fires for the same user gesture as `ModalDialog.onClose` (e.g. both responding to an Escape keypress or backdrop click), `onConfirm(null)` is called twice. The first call resolves the promise and clears the modal atom; the second call invokes `state?.onConfirm(null)` again before React re-renders. Promise resolution is idempotent so this doesn't corrupt state, but it does call the resolver twice. The `ChooseEditModeModal` should not duplicate the close behaviour that `GlobalModal` already handles via `Modal.onCancel`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The ModalDialog.onClose->onConfirm(null) pattern inside GlobalModal's Modal wrapper is the established convention used in at least three other modals (MCDAForm, MultivariateAnalysisForm, SubscriptionSuccessModal). ChooseEditModeModal follows this existing pattern. Whether Modal.onCancel and ModalDialog.onClose actually fire together for the same gesture cannot be confirmed without ui-kit internals, and if it were a real issue it would have been caught on pre-existing modals.",
+      "severity_justification": "Even if double-firing occurred, both promise resolution and modalAtom clearing are idempotent operations, so no functional impact.",
+      "category_justification": "The finding is about potential double invocation of a callback, which is a correctness concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/ChooseEditModeModal.test.tsx",
+      "start_line": 1,
+      "end_line": 34,
+      "message": "The tests search for buttons by their translated text (`/Draw new geometry/i`, `/Edit existing geometry/i`) which relies on `i18n.t()` returning the English translations at render time. The `TranslationService` calls `i18n.init()` without `await`, and while i18next with direct `resources` initialises synchronously, the `LanguageDetector` plugin is also used. In the `happy-dom` test environment the detector may not find a browser language and could fall back asynchronously. If i18next isn't ready before the component renders, `i18n.t()` returns the raw key (e.g. `focused_geometry_editor_modal.draw_new`) and `getByRole('button', { name: /Draw new geometry/i })` fails. The tests should either mock `i18n` or use keys that are guaranteed available regardless of initialisation state.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "i18next with inline resources (as used here) initializes synchronously in v23 — no async fallback occurs. LanguageDetector uses synchronous sources (localStorage, navigator.language). fallbackLng='en' ensures English translations are available. The finding's claim about async initialization is factually incorrect for this configuration.",
+      "severity_justification": "Even if the concern were valid, the worst case is a test failure (not a runtime bug), and the existing codebase has no i18n mocking pattern suggesting this is not a real problem.",
+      "category_justification": "The finding is about potential test reliability due to i18n initialization behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/index.ts",
+      "start_line": 94,
+      "end_line": 94,
+      "message": "When drawing is canceled by the user (resulting in an empty geometry), the original geometry is restored. However, if the user was editing a geometry (not drawing a new one), and cancels, the geometry is incorrectly reset instead of being restored.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: in 'edit' mode, restore is null (only set in the 'draw' branch). Cancel/empty result falls to focusedGeometryAtom.reset(), erasing the user's original geometry. The PR introduced the restore mechanism for 'draw' but failed to extend it to 'edit', creating an inconsistency where cancelling edit destroys geometry while cancelling draw restores it.",
+      "severity_justification": "Users who choose 'edit', then cancel without completing their edits lose their original geometry unexpectedly. This is user-facing data loss, made more confusing by the contrast with the 'draw' path which correctly restores.",
+      "category_justification": "The restore logic is applied inconsistently — 'draw' cancel restores, 'edit' cancel resets — creating incorrect behavior relative to the apparent intent of the feature.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/index.ts",
+      "start_line": 84,
+      "end_line": 91,
+      "message": "The awaitable 'showModal' function does not guarantee that it is error-free or validated. If 'showModal' fails or resolves with an unexpected value, this could break the workflow of editing focused geometry. It would be safer to explicitly handle errors or sanitize return values.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "showModal is already wrapped in the outer try/catch. The return type is TypeScript-constrained to GeometryEditChoice | null, and the modal component only emits those exact values. The null case is explicitly handled. The finding is generic boilerplate advice without identifying a specific unhandled code path.",
+      "severity_justification": "No concrete vulnerability or error path exists that isn't already handled.",
+      "category_justification": "The finding concerns error handling robustness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/index.ts",
+      "start_line": 114,
+      "end_line": 128,
+      "message": "State restoration logic is partially implemented for 'restore'. If 'restore.source' or 'restore.geometry' are unavailable or corrupted, this could lead to inconsistencies without being detected. Additional validation or fallback behavior should be introduced.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "restore is typed as FocusedGeometry | null, and FocusedGeometry requires both source and geometry as non-nullable fields. The if (restore) check narrows the type to FocusedGeometry, guaranteeing both fields exist. The finding provides no concrete path where these fields could be unavailable or corrupted — it is generic validation advice without a specific issue.",
+      "severity_justification": "No concrete failure path exists; TypeScript types and the atom's update mechanism ensure data integrity.",
+      "category_justification": "The finding concerns defensive validation and error handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/ChooseEditModeModal.tsx",
+      "start_line": 15,
+      "end_line": 30,
+      "message": "The modal's 'onConfirm' callback receives 'null' when the modal is closed. The downstream systems handling 'onConfirm' might not be equipped to handle or interpret 'null' gracefully, potentially leading to unexpected system state.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The null case is explicitly handled in index.ts: 'if (!choice) { store.dispatch([focusedGeometryControl.setState(\"regular\")]); return; }'. The onConfirm prop type is defined as (value: GeometryEditChoice | null) => void, so null is an expected and documented value. The finding is generic boilerplate that ignores the existing null-handling code.",
+      "severity_justification": "No actual unhandled null path exists — the null case is the first thing checked after awaiting showModal.",
+      "category_justification": "The finding concerns error/edge case handling in the callback flow.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/index.ts",
+      "start_line": 144,
+      "end_line": 149,
+      "message": "On exiting or removing the geometry control, the TODO comment refers to 'focused_geometry_editor.exit_confirmation', but this is unimplemented. Lack of a proper confirmation dialog could lead to unintended loss of unsaved geometry.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The TODO comment and unimplemented confirmation dialog are real and factually present in the code. Without a confirmation on exit, users can lose unsaved geometry. However, this is entirely pre-existing code not touched by this PR.",
+      "severity_justification": "Known pre-existing limitation acknowledged by a TODO comment. Geometry loss on accidental exit is a real UX issue but not a regression introduced here.",
+      "category_justification": "Missing confirmation dialog results in geometry being lost without user consent when the control exits.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/index.ts",
+      "start_line": 61,
+      "end_line": 64,
+      "message": "Because `onStateChange` callbacks are not awaited by the toolbar, the control can leave the `active` state while this modal is open. If the user then clicks either modal action, this suspended handler continues and starts `drawTools.edit(...)` even though the toolbar is already back in `regular` state, leaving draw tools active without the corresponding active toolbar UI. The modal path needs to guard against stale state (or cancel/close the modal when the control is deactivated) before proceeding.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the toolbar fires callbacks via `onStateChangeCbs.forEach((cb) => cb(...))` without awaiting the returned Promise. The async handler suspends at `await showModal(ChooseEditModeModal)`, creating a window where the control can be deactivated. After modal resolution, the code proceeds to call `drawTools.edit()` with no guard checking whether the control is still active, leaving draw tools active with the toolbar in regular state.",
+      "severity_justification": "Requires a specific sequence (control deactivated while modal is open) but leaves the draw tools in an inconsistent state with no matching active toolbar UI, breaking the user's editing flow.",
+      "category_justification": "Logic error — stale-state execution after async suspension causes draw tools to activate without a matching active toolbar state.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/ChooseEditModeModal.tsx",
+      "start_line": 15,
+      "end_line": 15,
+      "message": "The modal close/cancel path is new behavior that returns `null` and causes the editor activation to be aborted, but the new tests only cover the two action buttons. Please add coverage for closing the modal so regressions in the cancellation path are caught.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the test file has exactly two tests covering 'draw' and 'edit' button clicks. The onClose={() => onConfirm(null)} path (line 15 of ChooseEditModeModal.tsx) which triggers cancellation is untested. This is a real, verifiable gap in coverage for newly introduced behavior.",
+      "severity_justification": "Missing test for a cancel path is a coverage gap but low risk — the logic itself is a one-liner and the cancellation behavior is simple. It won't cause immediate user-facing issues but could let regressions slip through.",
+      "category_justification": "The finding is specifically about missing test coverage for a new code path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/widgets/FocusedGeometryEditor/index.ts",
+      "start_line": 16,
+      "end_line": 16,
+      "message": "`GeometryEditChoice` is only used as a TypeScript type, but it is imported as a runtime value. The repo enforces `@typescript-eslint/consistent-type-imports` (eslint.config.mjs:103), so this will fail lint unless the named import is marked as a type import.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: eslint.config.mjs line 103 sets '@typescript-eslint/consistent-type-imports' to 'error'. Line 16 of index.ts imports GeometryEditChoice as a value import, but it is only used as a type annotation (let mode: GeometryEditChoice). This is a concrete lint error that would fail CI.",
+      "severity_justification": "A lint error that breaks the CI lint check, but has no runtime impact and is a one-token fix (adding 'type' keyword).",
+      "category_justification": "It is a code style/type import convention violation enforced by the project's ESLint configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

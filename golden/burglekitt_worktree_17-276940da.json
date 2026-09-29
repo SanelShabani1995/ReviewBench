@@ -1,0 +1,583 @@
+{
+  "pr_key": "burglekitt_worktree_17-276940da",
+  "pr": {
+    "repo": "https://github.com/burglekitt/worktree",
+    "pr_number": 17,
+    "base": "99dfbcadd3f925a7e3580e4f951e69259397152c",
+    "head": "276940da48291a2505750371b2d50d9541b698f3"
+  },
+  "findings": [
+    {
+      "file": "docs/src/chat/hooks/useStreamChat.ts",
+      "start_line": 127,
+      "end_line": 131,
+      "message": "When an SSE `error` event is received, the function returns without calling `reader.cancel()` or `abort.abort()`. The ReadableStreamDefaultReader keeps a lock on the response body, and the underlying HTTP connection to the worker stays alive consuming data until Gemini closes the stream. This wastes Gemini API quota and keeps a TCP connection open unnecessarily. The fix is to call `abort.abort()` (or `reader.cancel()`) before returning in the error case.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code at lines ~128-131 returns from the error case without calling abort.abort() or reader.cancel(). The finally block runs but only clears the request timeout and calls finalizeMessage/warnMessage — neither cancels the reader nor aborts the controller. The stream from the worker continues to be fetched until Gemini closes it, confirmed by reading the full function.",
+      "severity_justification": "Wasted Gemini API quota and open TCP connections are real operational costs, but the impact is bounded: it only occurs on SSE error events (uncommon), the stream will eventually close on its own, and the app's UI state is handled correctly. No data loss or user-facing breakage.",
+      "category_justification": "This is a resource management issue — failing to release an HTTP connection and cancelling a stream on an error path, which wastes quota and holds connections open unnecessarily.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/hooks/useBottomScroll.ts",
+      "start_line": 17,
+      "end_line": 47,
+      "message": "`useLayoutEffect` is called with no dependency array, so it runs after every render of the Messages component. Even though a snapshot string comparison short-circuits scroll action, the DOM reads (`el.scrollHeight`, `el.scrollTop`, `el.clientHeight`) and snapshot comparison still execute on every render. During active streaming, this fires many times per second for each appended delta. Adding `[lastMsg]` as a dependency would limit execution to when the tracked message actually changes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's specific claim that DOM reads execute on every render is incorrect — el.scrollHeight/scrollTop/clientHeight are accessed only after the snapshot guard returns early. The actual per-render overhead (string construction + comparison) is negligible. Furthermore, adding [lastMsg] as a dep would not help during streaming since appendDelta creates a new object reference on every delta, meaning lastMsg changes on every streaming render anyway.",
+      "severity_justification": "Even if the claim were correct, the impact would be minor — cheap DOM property reads during streaming would not cause meaningful performance issues in a chat sidebar.",
+      "category_justification": "The finding is about unnecessary work per render cycle during streaming.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/components/ChatDrawer.tsx",
+      "start_line": 45,
+      "end_line": 53,
+      "message": "`handleClose` schedules a `setTimeout` but never stores or cancels the timer ID. If the user triggers close/open rapidly (e.g., double Ctrl+K, or clicking the FAB and then immediately reopening), multiple 480ms timers accumulate. Each one fires and calls `setIsDrawerOpen(false)`, which can close the drawer unexpectedly while it is already in an open state. The fix is to store the timeout ID in a ref and call `clearTimeout` at the start of `handleClose` and `handleOpen`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The setTimeout in handleClose is not stored or cancelled anywhere. handleOpen does not clear any pending close timer. Rapid close/open interactions (double Ctrl+K, FAB click) would accumulate 480ms timers that each fire setIsDrawerOpen(false), closing the drawer while it should be open. This is verified by reading the full handleClose and handleOpen implementations.",
+      "severity_justification": "The bug requires a precise timing window (open within 480ms of closing) and produces a jarring but non-blocking UX glitch. No data loss or functional breakage, and typical users rarely trigger it.",
+      "category_justification": "A stale timer firing state-setting callbacks in the wrong order produces incorrect drawer open/close behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/worker/worker.ts",
+      "start_line": 181,
+      "end_line": 181,
+      "message": "The model is resolved from the URL query string first (`url.searchParams.get('model')`), which takes precedence over the body's `model` field. The client only ever sends the model in the request body, but a third party can override the model selection by appending `?model=...` to the worker URL. While the subsequent `ALLOWED_MODELS` check prevents using disallowed models, this creates an inconsistent API surface where the same logical parameter is accepted from two sources with undocumented priority, which could cause confusion or unintended behaviour if the worker URL ever gets a public query-string parameter.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The URL query string model parameter at line 181 silently takes precedence over the body model field, which is the only source the client actually uses. The finding is factually correct. A third party making direct POST requests can use any of the ALLOWED_MODELS via query string, consuming API quota. The ALLOWED_MODELS check limits the blast radius but the undocumented dual-source resolution is a real API design inconsistency.",
+      "severity_justification": "ALLOWED_MODELS validation and rate limiting constrain the practical impact. The worst-case outcome is a third party consuming allowed-model quota — no unauthorized model access or data breach is possible.",
+      "category_justification": "The issue is about inconsistent API surface design: accepting the same logical parameter from two sources with undocumented priority in a public-facing worker endpoint.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/worker/worker.ts",
+      "start_line": 244,
+      "end_line": 252,
+      "message": "Model validation (`ALLOWED_MODELS.includes(model)`) is performed after iterating over all 50 messages and validating each one's role and content length. A request with an invalid model but valid messages performs the full O(N) message validation loop before the model check rejects it. The model check should be moved immediately after parsing the body and extracting the model value, before the message validation loop.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The validation order is exactly as described: message loop runs for up to 50 items before the ALLOWED_MODELS check at line 244. The finding is factually correct and identifies specific lines with a concrete fix.",
+      "severity_justification": "The worker is already rate-limited to 30 req/min per IP, and iterating 50 small objects in a JS edge runtime takes microseconds. The wasted work on an invalid-model request is imperceptible and the attack surface is negligible given rate limiting.",
+      "category_justification": "The issue is suboptimal validation ordering that does unnecessary work before an early-reject check.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/hooks/useStreamChat.ts",
+      "start_line": 39,
+      "end_line": 40,
+      "message": "If `GEMINI_WORKER_URL` is not set as a GitHub repository variable when the docs are deployed, `next.config.mjs` bakes in an empty string (`\"\"`). At runtime, `process.env.GEMINI_WORKER_URL || \"http://localhost:8787\"` evaluates the empty string as falsy and falls back to `http://localhost:8787`. The production site then sends all chat requests to localhost, silently failing for every user. Additionally, `IS_LOCAL_WORKER` in `ChatDrawer.tsx` would evaluate to `true`, showing the 'dev' badge in production. A non-empty placeholder or a build-time assertion should guard against a missing `GEMINI_WORKER_URL`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "All three claims are verified. next.config.mjs bakes in empty string when GEMINI_WORKER_URL is unset. The || fallback in useStreamChat.ts and ChatDrawer.tsx treats the empty string as falsy, silently falling back to localhost in production. Chat breaks entirely for all users with no visible error, and the dev badge appears incorrectly.",
+      "severity_justification": "The entire chat feature becomes silently non-functional in production if the repo variable is not configured. Users get no error message, just failed requests to localhost. The dev badge appearing in production is an additional signal of misconfiguration. However, chat is an optional docs feature, not a payment or auth flow, keeping this below high.",
+      "category_justification": "A missing configuration default causes silent production failure of a feature, which is a deployment/operational reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/components/Chat.tsx",
+      "start_line": 7,
+      "end_line": 7,
+      "message": "`QueryClient` is instantiated at module level (`const queryClient = new QueryClient()`), outside the React component. In a Next.js static export, the module is evaluated once per JS bundle load on the client, which is fine for a pure static site. However, because the instance is shared across all component trees (e.g., if the component is mounted/unmounted and remounted), stale query cache from a previous mount persists. The React Query documentation recommends creating `QueryClient` inside the component (guarded by `useState` or `useRef`) to ensure each component tree gets a fresh instance.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's specific concern — stale query cache from a previous mount — does not apply here. Chat is rendered in RootLayout and never unmounts during a session. The only React Query hook used is useMutation (not useQuery), so there is no persistent cached query data to go stale. The finding itself acknowledges the primary SSR risk doesn't apply for a static export. The module-level QueryClient is an accepted pattern for client-only static sites with no remounting.",
+      "severity_justification": "Even as a pattern concern, the practical impact is negligible given the deployment context.",
+      "category_justification": "The concern is about code pattern conformance to library documentation recommendations.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/utils/parseGeminiSseLine.test.ts",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "Globally defined?\n```suggestion\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "other",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding consists solely of the fragment 'Globally defined?' with an empty suggestion block and no explanation. It makes no verifiable claim, identifies no specific issue, and provides no actionable guidance. This is not a meaningful code review comment.",
+      "severity_justification": "No coherent concern is expressed.",
+      "category_justification": "The finding is too vague to categorize into any meaningful technical category.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "baldurpan",
+        "url": "https://github.com/burglekitt/worktree/pull/17#discussion_r3074169477",
+        "created_at": "2026-04-13T15:49:50Z",
+        "alignment": "code_changed",
+        "original_commit": "41c6ddffbbb38e2e9b03353efdffe81538500193",
+        "original_start_line": 1,
+        "original_end_line": 1
+      }
+    },
+    {
+      "file": "docs/worker/worker.test.ts",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "```suggestion\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "other",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is an empty suggestion block with no text, no claim, and no actionable content. It is not a meaningful code review finding and cannot be verified or falsified.",
+      "severity_justification": "No concern is expressed at all.",
+      "category_justification": "An empty suggestion is not classifiable into any technical category.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "baldurpan",
+        "url": "https://github.com/burglekitt/worktree/pull/17#discussion_r3074173389",
+        "created_at": "2026-04-13T15:50:34Z",
+        "alignment": "code_changed",
+        "original_commit": "efbbc463b7e624f108f748d00dd54d36db0ef51e",
+        "original_start_line": 1,
+        "original_end_line": 1
+      }
+    },
+    {
+      "file": ".github/workflows/agent-checks.yml",
+      "start_line": 28,
+      "end_line": 31,
+      "message": "The \"Format & Lint (example)\" step pipes both commands to `|| echo 'not configured'`, which swallows real failures and prints a misleading success message. The root `package.json` does not define `format:check` or `lint` scripts (it uses `format`, `format:fix`, `check`, `check:fix` via biome), so this step will always print the fallback strings and provide no actual signal. Either remove the step or wire it to the real biome scripts (e.g. `pnpm exec biome ci .` or `pnpm check`).",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`package.json` has `\"lint\": \"biome lint\"`",
+      "severity_justification": "The CI step will always pass regardless of format/lint state, giving false confidence. Real lint failures go undetected in PRs. The step name includes '(example)' suggesting it's aspirational, slightly reducing impact.",
+      "category_justification": "This is a CI/CD configuration issue — the workflow step silently swallows failures, undermining the enforcement purpose of the check.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/worker/worker.ts",
+      "start_line": 195,
+      "end_line": 203,
+      "message": "An empty `messages` array (length 0) passes all the validation checks and is forwarded to Gemini, which then rejects the request with an opaque upstream error. Consider adding a `messages.length === 0` check alongside the `> 50` check and returning a 400 with a clear message (e.g. \"messages must not be empty\"), matching the explicitness of the other validations.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the validation checks !Array.isArray and length > 50 but not length === 0. An empty array passes all checks and reaches Gemini. The client always adds at least one message, but the worker is a public endpoint and the inconsistency with the otherwise explicit validation is real.",
+      "severity_justification": "The normal client never sends an empty array, and even if it did, Gemini would return an error that propagates back. No security risk or data loss, just a missing explicit validation that makes debugging harder.",
+      "category_justification": "Missing input validation case — the worker's validation logic has a gap where an empty messages array passes all checks and is forwarded to the upstream API.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/hooks/useLocalStorage.ts",
+      "start_line": 17,
+      "end_line": 28,
+      "message": "`writeItem` dispatches a synthetic `StorageEvent` on every call, which causes `useSyncExternalStore` subscribers to re-run `getSnapshot` (calling `localStorage.getItem` + `JSON.parse` on the entire chat history). Because `appendDelta` in `useMessageHistory` calls `setMessages` for every streamed token, each token triggers a full serialize+parse of the message array — O(n²) work over the length of an assistant response and a likely source of jank for long replies. Consider either batching writes (debounce/rAF), only persisting on stream finalize, or skipping the synthetic event when no other in-tab subscriber exists.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: each appendDelta call triggers writeItem (JSON.stringify + localStorage.setItem + StorageEvent dispatch), which causes getSnapshot to be called and cache-miss every time (raw changed), forcing a full JSON.parse of the messages array. This is O(n²) work over a streaming response.",
+      "severity_justification": "For typical LLM responses of hundreds to thousands of tokens, the repeated full-array serialize/deserialize on every token could cause noticeable jank on slower devices. Not catastrophic but a real UX degradation for long responses.",
+      "category_justification": "The issue is an O(n²) write-and-read pattern on localStorage triggered on every streaming token, causing unnecessary serialization overhead.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/hooks/useStreamChat.ts",
+      "start_line": 23,
+      "end_line": 42,
+      "message": "When the user switches models while a stream is in flight, the running `mutationFn` continues to use `appendDelta` / `finalizeMessage` from the latest hook render — which is bound to the new model's storage key. The streaming text will then be appended into the new model's history (or silently dropped because the `assistantId` doesn't exist there), and the placeholder created against the old model is left as a stale `streaming: true` row. Consider aborting the in-flight request when `model` changes (e.g. abort in an effect cleanup keyed on `model`).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The running async mutationFn captures appendDelta/finalizeMessage from the render when it was invoked. JavaScript closures are fixed at creation; a re-render with a new model creates a new mutationFn closure but cannot update an already-executing async function. The stream continues writing to the old model's localStorage via the old appendDelta, not the new model's history. The finding's core claim is factually incorrect.",
+      "severity_justification": "Even if there were a real issue, model-switching mid-stream is a minor edge case in a chat UI.",
+      "category_justification": "The finding alleges incorrect data flow between model histories during a model switch.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/hooks/useStreamChat.ts",
+      "start_line": 113,
+      "end_line": 118,
+      "message": "The streaming parser drops any data left in `buf` when the reader returns `done`. If the final SSE frame arrives without a trailing newline, the last text chunk or `[DONE]` frame is never processed, leaving the assistant response truncated or only logging the zero-text warning. Process a non-empty remainder after the read loop before finalizing.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: when the read loop exits via `if (done) break`, buf is not processed. Any final SSE line lacking a trailing newline is silently dropped. The decoder is also never flushed at stream end. The finding accurately identifies the gap.",
+      "severity_justification": "In practice Gemini SSE ends with proper newlines so the happy path is unaffected. The bug would only surface on network truncation or server edge cases, and the consequence is a silently truncated response rather than data loss or security impact.",
+      "category_justification": "Logic error in the streaming buffer handling — remainder content is dropped when the reader signals done.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".gitignore",
+      "start_line": 11,
+      "end_line": 12,
+      "message": "This change removes the previous `docs/.vercel/` ignore entry and there is no replacement elsewhere in `.gitignore`. Running Vercel tooling locally under the docs app can now leave generated project metadata unignored, making it easy to commit machine-specific files accidentally.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The removal of docs/.vercel/ from .gitignore is intentional — the PR replaces Vercel with GitHub Pages + Cloudflare Workers. Without Vercel tooling in use, the directory won't be generated. The risk requires a developer to deliberately run vercel locally on a project that has explicitly dropped it, making this a speculative concern about an intentional cleanup.",
+      "severity_justification": "Even if valid, accidentally committing .vercel/ metadata is low impact — it doesn't expose secrets or break builds.",
+      "category_justification": "The concern is about accidentally tracking generated tool metadata files.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/components/ChatContext.tsx",
+      "start_line": 36,
+      "end_line": 42,
+      "message": "The persisted model value is used without validating it against `ALLOWED_MODELS`. A stale localStorage value from a renamed/removed model (or a manually edited value) will be sent to the worker, which rejects it as `Model not allowed`, and the UI can stay stuck on that invalid selection until the user finds and changes it. Normalize invalid stored values back to `DEFAULT_MODEL` before passing them to `useStreamChat`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: model is read from localStorage and passed directly to useStreamChat without checking ALLOWED_MODELS. The worker rejects unrecognized models with 'Model not allowed'. A stale stored value (e.g. from a renamed preview model) causes every message to fail, and there is no automatic fallback to DEFAULT_MODEL.",
+      "severity_justification": "A user with a stale model in localStorage gets stuck — every chat message fails with an error until they manually change the model. The preview model in the list makes this a realistic scenario after a future rename.",
+      "category_justification": "Missing input validation that causes user-visible failures and a stuck UI state when localStorage holds an invalid model value.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/components/ChatSubmitButton.tsx",
+      "start_line": 18,
+      "end_line": 26,
+      "message": "This icon-only submit button has no accessible name, so screen reader users will hear an unlabeled button. Add an `aria-label` (for example, a send/submit message label) or visible text that describes the action.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the Button contains only icon SVGs (RocketLaunchIcon/CubeTransparentIcon) with no aria-label, aria-labelledby, title, or visible text. Heroicons do not inject accessible names. Screen readers will announce this as an unlabeled button.",
+      "severity_justification": "Real accessibility gap but scoped to a docs chat widget — not a primary workflow. The fix is trivial (add aria-label='Send message').",
+      "category_justification": "Icon-only interactive element with no accessible name, which violates WCAG 2.1 SC 4.1.2 (Name, Role, Value).",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/components/ChatInput.tsx",
+      "start_line": 15,
+      "end_line": 26,
+      "message": "The text input is only identified by its placeholder; placeholders are not reliable accessible labels and disappear once the user types. Provide an accessible name via an associated label or `aria-label` so screen reader users know this field is for entering a chat message.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: ChatInput receives only a placeholder prop with no aria-label, aria-labelledby, or associated label element in ChatForm. Placeholder text alone is not an accessible name per WCAG 2.1 SC 4.1.2.",
+      "severity_justification": "Real accessibility gap but scoped to a docs chat widget. Fix is trivial — add aria-label='Message' or a visually-hidden label.",
+      "category_justification": "Text input lacks an accessible name, relying solely on placeholder which is not a substitute for a label per WCAG guidance.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/worker/worker.ts",
+      "start_line": 258,
+      "end_line": 263,
+      "message": "The upstream Gemini `fetch` is not wrapped in error handling. If the network request rejects (DNS/TLS failure, transient Worker runtime error, etc.), the Worker throws and returns Cloudflare's generic error response instead of the JSON/CORS error shape the client expects, so the chat UI cannot show the intended recoverable error message. Catch fetch failures and return a controlled 5xx JSON response with the existing CORS headers.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the upstream Gemini fetch at line 259 has no try-catch, and the top-level fetch handler has no outer try-catch. An unhandled network rejection causes Cloudflare to return a generic response without CORS headers, causing the browser to throw a CORS TypeError instead of a readable error, bypassing the worker's intended JSON error shape.",
+      "severity_justification": "DNS/TLS failures to the Gemini API are rare, and the client does handle network errors (failMessage with 'Connection error'). The degradation is losing a more specific error message, not a crash or data loss.",
+      "category_justification": "Missing error handling for a network call in a server-side handler, causing uncontrolled failure mode when the upstream is unreachable.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/worker-deploy.yml",
+      "start_line": 7,
+      "end_line": 8,
+      "message": "This workflow only redeploys when `docs/worker/**` changes, but the deployed Worker is built from more inputs: `docs/src/chat/constants.ts` is imported by `worker.ts`, and `worker:build-context` embeds every docs MDX page plus `skills/core/SKILL.md`. Changes to the allowed model list, docs content, or the shipped skill can therefore merge without redeploying the Worker, leaving production chat stale or rejecting newly selected models. Include those dependent paths (and package/lockfile changes that affect the Worker build) in the trigger.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: worker.ts imports ALLOWED_MODELS from docs/src/chat/constants.ts (outside the trigger path), and build-context.mjs embeds docs/src/app/docs/**/*.mdx and skills/core/SKILL.md (also outside trigger path). Changes to those files won't trigger a redeploy, leaving production chat using stale model lists or stale context.",
+      "severity_justification": "The ALLOWED_MODELS drift is user-facing: adding a model to constants.ts without redeploying the worker causes every message sent with that model to fail with 'Model not allowed'. Stale system prompt is less immediately visible but degrades AI response quality.",
+      "category_justification": "CI/CD trigger misconfiguration that causes incomplete deployment when dependent files change outside the watched path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/components/MarkdownContent.tsx",
+      "start_line": 196,
+      "end_line": 200,
+      "message": "Links are validated, but markdown images are still rendered by `react-markdown`'s default `img` renderer. A model response can include `![...](https://attacker.example/...)`, causing visitors' browsers to load arbitrary external resources/tracking pixels. Disable or validate `img` rendering the same way links are validated for this AI-generated content.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: no img renderer in the components map. react-markdown's default img renderer will load arbitrary external URLs from AI-generated content, while the a renderer explicitly validates hrefs. The gap is real and specific to this code.",
+      "severity_justification": "Allows arbitrary external resource loading from AI-generated content, enabling tracking pixels and leaking visitor information to third parties. Not code execution, but a concrete privacy/security gap for a chat widget handling untrusted model output.",
+      "category_justification": "Unvalidated external resource loading from AI-generated content — a concrete data-exfiltration vector (tracking pixel) specific to this codebase's design of validating links but not images.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/hooks/useStreamChat.ts",
+      "start_line": 84,
+      "end_line": 87,
+      "message": "The client sends the entire stored history on every request, but the Worker rejects requests with more than 50 messages. After roughly 25 user/assistant turns, normal continued chat will start failing with `Too many messages (max 50)` until the user clears history. Trim the history snapshot to the most recent messages (or enforce the same cap in the UI) before sending.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the client sends the full historySnapshot plus the new user message with no cap. The worker rejects arrays longer than 50. After 25 completed turns the 26th message always fails with a 400 error, breaking the chat until the user manually clears history.",
+      "severity_justification": "After ~25 exchanges the chat permanently breaks for that model's history with no recovery other than a manual clear. This is a predictable failure in normal use for any engaged user.",
+      "category_justification": "Client-side logic sends unbounded history that hits a hard server-side cap, causing a predictable failure mode after normal usage.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/README.md",
+      "start_line": 176,
+      "end_line": 182,
+      "message": "This table does not match the implemented link policy. `MarkdownContent.resolveHref()` only allows external URLs whose origin/path matches the GitHub Pages site (and localhost in development); other external URLs are rendered as plain text. Update the docs so contributors do not expect arbitrary external links to be rendered.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the README table states 'Any other external URL → Rendered as <a target=_blank>' but resolveHref only allows external URLs matching ALLOWED_EXTERNAL_ORIGINS (GH Pages origin only in production). All other external URLs return null and render as plain text. The documented behavior contradicts the implementation.",
+      "severity_justification": "Documentation inaccuracy that could mislead contributors about link rendering behavior, but has no runtime impact.",
+      "category_justification": "The README table documents incorrect behavior for the link validation policy in MarkdownContent.tsx.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/worker/README.md",
+      "start_line": 218,
+      "end_line": 221,
+      "message": "This is no longer accurate: `worker.ts` imports `@burglekitt/gmt`, and the docs package declares that dependency. The README should not claim the Worker has zero npm dependencies, especially because bundling/deployment troubleshooting depends on knowing which packages are part of the Worker build.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: worker.ts imports getUnixNow from @burglekitt/gmt (an npm package), and the docs package.json lists @burglekitt/gmt as a dependency. The README's 'Zero npm dependencies' claim is factually wrong.",
+      "severity_justification": "Stale documentation that could mislead contributors troubleshooting bundle size or deployment, but no runtime impact.",
+      "category_justification": "The worker README contains a factually incorrect claim about the worker's dependencies.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/docs-deploy.yml",
+      "start_line": 45,
+      "end_line": 49,
+      "message": "If the repository variable is not configured, this step passes an empty `GEMINI_WORKER_URL`; Next then bakes an empty value into the client and the chat code falls back to `http://localhost:8787`. In a production GitHub Pages build that makes the chat widget call localhost instead of the deployed Worker. Provide a production default or fail the workflow when the variable is missing.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified the full chain: unset GitHub variable evaluates to empty string, next.config.mjs bakes in empty string (not caught by ??), and useStreamChat's || fallback then hits localhost:8787 in the production bundle. The chat widget silently calls localhost in production if the variable is not configured.",
+      "severity_justification": "A missing configuration step causes the chat feature to be completely non-functional in production with a silent localhost fallback rather than a clear build-time or runtime error. Easy to miss when first setting up the repo.",
+      "category_justification": "Missing guard against an unconfigured required environment variable causes a silent production misconfiguration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/worker/worker.ts",
+      "start_line": 4,
+      "end_line": 5,
+      "message": "`docs-context.ts` is gitignored and only generated by `worker:build-context`, but `docs/tsconfig.json` includes `**/*.ts` and `docs:build` does not run that generator. In CI, `pnpm docs:build` can type-check `docs/worker/worker.ts` before `docs-context.ts` exists and fail to resolve this import (the Vitest alias only helps tests). Either generate the context before the docs build, exclude worker sources from the app tsconfig, or provide a TypeScript path/stub for builds.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: worker.ts imports ./docs-context.js which resolves to gitignored docs-context.ts; docs/tsconfig.json includes **/*.ts covering worker files; docs:build does not generate docs-context.ts; the vitest alias only applies to tests. The structural gap is real even if next build's actual TS check scope is uncertain.",
+      "severity_justification": "The actual CI failure impact is uncertain since next build may not traverse non-app files. The fix (exclude worker/ from app tsconfig or add a prebuild step) is straightforward, but this may currently be a latent rather than active breakage.",
+      "category_justification": "Build configuration gap — a generated file dependency is not available during the docs build step, creating fragility in CI.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/worker/build-context.mjs",
+      "start_line": 43,
+      "end_line": 49,
+      "message": "This regex removes entire JSX component blocks, including their children. Existing docs pages such as `docs/src/app/docs/getting-started/page.mdx` put install commands inside `<Tabs>`/`<TerminalBlock>` components, so those commands are stripped from the generated system prompt instead of being available to the chat. Strip only the tags or otherwise preserve textual children for documentation components.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the stripMdx regex removes entire JSX component blocks including children. The getting-started page wraps all install commands in <Tabs>/<Tabs.Tab>/<TerminalBlock> components, so the entire install section is stripped from the generated system prompt. The AI would have no install command content to answer from.",
+      "severity_justification": "Install commands are core content for a CLI docs chat. The AI would be unable to accurately answer 'how do I install worktree?' — arguably the most common question for a CLI documentation widget.",
+      "category_justification": "The MDX stripping logic incorrectly removes content-bearing JSX blocks rather than only the wrapper tags, leaving the AI's context missing key documentation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/src/chat/hooks/useStreamChat.ts",
+      "start_line": 64,
+      "end_line": 72,
+      "message": "When the idle timeout fires, it only rejects the local promise; it does not abort the fetch or cancel the reader. The mutation exits and clears the overall request timeout in `finally`, leaving the underlying stream running in the background until the server closes it. Abort the controller or cancel the reader when declaring the stream timed out.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the idle timeout handler only sets didTimeout and rejects the local promise. It never calls abort.abort() or reader.cancel(). The fetch stays open and the SSE stream continues downloading after the mutation exits, wasting bandwidth until the server closes the connection.",
+      "severity_justification": "The connection leaks bandwidth until the server closes it (typically when the full response finishes), but there are no memory leaks or correctness issues — the data is simply discarded. The user sees the correct timeout warning.",
+      "category_justification": "Resource leak — a network connection and its reader remain open after the logical operation has ended due to missing cancellation on the idle timeout path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

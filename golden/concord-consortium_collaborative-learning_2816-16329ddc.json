@@ -1,0 +1,523 @@
+{
+  "pr_key": "concord-consortium_collaborative-learning_2816-16329ddc",
+  "pr": {
+    "repo": "https://github.com/concord-consortium/collaborative-learning",
+    "pr_number": 2816,
+    "base": "fd3bc6241f856ddd2db4a0c2f24553b05835c4d1",
+    "head": "16329ddcee590f752cbdb600e9ff88d141d3d3e2"
+  },
+  "findings": [
+    {
+      "file": "src/plugins/bar-graph/chart-area.tsx",
+      "start_line": 104,
+      "end_line": 128,
+      "message": "handleBarKeyDown has no guard for currentIndex === -1. If e.currentTarget is not found in barArray (e.g., the DOM updates between the keydown event and the querySelectorAll call during a data-driven re-render), ArrowLeft computes (-1 - 1 + N) % N = N - 2, incorrectly focusing the second-to-last bar. ArrowRight computes 0, focusing the first bar. Both are wrong. A guard `if (currentIndex === -1) return;` is needed after computing currentIndex, mirroring the same check already present in tabWithinContent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the actual file: handleBarKeyDown at lines 104-128 computes currentIndex via indexOf without any -1 guard before the switch. ArrowLeft would compute ((-1 - 1 + N) % N) = N-2 and ArrowRight would compute 0, both wrong. tabWithinContent at line ~530 has an explicit `if (currentIndex === -1) return false;` guard that is absent here.",
+      "severity_justification": "The scenario requires a race between a re-render and a keydown event, which is uncommon in practice. When it does occur it causes a wrong bar to be focused rather than any data loss or crash — a minor UX glitch.",
+      "category_justification": "Logic error: missing boundary check leads to incorrect array index computation and wrong element being focused.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/chart-area.tsx",
+      "start_line": 44,
+      "end_line": 51,
+      "message": "The announce function schedules a requestAnimationFrame without cancelling any previously scheduled one. If announce is called twice before the first RAF fires (e.g., rapid Enter keypresses on bars), both RAF callbacks execute: the first sets 'Selected A', the second sets 'Selected B'. Screen readers may announce 'Selected A' as a spurious stale announcement before 'Selected B'. The RAF id should be stored in a ref and cancelled with cancelAnimationFrame on each new call.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: announce() calls requestAnimationFrame without storing or canceling prior frame IDs. Two rapid invocations would both execute, causing a stale 'Selected A' DOM update (and possible screen reader announcement) before 'Selected B'. The fix described is technically sound.",
+      "severity_justification": "The scenario requires two calls within a single RAF (~16ms), primarily via key auto-repeat. When it occurs, the effect is a spurious stale announcement before the correct one — minor UX degradation for screen reader users, no functional data corruption.",
+      "category_justification": "The bug affects screen reader announcements for keyboard users, which is a core accessibility concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/chart-area.tsx",
+      "start_line": 278,
+      "end_line": 280,
+      "message": "The aria-live region is placed inside a <foreignObject x={0} y={0} width={1} height={1} overflow=\"hidden\">. SVG foreignObject aria-live support is inconsistent across screen readers: VoiceOver on iOS does not reliably fire live region announcements for DOM mutations inside foreignObject, and some JAWS/NVDA versions also miss them. The foreignObject is additionally clipped to 1x1 pixels with overflow:hidden, compounding the problem. The standard pattern is to place the aria-live region in the HTML document outside the SVG (e.g., as a sibling div to the SVG container), not inside SVG.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: aria-live region is inside <foreignObject x={0} y={0} width={1} height={1}> within the SVG at line 279. The claim about cross-screen-reader inconsistency with foreignObject aria-live is factually correct and well-documented. Standard practice is to place live regions in the HTML document outside SVG.",
+      "severity_justification": "This directly undermines the screen reader announcement feature that the PR is trying to provide. On some screen readers (especially VoiceOver on iOS), bar selection announcements may silently fail, defeating the accessibility goal.",
+      "category_justification": "The issue is specifically about screen reader support for aria-live announcements, a core accessibility concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/toolbar/tile-toolbar.tsx",
+      "start_line": 146,
+      "end_line": 154,
+      "message": "Forward Tab from toolbar has an incorrect fallback chain. The declared cycle order is title → content → toolbar → resize → (wrap to title). Wrapping forward from toolbar should go to resize, then title. The code does: if (!tryFocusResize()) { try title; if title present but unfocusable, try content }. If titleElement is non-null but cannot receive focus (display:none, tabIndex=-1), focus falls through to content, which precedes toolbar in the cycle. This sends focus backward in the cycle when it should remain stalled or bail to the tile element. The content fallback in this branch should be removed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the actual file: forward Tab from toolbar tries resize → title → content (as fallback). The content fallback contradicts the declared cycle order `title → content → toolbar → resize`. If titleElement is non-null but unfocusable, focus moves to content which is before toolbar in the cycle — moving backward.",
+      "severity_justification": "The scenario requires a non-null but unfocusable titleElement, which is an edge case given the new tabIndex=0 on editable-tile-title-text. When triggered, the consequence is confusing but non-breaking keyboard navigation.",
+      "category_justification": "Logic error in focus cycle ordering — the fallback chain contradicts the declared cycle order, causing backward focus movement in an edge case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/tiles/tile-component.tsx",
+      "start_line": 554,
+      "end_line": 557,
+      "message": "enterFocusTrap (forward entry via Tab on selected tile) does not include resizeHandle as a candidate. The reverse entry correctly includes resizeHandle first. If a tile has no title, no content, and no toolbar but does have a resize handle, forward Tab on the selected tile returns false and falls through to navigateToSiblingTile (navigating away), while Shift+Tab correctly enters the trap to resize. This asymmetric behavior means the focus trap is enterable via Shift+Tab but not Tab in degenerate configurations.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the forward branch of enterFocusTrap tries title → content → activeToolbarButton only; resizeHandle is absent despite the comment declaring the cycle as 'title → content → toolbar → resize'. The reverse branch correctly includes resizeHandle first. This asymmetry is real.",
+      "severity_justification": "The scenario (tile with resize handle but no title, content, or toolbar) is a degenerate configuration unlikely to exist in practice. When triggered, Tab navigates away from the tile instead of entering the focus trap — incorrect but non-data-damaging behavior.",
+      "category_justification": "Asymmetric focus trap entry logic — forward Tab misses a candidate that reverse Shift+Tab handles, contradicting the declared cycle order.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/bar-graph-tile.tsx",
+      "start_line": 60,
+      "end_line": 68,
+      "message": "getTitleElement uses containerRef.current?.closest('.tool-tile') then queries '.editable-tile-title-text' within that ancestor. This depends on both the '.tool-tile' CSS class on the tile wrapper and the '.editable-tile-title-text' class on the title div remaining stable. If either class name changes these hard-coded selectors silently break title-based focus cycling without any compile-time error. The element should be located via a ref or a registered callback from the EditableTileTitle component rather than CSS class sniffing.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: getTitleElement uses `.tool-tile` and `.editable-tile-title-text` CSS selectors, which silently break if renamed. The codebase acknowledges this pattern elsewhere (tile-component.tsx line 570) but the finding correctly identifies it as a fragility in new code.",
+      "severity_justification": "CSS class names are stable and widely referenced identifiers in this codebase. Breaking would be caught in manual keyboard testing. No functional behavior affected, only keyboard focus cycling.",
+      "category_justification": "The concern is about brittleness and implicit coupling to CSS class names rather than structured component APIs — a maintainability issue, not a runtime correctness bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/chart-area.tsx",
+      "start_line": 149,
+      "end_line": 153,
+      "message": "makeActivateHandler captures isSelected at render time. The announce call inside the returned handler uses this captured value to say 'Selected X' or 'Deselected X'. If the model's selection state is changed externally between render and activation (e.g., another user in a collaborative session selects the same bar), the announcement will be wrong. The handler should read the current selection state from the model at invocation time rather than closing over the stale render-time value.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Factually correct: isSelected is captured at render time in the closure. In a collaborative session, a remote change could make the stale value incorrect. However, MobX observer re-renders minimize the window, and only the announcement text is wrong (handleClick reads current state correctly).",
+      "severity_justification": "Requires collaborative session with precise timing overlap. Only affects a single screen reader announcement text, not functional behavior. MobX observer substantially reduces the practical risk window.",
+      "category_justification": "Stale closure capturing render-time state rather than reading current model state at invocation — a correctness issue limited to announcement text.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/tiles/tile-component.tsx",
+      "start_line": 498,
+      "end_line": 535,
+      "message": "tabWithinContent receives activeElement typed as HTMLElement but SVG bar elements (SVGRectElement) are SVGElement, not HTMLElement. The cast at the call site (document.activeElement as HTMLElement) is unsafe. While indexOf identity comparison works at runtime despite the type mismatch, the SVG visibility branch checks `el instanceof SVGElement` on elements from querySelectorAll<HTMLElement>, which returns SVGRectElement nodes typed as HTMLElement. If TypeScript strict checks are applied or the code is refactored, the wrong branch may execute. The parameter and querySelectorAll generic should use Element rather than HTMLElement.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct about TypeScript type inconsistencies: unsafe HTMLElement cast for SVGRectElement and wrong querySelectorAll generic. However, the claim about 'wrong branch executing' is overstated — instanceof checks work at runtime regardless of TypeScript types, so current behavior is correct.",
+      "severity_justification": "No runtime bug: instanceof SVGElement works correctly at runtime, indexOf uses reference equality. This is a TypeScript type safety issue that could cause compilation warnings/errors under strict settings or confuse future maintainers.",
+      "category_justification": "TypeScript type safety concern — using HTMLElement where Element or SVGElement would be more accurate, creating implicit coupling to type annotations rather than runtime correctness.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/bar-graph-tile.tsx",
+      "start_line": 64,
+      "end_line": 77,
+      "message": "The selector for `firstFocusable` is overly broad and could select non-interactive elements, preventing focus from correctly landing on the first bar of the chart as intended. The selector `[tabindex=\"0\"]` can match elements like the editable axis label, which should not be the primary entry point into the chart content. The selector should be more specific, like `.visx-bar[tabindex=\"0\"]`, to target only the bars.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "querySelector returns the first match in document order, and bars appear before the axis label in the SVG DOM. When bars exist, the first bar is correctly focused. The finding's claim that the axis label could be selected instead of a bar is wrong for normal rendering. Additionally, the axis label IS interactive (role=button), contradicting 'non-interactive elements'.",
+      "severity_justification": "Even if the concern were valid, it would only affect keyboard focus entry into chart content — an accessibility UX issue rather than data loss or functional breakage.",
+      "category_justification": "The finding makes an incorrect claim about selector behavior and DOM order.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/tiles/tile-component.tsx",
+      "start_line": 516,
+      "end_line": 516,
+      "message": "The focus trap cycle order is documented as `title → content → toolbar → resize`, but the implementation for `enterFocusTrap` in reverse (`shiftKey: true`) is `resize → toolbar → content → title`. This seems to contradict the intended order and other parts of the focus logic.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The reverse entry order (resize → toolbar → content → title) is the correct implementation of entering the focus trap backward — when Shift+Tab is pressed on the selected tile, focus should land on the last element in the cycle. This is standard focus trap behavior and directly consistent with the declared cycle order title → content → toolbar → resize.",
+      "severity_justification": "Even if the finding were correct, it would only affect keyboard navigation entry behavior, not data integrity.",
+      "category_justification": "The finding makes an incorrect claim about the expected behavior of reverse focus trap entry.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/chart-area.tsx",
+      "start_line": 48,
+      "end_line": 51,
+      "message": "The `announce` function uses `requestAnimationFrame` to ensure the announcement text is updated for screen readers. However, there is no cleanup for this asynchronous operation. If the component unmounts between the `requestAnimationFrame` call and its execution, it will attempt to update state on an unmounted component, leading to a React warning and potential memory leak. An effect with a cleanup function should be used to manage the `requestAnimationFrame` lifecycle.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: the RAF in announce() has no cleanup. In React 17 (confirmed in package.json), setState on an unmounted component generates a warning. The RAF id is not stored, making cancellation impossible. The fix described (useEffect cleanup or storing RAF id in ref) is valid.",
+      "severity_justification": "Requires unmount within a ~16ms window after user interaction. Results in a React warning only (not a crash or real memory leak). React 18 removed this warning entirely. Functionally harmless in practice.",
+      "category_justification": "Uncleaned async operation (requestAnimationFrame) that triggers state updates on potentially unmounted components — a reliability/lifecycle management concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/chart-area.tsx",
+      "start_line": 105,
+      "end_line": 108,
+      "message": "When activating a bar with Enter/Space, the announcement text is generated and spoken. However, if the user navigates with arrow keys, there's no corresponding announcement to inform them which bar is now focused. This creates an accessibility gap where a screen reader user can't identify the bars they are navigating through before deciding to select one.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Bars have role='button' and aria-label with category name and count. Screen readers automatically announce the accessible name and role of focused elements when focus moves via .focus(). No explicit aria-live announcement is needed for keyboard navigation — the finding incorrectly assumes silent focus movement for elements with proper ARIA attributes.",
+      "severity_justification": "Even if the finding were correct, it would be an accessibility gap in bar navigation. But it is not correct given the bars' aria-label attributes.",
+      "category_justification": "The claim concerns screen reader announcements during keyboard navigation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/tiles/tile-component.tsx",
+      "start_line": 447,
+      "end_line": 447,
+      "message": "The `tabWithinContent` function uses `el.getBoundingClientRect()` as a fallback for `checkVisibility`. However, this can be unreliable for `SVGElement` instances in some browser/JSDOM environments where they might report a zero-size rectangle even if visible. A more robust check should be used, potentially involving `getBBox()` for SVGs, to ensure keyboard navigation doesn't skip over visible SVG elements like chart bars.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "getBoundingClientRect() works correctly for SVGRectElement (bars) in production browsers. getBBox() would be less appropriate as it ignores CSS visibility and parent transforms. The JSDOM concern is a test environment issue already handled differently in tests. The finding does not identify a concrete browser where this fails.",
+      "severity_justification": "Even if the concern were valid, it would cause visible bars to be skipped during Tab cycling — an accessibility issue but not data loss.",
+      "category_justification": "The concern is about whether visible SVG elements are correctly included in keyboard navigation tabbing.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/bar-graph-tile.tsx",
+      "start_line": 31,
+      "end_line": 40,
+      "message": "focusContent in the useClueAccessibility hook calls container.querySelector() without ensuring thread safety or sanitation from external DOM edits. This leaves a risk of improper initialization if bar elements are not properly scoped, affecting focus handlers.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "JavaScript is single-threaded — 'thread safety' is not a meaningful concept here. 'Sanitation from external DOM edits' is equally inapplicable to a read-only querySelector scoped to the tile's own container. The finding is generic boilerplate with no specific exploitable scenario demonstrated.",
+      "severity_justification": "The concern is based on incorrect premises about JavaScript's execution model; no real risk exists.",
+      "category_justification": "The finding makes factually incorrect claims about JavaScript's threading model.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/tiles/editable-tile-title.tsx",
+      "start_line": 112,
+      "end_line": 122,
+      "message": "In `EditableTileTitle`, the keyboard event handler for onKeyDown does not handle additional edge cases for inputs like long titles exceeding constraints—which risks focus leakage by accident if e.g. key modifiers are accidentally invoked.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is vague boilerplate — 'long titles exceeding constraints' and 'key modifiers accidentally invoked' are not specific code-level scenarios. The handler only fires on Enter/Space to activate editing, which is correct and minimal. No concrete exploitable focus leakage path is demonstrated. The same generic comment could be applied to any keyboard handler anywhere.",
+      "severity_justification": "No concrete bug scenario is identified — the concern is entirely speculative.",
+      "category_justification": "The finding claims incorrect behavior but provides no specific scenario or code path that fails.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/tiles/tile-component.tsx",
+      "start_line": 603,
+      "end_line": 642,
+      "message": "In handleTabKeyDown: semantic N+logic layers seem overcompressed toward constantly recalibrating recursively against model.value() by callback queries already fulfilled above loop cycles.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is incoherent — 'semantic N+logic layers overcompressed toward constantly recalibrating recursively against model.value() by callback queries' does not correspond to any identifiable code pattern or bug in the handleTabKeyDown implementation. There are no recursive calls to model.value() in the referenced lines. The description is too vague and garbled to be actionable or verifiable.",
+      "severity_justification": "No concrete issue is identified; the finding cannot be acted upon.",
+      "category_justification": "The finding attempts to comment on code complexity but fails to identify any specific, verifiable issue.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/tiles/editable-tile-title.tsx",
+      "start_line": 97,
+      "end_line": 97,
+      "message": "I think the editable version should be rephrased. A screenreader will say something very much like \"Edit title: Rainfall, button\" (the button role gets added automatically). Since the element's main role is the tile title, the title value seems most important and should be first. The fact it can be edited is secondary.\n\nI'd think hearing something more like \"Rainfall, editable title, button\" would provide better overall context. Or maybe \"Title: Rainfall, editable, button\".\n\n```suggestion\n            aria-label={readOnly ? title : `${title}, editable title`}\n```",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding correctly identifies that aria-label phrasing puts context ('Edit title:') before the identifying value. At SHA 16329ddc the label is `Edit title: ${title}`, which still has the ordering issue described. Putting the title value first is a legitimate accessibility UX improvement consistent with label-naming best practices.",
+      "severity_justification": "Screen readers still convey all the necessary information — this is a UX quality improvement for efficiency of navigation, not a functional accessibility failure.",
+      "category_justification": "The finding is specifically about optimal aria-label ordering for screen reader user experience.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "emcelroy",
+        "url": "https://github.com/concord-consortium/collaborative-learning/pull/2816#discussion_r3059964288",
+        "created_at": "2026-04-09T18:41:28Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "16329ddcee590f752cbdb600e9ff88d141d3d3e2"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/bar-graph.scss",
+      "start_line": 28,
+      "end_line": 29,
+      "message": "Would it make sense to use the `focus-ring` mixin here like you did on line 77? Also, you may already know this given our discussion elsewhere, but I think that mixin needs to be updated to use `$focus-ring-color` for the outline.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "At SHA 16329ddc, .visx-bar inlines $focus-ring-color while other elements in the same file use @include focus-ring (which uses $workspace-teal-dark-1 — a different color). This is a real inconsistency: bars get a different focus ring color than other interactive elements in the bar graph tile.",
+      "severity_justification": "Visual inconsistency in focus ring color across interactive elements in the same tile — noticeable but not functionally broken. All focus rings are present and visible.",
+      "category_justification": "Inconsistent use of the focus-ring mixin creates a drift risk where the color diverges between bars and other elements.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "emcelroy",
+        "url": "https://github.com/concord-consortium/collaborative-learning/pull/2816#discussion_r3060080394",
+        "created_at": "2026-04-09T19:04:33Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "16329ddcee590f752cbdb600e9ff88d141d3d3e2"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/editable-axis-label.tsx",
+      "start_line": 105,
+      "end_line": 105,
+      "message": "Similar to the tile title, I think a better editable label definition would be something like `Y-axis: ${displayText}, editable label` so a screen reader would say something like \"Y-axis: Elevation, editable label, button\".",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "At SHA 16329ddc, aria-label is `Edit Y-axis label: ${displayText}` — the action prefix precedes the identifying value. The finding correctly applies the same label-ordering principle as Finding 17: putting the value first (e.g., `Y-axis: Elevation, editable label`) lets screen reader users identify the element without hearing the full prefix first.",
+      "severity_justification": "Screen readers still convey all necessary information — this is a UX quality improvement for navigation efficiency, not a functional accessibility failure.",
+      "category_justification": "The finding is specifically about optimal aria-label ordering for screen reader user experience on an interactive SVG element.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "emcelroy",
+        "url": "https://github.com/concord-consortium/collaborative-learning/pull/2816#discussion_r3060152918",
+        "created_at": "2026-04-09T19:19:58Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "16329ddcee590f752cbdb600e9ff88d141d3d3e2"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/chart-area.tsx",
+      "start_line": 331,
+      "end_line": 332,
+      "message": "These bars visually represent a selected/unselected state and activation toggles that state, but the accessible element only exposes a generic button label. Screen reader users won't know which bars are currently selected when navigating the chart; expose the selection state (for example with `aria-pressed` on the toggle button or an equivalent selected-state announcement in the accessible name).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `BarWithHighlight` receives a `selected` prop that drives visual state (BarHighlight overlay) and the announce text on activation, but the `Bar` element's `aria-label` is only `${displayValue(key)}: ${info.count}` with no selection state, and `aria-pressed` is absent. A screen reader user navigating to a pre-selected bar has no accessible indication of that state.",
+      "severity_justification": "Selection state is core interactive semantics for a toggle-button pattern; users relying on screen readers cannot determine current chart state without activating each bar, degrading the usability of the feature this PR is specifically adding.",
+      "category_justification": "The issue is a missing ARIA state attribute (`aria-pressed`) on an interactive element that has a selected/unselected toggle behaviour.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/tiles/editable-tile-title.tsx",
+      "start_line": 95,
+      "end_line": 97,
+      "message": "The title remains keyboard-focusable even in read-only mode, but in that mode it has no button role and no keyboard handler, so it becomes a non-interactive tab stop. This is inconsistent with the axis label in this PR, which removes read-only labels from the tab order, and can confuse keyboard and screen-reader users.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: editable-tile-title.tsx sets tabIndex={0} unconditionally, making the title a tab stop even in read-only mode where it has no role='button' and no keyboard handler. The axis label in the same PR correctly uses tabIndex={readOnly ? -1 : 0}, making the inconsistency concrete and verifiable.",
+      "severity_justification": "A non-interactive tab stop with no action or role is a WCAG 2.4.3 (Focus Order) violation and actively confuses keyboard users who tab into the title expecting to interact with it but nothing happens.",
+      "category_justification": "The issue is an unnecessary non-interactive keyboard tab stop in read-only mode, directly impacting keyboard and screen reader user experience.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/plugins/bar-graph/bar-graph.scss",
+      "start_line": 72,
+      "end_line": 77,
+      "message": "This rule gives the unlink button a pointer cursor even when it is disabled in read-only mode. Disabled controls should not advertise clickability; add a disabled-specific cursor/style so the new read-only disabled state is visually clear.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the button rule sets `cursor: pointer` unconditionally. Browsers default disabled buttons to `cursor: default` or `cursor: not-allowed`, but an explicit `cursor: pointer` in CSS overrides that, so the disabled unlink button will show a pointer cursor in read-only mode. The hover guard uses `:not(:has(button:disabled))` showing awareness of this distinction, but the cursor rule was not similarly conditioned.",
+      "severity_justification": "This is a visual inconsistency — the disabled button advertises clickability — but it does not break functionality or prevent any user from completing a task. It is a minor UX polish issue.",
+      "category_justification": "Cursor feedback on disabled controls is a UI/UX concern that affects how users perceive interactive state, relating to accessible/inclusive design conventions.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/toolbar/tile-toolbar.tsx",
+      "start_line": 137,
+      "end_line": 140,
+      "message": "When Shift+Tabbing backward from the toolbar, this calls the tile's normal `focusContent` function, which is defined to focus the first content control (for example the first bar in the bar graph). With the new support for multiple focusable children inside content, reverse traversal should land on the last content control; otherwise keyboard users skip the rest of the content when moving backward from the toolbar.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `tryFocusContent()` in tile-toolbar.tsx always calls `focusContentFn()` (bar-graph's `focusContent` focuses the first bar) or focuses `contentElement`. The `focusContent` API has no `reverse` parameter, so Shift+Tab from toolbar always lands on the first content control. With the new `tabWithinContent` feature that cycles through multiple focusable content children, backward entry from toolbar should land on the last focusable child, not the first.",
+      "severity_justification": "Keyboard users traversing backward through tile content will land on the first bar instead of the last, forcing them to cycle forward through all bars again — a real disruption to the reverse traversal UX that this PR is specifically improving.",
+      "category_justification": "This is a focus order issue affecting keyboard navigation, a core accessibility concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/tiles/tile-component.tsx",
+      "start_line": 549,
+      "end_line": 552,
+      "message": "Reverse entry into the focus trap still uses `focusContent`, which focuses the first content control. Now that content can contain multiple tabbable children, Shift+Tab entering a selected tile should land on the last content child when resize/toolbar aren't available; otherwise reverse traversal starts at the wrong end of the content.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `enterFocusTrap(reverse=true)` at lines 549-552 calls `this.focusContent(contentElement, focusContent)` when resize/toolbar are unavailable. `focusContent` has no reverse parameter and always focuses the first content element (or calls the tile's custom `focusContent` which also targets the first focusable). With the new multi-child `tabWithinContent` feature, reverse trap entry should land on the last content child, not the first.",
+      "severity_justification": "Keyboard users pressing Shift+Tab to enter a selected tile with only focusable content will land at the first bar instead of the last, forcing them to cycle all the way forward through the content — incorrect reverse traversal behavior for the feature this PR introduces.",
+      "category_justification": "Focus order on reverse trap entry is a keyboard navigation and screen reader accessibility issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/tiles/tile-component.tsx",
+      "start_line": 524,
+      "end_line": 525,
+      "message": "When focus is on the content container itself, it is not part of the descendant-only `focusables` list, so Tab immediately exits the content area and skips any focusable children. This breaks the new within-content tab cycling for tiles whose `focusContent` focuses the container rather than the first child.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `tabWithinContent` uses `contentElement.querySelectorAll()` which excludes the container itself. When `activeElement === contentElement`, `focusables.indexOf(activeElement)` returns -1 and the function returns false, causing Tab to immediately exit the content area and skip all focusable children. This is a real bug for any tile whose focusContent targets the container element directly (which is the fallback path in the toolbar's `tryFocusContent`).",
+      "severity_justification": "For tiles relying on the fallback `contentElement.focus()` path, the entire within-content Tab cycling feature introduced by this PR is silently bypassed — users Tab straight out of content without visiting any focusable children.",
+      "category_justification": "This is a logic bug: the function incorrectly returns false when the active element is the content container, causing the wrong branch to execute and skipping all content children.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

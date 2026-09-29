@@ -1,0 +1,477 @@
+{
+  "pr_key": "evdboom_Bindery_63-3dd03d66",
+  "pr": {
+    "repo": "https://github.com/evdboom/Bindery",
+    "pr_number": 63,
+    "base": "19b77e41591a5bbc56045b3621b28510257aa65e",
+    "head": "3dd03d6616aaa1a89e61358271f48d15c3a331f3"
+  },
+  "findings": [
+    {
+      "file": "mcp-ts/src/templates.ts",
+      "start_line": 771,
+      "end_line": 773,
+      "message": "The proof-read skill template shows `settings_update({ patch: { proof_read: { authors: [...] } } })` as a concrete code example, but the actual `settings_update` tool requires a `book` parameter (defined in `index.ts` line 381 as required). An AI agent following this example literally will call the tool without `book` and receive an error every time it tries to persist the author panel.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `settings_update` in index.ts requires `book: bookSchema` (a required z.string()) alongside `patch`. The skill template's example at line 771-773 shows `settings_update({ patch: { proof_read: { authors: [...] } } })` with no `book` parameter, which would cause the tool call to fail when an AI agent follows the example literally.",
+      "severity_justification": "An AI agent following the template would fail to persist the author panel every time, breaking the proof-read workflow's state persistence. The tool implementation is correct but the instructional example is wrong.",
+      "category_justification": "The issue is an incorrect example in a skill template that an AI agent follows — the tool implementation is correct but the instructional example omits a required parameter.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 327,
+      "end_line": 330,
+      "message": "`chapterNumber` is silently clamped to 1 via `Math.max(1, Math.floor(args.chapterNumber))` when 0 or a negative value is passed, so a caller that passes `chapterNumber: 0` gets chapter 1 back instead of an error. This is inconsistent with how the function handles `start > end` (explicit error message returned). The schema describes the parameter as '1-based' but there is no explicit validation to enforce it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 328 uses `Math.max(1, Math.floor(args.chapterNumber))` which silently clamps 0 or negative values to 1, while line 329 explicitly returns an error string for `start > end`. The inconsistency is factually correct — passing `chapterNumber: 0` returns chapter 1 content silently rather than an error.",
+      "severity_justification": "The practical impact is minimal — a caller passing chapterNumber: 0 gets chapter 1 instead of an error, which is unlikely to cause real problems in production. The inconsistency is a minor API design issue rather than a functional bug.",
+      "category_justification": "The function returns unexpected output (chapter 1) for invalid input (chapterNumber: 0) instead of an error, contradicting the documented '1-based' contract.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 1330,
+      "end_line": 1340,
+      "message": "`deepMergeSettings` silently drops any key from the *existing* settings that matches `isUnsafeMergeKey` (i.e. `__proto__`, `constructor`, `prototype`). The function's contract is 'merge without replacing unrelated keys', but it actually deletes those keys from the output. If a settings.json ever contains an own property named `constructor` (which JSON.parse produces as a regular enumerable key), calling `settings_update` will permanently remove it without any warning.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `deepMergeSettings` lines 1332-1338 skip `isUnsafeMergeKey` keys from the base/existing object, not just the patch. A settings.json with an own-property named `constructor` would be silently dropped. The function's stated contract ('merge without replacing unrelated keys') is violated for these keys.",
+      "severity_justification": "The scenario is theoretical — no legitimate book-project settings.json would contain keys named `constructor`, `prototype`, or `__proto__`. The real risk is near-zero in practice, but the logic is subtly wrong relative to the documented contract.",
+      "category_justification": "The function's behavior contradicts its documented contract: it silently deletes base keys that match unsafe names rather than preserving them, violating the 'merge without replacing unrelated keys' guarantee.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 1355,
+      "end_line": 1383,
+      "message": "`toolSettingsUpdate` reads settings.json, merges, then writes — with no atomicity. Two concurrent MCP requests that both call `settings_update` will both read the same original file, each produce a merged result, and the second write will silently overwrite the first's changes. The read is wrapped in try/catch with a clean string error, but the write is not; a disk-full or permission error on write throws an exception that bypasses the function's own error-string convention and surfaces as a raw exception through the MCP handler.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The concurrency concern is factually correct — no locking means concurrent calls can overwrite each other's changes. The write-exception claim is partially overstated: writeFileSync exceptions propagate out of the function bypassing the internal error-string convention, but the MCP handler at index.ts:386 catches them via `catch (e) { return err(e) }`, so they don't surface as completely unhandled.",
+      "severity_justification": "This is a single-user book-writing tool; concurrent settings_update calls are extremely unlikely in practice. The write exception handling inconsistency is real but the outer MCP handler covers it. Neither issue would affect typical usage.",
+      "category_justification": "The finding concerns race conditions in file I/O and inconsistent error handling patterns — both reliability concerns.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/index.ts",
+      "start_line": 374,
+      "end_line": 387,
+      "message": "The `settings_update` tool accepts `z.record(z.string(), z.any())` as the patch with no key allowlist. An AI agent can patch any key including structural ones that other tools depend on — `storyFolder`, `languages`, `bookTitle` — and silently corrupt the workspace. The tool description says it is 'useful for persisting tool-specific state (for example proof_read settings)' but provides no enforcement of that scope.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The tool intentionally accepts any key via z.record(z.string(), z.any()) and is annotated with `destructiveHint: true`, which is the MCP standard signal for caution. The finding correctly describes the capability but characterizes it as a defect when it is a deliberate design decision. The concern is generic ('any write tool could corrupt data') rather than identifying a concrete, observable bug.",
+      "severity_justification": "Even if considered a design concern, the destructiveHint annotation and descriptive language provide appropriate guidance; actual structural corruption would require an agent to deliberately or erroneously patch core fields.",
+      "category_justification": "The concern is about API scope and design — whether the tool should enforce an allowlist to match its stated purpose.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 347,
+      "end_line": 380,
+      "message": "`findChapterFiles` duplicates `findChapterFile`'s recursive directory-scanning and chapter-number extraction logic as a separate, unlinked code path. Both functions apply a 'first-wins' strategy on unsorted `fs.readdirSync` results. Because they are independent functions, any future bug fix or regex change applied to one will silently diverge from the other, meaning `toolGetBookUntil` and `toolGetChapter` could return different files for the same chapter number if the implementations drift.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: both functions implement identical recursive directory scanning with the same regex, same parseInt, and same first-wins strategy as completely independent code paths. `toolGetChapter` uses `findChapterFile` while `toolGetBookUntil` uses `findChapterFiles`, creating a realistic drift risk where a fix to one leaves the other behind.",
+      "severity_justification": "The duplication creates a realistic drift risk — a future regex fix or naming-pattern addition applied to only one function would cause `get_chapter` and `get_book_until` to silently return different files for the same chapter number, which is a subtle and hard-to-debug inconsistency.",
+      "category_justification": "This is a DRY violation — two independent implementations of the same logic with no shared helper, creating drift risk between two related tools.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "vscode-ext/src/ai-setup.ts",
+      "start_line": 34,
+      "end_line": 52,
+      "message": "The load priority for `renderTemplate` was swapped: the mono-repo source path (`mcp-ts/src/templates`) is now tried first, with the generated copy (`./ai-setup-templates`) as the fallback. In a published `.vsix`, the mono-repo source path does not exist inside the package, so the first `require()` always throws a caught exception before falling through to the copy. The previous order (in-tree copy first) was correct for packaged builds and incurred no unnecessary exception. While functionally equivalent for end users, this introduces a guaranteed (silent) exception at extension activation for every published release.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified via CI workflow: `ai-setup-templates.ts` is always present in packaged builds. With esbuild bundling, the first `require(fallbackPath)` (runtime-computed path to mcp-ts/src/templates) always throws in a VSIX since that path doesn't exist in the package, before falling through to the bundled copy. The previous order avoided this exception.",
+      "severity_justification": "The exception is silently caught and has no user-visible impact. It marginally degrades extension activation performance but causes no functional regression. A real issue but with negligible practical consequence.",
+      "category_justification": "A guaranteed exception on every production activation is an operational concern, even if swallowed silently.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 341,
+      "end_line": 341,
+      "message": "The `toolGetBookUntil` function re-initializes `chapterFileMap` on every call by calling `findChapterFiles`, which recursively scans the file system. For a large number of chapters, this could be inefficient. Consider caching the result of `findChapterFiles` to improve performance, with a mechanism to invalidate the cache when files change.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "While factually correct that `findChapterFiles` is called on every invocation, this is a generic performance suggestion that could be copy-pasted onto any file-scanning function. It doesn't identify a concrete problem: this is a book-writing tool where chapters number in the dozens at most, the scan runs once per MCP tool call (not in a loop), and MCP tools are user-invoked rather than called in tight loops. The suggestion to add a cache with invalidation mechanism is speculative optimization without evidence of a real performance problem.",
+      "severity_justification": "A book with 50 chapters involves scanning perhaps a few hundred small files once per tool call. The overhead is negligible for this use case.",
+      "category_justification": "The finding is about unnecessary filesystem rescanning on each call.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 1378,
+      "end_line": 1378,
+      "message": "The `cloneSettingsObject` function performs a shallow copy for array values. If an array contains objects, those objects will not be cloned, and modifications to them will affect both the original and the cloned settings object. This could lead to unintended side effects if nested objects within arrays are ever modified. Consider implementing a deep copy for arrays as well.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The shared array references between source and merged objects have no observable effect because neither is mutated after the merge — `merged` is immediately serialized to JSON and `existing` goes out of scope. The comment explicitly documents this as intentional. The finding describes a generic 'shallow copy is risky' concern that doesn't manifest as an actual bug here.",
+      "severity_justification": "Even if the concern were valid, the practical impact in a book settings context would be negligible.",
+      "category_justification": "The finding is about potential mutation side effects from shared references.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 1410,
+      "end_line": 1410,
+      "message": "The `deepMergeSettings` function does not handle arrays. If a key exists in both the base and patch objects and its value is an array, the array from the patch will completely replace the one from the base object, rather than merging them. This might be unexpected for the caller, who may want to concatenate or merge array elements.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Array replacement is the intended and correct behavior for this settings merge. The primary use case (replacing the proof_read authors panel) requires replacement semantics, matching JSON Merge Patch RFC 7396 which is the standard for settings-style merges. The finding presents a generic concern ('might be unexpected') without identifying a concrete bug.",
+      "severity_justification": "Even if array concatenation were desired, the practical impact in this book-writing tool is negligible — the only array use case in the PR is authors replacement.",
+      "category_justification": "The finding concerns the merge semantics for array values.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 1438,
+      "end_line": 1438,
+      "message": "In `toolSettingsUpdate`, a check for `isPlainObject(args.patch)` is performed. However, `zod` schema validation for this tool in `index.ts` uses `z.record(z.string(), z.any())`, which allows arrays and null, both of which are not plain objects and will cause the `isPlainObject` check to fail. This discrepancy could lead to valid Zod inputs being rejected by the tool. The Zod schema should probably be `z.object({})` or the check should be adjusted.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Directly verified via Zod: `z.record(z.string(), z.any()).safeParse(null)` returns false and `z.record(z.string(), z.any()).safeParse([])` returns false. Arrays and null are rejected by Zod before reaching `isPlainObject`. The claimed discrepancy does not exist.",
+      "severity_justification": "The finding is factually incorrect, so no real issue exists.",
+      "category_justification": "The finding makes a factual claim about Zod schema validation behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/templates.ts",
+      "start_line": 277,
+      "end_line": 701,
+      "message": "The skill templates (`skillReview`, `skillBrainstorm`, etc.) were changed to remove hardcoded book-specific details like `title` and `audience`. They now instruct the agent to fetch `settings.json` at runtime. However, the function signatures still accept a `TemplateContext` object containing this information, which is now marked as unused (`void ctx`). This creates a mismatch where the function receives data it no longer uses, and could be simplified by removing the `TemplateContext` parameter if it's no longer needed for these skills.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: multiple skill functions now use `void ctx` indicating unused parameters. The finding accurately identifies a mismatch introduced in this PR where context was removed from templates. The `void ctx` pattern is a code smell that signals these functions receive data they ignore.",
+      "severity_justification": "The unused parameter doesn't affect correctness or behavior. The `void ctx` is a deliberate pattern to maintain a uniform dispatch signature, and the refactoring suggested would require non-trivial changes to the switch dispatch.",
+      "category_justification": "The finding is about unused parameters and the resulting API mismatch — a code structure/readability concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/test/tools.test.ts",
+      "start_line": 61,
+      "end_line": 68,
+      "message": "The test case `coerces a non-integer startChapter to an integer range start` uses `startChapter: 2.9`. The implementation uses `Math.floor()`, so this correctly tests flooring a positive number. However, it would be more robust to also test flooring a negative number (e.g., -1.5) to ensure it behaves as expected (clamping to 1 as `Math.max(1, Math.floor(-1.5))` would be `Math.max(1,-2)` which is `1`), which is already covered in the next test, but combining them or making the name more general could be clearer.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding acknowledges within its own text that the negative-float case 'is already covered in the next test' (`clamps negative non-integer startChapter values to chapter 1`). The suggestion to combine tests or rename them is pure stylistic preference with no concrete defect. The test coverage is adequate as written.",
+      "severity_justification": "No missing coverage or incorrect behavior — the finding identifies a cosmetic test organization preference.",
+      "category_justification": "The finding is about test case design and naming.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 358,
+      "end_line": 371,
+      "message": "The deepMergeSettings function permits unvalidated nested objects, increasing the potential for unintended merges, particularly if unexpected structures exist within the patch. This can lead to logical issues or silent failures when applied.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic boilerplate warning about unvalidated nested merges that could be applied verbatim to any deep-merge utility. It doesn't identify a specific structure, a concrete failure mode, or a demonstrable bug in this codebase. The tool is intentionally general-purpose (accepting z.record(z.string(), z.any())), and `destructiveHint: true` is the stated guardrail.",
+      "severity_justification": "No concrete issue is identified — the concern is abstract and speculative.",
+      "category_justification": "The finding loosely concerns merge correctness but without any specific code reference or failure path.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 1319,
+      "end_line": 1342,
+      "message": "The settings update operation logs \"updated\" regardless of whether any meaningful changes are applied. For instance, if only unsafe keys are filtered out and no valid keys are present, the log message does not reflect this clearly. This can mislead users about actual changes made to the file.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code explicitly checks `if (safeKeys.length === 0)` and returns a clear error before reaching the write and success return. The scenario the finding describes — only unsafe keys present — is already handled with an explicit error message. The success message is only reachable when safe keys exist.",
+      "severity_justification": "The finding is factually incorrect; no issue exists.",
+      "category_justification": "The finding makes a factual claim about the function's return behavior under a specific input condition.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/test/tools.test.ts",
+      "start_line": 53,
+      "end_line": 118,
+      "message": "The test 'returns concatenated chapter text from chapter 1 through N' assumes sequential chapter numbering without validating gaps or invalid naming conventions. This causes over-reliance on findChapterFiles, which may fail in catching skipped or improperly formatted chapters.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test suite explicitly includes `'returns a clear error when a chapter in range is missing'` which creates chapters 1 and 3 (skipping 2) and asserts the error. The finding's claim that gaps aren't tested is factually incorrect. The basic concatenation test appropriately focuses on the happy path.",
+      "severity_justification": "The finding is incorrect — the concern it raises is already addressed by an existing test.",
+      "category_justification": "The finding is about test coverage.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/test/tools.test.ts",
+      "start_line": 120,
+      "end_line": 136,
+      "message": "In the test for handling invalid startChapter values, user input cases like string values that aren't numbers are not directly addressed. Arbitrary conversions to 1 may mask invalid input errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `startChapter` parameter is declared as `z.number().optional()` in the Zod input schema — string values would be rejected by Zod before reaching the function. Testing string inputs to `toolGetBookUntil` directly bypasses the validation layer and doesn't represent a real production code path. The finding is a generic suggestion not grounded in this codebase's actual validation flow.",
+      "severity_justification": "No real risk — string inputs are blocked by Zod schema validation before the function is called.",
+      "category_justification": "The finding is about missing test coverage for an input type scenario.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcpb/manifest.json",
+      "start_line": 33,
+      "end_line": 45,
+      "message": "Description for 'get_book_until' does not clarify its behavior when chapters are missing or improperly formatted. This ambiguity can cause confusion for integrators working with partial book projects.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic documentation completeness suggestion that could be applied to any tool description. It doesn't identify a specific misleading claim or a concrete integration problem — it just notes that edge case behavior isn't described in the one-line manifest description. Short tool descriptions in manifest.json are not expected to enumerate all error behaviors.",
+      "severity_justification": "Manifest descriptions are brief summaries; detailed error behavior is documented in the tool's inputSchema, README, and CLAUDE.md. No integrator would rely solely on the manifest one-liner.",
+      "category_justification": "The finding concerns the completeness of a tool description in manifest.json.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/index.ts",
+      "start_line": 372,
+      "end_line": 372,
+      "message": "The 'settings_update' tool description in its registration does not specify whether unsafe merge keys are rejected outright or partially allowed for root-level objects. This is important for plugin behavior consistency.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic documentation completeness suggestion about a security implementation detail that belongs in code comments or developer docs, not in a one-line MCP tool description shown to AI agents. The description ('Merge a partial patch into .bindery/settings.json without replacing unrelated keys') correctly captures the user-facing behavior. The unsafe key filtering is an internal implementation detail with no relevance to normal callers.",
+      "severity_justification": "No integrator needs to know about __proto__/constructor/prototype filtering in a tool description — these are never legitimate settings keys. The omission causes no confusion in practice.",
+      "category_justification": "The finding is about incompleteness of a tool description string.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/templates.ts",
+      "start_line": 817,
+      "end_line": 818,
+      "message": "R1 and R3 are slightly off:\nR1 is genre fan, but if genre is realistic fiction, R3 will be a copy. The goal was to provide provide an opposite (so realistic for fantasy, etc.).\n@copilot  can you find words to rephrase?\n",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The template explicitly handles the realistic-fiction case for R3 at line 833: 'For realistic fiction, it should be a reader from a different corner, such as mystery, thriller, romance, horror, or speculative fiction.' R3 is not a copy of R1 for realistic fiction — the template explicitly differentiates them. The finding is based on an incomplete reading of the R3 description.",
+      "severity_justification": "The finding is factually incorrect; the template already addresses the case described.",
+      "category_justification": "The finding concerns the clarity and correctness of instructions in a skill template.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "evdboom",
+        "url": "https://github.com/evdboom/Bindery/pull/63#discussion_r3096150331",
+        "created_at": "2026-04-16T20:22:31Z",
+        "alignment": "code_changed",
+        "original_commit": "de3af97bd5c0516be679f0a428c3528e358c3479",
+        "original_start_line": 817,
+        "original_end_line": 818
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 321,
+      "end_line": 323,
+      "message": "This builds the language directory from the upper-cased language code instead of resolving the configured `languages[].folderName` from `.bindery/settings.json`. `add_language` explicitly supports custom folder names and creates stubs under that folder, so `get_book_until({ language: code })` will report the language folder missing for those workspaces.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: toolGetBookUntil at lines 321-322 builds langDir using `args.language.toUpperCase()` directly, not from `settings.languages[].folderName`. toolAddLanguage explicitly stores a custom `folderName` (defaulting to the code but configurable). For workspaces with custom folder names, get_book_until would report 'Language folder not found'. The finding is factually accurate. However, toolGetChapter (line 296) has the identical pattern, making this a pre-existing codebase pattern that get_book_until simply replicates.",
+      "severity_justification": "Only affects workspaces where add_language was called with a non-default folderName. The default folderName is the uppercased code, which matches the current lookup. The same limitation exists in toolGetChapter and other pre-existing tools, so users already live with this constraint.",
+      "category_justification": "The tool produces a wrong result (folder not found error) for a valid configuration scenario — custom language folder names configured via add_language.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/tools.ts",
+      "start_line": 366,
+      "end_line": 368,
+      "message": "The new chapter map only recognizes hard-coded English/Dutch filename prefixes. Since workspace settings and `add_language` support arbitrary `chapterWord` values such as `Chapitre` or `Kapitel`, `get_book_until` cannot fetch chapters for those configured languages even when their files were scaffolded by the project.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: findChapterFiles at lines 361-378 uses the same hardcoded regex /(?:chapter|hoofdstuk|chapter_?)\\s*(\\d+)/i as the pre-existing findChapterFile. Settings store a configurable `chapterWord` per language (e.g., Chapitre, Kapitel) via add_language, but neither function reads it. Files scaffolded with a custom chapterWord would not be found by get_book_until. The finding is factually accurate about the new function.",
+      "severity_justification": "The same limitation exists in the pre-existing toolGetChapter via findChapterFile, so users already encounter this constraint. The default chapterWord is 'Chapter', which is matched. Only affects workspaces using non-English/non-Dutch custom chapterWord values.",
+      "category_justification": "The tool silently returns 'Chapter N not found' for chapters whose filenames use a custom configured chapterWord, producing incorrect behavior for a valid project configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "mcp-ts/src/templates.ts",
+      "start_line": 720,
+      "end_line": 724,
+      "message": "The new `proof-read` template is not covered by the template tests, even though every existing skill template has assertions for its front matter/sections and key tool references in `mcp-ts/test/templates.test.ts`. Please add coverage so regressions in the new skill output are caught.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: templates.test.ts has dedicated describe blocks for every existing skill (review, brainstorm, memory, translate, status, continuity, read-aloud, read-in) but has no tests at all for the new proof-read template introduced in this PR. The pattern is clearly established — each skill gets at least front-matter and tool-reference assertions.",
+      "severity_justification": "Missing tests are a quality gap but don't affect runtime behavior. The proof-read template is a long static string; a regression would be caught during manual use, though automated coverage would be more reliable.",
+      "category_justification": "The finding is about missing test coverage for a newly introduced template, consistent with the established per-skill test pattern in the file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

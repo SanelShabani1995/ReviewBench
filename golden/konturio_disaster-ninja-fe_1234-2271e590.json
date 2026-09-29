@@ -1,0 +1,231 @@
+{
+  "pr_key": "konturio_disaster-ninja-fe_1234-2271e590",
+  "pr": {
+    "repo": "https://github.com/konturio/disaster-ninja-fe",
+    "pr_number": 1234,
+    "base": "3c1900acccaae22cb69adb02dd8351f24fe4e8b5",
+    "head": "2271e59046b1afe806dfc49d92435d40131df30f"
+  },
+  "findings": [
+    {
+      "file": "src/components/SimpleLegend/SimpleLegend.tsx",
+      "start_line": 2,
+      "end_line": 2,
+      "message": "Letter is imported via a deep internal path '@konturio/default-icons/tslib/figma-icons/Letter.js' instead of the public named export used everywhere else in the codebase ('import { Letter } from @konturio/default-icons'). This path reaches into the package's compiled tslib output, bypasses the package's public API contract, and will break silently on any package version that restructures its build output.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: MultivariateLegend.tsx imports Letter via the public API `import { Letter } from '@konturio/default-icons'`, while the new code in SimpleLegend.tsx uses the deep internal path `'@konturio/default-icons/tslib/figma-icons/Letter.js'`. The public export demonstrably exists and is used elsewhere; the deep path bypasses the package contract and will silently break on any build output restructuring.",
+      "severity_justification": "The deep import will compile and work today but is fragile — any patch/minor version bump that reorganizes the package's tslib output will break this silently. It also violates the established local convention shown in MultivariateLegend.tsx.",
+      "category_justification": "This is a code convention/consistency issue: reaching into a package's internal build artifacts instead of using its public API, contrary to how the same icon is imported elsewhere in the project.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/SimpleLegend/SimpleLegend.test.tsx",
+      "start_line": 29,
+      "end_line": 33,
+      "message": "The test verifies the exact SVG path string ('M6 6H18V9.08508H16.769V8.53835...') of the Letter component's internal SVG. This tests implementation details of an external library and will silently break whenever the icon SVG changes in a package update. The test also does not mock '@konturio/default-icons/tslib/figma-icons/Letter.js', so it depends on the deep internal path resolving correctly in the test environment — if it doesn't, the test will fail with a module resolution error rather than a meaningful assertion failure.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the test mocks only `@konturio/ui-kit` and not the Letter icon import. It then asserts an exact SVG path string ('M6 6H18V9.08508H16.769V8.53835') from the external library's internal component — an implementation detail that will break silently on any icon update. Additionally, the unmocked deep internal path `@konturio/default-icons/tslib/figma-icons/Letter.js` must resolve correctly for the test to run at all.",
+      "severity_justification": "The test is brittle and couples to internal library SVG details, but this is a test-quality issue rather than a production bug. It won't cause runtime failures; it will just produce a noisy false failure on library updates.",
+      "category_justification": "The finding is about test design quality — asserting internal implementation details of an external library and a missing mock that makes the test environment-dependent.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/SimpleLegend/icons/CircleIcon.tsx",
+      "start_line": 20,
+      "end_line": 37,
+      "message": "The condition 'fillColor === \"none\"' does not distinguish between an absent fill (all sources undefined → fallback 'none') and an explicit fill-color value of 'none' set in style data, nor does it handle other CSS representations of no-fill (e.g. 'transparent' or ''). If a map style has circle-color: 'transparent' or fill-color: '' explicitly, the fallback chain would still produce 'none' and render a line, but more importantly any other zero-fill CSS value except the exact string 'none' would render a circle with a transparent fill instead of a line. This makes the condition fragile against variations in how data sources express no-fill.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's specific behavioral claim is factually wrong: `circle-color: 'transparent'` is truthy, so the fallback chain produces `'transparent'`, not `'none'` — it renders a circle, not a line. The finding is internally inconsistent (first part says transparent → line, 'more importantly' part says transparent → circle). The underlying fragility concern is real but highly speculative — the codebase exclusively uses hex colors in circle/fill legend styles, and MapLibre specs use hex/rgba rather than CSS keywords.",
+      "severity_justification": "The fragility concern is theoretical; no actual data in the codebase uses 'transparent' or empty-string for circle/fill-color in legend steps.",
+      "category_justification": "The finding claims incorrect behavior in fill-color condition logic.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/SimpleLegend/SimpleLegend.tsx",
+      "start_line": 16,
+      "end_line": 23,
+      "message": "The 'icon()' function has no exhaustive return for all branches of SimpleLegendStepType. If stepShape is a known type (e.g. 'hex', 'circle', 'square', 'letter') all cases are covered, but the function implicitly returns undefined for any value not matched by the if-chains. Since noImplicitReturns is not set in tsconfig.json, TypeScript will not flag this, and adding a new type to SimpleLegendStepType without updating icon() will silently render nothing with no compile-time warning.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: tsconfig.json has `strict: true` but no `noImplicitReturns`. The `icon()` function covers all current values of `SimpleLegendStepType` but has no exhaustive default — adding a new member to the union without updating `icon()` will silently render nothing. TypeScript will not flag this.",
+      "severity_justification": "All current `SimpleLegendStepType` values are handled, so there is no immediate bug. The risk is a silent future regression when the type is extended, which is a maintainability concern rather than an active defect.",
+      "category_justification": "The issue is about defensive coding and type-safety for future extension — a code structure concern rather than a current correctness bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/SimpleLegend/SimpleLegend.test.tsx",
+      "start_line": 21,
+      "end_line": 24,
+      "message": "The test step object is cast as 'any' and omits the required 'stepName' field from SimpleLegendStep. It also omits 'stepIconFill' and 'stepIconStroke'. While cast suppresses TypeScript errors, if SimpleLegend.tsx accesses step.stepName elsewhere (it does: line 63 of SimpleLegend.tsx renders step.stepName), the test is not representative of real data shape and may miss regressions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's main claim that `stepName` is omitted is factually incorrect — `stepName` is present in the step object via ES6 shorthand property notation, populated from the `it.each` destructured parameter ('Active mappers', 'Possibly local mappers'). The secondary claim about `stepIconFill`/`stepIconStroke` is true but those are optional fields in the type definition.",
+      "severity_justification": "Even if the claim were correct, it would be a minor test representativeness issue with no production impact.",
+      "category_justification": "The finding is about test data completeness and type correctness in test fixtures.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/SimpleLegend/SimpleLegend.tsx",
+      "start_line": 23,
+      "end_line": 23,
+      "message": "The fallback color `'#000000'` for the letter icon is hardcoded. It may not be suitable for all themes (e.g., a dark theme). It would be better to use a theme variable from the UI kit for better adaptability.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `#000000` fallback is the established pattern in all other icon components in the same directory (CircleIcon, HexIcon, SquareIcon all use it). The finding doesn't identify a deviation from local convention — it proposes a different approach that isn't used anywhere in this component tree. The suggestion is generic enough to apply to any hardcoded color in any project.",
+      "severity_justification": "Even if valid, this would be a minor theming inconsistency with no functional impact on the current implementation.",
+      "category_justification": "The finding is about theming/style adaptability, a code quality concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/SimpleLegend/icons/CircleIcon.tsx",
+      "start_line": 25,
+      "end_line": 25,
+      "message": "The default value for `strokeWidth` is hardcoded to `4`. This might not be consistent with other icons or could be inflexible if different stroke widths are needed. Using `styles['stroke-width']` would be more consistent with how other style properties are handled in this component.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims `styles['stroke-width']` would be more consistent, but the actual convention in all other icon components (HexIcon, SquareIcon) uses `styles.width`, not `styles['stroke-width']`. The suggested fix contradicts the local convention. The real inconsistency (default `4` vs `3` in other icons) is pre-existing code not introduced by this PR.",
+      "severity_justification": "Even if valid, this would be a minor cosmetic inconsistency with no behavioral impact.",
+      "category_justification": "The finding is about code style consistency in SVG rendering properties.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/SimpleLegend/icons/CircleIcon.tsx",
+      "start_line": 27,
+      "end_line": 30,
+      "message": "The rendering logic for `CircleIcon` does not explicitly define what happens if `styles.width` is not set. This could lead to inconsistent rendering of the `line` or `circle` elements as strokeWidth falls back to `undefined`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding misreads the nullish coalescing operator. `styles.width ?? 4` explicitly provides `4` as the default when `styles.width` is null or undefined — strokeWidth cannot be undefined. The claim that 'strokeWidth falls back to undefined' is factually wrong.",
+      "severity_justification": "The described problem does not exist in the code.",
+      "category_justification": "The finding makes an incorrect claim about runtime behavior of the nullish coalescing operator.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/SimpleLegend/icons/CircleIcon.test.tsx",
+      "start_line": 14,
+      "end_line": 16,
+      "message": "The test assumes that a `line` element will render when no fill color is provided, but it does not test for rendering consistency with different possible configurations of `styles` object, such as missing or invalid widths.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a generic test coverage suggestion — 'the test doesn't cover all configurations' — without identifying a specific scenario that would reveal a real bug or regression. The same comment could be copy-pasted onto any unit test. Missing/invalid widths are already handled safely by `styles.width ?? 4`, so there's no concrete gap to fill.",
+      "severity_justification": "No specific failing scenario is identified; the suggestion is purely cosmetic test completeness.",
+      "category_justification": "The finding is about test coverage breadth.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/logical_layers/types/legends.ts",
+      "start_line": 9,
+      "end_line": 10,
+      "message": "The `SimpleLegendStepType` type addition introduces 'letter' as a valid option, but there's no corresponding validation to ensure other components using this type (e.g., in rendering or logic) properly support the new 'letter' type.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Investigation shows `stepShape` is only branched on in `SimpleLegend.tsx`, which this PR already updates to handle 'letter'. No other component in the codebase switches on `stepShape` — `mapCSSToMapBoxPropertiesConverter` and `Layer/index.tsx` use `SimpleLegendStep` but only access other fields. The finding doesn't identify any concrete unsupported component; it's a generic speculative concern.",
+      "severity_justification": "No actual unsupported component exists, making this a non-issue.",
+      "category_justification": "The concern is about type coverage and ensuring all consumers handle new union members.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/SimpleLegend/icons/CircleIcon.tsx",
+      "start_line": 37,
+      "end_line": 45,
+      "message": "This branch changes every circle legend with no fill into a line, but `CircleIcon` is also used for point/circle layer legends that currently provide only `style.color` and no fill color (for example `src/features/create_layer/constants.ts:37-46` and `src/core/logical_layers/utils/registerNewGeometryLayer.ts:33-38`). Those existing point legends will now render as horizontal lines instead of circles, so the condition needs to distinguish line-style legends from unfilled point/circle legends rather than applying to all missing fills.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in constants.ts and registerNewGeometryLayer.ts: both define circle legend steps with only `style.color` (no fill-color, circle-color, or stepIconFill). The new CircleIcon logic evaluates fillColor as 'none' for these, causing them to render as horizontal lines instead of circles — a visual regression for existing point layer legends.",
+      "severity_justification": "Existing point/circle layer legends in the app (create layer feature and geometry layer registration) will silently render as horizontal lines instead of circles, degrading the legend UI for real users with no obvious indicator of the regression.",
+      "category_justification": "The changed rendering condition produces incorrect visual output (line instead of circle) for existing valid inputs, contradicting the intended behavior of those legend entries.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

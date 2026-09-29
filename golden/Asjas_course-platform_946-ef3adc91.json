@@ -1,0 +1,391 @@
+{
+  "pr_key": "Asjas_course-platform_946-ef3adc91",
+  "pr": {
+    "repo": "https://github.com/Asjas/course-platform",
+    "pr_number": 946,
+    "base": "2fcdc8b36f1759f9a19ad71d3d5d9e5f5f642a28",
+    "head": "ef3adc91ad629487ca4b48db902c729c622fd95e"
+  },
+  "findings": [
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 155,
+      "end_line": 157,
+      "message": "The module-scoped `const _domParser = new DOMParser()` is evaluated at import time. Any import of this module in a Node.js context (SSR, a server-side admin script, or a test environment without jsdom) will throw `ReferenceError: DOMParser is not defined` and crash the entire module. The initialization should be lazy — move it inside `stripVttTags()` or guard it with `typeof DOMParser !== 'undefined'`. The comment acknowledging 'Browser-only' is not sufficient enforcement.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claim is factually correct: `const _domParser = new DOMParser()` at module scope will throw `ReferenceError` in any non-browser environment. While no current code path triggers this (pure SPA, jsdom test environment, no server imports), it is a real latent reliability risk with no enforcement mechanism other than a comment.",
+      "severity_justification": "No current execution path reaches this code in a non-jsdom Node.js context — the module is browser-only, tests use jsdom, no SSR, no server imports. The risk is latent/theoretical in the current codebase.",
+      "category_justification": "The issue is about the module crashing at import time in specific runtime environments, which is an operational/environmental reliability concern rather than a logic error or security issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 356,
+      "end_line": 370,
+      "message": "`buildTranscriptData` unconditionally sets `lastFetchedAt: new Date().toISOString()`, but the `options` parameter has no `lastFetchedAt` field. Callers that re-process an already-stored VTT (e.g., to change language or source metadata) will silently overwrite the original upload/fetch timestamp with the current time, losing audit history. The `options` type should expose an optional `lastFetchedAt?: string` so the caller can preserve the original value.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim is factually correct: `buildTranscriptData` hardcodes `lastFetchedAt: new Date().toISOString()` and the `options` type exposes no `lastFetchedAt` field, making it impossible for callers to preserve an original timestamp. The function is exported and intended for future use as an upload/processing utility.",
+      "severity_justification": "No production code currently calls `buildTranscriptData` — it's only referenced in tests. The timestamp-overwrite problem only manifests in future re-processing workflows that don't yet exist. Low immediate impact.",
+      "category_justification": "The issue is with the function's public interface design — a missing option in the type that prevents callers from supplying their own value for an optional field.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 461,
+      "end_line": 477,
+      "message": "`searchTranscript` uses `cue.text.toLowerCase().indexOf(lower)` which stops at the first occurrence per cue. The `TranscriptSearchMatch.matchIndex` field is documented as 'for highlight ranges', implying Phase 3 will use it to mark all occurrences. A cue containing the search term twice yields only one `TranscriptSearchMatch`, silently discarding the second match. The API will need to be redesigned for Phase 3 (e.g., return `matchIndices: number[]` or produce multiple match objects per cue). The current shape will force a breaking change at that point.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claim is factually correct: `indexOf` returns only the first match per cue, and `matchIndex` is documented as intended for highlight ranges, which implies all occurrences need to be captured. The API limitation is real even though it has no current production callers.",
+      "severity_justification": "`searchTranscript` is not wired up to any UI in Phase 1 and has no production callers. The limitation only matters in a future phase; redesigning it before it's consumed costs nothing. No current user-facing behavior is affected.",
+      "category_justification": "The concern is about the shape of the public function's return type and how it will need to change to support its documented future use case — a forward-looking API design issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/routes/_authenticated/courses.$courseId.tsx",
+      "start_line": 139,
+      "end_line": 148,
+      "message": "The `childMatches.length > 1` guard uses the count of matched route segments to decide whether to render `<Outlet />`. This is fragile: if any intermediate layout route is inserted between the course route and the lesson routes (e.g., a `/lessons` layout shell gains its own content, or an error boundary layer is added), the count changes and the course detail page silently stops rendering — or the lesson page never mounts — with no compile-time or runtime warning. The condition should check for a specific descendant route ID rather than a raw count.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claim is factually correct: `childMatches.length > 1` relies on the exact count of matched route segments in the current tree. Any new intermediate layout route changes the count and silently breaks routing. The code comment itself acknowledges the count-dependency, confirming the brittleness.",
+      "severity_justification": "The current behavior is correct for the existing route tree. The risk is future-facing — it only breaks if a developer adds an intermediate route without knowing about this guard. No user-facing issue today.",
+      "category_justification": "The issue is about fragile implementation choice that makes the code harder to safely evolve — not a current bug or security issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/components/transcript-panel.tsx",
+      "start_line": 208,
+      "end_line": 212,
+      "message": "Paragraph list items use `key={\\`${para.startMs}-${para.endMs}\\`}`. Two consecutive paragraphs that are split by a speaker change at a cue boundary where both cues share the same `startMs` (e.g., a zero-duration preceding cue and its successor have identical timestamps) produce the same key. React will silently deduplicate or reorder them incorrectly. `para.firstCueIndex` is guaranteed unique within a `buildParagraphs` result and should be used as the key instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The key collision is confirmed: two single-cue zero-duration paragraphs at the same timestamp produce identical `${startMs}-${endMs}` keys. `para.firstCueIndex` is guaranteed unique within buildParagraphs output and would avoid the issue.",
+      "severity_justification": "The collision only occurs with consecutive zero-duration cues at identical timestamps with a speaker change — an unusual but valid edge case in malformed or auto-generated VTT. Current fixture data doesn't trigger it, and React's duplicate-key handling is cosmetic (warning + potential reordering) rather than a crash.",
+      "category_justification": "Using a non-unique React list key leads to incorrect reconciliation behavior (silently deduplicated or reordered list items), which is a correctness issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 613,
+      "end_line": 628,
+      "message": "In `resolveTranscript`, when `hasVideo` is `false` and `transcription` is a non-null value that fails `validateTranscriptData` (e.g., the old `{ segments: [] }` format), the function returns `{ eligibility: { eligible: true }, data: null }`. `TranscriptPanel` then hits the `!data` guard and shows 'No transcript has been added for this lesson yet.' — but a transcript IS present; it just has an invalid schema. The `invalid_schema` reason is never surfaced for non-video lessons, giving the user a misleading message. The non-video path should propagate validation failure as a distinct reason, or at minimum not conflate 'no transcript' with 'transcript in old format'.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed by code trace: `resolveTranscript` with `hasVideo=false` and an invalid-schema transcript returns `{eligible:true, data:null}`, causing `TranscriptPanel` to show 'No transcript has been added' — which is incorrect since a transcript is present but in an old format. The `invalid_schema` message path is unreachable for non-video lessons.",
+      "severity_justification": "Non-video lessons with transcripts are an edge case, and the consequence is only a misleading UI message — not a crash or data loss. Current fixtures and the test suite don't exercise this path.",
+      "category_justification": "The logic conflates two distinct states (absent transcript vs. present but invalid-schema transcript) for non-video lessons, producing a factually incorrect user-facing message.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 399,
+      "end_line": 447,
+      "message": "`buildParagraphs` tracks accumulated text length in `accText` via `accText += \" \" + curr.text` (raw concatenation), but the actual paragraph text emitted by `flush()` uses `join(\" \").replace(/\\s+/g, \" \").trim()`. If any cue text contains consecutive internal spaces (which `stripVttTags` may not normalize), `accText` will be longer than the actual rendered text, causing the 600-character paragraph boundary to fire earlier than intended and producing more paragraph splits than the spec requires.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: `stripVttTags` only `.trim()`s without normalizing internal whitespace, `accText` accumulates raw (possibly multi-spaced) text, while `flush()` normalizes via `.replace(/\\s+/g, ' ')`. This makes `accText.length` larger than the actual rendered paragraph length, causing the 600-char limit to trigger earlier than intended.",
+      "severity_justification": "The consequence is occasional extra paragraph breaks in transcripts with internal multiple spaces — cosmetically suboptimal but not incorrect data, no crash, and the paragraph threshold is already a soft heuristic. Requires unusual VTT formatting to trigger meaningfully.",
+      "category_justification": "The internal state (`accText`) used for the length threshold is measured inconsistently with the actual output produced by `flush()`, causing the boundary condition to fire at the wrong time.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 508,
+      "end_line": 511,
+      "message": "`z.string().datetime({ offset: true })` is the Zod 3 API for validating ISO-8601 datetimes with a timezone offset. In Zod 4 (which this project uses at 4.3.6), datetime validation moved to `z.iso.datetime()`. The `{ offset: true }` option on `z.string().datetime()` is deprecated and its exact behavior in Zod 4 is unspecified in the project's Zod 4 patterns reference. The rest of the codebase (e.g., the server's announcements router) uses plain `z.string().datetime()` without options. This should be aligned to `z.iso.datetime()` per Zod 4 conventions.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "There is a real inconsistency: `z.string().datetime({ offset: true })` is used uniquely in `transcript.ts` while the only other datetime validation in the codebase (announcements router) uses plain `z.string().datetime()` without options. The `{ offset: true }` option is not established in the project's conventions. The 'deprecated' claim is unverified but the convention violation is real.",
+      "severity_justification": "The schema likely works correctly in Zod 4.3.6 as a compatibility layer. The issue is a style/convention inconsistency — `lastFetchedAt` validation is optional and non-critical to the transcript feature's core behavior.",
+      "category_justification": "The issue is an inconsistency with the established Zod usage pattern in the codebase, not a functional bug or security concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 298,
+      "end_line": 303,
+      "message": "The `rawText.trim()` check before parsing speaker and text means that a VTT cue containing only a speaker tag (e.g., `<v Alice>`) and no other text will be skipped as empty. While uncommon, this could lead to silently dropping cues from a transcript if it relies on speaker tags alone to signal presence.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim is factually incorrect. `rawText.trim()` is evaluated on the pre-tag-stripping raw VTT text (`'<v Alice>'`), which is non-empty, so the guard does not fire. The cue is not skipped — it is pushed with `speaker: 'Alice'` and `text: ''`. The finding incorrectly assumes the empty check runs after HTML stripping.",
+      "severity_justification": "The described scenario doesn't occur, so there's no actual bug to rate, but the underlying edge case (cue with empty text after stripping) is still a minor concern even if the finding misdescribes the mechanism.",
+      "category_justification": "The finding alleges incorrect cue-dropping behavior in the VTT parser.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/components/transcript-panel.tsx",
+      "start_line": 195,
+      "end_line": 195,
+      "message": "The component uses a composite key `key={`${cue.id}-${cue.startMs}-${idx}`}` for list items. The `cue.id` should be unique per cue according to VTT spec (or is a unique index if not provided), and `startMs` is also part of the cue's identity. Including the array `idx` is redundant and suggests a potential misunderstanding of `key` prop requirements. A simpler `key={cue.id}` would be sufficient and more idiomatic.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The composite key `${cue.id}-${cue.startMs}-${idx}` is deliberately defensive: `cue.id` uniqueness is not enforced by the VTT parser for explicit IDs, and `idx` guarantees overall uniqueness as a fallback. The suggestion to simplify to `key={cue.id}` would reduce robustness. The 'misunderstanding' characterization is incorrect.",
+      "severity_justification": "The current key is more defensive than necessary for well-formed VTT but no less correct. The finding's recommendation would be a marginal regression in edge cases.",
+      "category_justification": "The finding is a style/simplification suggestion about React key construction.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 286,
+      "end_line": 286,
+      "message": "The VTT parser splits the timing line using `line.split(' --> ')`, which is correct for valid VTT. However, it does not account for variations in whitespace, such as multiple spaces around the arrow (`-->`). The VTT specification is flexible about whitespace. Using a regex like `/\\s+-->\\s+/` for splitting would make the parser more robust against such formatting variations.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed by tracing: multiple spaces around `-->` (spec-allowed) cause the `endRaw` extraction to produce an empty string because `timingParts[1]` starts with a space, making `.split(/\\s+/)[0]` return `\"\"`. This triggers a malformed-end-timestamp warning and silently drops the cue.",
+      "severity_justification": "The failure only occurs with non-standard but spec-compliant whitespace around `-->`. Most real VTT generators produce exactly single-space `-->` separators. The symptom is cue dropping with a parser warning, not a silent data corruption.",
+      "category_justification": "The parser incorrectly rejects valid VTT timing lines that use extra whitespace around `-->`, causing cue loss.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 560,
+      "end_line": 566,
+      "message": "The `superRefine` check for `durationMs` only validates it against the last cue's `endMs`. It does not verify that `durationMs` is greater than or equal to `cue.endMs` for *all* cues. A malformed transcript could have an intermediate cue with an `endMs` greater than the final cue's `endMs`, which would pass validation but represent an inconsistent state. The check should ideally ensure `durationMs` is at least `Math.max(0, ...data.cues.map(c => c.endMs))`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: `data.cues.at(-1)` checks only the last array element, not the cue with the maximum `endMs`. Out-of-order cues (valid per schema) could have an intermediate `endMs` exceeding `durationMs`, which passes validation but represents inconsistent data.",
+      "severity_justification": "Only affects manually-crafted or malformed stored data — the VTT parser produces cues in source order. Consequence is an incorrect `durationMs` metadata field, not a crash or user-facing correctness issue.",
+      "category_justification": "The schema validation has an incomplete invariant check — it fails to catch a class of inconsistent transcript payloads.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/routes/_authenticated/chat.tsx",
+      "start_line": 78,
+      "end_line": 78,
+      "message": "The component uses a `useMutation` hook for `closeConversation`, but the `mutationOptions` from `trpc.directMessages.closeConversation.mutationOptions()` are called with `keyPrefix: undefined`, which seems to have been an older pattern for this codebase. The new pattern, as seen in other files, is to call it without arguments. This inconsistency should be resolved.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding describes code calling `mutationOptions({ keyPrefix: undefined })`, but at SHA ef3adc91 the code already calls `mutationOptions()` with no arguments — this exact change was made by the PR being reviewed. The issue described no longer exists in the codebase.",
+      "severity_justification": "The issue was a minor style inconsistency that the PR already resolved.",
+      "category_justification": "The finding is about a pattern inconsistency in how mutationOptions is called.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 491,
+      "end_line": 501,
+      "message": "The `buildParagraphs` function determines the paragraph's speaker by checking if a `Set` of speaker names from the grouped cues has a size of 1. However, this logic doesn't correctly handle `undefined` speaker values. If some cues have a speaker (e.g., \"Alice\") and others have `undefined`, the `Set` will have a size of 2 (e.g., `{\"Alice\", undefined}`), correctly resulting in an `undefined` paragraph speaker. But if all cues in a group have `speaker: undefined`, the `Set` will have size 1 (`{undefined}`), but `groupSpeaker` will be `undefined`, so the paragraph speaker will also be `undefined`. The logic is correct but slightly complex. A clearer implementation would be to check `speakers.size === 1 && !speakers.has(undefined)`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding explicitly states 'The logic is correct.' Both implementations produce identical results — verified by tracing all scenarios. The current code's `speakers.size === 1 && groupSpeaker` correctly handles all-undefined-speaker groups because `groupSpeaker` is `undefined` (falsy) in that case. This is a purely cosmetic suggestion with no behavioral difference.",
+      "severity_justification": "No bug or behavioral difference exists; the concern is solely about code readability.",
+      "category_justification": "The finding is a style/clarity suggestion about an already-correct code pattern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 281,
+      "end_line": 288,
+      "message": "The parseVtt() method clamps endMs to startMs when endMs < startMs, but it still adds the cue with potentially incorrect timings. This could lead to inaccurate rendering or logic relying on cue end times being greater than or equal to start times.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "After clamping, `endMs === startMs` which satisfies the `endMs >= startMs` invariant that all downstream logic relies on. The Zod schema passes, `findActiveCueIndex` correctly handles zero-duration cues, and gap calculations work normally. The finding incorrectly claims the invariant could be violated when it is maintained by the explicit clamp on line 331.",
+      "severity_justification": "No actual bug: the clamping is intentional, documented, and produces a valid zero-duration cue that downstream code handles correctly.",
+      "category_justification": "The finding is about whether post-clamping cue timing values satisfy downstream invariants.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 517,
+      "end_line": 533,
+      "message": "The buildParagraphs() function uses a hardcoded paragraph limit of 600 characters, which is not configurable. This could lead to issues if the paragraph length specification needs to be dynamically adjusted.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The constant `PARAGRAPH_CHAR_LIMIT = 600` is a named, documented module-scoped constant with explicit spec rationale. The finding is a generic 'should be configurable' argument with no concrete evidence of a current or near-term need for dynamic adjustment. The same comment could be applied verbatim to any named constant in any project.",
+      "severity_justification": "No current behavior is affected; purely a speculative future-need concern.",
+      "category_justification": "The finding is a style suggestion about configurability of a named constant.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/routes/_authenticated/courses.$courseId.tsx",
+      "start_line": 108,
+      "end_line": 121,
+      "message": "The existingReview casting to UserReview is performed using 'as unknown as' pattern, which bypasses type safety and can lead to runtime errors if the structure changes. A better strategy would be to validate the structure before casting.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is a generic 'as unknown as bypasses type safety' warning with no concrete evidence of a mismatch between the UserReview interface and the actual data shape. The cast is documented as a workaround for a known Drizzle ORM type-inference limitation, and the same pattern is established across the PR. The recommendation to 'validate the structure' is a generic best-practice not grounded in a specific risk here.",
+      "severity_justification": "No concrete evidence of data shape mismatch; the data flows through tRPC which enforces the server type contract.",
+      "category_justification": "The finding is about TypeScript type assertion patterns rather than runtime behavior or security.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/routes/_authenticated/courses.$courseId.lessons.$lessonId.tsx",
+      "start_line": 387,
+      "end_line": 390,
+      "message": "Casting lesson.transcription to unknown before passing to TranscriptPanel reduces type safety. If transcription contains unexpected data, it might produce runtime errors or visual bugs in TranscriptPanel.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "No cast occurs at line 376. `lesson.transcription` is already typed as `unknown` in the `LessonInModule` interface (matching the jsonb DB column), and `TranscriptPanel` accepts `transcription: unknown`. Typing it as `unknown` is the intentional safety mechanism that forces Zod validation inside `TranscriptPanel`. Unexpected data is handled gracefully via the invalid_schema path, not a runtime error.",
+      "severity_justification": "The code is correctly designed; the finding's premise (a cast reducing safety) is factually wrong.",
+      "category_justification": "The finding makes a factually incorrect claim about what the code does.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/web/src/lib/transcript.ts",
+      "start_line": 845,
+      "end_line": 857,
+      "message": "The resolveTranscript() function does not log or handle unexpected values for transcription that fail validation, which could make debugging errors harder when the issue arises.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The referenced lines 845-857 don't exist in a 675-line file. The actual `resolveTranscript` function explicitly handles validation failures by returning `{ eligible: false, reason: 'invalid_schema' }`, which the caller renders as a user message. The suggestion to add logging is a generic best-practice comment with no code-specific evidence of a debugging problem.",
+      "severity_justification": "The referenced lines don't exist and the actual code handles failures with structured return values — no concrete issue identified.",
+      "category_justification": "The finding is a generic suggestion to add debug logging to a library function.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

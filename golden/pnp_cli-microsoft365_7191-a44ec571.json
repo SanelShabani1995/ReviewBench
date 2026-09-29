@@ -1,0 +1,211 @@
+{
+  "pr_key": "pnp_cli-microsoft365_7191-a44ec571",
+  "pr": {
+    "repo": "https://github.com/pnp/cli-microsoft365",
+    "pr_number": 7191,
+    "base": "7182dbb5a5bbf283e890fa3774bbbd8d78573f59",
+    "head": "a44ec57153539d3b87c3d8fe819575574b2dee9e"
+  },
+  "findings": [
+    {
+      "file": "docs/docs/cmd/external/connection/connection-add.mdx",
+      "start_line": 46,
+      "end_line": 51,
+      "message": "ExternalConnection.ReadWrite.OwnedBy is an application-only permission in Microsoft Graph — it has no delegated authentication support. Listing it under the Delegated tab will mislead users into thinking they can use this command with delegated (user) credentials. The Delegated tab should either be removed or state that delegated access is not supported for this permission scope.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim that ExternalConnection.ReadWrite.OwnedBy is application-only is factually incorrect. The project's own mock data (app-permission-list.mock.ts) shows two entries for this permission: one Application-scoped (origin: Application) and one delegated-scoped (with userConsentDescription/userConsentDisplayName and type: Admin). The permission supports delegated access with admin consent, making the Delegated tab entry accurate.",
+      "severity_justification": "If the claim were true it would be a meaningful documentation error misleading users, but since the finding is factually wrong the severity is moot.",
+      "category_justification": "The finding is about correctness of the Permissions section in documentation files.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/cmd/external/connection/connection-doctor.mdx",
+      "start_line": 55,
+      "end_line": 60,
+      "message": "ExternalConnection.ReadWrite.OwnedBy is an application-only permission and should not be listed under Delegated. Additionally, the doctor command calls /v1.0/search/query (entityType=externalItem) and /v1.0/external/connections/{id}/items/{itemId}, which require ExternalItem.Read.All and ExternalItem.ReadWrite.OwnedBy respectively — neither is listed here, making the Permissions section incomplete for a command that touches multiple API surfaces.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding makes two factually incorrect claims: (1) ExternalConnection.ReadWrite.OwnedBy is application-only — it has a delegated variant requiring admin consent, as shown in the project's own mock data; (2) 'neither [ExternalItem.Read.All and ExternalItem.ReadWrite.OwnedBy] is listed here' — the diff for connection-doctor.mdx explicitly includes ExternalItem.ReadWrite.OwnedBy alongside ExternalConnection.ReadWrite.OwnedBy in both tabs. The claim that neither permission is listed is directly contradicted by the diff.",
+      "severity_justification": "If true, missing permissions in documentation would mislead users about what access is needed to run the command, but both claims are factually wrong.",
+      "category_justification": "The finding is about the accuracy of the Permissions section in the documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/cmd/external/connection/connection-doctor.mdx",
+      "start_line": 52,
+      "end_line": 70,
+      "message": "The Permissions section only lists ExternalConnection.ReadWrite.OwnedBy, but connection-doctor also calls POST /v1.0/search/query (requires ExternalItem.Read.All) and GET /v1.0/external/connections/{id}/items/{itemId} (requires ExternalItem.ReadWrite.OwnedBy). Users following only this documentation will get 403 errors when the contentIngested check runs.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims 'The Permissions section only lists ExternalConnection.ReadWrite.OwnedBy', but the PR diff for connection-doctor.mdx explicitly shows ExternalItem.ReadWrite.OwnedBy is listed alongside ExternalConnection.ReadWrite.OwnedBy in both tabs. The factual premise of the finding is directly contradicted by the diff.",
+      "severity_justification": "If the claim were true, missing permissions would cause 403 errors for users following the docs. But the claim is factually wrong per the diff.",
+      "category_justification": "The finding is about completeness and accuracy of the Permissions section in documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/cmd/external/connection/connection-list.mdx",
+      "start_line": 28,
+      "end_line": 39,
+      "message": "connection-list is a read-only operation (GET /v1.0/external/connections). ExternalConnection.ReadWrite.OwnedBy overstates the required privilege; ExternalConnection.Read.All is sufficient and lower-privilege. Documenting only ReadWrite.OwnedBy misleads operators into granting broader write access than needed. Also, OwnedBy is application-only, so the Delegated tab is incorrect.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding's key factual claim — 'OwnedBy is application-only, so the Delegated tab is incorrect' — is verifiably false. ExternalConnection.ReadWrite.OwnedBy supports delegated access with admin consent per the project's own mock data. The secondary claim about Read.All being lower-privilege is partially valid but the permission used (ReadWrite.OwnedBy) is consistent across all connection commands in the PR and is accepted by the API, making it a stylistic/philosophy choice rather than a concrete error.",
+      "severity_justification": "Using a higher-privilege permission than strictly necessary in documentation is a minor concern, especially since the permission is valid, consistent, and commonly used across all connection commands in this PR.",
+      "category_justification": "The finding is about whether the documented permission overstates the required privilege level for a read-only operation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/cmd/external/connection/connection-get.mdx",
+      "start_line": 36,
+      "end_line": 47,
+      "message": "connection-get is a read-only operation (GET /v1.0/external/connections/{id} or filtered list). ExternalConnection.ReadWrite.OwnedBy overstates the required privilege; ExternalConnection.Read.All is sufficient. Additionally, OwnedBy is application-only so listing it under Delegated is incorrect.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The 'OwnedBy is application-only' claim is factually incorrect as verified repeatedly — ExternalConnection.ReadWrite.OwnedBy has a delegated admin-consent variant. The over-privilege concern (Read.All vs ReadWrite.OwnedBy for a GET-only operation) has marginal merit but is a stylistic consistency choice across all connection commands in this PR. The factual error undermines the finding.",
+      "severity_justification": "Same as Finding 4: using a higher-privilege permission than strictly necessary for a read-only operation is minor, especially since the permission is valid and consistent across the PR.",
+      "category_justification": "The finding is about the accuracy and least-privilege principle of the documented permissions for a read-only operation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/cmd/external/connection/connection-remove.mdx",
+      "start_line": 43,
+      "end_line": 54,
+      "message": "ExternalConnection.ReadWrite.OwnedBy is an application-only permission in Microsoft Graph. Listing it under the Delegated tab is incorrect and will mislead users attempting to run this command with delegated credentials.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Identical claim to Finding 1, already verified as factually incorrect. ExternalConnection.ReadWrite.OwnedBy supports delegated access with admin consent, as demonstrated by the delegated entry (with userConsentDescription/adminConsentDescription) in the project's own app-permission-list.mock.ts. The Delegated tab is not incorrect.",
+      "severity_justification": "If the claim were true it would be a meaningful documentation error misleading users about credential requirements, but the claim is factually wrong.",
+      "category_justification": "The finding concerns the correctness of the Permissions section in documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/cmd/external/connection/connection-schema-add.mdx",
+      "start_line": 39,
+      "end_line": 50,
+      "message": "ExternalConnection.ReadWrite.OwnedBy is an application-only permission. It cannot be used with delegated authentication, so listing it in the Delegated tab is incorrect.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same factually incorrect claim repeated again: ExternalConnection.ReadWrite.OwnedBy is not application-only. It has a delegated variant with admin consent as confirmed by the project's own app-permission-list.mock.ts. The Delegated tab entry is not incorrect.",
+      "severity_justification": "If true it would mislead users about credential requirements, but the claim is factually wrong.",
+      "category_justification": "The finding concerns accuracy of the Permissions section in documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/cmd/external/connection/connection-urltoitemresolver-add.mdx",
+      "start_line": 38,
+      "end_line": 49,
+      "message": "ExternalConnection.ReadWrite.OwnedBy is an application-only permission. Listing it under the Delegated tab is incorrect; delegated access is not supported with this permission scope.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Identical factually incorrect claim repeated again. ExternalConnection.ReadWrite.OwnedBy supports delegated access with admin consent as confirmed by the project's own app-permission-list.mock.ts. The Delegated tab is not incorrect.",
+      "severity_justification": "If true it would mislead users about credential requirements, but the claim is factually wrong.",
+      "category_justification": "The finding concerns accuracy of the Permissions section in documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/cmd/external/item/item-add.mdx",
+      "start_line": 64,
+      "end_line": 69,
+      "message": "ExternalItem.ReadWrite.OwnedBy is an application-only permission in Microsoft Graph — it has no delegated support. Listing it in the Delegated tab is incorrect and will mislead users trying to run this command with delegated credentials.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "ExternalItem.ReadWrite.OwnedBy is not application-only. The project's own app-permission-list.mock.ts has a delegated entry for this permission (line 6690) with adminConsentDescription, userConsentDescription, and type: Admin — confirming it supports delegated access with admin consent. The finding's factual premise is wrong.",
+      "severity_justification": "If true it would be a meaningful documentation error misleading users about credential requirements, but the claim is factually incorrect.",
+      "category_justification": "The finding concerns the accuracy of the Delegated tab in the Permissions section of the documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/cmd/external/connection/connection-doctor.mdx",
+      "start_line": 23,
+      "end_line": 23,
+      "message": "The documentation for `external connection doctor` specifies `ExternalConnection.ReadWrite.OwnedBy` as the required permission. However, this command performs write operations related to the schema which require `ExternalConnection.ReadWrite.All`. The correct permission should be `ExternalConnection.ReadWrite.All`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims connection-doctor performs write operations requiring ExternalConnection.ReadWrite.All, but the source code (connection-doctor.ts) contains only GET requests (connection, schema, external item) and a POST to search/query (which is a search operation, not a write). There are no schema write operations whatsoever. The factual premise of the finding is wrong.",
+      "severity_justification": "The suggested change (ReadWrite.All instead of ReadWrite.OwnedBy) would actually broaden the documented permission requirement beyond what is needed, and the premise is entirely incorrect.",
+      "category_justification": "The finding concerns whether the documented permission accurately reflects the operations performed by the command.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,593 @@
+{
+  "pr_key": "WhatIfWeDigDeeper_application-tracker_261-c1bdc879",
+  "pr": {
+    "repo": "https://github.com/WhatIfWeDigDeeper/application-tracker",
+    "pr_number": 261,
+    "base": "fdac3c71dcb949a181b74f98e59562602f69c15b",
+    "head": "c1bdc879558947c4d1917519cee2dd2e7e3dabde"
+  },
+  "findings": [
+    {
+      "file": "lambda-api/src/services/csv.service.ts",
+      "start_line": 257,
+      "end_line": 293,
+      "message": "Partial import creates ghost records: if createApplication succeeds but the subsequent updateApplication (offerDueDate) or archiveApplication call fails, the catch block increments result.failed and adds an error message — but the application already exists in DynamoDB. The row is misreported as 'failed' while the application is actually partially imported. On a retry import the same row will either be silently skipped (if jobPostingUrl matched) or create a duplicate (if jobPostingUrl was empty), making recovery impossible.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the code: `createApplication` persists the record to DynamoDB before `updateApplication` (offerDueDate) and `archiveApplication` are called. If either subsequent call throws, the catch block increments `result.failed` and skips the `existingUrls.add(row.jobPostingUrl)` step. On retry: rows with a jobPostingUrl will be silently skipped (misclassified as skipped), while rows without one will create duplicates. The finding is factually accurate.",
+      "severity_justification": "Creates ghost/partial records that are misreported as failures. Recovery requires manual intervention via the UI. Duplicates are possible for rows without jobPostingUrl. Not a catastrophic data loss scenario but genuinely corrupts import state.",
+      "category_justification": "Logic error in import transaction handling — partial state is written to DynamoDB but the result counter reports failure, and idempotency state (existingUrls) is not updated.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-api/src/services/csv.service.ts",
+      "start_line": 192,
+      "end_line": 194,
+      "message": "The `dynamodb` parameter of importApplications only controls the duplicate-detection ScanCommand in listExistingJobPostingUrls. All actual writes — createApplication, updateApplication, archiveApplication — go through applicationService which uses the module-level docClient singleton. Passing a fake DynamoDB (as done in the unit test) prevents writes only when rows are skipped as duplicates; any row that actually imports will hit the real DynamoDB. The parameter name implies full isolation but only delivers partial isolation, making tests that import non-duplicate rows not hermetic.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the `dynamodb` parameter is only used in `listExistingJobPostingUrls` for the dedup ScanCommand. All write operations (`createApplication`, `updateApplication`, `archiveApplication`) call `applicationService` which uses the module-level `docClient` singleton directly. The parameter implies full isolation but only delivers partial isolation for reads.",
+      "severity_justification": "No production impact — the issue is purely about test design. The existing test is coincidentally hermetic because it only tests the skip path. The misleading interface makes future tests harder to write correctly but doesn't affect runtime behavior.",
+      "category_justification": "The issue is about test isolation design — the injected dependency parameter implies full testability but only partially achieves it, making it harder to write hermetic tests for the non-duplicate import path.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-api/src/services/csv.service.ts",
+      "start_line": 306,
+      "end_line": 322,
+      "message": "exportApplications has an unbounded while(true) loop with no maximum page guard. If listApplications consistently returns exactly `limit` items due to a bug or a total count that is an exact multiple of 1000, the loop keeps incrementing `page` indefinitely, accumulating all results in memory and blocking the request until the process runs out of memory or crashes. A simple guard (e.g., break when items.length === 0 OR after a max iteration count) would prevent runaway execution.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The while(true) loop terminates correctly even when the total is an exact multiple of 1000. After the last full page, the next page will have offset beyond the total item count and return 0 items (0 < 1000), triggering the break. The finding misunderstands the in-memory pagination in listApplications where slice() returns empty arrays past the end of data.",
+      "severity_justification": "Even if the claim were correct, this is a job-tracker application where DynamoDB item counts are bounded in practice. The code is in fact correct.",
+      "category_justification": "The finding was about potential unbounded looping and resource exhaustion.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/stores/applicationStore.ts",
+      "start_line": 164,
+      "end_line": 169,
+      "message": "addDefaultStages uses Promise.all to create 6 stages concurrently. If any one createStage call rejects, Promise.all short-circuits and throws, leaving the already-created stages in DynamoDB with no cleanup. There is no rollback logic. Worse, the call site in InterviewStageList.tsx (line 84) uses `void addDefaultStages(appId)`, so the thrown error is silently discarded and the user sees no feedback while the application is left in a partial state (e.g., 3 of 6 default stages).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `addDefaultStages` uses `Promise.all` with no try/catch or rollback — if any `createStage` call fails, already-created stages remain in DynamoDB. The call site in InterviewStageList.tsx line 84 uses `void addDefaultStages(appId)` which discards the rejected promise, giving the user no error feedback. The CLAUDE.md even explicitly documents this as an anti-pattern to avoid for lambda-react-ui.",
+      "severity_justification": "Silent error swallowing plus partial DB state is a real reliability and UX concern. Users clicking 'Add Default Stages' could get 3 of 6 stages created with no feedback. However, the user can still manually add stages afterward, and stage creation failures are unlikely in normal operation.",
+      "category_justification": "Unhandled promise rejection causes silent failure and leaves the application in a partial state — error handling and fault tolerance concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/components/applications/ApplicationForm.tsx",
+      "start_line": 216,
+      "end_line": 219,
+      "message": "If onTransitionToInterviewing (which calls addDefaultStages) throws after onSubmit has already succeeded, the error propagates through handleSubmit but is then silently discarded by the `void handleSubmit()` call at line 417. The application's status change is committed to the backend, but the user receives no error feedback about the failed stage creation. The form does not have a try/catch around onTransitionToInterviewing, so there is no path to surface this error to the UI.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: handleSubmit has no try/catch around onTransitionToInterviewing — if it throws after onSubmit succeeds, the rejection propagates out of handleSubmit. The onClick handler uses `void handleSubmit()` which silently discards that rejection. Application status change is committed but stage creation failure produces no user-visible feedback.",
+      "severity_justification": "Only triggers on the specific flow of first transitioning to 'interviewing' with no existing stages when stage creation fails (unlikely in normal operation). User can manually add stages afterward. Impact is poor UX rather than data corruption.",
+      "category_justification": "Unhandled promise rejection in an event handler silently swallows errors after a partial state change — an error handling and fault tolerance issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/stores/applicationStore.ts",
+      "start_line": 133,
+      "end_line": 136,
+      "message": "loadSelectedApplication immediately sets selectedApplication to null before the fetch completes. Since refreshSelected calls loadSelectedApplication, every stage add/update/remove causes the context panel to momentarily render with selectedApplication === null (showing 'No Selection' / empty tab content), then flash back to the application data when the re-fetch resolves. This creates a visible UI flicker on every interview stage interaction. The fix is to preserve the stale selectedApplication during re-fetch and only clear it on actual deselection.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `loadSelectedApplication` sets `selectedApplication: null` synchronously before the fetch. `refreshSelected` calls `loadSelectedApplication`, and all stage mutations call `refreshSelected`. ContextPanel renders `selectedApplication?.companyName ?? 'No Selection'` — so during every stage add/update/remove, the panel momentarily shows 'No Selection' until the re-fetch resolves.",
+      "severity_justification": "Causes visible UI flicker on every interview stage interaction, which is bad UX. However, it's a cosmetic/transient issue with no data loss or functional failure — the correct data re-appears after the fetch completes.",
+      "category_justification": "The clearing of selectedApplication during refresh is an unintended behavioral consequence that causes incorrect UI state during what should be a transparent background refresh.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/pages/ListPage.tsx",
+      "start_line": 47,
+      "end_line": 57,
+      "message": "Two useEffect hooks fire simultaneously when filterState or sortState changes while page > 1. Effect 1 (deps: filterState, sortState) calls setPage(1) and fetchApplications with page 1. Effect 2 (deps: filterState, sortState, page) also fires because filterState changed — at this point page is still the old value (e.g., 3), so the guard `if (page === 1) return` does not trigger and Effect 2 fetches the old page number with the new filters. Both fetches are in-flight concurrently; whichever resolves last wins, potentially displaying stale data briefly.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Effect 1 deps [filterState, sortState] and Effect 2 deps [filterState, sortState, page] both fire when filterState changes. In the same effect flush, page is still the old value (setPage(1) hasn't triggered a re-render yet), so Effect 2's `page === 1` guard doesn't fire and a stale-page fetch is dispatched concurrently with the correct page-1 fetch.",
+      "severity_justification": "The race window is small (two in-flight requests that resolve close together), it only affects users who change filters while on page > 1, and the incorrect result self-corrects after the next render when page becomes 1 and Effect 2 returns early. No data is corrupted — only a brief visual stale state.",
+      "category_justification": "A React state/effect race condition that can cause the wrong page of data to be briefly displayed when filters change on non-first pages.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-api/src/routes/applications.ts",
+      "start_line": 60,
+      "end_line": 72,
+      "message": "POST /import has no file size limit. `await file.text()` reads the entire uploaded file into memory before any validation. A request with a very large CSV will exhaust server memory before being rejected. Hono's body parser does not impose a default limit on multipart uploads in this configuration. A size check on `file.size` before calling `file.text()` should be added.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: no file size check before `file.text()`, no body size limit middleware in app.ts or server.ts. The finding is factually correct that an oversized upload would be fully buffered in memory. However, the application is a local dev / self-hosted job tracker with CORS restricted to localhost origins, making exploitability near-zero in the intended deployment.",
+      "severity_justification": "Technically correct missing guard, but the application is explicitly a local-only tool (CORS restricted to localhost, no auth, designed for personal use). The risk of a malicious oversized upload is negligible in the intended context.",
+      "category_justification": "Missing input validation/size guard that could cause memory exhaustion — more of a reliability concern than a security one given the localhost-only deployment context.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/stores/applicationStore.ts",
+      "start_line": 112,
+      "end_line": 130,
+      "message": "archiveApplication and restoreApplication discard the Application object returned by the API and instead make a second round-trip via refreshSelected → loadSelectedApplication to reload the application. More critically, neither action updates the `applications` list in the store — the list remains stale (still showing the pre-archive state) until the caller explicitly calls fetchApplications. Callers in ContextPanel and ApplicationList do call refreshList/refreshCurrentPage, but store-level consistency depends entirely on callers remembering to do this.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: archiveApplication/restoreApplication don't update the `applications` array in the store (unlike deleteApplication which does). The API return value is discarded and a second round-trip is made via refreshSelected. All current callers do call refreshList/refreshCurrentPage, so there's no active stale-state bug — but the inconsistent design creates a trap for future callers.",
+      "severity_justification": "No current bug — all callers refresh the list. The concern is a design inconsistency and wasted API round-trip. The 'more critically' framing in the finding overstates the impact since both call sites correctly refresh afterward.",
+      "category_justification": "Design inconsistency in the store — archive/restore don't self-manage list state like delete does, creating implicit caller responsibility and a wasted round-trip. A maintainability concern rather than an active correctness bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-api/src/services/csv.service.ts",
+      "start_line": 70,
+      "end_line": 82,
+      "message": "parseCsvRows processes a bare \\r (without following \\n) as a row terminator. However, the final flush condition at lines 86-89 — `if (value.length > 0 || row.length > 0)` — pushes the last row unconditionally without the blank-line filter (`row.length > 1 || row[0] !== ''`). If the CSV ends with a Windows CRLF (\\r\\n) followed by no trailing newline, the \\r is consumed as a row terminator (correct), but if the CSV ends with a bare \\r, the empty value after it is added to rows without filtering, silently injecting a blank data row into the parsed output that then fails validation as 'missing required companyName or positionTitle'.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Traced through the parsing logic and verified empirically: when the CSV ends with a bare \\r, the row terminator handler resets value='' and row=[] before the loop ends. The final flush condition (value.length > 0 || row.length > 0) evaluates to false, so no empty row is pushed. The described bug scenario does not occur.",
+      "severity_justification": "The claimed bug does not exist in the code — the finding is incorrect about the parser behavior.",
+      "category_justification": "The finding claimed a CSV parsing correctness bug that would inject blank rows, which turned out to be factually wrong.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-api/src/services/csv.service.ts",
+      "start_line": 36,
+      "end_line": 36,
+      "message": "[javascript.lang.correctness.no-replaceall.no-replaceall] The string method replaceAll is not supported in all versions of javascript, and is not supported by older browser versions. Consider using replace() with a regex as the first argument instead like mystring.replace(/bad/g, \"good\") instead of mystring.replaceAll(\"bad\", \"good\") (https://discourse.threejs.org/t/replaceall-is-not-a-function/14585)",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "lambda-api is a Node.js server (not browser code), targeting ES2022 per tsconfig.json with @types/node v25. String.prototype.replaceAll is fully supported in ES2021+ and all Node.js versions ≥15. The finding is a generic static analysis rule about browser compatibility that is inapplicable to this server-side runtime context.",
+      "severity_justification": "Even if taken at face value, replaceAll is universally supported in any Node.js version that would run this ES2022 TypeScript codebase.",
+      "category_justification": "The finding is a generic linter/static analysis warning about API compatibility that doesn't apply to the actual runtime environment.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.correctness.no-replaceall.no-replaceall"
+      }
+    },
+    {
+      "file": "lambda-api/src/services/csv.service.ts",
+      "start_line": 250,
+      "end_line": 254,
+      "message": "Invalid numeric CSV values are treated the same as empty values here because `toNumber()` returns `undefined` for negatives, decimals, non-numeric strings, and blanks. As a result a row with `skillsMatch=-1`, `skillsMatch=3.5`, or `skillsMatch=abc` is imported with no skills match instead of being reported as a failed row, bypassing the validation constraints in `CreateApplicationSchema`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: toNumber() returns undefined for negatives (-1), decimals (3.5), and non-numeric strings (abc). The validation guard `skillsMatchNum !== undefined` only fires when toNumber returns a valid number, so all invalid non-empty skillsMatch values are silently dropped and the row is imported with no skillsMatch instead of being reported as failed.",
+      "severity_justification": "Data is silently dropped rather than rejected — the import succeeds but with a missing field. The user gets no indication their skillsMatch value was invalid. Impactful for data integrity but not a critical workflow issue.",
+      "category_justification": "The validation logic is incorrect: invalid skillsMatch values bypass the validation check and produce a different outcome (field silently omitted) than the documented/intended behavior (row reported as failed).",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-api/src/services/csv.service.ts",
+      "start_line": 270,
+      "end_line": 271,
+      "message": "Invalid salary values are silently dropped during import because `toNumber()` returns `undefined` for negatives, decimals, and non-numeric strings. That lets rows with malformed `salaryMin`/`salaryMax` import successfully with the salary omitted instead of surfacing a row-level validation failure.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: lines 270-271 pass toNumber(row.salaryMin) and toNumber(row.salaryMax) directly to createApplication with no prior validation check. toNumber() returns undefined for negatives, decimals, and non-numeric strings, so malformed salary values are silently dropped and the row imports with no salary fields instead of being reported as failed.",
+      "severity_justification": "Data is silently omitted rather than rejected, so users get no indication their salary values were invalid. Impacts data integrity but not a critical workflow.",
+      "category_justification": "Validation logic is missing for salaryMin/salaryMax: invalid non-empty values are silently dropped instead of causing a row-level failure as would be expected from the validation pattern used for other fields.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/components/applications/ApplicationCard.tsx",
+      "start_line": 28,
+      "end_line": 31,
+      "message": "The card is only selectable with a mouse because the click handler is attached to a non-focusable `<article>` without keyboard handling. Keyboard and screen-reader users cannot open an application from the list; make the selectable control focusable (for example, a button/link or an element with appropriate role, tab index, and Enter/Space handling).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the <article> element has an onClick handler and cursor-pointer but no tabIndex, no keyboard event handlers (onKeyDown/onKeyUp for Enter/Space), and no interactive role (e.g. role='button'). Non-interactive HTML elements are not in the tab order by default, so keyboard-only and screen-reader users cannot select an application card.",
+      "severity_justification": "Keyboard and screen-reader users cannot access the primary interaction on the list page (selecting an application). This blocks a core user workflow for assistive technology users.",
+      "category_justification": "The issue is a missing keyboard interaction pattern on a clickable non-interactive element, which is an accessibility (a11y) concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/pages/ListPage.tsx",
+      "start_line": 74,
+      "end_line": 75,
+      "message": "`applications` only contains the current paginated page (`fetchApplications` requests `limit: get().limit`, default 20), so the pipeline summary counts are page-local rather than totals for the whole pipeline. Users with more than one page will see misleading segment counts and may filter based on incomplete data.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: PipelineSummaryBar at line 74 receives `applications` from the store which only holds the current page's items (response.items from a paginated fetch with limit 20). PipelineSummaryBar.tsx counts statuses by filtering that local array, so counts reflect only the current page rather than the full pipeline.",
+      "severity_justification": "Users with more than one page of applications will see incorrect pipeline segment counts on the main dashboard view, potentially misleading them when making decisions about their job search pipeline.",
+      "category_justification": "The pipeline summary shows incorrect counts due to operating on a paginated subset instead of the full dataset, producing misleading information in the UI.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/components/applications/ApplicationForm.tsx",
+      "start_line": 388,
+      "end_line": 392,
+      "message": "In create mode the stage draft keeps only the stage name, even though `InterviewStageForm` lets users enter completion status, completed date, notes, and performance rating. Those values are discarded here and `ApplicationEditPage` later creates stages with only `{ name, order }`, so users can fill out fields that are silently lost on save.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: InterviewStageForm calls onSave with a full CreateInterviewStageInput (including isCompleted, completedDate, notes, performanceRating), but ApplicationForm.tsx only extracts the name string into draftStages (string[]). ApplicationEditPage then creates stages with only {name, order}. All other fields are silently lost.",
+      "severity_justification": "Users can fill in stage details during application creation that are silently discarded on save — a data loss bug that would frustrate users who care about pre-populating stage details.",
+      "category_justification": "The stage form collects more data than is preserved, resulting in silent data loss when creating an application with pre-populated interview stages.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/components/layout/ContextPanel.tsx",
+      "start_line": 92,
+      "end_line": 96,
+      "message": "Autosave failures in the details panel are swallowed without updating component or store error state, and `updateApplication` does not set an error itself. If a notes/salary update fails, the user gets no indication that their edit was not saved.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the catch block in handleDetailBlur (line 95) only suppresses the 'Saved' indicator with no error surfacing. The updateApplication store action has no try/catch and sets no error state on failure. No error display exists in ContextPanel for these autosave fields. Failed notes/salary saves are completely silent to the user.",
+      "severity_justification": "Silent autosave failure is a meaningful data-loss scenario: users edit notes or salary fields, see no error, and believe their change was saved when it wasn't. The autosave UX pattern makes this particularly deceptive since there's no explicit submit confirmation.",
+      "category_justification": "The error handling logic is incomplete — autosave failures are silently swallowed, producing incorrect feedback (no indication of failure) to the user.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/components/layout/ContextPanel.tsx",
+      "start_line": 41,
+      "end_line": 46,
+      "message": "Refreshing the list from the context panel always fetches page 1, but `ListPage` keeps its current `page` in local state and is not reset here. If a user archives/restores/deletes from the panel while on page > 1, the store is populated with page 1 results while the pagination UI still reports the old page.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ContextPanel.refreshList() always calls fetchApplications with page=1 (hardcoded). ListPage's page is local useState(1) and is not reset by this. The ApplicationList auto-page-back guard (applications.length === 0 && page > 1) doesn't fire for the common case since page 1 data fills applications. Result: store shows page 1 data while pagination UI reports the old page.",
+      "severity_justification": "Causes confusing pagination UI state (shows page N but data is page 1) when archiving/restoring/deleting from the context panel while on a page > 1. No data loss, and navigating away or changing page fixes it.",
+      "category_justification": "State synchronization bug between ContextPanel's refresh (hardcoded page 1) and ListPage's local page state, producing an inconsistent UI.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-api/src/__tests__/unit.test.ts",
+      "start_line": 198,
+      "end_line": 203,
+      "message": "These tests duplicate the cursor encode/decode logic instead of invoking `listApplications`, so they can pass even if the real cursor branch stops decoding, slicing, or returning `nextCursor` correctly. Add at least one test around `applicationService.listApplications({ cursor: ... })` with mocked DynamoDB results to cover the actual implementation path.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the 'cursor pagination encode/decode' describe block defines its own decodeCursor/encodeCursor functions and tests those local copies. No test calls applicationService.listApplications() with a cursor param. The code even comments 'These mirror the inline logic' — confirming they don't test the actual implementation path. A bug in the service's cursor branch would not be caught.",
+      "severity_justification": "The cursor pagination code path in the actual service has no test coverage, but the logic is straightforward and the encode/decode contract tests do validate the algorithm. Risk is regression going undetected, which is low-severity but worth addressing.",
+      "category_justification": "The finding identifies a gap in test coverage — the tests duplicate implementation logic locally rather than exercising the actual function under test.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-api/src/services/csv.service.ts",
+      "start_line": 260,
+      "end_line": 264,
+      "message": "CSV import passes URL fields directly into `createApplication` without runtime validation, and `applicationService.createApplication` does not apply `CreateApplicationSchema` itself. Rows with malformed `companyUrl`, `jobPostingUrl`, or `companyCareerUrl` can therefore be stored even though the normal JSON route rejects invalid URLs.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: CreateApplicationSchema defines companyUrl/jobPostingUrl/companyCareerUrl as z.string().url(), enforced on the JSON route via zValidator. applicationService.createApplication has no internal validation. CSV import passes URL fields directly without URL format checks, so malformed URLs are stored when the equivalent JSON request would be rejected.",
+      "severity_justification": "Results in stored malformed URLs causing broken links in the UI, but no security impact, no data loss of other fields, and the impact is limited to CSV import paths where users may intentionally leave URL fields empty.",
+      "category_justification": "Inconsistent validation between the JSON and CSV import paths allows data that would normally be rejected by schema validation to be stored.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-api/src/services/csv.service.ts",
+      "start_line": 275,
+      "end_line": 278,
+      "message": "The CSV date fields are imported without validating the expected `YYYY-MM-DD` format. Because the service layer does not validate inputs at runtime, malformed `dateApplied`/`offerDueDate` strings from CSV can be persisted and later break date sorting/display assumptions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims CSV bypasses date validation enforced by the normal JSON route. Verified: CreateApplicationSchema uses z.string().optional() for dateApplied with no format validation, and UpdateApplicationSchema uses z.string().nullable().optional() for offerDueDate — same for both paths. The JSON route does not reject malformed dates either, so there is no inconsistency introduced by the CSV import.",
+      "severity_justification": "The underlying absence of date format validation is real but pre-existing and affects both paths equally, not a new regression from this PR.",
+      "category_justification": "The finding concerns data validation correctness, but the specific claim about inconsistency between CSV and JSON routes is factually wrong.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/components/applications/ApplicationForm.tsx",
+      "start_line": 191,
+      "end_line": 208,
+      "message": "The form builds a create-style payload even in edit mode. Empty optional fields are sent as `undefined`, which the update service ignores, so clearing URLs, category/source, notes, special requirements, salary, or offer due date will not persist; additionally a stored `coverLetterRequired: null` is normalized to `false` and overwritten on any edit save. Edit submissions need to preserve omitted fields and send `null` for intentional clears.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: handleSubmit builds payload with || undefined patterns (notes, salaryMin/Max, URLs, companyCategory, jobSource). updateApplication service uses !== undefined guards — undefined fields are skipped, preserving old values. Clearing any optional field in edit mode sends undefined, so the clear silently fails. Also confirmed coverLetterRequired is initialized to false via ?? false and always overwrites null.",
+      "severity_justification": "Users cannot clear optional fields after setting them — clearing URLs, salary, notes, category, job source, or offer due date in edit mode silently fails. This is a persistent data-editing bug that blocks a core use case.",
+      "category_justification": "The payload construction logic incorrectly uses undefined for cleared fields in edit mode, while the update service treats undefined as 'no change', making it impossible to clear optional fields.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/components/interviews/InterviewStageList.tsx",
+      "start_line": 83,
+      "end_line": 85,
+      "message": "The “Add Default Stages” action fires `addDefaultStages` without awaiting or catching the promise. If any stage creation fails, the rejection is unhandled and no error is shown to the user.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: onClick={() => void addDefaultStages(appId)} at line 84 discards the promise. addDefaultStages in the store uses Promise.all of API calls with no error handling and doesn't set store error state. A failure silently produces no user feedback.",
+      "severity_justification": "Add Default Stages is a convenience action that rarely fails, but unhandled rejection means users get no feedback on failure and may not notice stages weren't created. Impact is limited to this specific convenience action.",
+      "category_justification": "Unhandled promise rejection means errors from the async operation are silently swallowed, violating the established pattern in this codebase for surfacing async errors.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/components/ui/Rating.tsx",
+      "start_line": 36,
+      "end_line": 44,
+      "message": "The rating buttons expose only “Set rating to N” labels and visual color to indicate the current value. Screen-reader users do not get selected-state information; add an accessible state such as `aria-pressed` or use a radiogroup/radio pattern so the current rating is announced.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: RatingInput buttons have aria-label='Set rating to N' but no aria-pressed attribute and no radio pattern. Selected state is communicated only through CSS color class (starClass). Screen readers cannot determine which rating is currently selected.",
+      "severity_justification": "Screen-reader users can interact with the rating control and set a value, but cannot determine the current rating without re-reading context from surrounding elements. This is a real accessibility gap but doesn't block the primary workflow.",
+      "category_justification": "Missing aria-pressed or radiogroup/radio pattern means the selected state of the rating input is not announced to screen readers.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/components/applications/HistoryPanel.tsx",
+      "start_line": 115,
+      "end_line": 119,
+      "message": "After restoring a version, the panel only refreshes the selected application; it does not reload the history list. Since the backend records a new `restore_version` history entry, the UI continues showing the old entries and marks the previous latest entry as “current” until the panel is reloaded.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: restoreToVersion in the store only calls refreshSelected() but does not trigger a history reload. HistoryPanel's entries are local component state fetched by a useEffect on applicationId/page — neither changes post-restore. The new restore_version history entry is never shown and latestSequence remains stale, so the wrong entry is marked (current) and the Restore button remains on the just-restored entry.",
+      "severity_justification": "After a restore the history panel shows stale data until reopened. This is a UI staleness issue but the actual restore operation succeeds correctly; no data is lost.",
+      "category_justification": "The history panel's local state is not refreshed after a restore operation, causing incorrect display of the current version marker and missing the new restore history entry.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/pages/ApplicationEditPage.tsx",
+      "start_line": 35,
+      "end_line": 39,
+      "message": "Navigating to `/applications/new` does not clear the previously selected application because this effect only runs when `id` is present. If the user opens the new-application page after viewing an existing application, the context/history panel can still show and act on the old selection.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the useEffect only calls loadSelectedApplication when id is truthy, so navigating to /applications/new leaves selectedApplication and panelOpen unchanged. ContextPanel is a globally-rendered component in App.tsx that stays visible with the old selection, allowing the user to accidentally act on the previously-viewed application while on the new application form.",
+      "severity_justification": "Requires a specific navigation sequence (open existing app panel, then navigate to new app page without closing panel). The panel showing stale data is confusing and archive/delete buttons could act on the wrong application, but the path is not common.",
+      "category_justification": "Stale application selection in global store causes the context panel to operate on the wrong application when the new-application route is visited without clearing state.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/components/applications/CsvImportModal.tsx",
+      "start_line": 13,
+      "end_line": 18,
+      "message": "The modal keeps `file`, `result`, and `error` state when it is closed because the component stays mounted and `onClose` only hides it. Reopening the modal shows the previous import result/file and can re-import the stale file if the user clicks Import before selecting a new one; reset this state when `open` changes to false or after closing.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: Modal returns null when open=false but CsvImportModal stays mounted, preserving file/result/error state. On reopen, old result is shown and the stale file is still set — clicking Import without picking a new file triggers a re-import of the previous file since handleImport only opens the file picker when file is null.",
+      "severity_justification": "Users may see confusing stale results on reopen and could accidentally re-import the same file. Not a data-loss or security issue, but a noticeable UX bug.",
+      "category_justification": "Component state is not reset on close, causing stale UI state and enabling accidental re-import on reopen.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/stores/applicationStore.ts",
+      "start_line": 134,
+      "end_line": 139,
+      "message": "`loadSelectedApplication` does not guard against out-of-order responses. If a user navigates quickly between applications, a slower request for the previous id can resolve after the newer request and overwrite `selectedApplication` with the wrong record while `selectedId` points at the latest id.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: loadSelectedApplication sets selectedId synchronously then awaits the API call with no stale-request guard before the final set. A slower prior request resolving after a newer one would set selectedApplication to the wrong record while selectedId points to the new id, causing ApplicationEditPage to render the wrong form data.",
+      "severity_justification": "Requires rapid successive navigation to trigger; the window is small due to fast DynamoDB reads. The impact is temporary display of wrong application data until the user navigates again, no data mutation occurs.",
+      "category_justification": "A race condition in async state management that can cause incorrect UI state under concurrent requests.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lambda-react-ui/src/stores/applicationStore.ts",
+      "start_line": 77,
+      "end_line": 79,
+      "message": "List fetch failures are swallowed here after setting store `error`, but the list page never subscribes to or displays that error state. On an initial load failure the UI can render an empty-state message instead of telling the user the API request failed.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: fetchApplications catch block sets store error but does not rethrow. ListPage.tsx has zero references to the error state (grep confirms 0 matches). ApplicationList.tsx only has a comment about error state with no display logic. A fetch failure renders as an empty list, not an error message.",
+      "severity_justification": "On initial load failure the user sees an empty state and has no way to know the API failed vs. having zero applications. This can cause significant confusion and the user has no path to retry except manually refreshing.",
+      "category_justification": "Error state is set in the store but never consumed by the UI, making API failures invisible to the user and indistinguishable from an empty dataset.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

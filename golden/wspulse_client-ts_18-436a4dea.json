@@ -1,0 +1,293 @@
+{
+  "pr_key": "wspulse_client-ts_18-436a4dea",
+  "pr": {
+    "repo": "https://github.com/wspulse/client-ts",
+    "pr_number": 18,
+    "base": "bc83e29d0253c3544674d151a4fccefacb4b4703",
+    "head": "436a4dea148a3c23668c41d435849d21598e6367"
+  },
+  "findings": [
+    {
+      "file": "test/component/fake-clock.ts",
+      "start_line": 28,
+      "end_line": 35,
+      "message": "The `setTimeout` and `setInterval` implementations in `FakeClock` do not handle a delay of `0`. According to MDN, a delay of `0` (or any negative value) schedules the callback to be executed as soon as the stack is clear, similar to `queueMicrotask` but after it. In the current implementation, a delay of `0` would result in a deadline equal to the current time `this._now`. If `advance(0)` is not called, these timers will only fire during the next `advance()` call that moves time forward.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "No production code in client.ts uses a delay of 0 — all timer calls use positive values (5ms, 20s, 60s, 10s, and computed backoff values). The behavioral difference between real setTimeout(fn,0) and FakeClock with delay=0 is an expected, intentional design trade-off of a fake clock. Additionally, the claim is partially incorrect: advance(0) would fire 0-deadline timers because the loop condition is `nextDeadline > target` (strict greater-than), so equal deadlines fire.",
+      "severity_justification": "Even if this edge case were a real issue, no production code uses 0-delay timers, making the practical impact zero.",
+      "category_justification": "The finding concerns the behavior of the test-only FakeClock implementation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/clock.ts",
+      "start_line": 8,
+      "end_line": 8,
+      "message": "The type for timer IDs in the `Clock` interface is `ReturnType<typeof setTimeout>`. This is an opaque type that can be either `number` (in Node.js) or a complex object (`Timeout` in Node.js, `number` in browsers). Using `any` or `unknown` might be more portable, but `ReturnType<...>` is more precise for a given environment. However, `FakeClock` casts this to `number`, which assumes a Node.js or browser-like environment and could be problematic if the underlying type changes or in different JS runtimes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "FakeClock is self-contained test code: it assigns number IDs, casts them as ReturnType<typeof setTimeout> on return, and casts back to number on receipt — a self-consistent round-trip that never touches real timer APIs. The client.ts only stores and returns these handles; it never inspects or does arithmetic on them. The as unknown as double-cast is the standard TypeScript pattern for deliberate cross-type casting, not an accidental omission.",
+      "severity_justification": "Test-only code with no production impact; the self-consistent cast pattern works correctly in all environments where the tests run.",
+      "category_justification": "The concern is about type-safety style in a test utility rather than a correctness or runtime issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/fake-clock.ts",
+      "start_line": 105,
+      "end_line": 105,
+      "message": "The `advance` method in `FakeClock` yields 10 times to flush the microtask queue. This is a fragile approach that relies on an arbitrary number of yields to handle chained `await` calls. It can fail if a promise chain is deeper than 10 levels, or it can be inefficient if fewer yields would suffice. A more robust solution would be to repeatedly yield until the microtask queue is actually empty, for example by using `setImmediate` in a loop in Node.js, or a similar pattern with `postMessage` in browsers.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct: the 10-yield loop is an arbitrary magic number. The code's own comment acknowledges 'several times to let deep promise chains settle', confirming the fragility is known. A deeper async chain in client.ts could silently cause test flakiness. The suggested alternatives (setImmediate-based drain) are established patterns.",
+      "severity_justification": "Currently works correctly — the actual chain depth (~5-6 steps) is well within the 10-yield budget. Breakage would only occur if client.ts async chains are significantly extended, and this is test-only code with no production impact.",
+      "category_justification": "The concern is about the reliability of the FakeClock test utility's microtask-draining mechanism.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/fake-clock.ts",
+      "start_line": 40,
+      "end_line": 42,
+      "message": "The `clearTimeout` method in `FakeClock` only filters the `_timers` array. It does not prevent a callback from being fired if `clearTimeout` is called from within another timer callback that is part of the same batch being executed in `advance`. The `_clearedIds` set is used to prevent this, but `clearTimeout` does not add the ID to this set. `clearInterval` has the same issue.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. Both clearTimeout (line 41) and clearInterval (line 60) do call this._clearedIds.add(id), exactly the mechanism the finding claims is missing. The advance() loop correctly uses _clearedIds to skip already-cancelled timers in the same-deadline batch.",
+      "severity_justification": "The finding is false — no actual bug exists. Even if it were true, it would only affect edge cases where same-deadline timers cancel each other within a batch.",
+      "category_justification": "The claim concerns the correctness of the FakeClock test utility.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 433,
+      "end_line": 438,
+      "message": "In the abortableDelay method, if the signal is already aborted right after the initial check but before adding the abort event listener, setTimeout will still start, potentially leading to unnecessary timer execution and resource usage.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "JavaScript is single-threaded. The Promise executor runs synchronously, so no other code can call AbortController.abort() between the signal.aborted check and the addEventListener call. There is no actual race condition possible in JavaScript's event loop model.",
+      "severity_justification": "Even if the concern were valid, the worst outcome would be an unnecessary timer execution before cleanup — no correctness issue or data loss.",
+      "category_justification": "The finding makes a claim about a concurrency/race condition in the logic.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/lifecycle.test.ts",
+      "start_line": 91,
+      "end_line": 100,
+      "message": "In the test 'close() racing with transport drop fires onDisconnect exactly once', transport.injectClose() may race with client.close(), making the test's determinism vulnerable since FakeClock.advance isn't applied. This can result in nondeterministic failures in race conditions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "JavaScript is single-threaded. transport.injectClose() and client.close() execute synchronously and sequentially in the same stack frame — there is no actual race condition possible. The test is deterministic by design: injectClose fires the onclose handler which calls shutdown(), then client.close() finds this.closed=true and no-ops. FakeClock is correctly used for the advance(50) guard at the end.",
+      "severity_justification": "No actual nondeterminism exists. The finding is based on a false premise about JavaScript's execution model.",
+      "category_justification": "The concern is about test determinism and design.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/reconnect.test.ts",
+      "start_line": 94,
+      "end_line": 101,
+      "message": "The 'reconnect with max retries' test advances time beyond two retry backoffs but does not verify intermediate states (e.g., whether retries are attempted at all). This reduces confidence in the correctness of retry progression during time advancement since FakeClock slews multiple intervals.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The test implicitly validates retry count: the MockDialer has exactly 2 error entries, and the final RetriesExhaustedError assertion only fires after both dial attempts are consumed. If retries were miscounted, either MockDialer would throw 'no more results' or disconnected would never resolve. The finding's suggestion to add intermediate assertions is generic test improvement advice without a concrete bug scenario.",
+      "severity_justification": "Even if the suggestion were acted on, it would add minor confidence without fixing any actual defect.",
+      "category_justification": "The concern is about test coverage and assertion completeness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/options.ts",
+      "start_line": 283,
+      "end_line": 296,
+      "message": "The defaultClock in resolveOptions is hardcoded, but there is no check to validate if a passed _clock implements the Clock interface, risking runtime type errors if an incompatible object is mistakenly provided.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The _clock option is @internal and stripped from .d.ts via stripInternal:true, making it invisible to external consumers. TypeScript enforces the Clock interface shape at compile time for any code within the repo that uses it. The described risk of runtime type errors from an incompatible object is negligible for internal test infrastructure that TypeScript already validates.",
+      "severity_justification": "Even if the concern were valid, it only affects test-injection code invisible to external consumers, with no production impact.",
+      "category_justification": "The finding is about consistency of defensive validation between _dialer and _clock internal options.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/misc.test.ts",
+      "start_line": 97,
+      "end_line": 119,
+      "message": "The 'pong timeout triggers ConnectionLostError' test in async contexts does not validate the exact timer behavior responsible for triggering pong deadlines after the FakeClock.advance(). This could miss nuanced cases of timer mismanagement.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is too vague to be actionable — it says 'could miss nuanced cases of timer mismanagement' without identifying any specific scenario where the test would pass despite a real bug. The test correctly uses FakeClock to deterministically fire the pong deadline at 150ms and asserts the correct error type. No concrete gap is identified.",
+      "severity_justification": "No actual defect is identified; the test correctly exercises the pong timeout path end-to-end.",
+      "category_justification": "The concern is about test assertion completeness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/basic.test.ts",
+      "start_line": 58,
+      "end_line": 62,
+      "message": "The 'advance past the drain timer (5 ms)' comment in 'connects, sends a frame, receives echo' test does not explicitly verify FakeClock's timer order integrity. Tests must explicitly assert deterministic event ordering rather than assuming timer behavior by FakeClock.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test already explicitly asserts the timer's effect: expect(transport.sent.length).toBe(1) after clock.advance(10) verifies the drain timer fired and flushed the buffer. The finding provides no concrete scenario where this assertion would pass despite incorrect timer behavior. Checking 'timer order integrity' is not meaningful for a single-timer test case.",
+      "severity_justification": "No actual defect identified; the existing assertion adequately validates the drain timer behavior.",
+      "category_justification": "The concern is about test assertion style for timer-driven behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/clock.ts",
+      "start_line": 13,
+      "end_line": 19,
+      "message": "The Clock interface has minimal documentation on its expected use cases. It should more explicitly define contractual guarantees or constraints such as thread safety or atomicity, aiding developers implementing other variants like FakeClock.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding prescribes documenting 'thread safety or atomicity' for a JavaScript interface — concepts that don't apply in JavaScript's single-threaded execution model. The interface is @internal with stripInternal:true, has no external consumers, and its existing JSDoc ('Test-injection only. Not exported from the public API.') is adequate for its purpose.",
+      "severity_justification": "Documentation-only concern on an internal interface with no external consumers; the suggested addition would introduce inapplicable concepts.",
+      "category_justification": "The finding is purely about adding documentation to an interface.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/reconnect.test.ts",
+      "start_line": 111,
+      "end_line": 119,
+      "message": "In 'close() during reconnect aborts loop' test, FakeClock.advance lacks precision when fast-forwarding through successive backoff timers that could potentially overlap in edge concurrency scenarios. Intermediate state assertions are absent to confirm proper abort steps.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect: clock.advance() is never called in this test. The test intentionally uses queueMicrotask to abort the reconnect loop before any FakeClock timer fires, so there are no 'successive backoff timers' to fast-forward. The premise of the entire finding is wrong.",
+      "severity_justification": "The finding is based on a false reading of the test; no actual issue exists.",
+      "category_justification": "The concern is about test precision and intermediate assertions.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/callback.test.ts",
+      "start_line": 102,
+      "end_line": 111,
+      "message": "The 'onDisconnect fires exactly once on transport drop' test has minimal assertions on timer interleaving conditions. This could lead to inadequate validation of timer callbacks being triggered/cleared correctly in FakeClock's logic.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is generic 'add more assertions' advice without identifying any concrete timer interleaving scenario relevant to this test. The test has no autoReconnect so there are no backoff timers; the disconnectCount===1 assertion directly validates the test's stated purpose. No specific failure mode where the current assertion passes despite incorrect behavior is identified.",
+      "severity_justification": "No actual defect identified; the test correctly validates its stated purpose.",
+      "category_justification": "The concern is about test assertion completeness for timer-driven callbacks.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/basic.test.ts",
+      "start_line": 118,
+      "end_line": 118,
+      "message": "[javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket] Insecure WebSocket Detected. WebSocket Secure (wss) should be used for all WebSocket connections.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic static analysis rule firing on a ws://mock/ws string literal in test code that uses a MockDialer — no real network connection is ever made. The _dialer intercepts the call before any WebSocket is opened. The rule cannot distinguish test fixture strings from production URLs and has no security relevance here.",
+      "severity_justification": "No real network connection is made; the URL is a test fixture string intercepted by MockDialer before any socket is created.",
+      "category_justification": "The finding is a security scanner alert about insecure WebSocket URLs.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket"
+      }
+    }
+  ]
+}

@@ -1,0 +1,773 @@
+{
+  "pr_key": "slbug_claude-ruby-grape-rails_24-f660a6f0",
+  "pr": {
+    "repo": "https://github.com/slbug/claude-ruby-grape-rails",
+    "pr_number": 24,
+    "base": "d94389141c466dc41e39dcca8aad09532658d9c1",
+    "head": "f660a6f01ca3153cf2b6a6bf84093182231a69b4"
+  },
+  "findings": [
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 143,
+      "end_line": 226,
+      "message": "When `--limit N` is used, `should_trigger` and `should_not_trigger` are sliced to N items (lines 143-145), but `content_hash` at line 220 only hashes the skill description and full trigger corpus — it doesn't incorporate the limit. The partial result is then written to the cache file (line 226) with the same hash as a full run. Subsequent `--cache` invocations will accept this limited result as an authoritative full evaluation, silently returning inflated or deflated scores based on only a fraction of the test prompts.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: content_hash (line 29-35) takes only skill_name and descriptions, loading the full trigger corpus without any limit parameter. score_skill applies the limit to slice test prompts (lines 143-145) before running haiku, then writes the partial results to cache with the full-corpus hash (line 220). A subsequent --cache run finds a matching hash and accepts the partial result as authoritative.",
+      "severity_justification": "--limit is an explicit opt-in flag intended for quick/cheap partial runs during development, not production evaluations. The risk of a developer accidentally poisoning the cache with a limited run and then not noticing is real but low-impact — it only affects this contributor eval tooling, not shipped functionality.",
+      "category_justification": "The cache invalidation logic is factually incorrect: a limited run produces a result that is indistinguishable from a full run at cache lookup time, causing subsequent --cache reads to return inaccurate scores.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 197,
+      "end_line": 208,
+      "message": "When all `should_trigger` haiku calls fail (timeout / API error), each failure increments `failures` and is not added to `results`. If any `should_not_trigger` call succeeds, `results` is non-empty, so the guard at line 197 (`if not results and failures > 0`) does not trigger. In that state, `fn = 0` (no should_trigger entries in results) and `tp = 0`, so `tp + fn == 0` and recall defaults to `1.0`. The result is then written to cache with artificially perfect recall, misrepresenting a skill that was never actually tested for triggering.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: when all should_trigger haiku calls fail, they are skipped (not added to results), while successful should_not_trigger calls populate results. The guard `if not results and failures > 0` only fires when results is completely empty, so partial failure is not caught. With tp=0 and fn=0, `tp + fn == 0`, recall defaults to 1.0. This partial result is written to cache as a valid evaluation with artificially perfect recall.",
+      "severity_justification": "This is contributor-only eval tooling with no impact on shipped functionality. However, it can silently cache misleading scores if Haiku API calls fail during a run, which could cause a contributor to draw wrong conclusions about skill routing quality.",
+      "category_justification": "The metric computation logic produces incorrect results under a specific partial-failure scenario, misrepresenting the recall of a skill that was never tested for triggering.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/fetch-cc-changelog.sh",
+      "start_line": 82,
+      "end_line": 98,
+      "message": "The rate-limit error message at line 86 tells users to 'use a GITHUB_TOKEN', but the script never reads `$GITHUB_TOKEN` from the environment and passes no Authorization header in the curl command (lines 72-82). Users who set `GITHUB_TOKEN` in their environment will see no change in behavior; the script will continue to fail with 403 on rate-limited machines. The fix is to conditionally pass `-H \"Authorization: Bearer $GITHUB_TOKEN\"` when the variable is set.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the curl command passes only the Accept header with no Authorization header, and grep of the script shows no reference to GITHUB_TOKEN anywhere. The 403 hint tells users to set GITHUB_TOKEN but the script never reads it, making the advice non-actionable.",
+      "severity_justification": "This is a contributor-only tool that would only be used periodically to check for new Claude Code versions. Rate limiting on the unauthenticated GitHub API (60 req/hr) is unlikely to be hit in normal use. The misleading hint causes confusion but the workaround (waiting) also works per the hint text.",
+      "category_justification": "The hint text claims a fix (using GITHUB_TOKEN) that doesn't actually work because the script doesn't implement it — the script's documented behavior contradicts its actual behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/scorer.py",
+      "start_line": 220,
+      "end_line": 226,
+      "message": "`_compare_scores()` permanently mutates the module-level `matchers.MATCHERS` dict by adding `behavioral_accuracy`, `behavioral_precision`, and `behavioral_recall` keys (lines 223-225) and never removes them. This is a process-wide side effect: any test or downstream scorer call that runs after `_compare_scores()` will see these extra matchers. If a future test imports and exercises the matchers dict, it gets unexpected keys. The keys should be registered only for the duration of the `score_all(behavioral=True)` call, or `_compare_scores` should restore the original dict state after use.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: _compare_scores adds three keys to matchers.MATCHERS (lines 223-225) and never removes them. The claim is factually correct. However, the only call site is main() which returns immediately after (making the process exit), so no downstream code currently observes the leaked state.",
+      "severity_justification": "In all current call paths the process exits immediately after _compare_scores() returns, so no actual code is affected. The risk is purely future/hypothetical — if a test were added for _compare_scores it could see leaked matchers. Low real-world impact.",
+      "category_justification": "The mutation of a module-level dict without cleanup is a code quality concern — it violates the principle of minimal side effects and could cause surprising behavior in tests, but doesn't affect current behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Makefile",
+      "start_line": 70,
+      "end_line": 73,
+      "message": "`eval-behavioral-verbose` passes `--verbose` to `behavioral_scorer` while also passing `--cache`. The `--verbose` flag only prints debug output inside `run_haiku()`, which is never called in `--cache` mode (score_skill returns early from the cached file). The verbose variant produces identical output to the non-verbose `eval-behavioral` target. The description in README.md calls it 'same with verbose cache/score output', but no additional output is produced. Either the `-verbose` cache variants should use a different mechanism to print per-skill cache hits, or the description is misleading.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: in --cache mode, score_skill returns early (lines 125-135) before any verbose-gated print statements. The only difference verbose makes in --cache mode is a newline vs space after the skill name in main() (line 263), which is negligible. The verbose flag only produces meaningful output inside run_haiku() and the haiku call loops, which are never executed in cache mode. The README description 'same with verbose cache/score output' is misleading.",
+      "severity_justification": "This is purely a documentation/usability issue in contributor tooling. No shipped functionality is affected. A contributor running the verbose variant expecting extra output would just get the same output as the regular variant.",
+      "category_justification": "The README and Makefile describe behavior ('verbose cache/score output') that doesn't actually occur. The verbose variant of the cached target produces essentially identical output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 48,
+      "end_line": 48,
+      "message": "`build_routing_prompt` embeds `user_prompt` inside hard-coded double-quote delimiters: `The user says: \"{user_prompt}\"`. If a trigger prompt contains a double-quote character (e.g., `He said \"fix it\"`), the resulting prompt text becomes `The user says: \"He said \"fix it\"\"` with mismatched quoting. Haiku may misparse the message boundary, producing wrong routing results that then get cached. The prompt should use a delimiter that won't appear in typical test prompts, or the user prompt should be escaped/sanitised before embedding.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claim is theoretically correct but not a real concern: scanning all 51 trigger JSON files shows zero prompts with double-quote characters. Furthermore, the 'misparsing' concern overstates risk — Haiku receives this as a plain text string, not a parsed format. LLMs are robust to quote nesting in natural language text. The finding describes a purely hypothetical scenario with no actual trigger corpus instances.",
+      "severity_justification": "Even if a future prompt contained double quotes, the impact would be at most a slightly degraded routing decision for that one test, not a systemic failure.",
+      "category_justification": "The concern is about prompt construction producing ambiguous text.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 197,
+      "end_line": 226,
+      "message": "When both `should_trigger` and `should_not_trigger` are empty lists (e.g., a trigger file with empty arrays), no haiku calls are made, `results = []`, `failures = 0`. The guard at line 197 does not trigger (failures is 0), so the function falls through and writes a cache entry with `accuracy=0.0`, `precision=1.0` (default), `recall=1.0` (default). This misleading cache entry is then picked up by the behavioral dimension scorer as a valid result, contributing a falsely high score to the composite.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the guard `if not results and failures > 0` requires failures > 0 to short-circuit, so an empty-lists case (failures=0, results=[]) falls through and writes accuracy=0.0, precision=1.0, recall=1.0 to cache. No existing trigger files currently trigger this, but the edge case is a real code defect.",
+      "severity_justification": "No existing trigger files have empty arrays, and contributors creating new trigger files would populate them. This is a theoretical edge case in contributor tooling with no current or likely future impact.",
+      "category_justification": "The guard condition is incomplete — it should also protect against the empty-inputs case, not just the all-failures case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/dimensions/__init__.py",
+      "start_line": 3,
+      "end_line": 3,
+      "message": "`from . import behavioral` is a redundant eager import suppressed with `# noqa: F401`. Nothing accesses `dimensions.behavioral` through the package namespace — the only consumers use `from .dimensions.behavioral import RESULTS_DIR` (scorer.py, lazily inside a function) or `from lab.eval.dimensions.behavioral import score` (test file). The `__init__.py` import forces `behavioral.py` to load whenever the `dimensions` package is imported, even in non-behavioral eval runs. It adds coupling without benefit and should be removed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claim is factually correct: no code accesses `dimensions.behavioral` through the package namespace. All consumers import directly from the submodule. The `# noqa: F401` confirms the import produces no used symbol. The import adds coupling without providing access via the package namespace.",
+      "severity_justification": "In practice, when any code imports `from lab.eval.dimensions.behavioral import ...`, Python runs `__init__.py` anyway and the module loads regardless. The redundant import has negligible performance or coupling impact in this contributor-only eval tool.",
+      "category_justification": "The finding is about unnecessary coupling and an unused import (suppressed with noqa) that adds no value — a code cleanliness concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 94,
+      "end_line": 96,
+      "message": "The stdout of the `claude` CLI call is parsed in a brittle way. It splits on newlines and then uses multiple string manipulation methods (`.strip()`, `.lstrip()`, `.split()`) to clean up each line. This is fragile and may fail if the CLI output format changes, for instance if it adds prefixes, bullet points, or explanatory text around the skill names. A more robust approach would be to have the model output JSON or use more defensive parsing logic.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding correctly identifies that text parsing is less robust than JSON, but it's a generic best-practice recommendation. The existing code already defensively handles numerous LLM output variations (bullets, numbers, em-dashes, backticks, parentheticals, dash notes). No specific failure mode in the current code or prompt is demonstrated — the finding speculates about hypothetical future format changes without showing an actual defect.",
+      "severity_justification": "This is contributor-only eval tooling. Even if parsing occasionally misidentifies a skill name, the result is slightly inaccurate behavioral scores in a non-CI eval dimension, not a shipped bug.",
+      "category_justification": "The concern is about code fragility and parsing robustness — a code quality issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 86,
+      "end_line": 86,
+      "message": "The call to `subprocess.run` has a hardcoded timeout of 60 seconds. If the `claude` CLI command takes longer than this to execute (e.g., due to network latency or slow API response), it will time out and be treated as a failure. This could lead to incomplete or failed evaluation runs. The timeout should be configurable or increased to a more generous value.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "A 60-second timeout for a single Haiku API call is generous — Haiku responses typically complete in under 5 seconds. The docstring explicitly notes cost is ~$0.001/prompt and the --max-budget-usd 0.02 flag caps spend per call. Timeout failures are handled gracefully (returns None, increments failures counter). The finding offers no evidence the current timeout is insufficient and the suggestion is generic ('should be configurable or increased') without demonstrating an actual problem.",
+      "severity_justification": "Even if a timeout occurs, the code handles it gracefully by skipping the prompt. This is contributor eval tooling, not shipped functionality.",
+      "category_justification": "The concern is about timeout configuration affecting eval run completeness.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/fetch-cc-changelog.sh",
+      "start_line": 108,
+      "end_line": 113,
+      "message": "The script uses `sort -V` to compare semantic versions, which is a GNU extension and not available on standard macOS/BSD systems. This will cause the script to fail on macOS, which is a supported development environment according to `CLAUDE.md`. The version comparison logic should be implemented using a more portable method, such as a Python script or a more complex but portable shell function, to ensure cross-platform compatibility.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: the script uses `sort -V` (lines 115) without any macOS compatibility note. BSD sort on macOS Monterey (12) and earlier does not support -V. CLAUDE.md explicitly states tooling is validated on macOS. The current test system is macOS 26.5 (future beta) where it works, but contributors on older macOS would encounter failures.",
+      "severity_justification": "This is a contributor-only periodic tool for checking CC changelog. Failure is visible and non-silent (the while loop would produce incorrect output). The script already requires jq and curl so contributors expect some dependencies. Practical impact is minimal — failing users would quickly debug the issue.",
+      "category_justification": "The issue is about cross-platform compatibility — the script fails on a documented supported platform (macOS) depending on OS version.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/scorer.py",
+      "start_line": 141,
+      "end_line": 147,
+      "message": "In `_get_behavioral_data`, if `json.loads` fails, an empty dictionary is returned. The caller `_behavioral_accuracy` then treats this the same as a missing file, masking the corrupted cache file error. This fails silently and prevents the user from being notified about the corrupted cache file, which they might need to delete or fix. The function should propagate the error or log it, so that the user is aware of the corrupted state.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: _get_behavioral_data silently returns {} on json.JSONDecodeError, causing callers to emit 'No behavioral cache (neutral)' — which is misleading when the file exists but is corrupted. The behavioral.py scorer handles the same case more transparently by including 'Corrupted cache' in the evidence string. The claim is factually correct.",
+      "severity_justification": "This is contributor-only eval tooling where neutral-on-error is the explicit design intent. A corrupted cache file would be unusual, and the practical impact is just a slightly misleading status message — the functional result (neutral score) is the same either way.",
+      "category_justification": "The issue is about silent error swallowing leading to a misleading diagnostic message — a code quality concern around observability, not a behavior-breaking bug.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 139,
+      "end_line": 140,
+      "message": "In the `score_skill` function, if `--cache` is used and a cache file is present but contains a JSON decoding error, the function returns a generic `corrupted cache file` error. However, it does not provide the path to the problematic file, making it difficult for the user to locate and fix the issue. The error message should include the `cache_path`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the error at line 129 returns only 'corrupted cache file' without cache_path. The claim is factually correct. However, skill_name is already in the dict so the file is easily derivable as RESULTS_DIR/{skill_name}.json, making this a very minor improvement.",
+      "severity_justification": "The skill_name in the error dict allows the contributor to easily find the file. This is a minor UX improvement in contributor-only tooling with no functional impact.",
+      "category_justification": "The finding is about the quality of a diagnostic error message — a code quality concern with no behavioral impact.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 272,
+      "end_line": 283,
+      "message": "The `main` function calculates `avg` accuracy but does not handle the case where `skills_tested` is zero. If no skills are tested (e.g., all have errors or no trigger files are found), this will result in a `ZeroDivisionError`. The code should check if `skills_tested` is greater than zero before performing the division.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim is factually incorrect. Line 280 reads `avg = total_accuracy / skills_tested if skills_tested else 0`, which already guards against division by zero when skills_tested is 0.",
+      "severity_justification": "No actual bug exists — the guard is already present.",
+      "category_justification": "The finding incorrectly claims a ZeroDivisionError can occur.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/fetch-cc-changelog.sh",
+      "start_line": 109,
+      "end_line": 113,
+      "message": "No proper error handling for empty or malformed GitHub API response bodies. A malformed response could silently continue without highlighting the issue, possibly influencing the output.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The main malformed/non-JSON response case is already caught by the `jq 'length'` check with explicit error+exit. The only remaining edge case (valid JSON but wrong structure) would produce a benign false UP_TO_DATE result, not corrupt output. The finding doesn't identify a specific concrete failure path that bypasses existing checks — it's a generic 'add more error handling' comment.",
+      "severity_justification": "Even if the edge case occurred, the result would be a false UP_TO_DATE status in a periodic contributor tool — easily discovered on next run.",
+      "category_justification": "The concern is about error handling completeness in a shell script.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 298,
+      "end_line": 299,
+      "message": "The logic to handle --cache-only skips tests with stale or missing cache content but does not log skipped entries, which might confuse users about test coverage.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim is factually incorrect. When score_skill returns an error dict (including for stale/missing cache in --cache mode), the main loop prints 'Testing {name}...' then 'SKIPPED (no valid cache (stale or missing))' to stderr. Skipped entries are clearly logged with their reason.",
+      "severity_justification": "The finding is wrong about missing logging — it already exists in the code.",
+      "category_justification": "The finding makes an incorrect factual claim about the code's behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".claude/skills/cc-changelog/SKILL.md",
+      "start_line": 63,
+      "end_line": 63,
+      "message": "The Iron Law mandates that the changelog analysis cross-reference plugin components, yet there is no automated check ensuring all relevant files are analyzed during execution.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic observation that an LLM-driven skill's Iron Law ('ALWAYS cross-reference plugin files') has no automated enforcement. Claude Code skills are by design natural-language instructions executed by an LLM, not code with testable invariants. The finding could apply verbatim to any skill with an Iron Law — it doesn't identify a specific defect in the code. The cross-referencing guidance is in references/analysis-rules.md for LLM consumption.",
+      "severity_justification": "The skill is a contributor tool for periodic changelog review. Missing automated enforcement of an LLM instruction is expected and by design — there is no mechanism in the Claude Code skill system for such enforcement.",
+      "category_justification": "The concern is about lack of automated validation of a behavioral instruction, essentially a test coverage gap for LLM-driven behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/scorer.py",
+      "start_line": 236,
+      "end_line": 237,
+      "message": "[python.lang.correctness.useless-comparison.no-strings-as-booleans] Using strings as booleans in Python has unexpected results. `\"one\" and \"two\"` will return \"two\". `\"one\" or \"two\"` will return \"one\". In Python, strings are truthy, and strings with a non-zero length evaluate to True.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at lines 235-237 sets `flag = \" *\" if condition else \"\"` then uses `if flag:` to check whether it was set. This is correct, idiomatic Python — an empty string is falsy, a non-empty string is truthy. The finding misidentifies valid string-as-boolean idiom as a bug. No actual string boolean confusion exists here.",
+      "severity_justification": "There is no actual bug — the code works correctly as written.",
+      "category_justification": "The finding makes an incorrect claim about the correctness of string boolean evaluation in Python.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.correctness.useless-comparison.no-strings-as-booleans"
+      }
+    },
+    {
+      "file": "lab/eval/dimensions/behavioral.py",
+      "start_line": 19,
+      "end_line": 100,
+      "message": "The `score()` function and threshold logic in `lab/eval/dimensions/behavioral.py` are never invoked by `scorer.py`—`scorer.py` re-implements the same accuracy/precision/recall thresholds inline via `_behavioral_accuracy`, `_behavioral_precision`, and `_behavioral_recall` (with duplicated hard-coded thresholds 0.75/0.80/0.60). Outside of the unit tests in `test_behavioral.py`, this dimension module is effectively dead code, and the duplicated thresholds can drift out of sync (e.g., if the dimension file changes 0.75 but scorer.py is missed). Consider either (a) having the inline matchers in `scorer.py` delegate to the dimension module, or (b) removing the dimension module if the matcher-based approach is the chosen path.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `dimensions/behavioral.py`'s `score()` function is never called from `scorer.py` — only `RESULTS_DIR` is imported. `scorer.py` re-implements the logic via `_behavioral_accuracy`, `_behavioral_precision`, `_behavioral_recall` with identical hardcoded thresholds (0.75/0.80/0.60) duplicated in both files. The dimension module is used only in tests.",
+      "severity_justification": "The duplication doesn't affect correctness today since thresholds match, but creates a drift risk if one location is updated without the other. No runtime impact since the dead module is test-only.",
+      "category_justification": "Duplicated threshold constants across two files and a module that implements logic which is never invoked in production code paths — a DRY violation and dead code concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 63,
+      "end_line": 69,
+      "message": "The `claude` CLI flags `--max-budget-usd` and `--no-session-persistence` do not appear to be documented/standard Claude Code CLI flags. If the CLI does not recognize them, every `subprocess.run` call will fail (non-zero return code), `run_haiku` will return `None`, and after the loop `score_skill` will return `{\"error\": \"all N haiku calls failed\"}` for every skill—silently leaving the cache empty. Please verify these flag names against the Claude Code CLI surface used by this plugin (the plugin already depends on `claude -p ... --model haiku`, but the additional flags should be confirmed), and either correct them or document the minimum CLI version required for `eval-behavioral-fresh*`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Running `claude --help` confirms both `--max-budget-usd <amount>` and `--no-session-persistence` are documented, standard Claude Code CLI flags. The finding's claim that these flags are non-standard or unrecognized is factually wrong.",
+      "severity_justification": "The finding raises a non-issue since the flags are valid; no real risk.",
+      "category_justification": "The concern was about subprocess calls potentially failing due to unrecognized CLI flags.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".gitignore",
+      "start_line": 19,
+      "end_line": 20,
+      "message": "The `--cache` flag's behavior is \"skip stale/missing — no API calls\", and `make eval-behavioral` is documented as \"runs offline if cache exists\". However, the cache directory `lab/eval/triggers/results/` is added to `.gitignore`, so by default no contributor or CI environment will ever have a populated cache. As a result, the new default `make eval-behavioral` / `npm run eval:behavioral` will report \"SKIPPED (no valid cache (stale or missing))\" for every skill on a fresh checkout, and the subsequent `scorer.py --behavioral` step's behavioral dimension will resolve to the neutral (pass) state for every skill, masking the metric's signal. Consider either (a) committing a baseline cache, (b) having the make/npm target gracefully fall back to fresh mode when cache is empty, or (c) explicitly documenting that a `--fresh` run is required to seed the cache before `eval-behavioral` produces useful output.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `lab/eval/triggers/results/` is gitignored and doesn't exist in the repo. `make eval-behavioral` uses `--cache` mode which returns 'no valid cache' for every skill on a fresh checkout, making the behavioral dimension neutral/skipped for all skills. The documentation says 'runs offline if cache exists' but doesn't explicitly state that `eval-behavioral-fresh` must be run first to seed it. The finding correctly identifies a usability/signal gap.",
+      "severity_justification": "This is a contributor tool (not shipped), so it doesn't affect end users. The intent is documented as 'cache-only' but the workflow for seeding the cache is not called out explicitly. The impact is that the default `make eval-behavioral` silently produces empty/neutral results on a fresh checkout.",
+      "category_justification": "The behavior itself is intentional but the prerequisite workflow (run fresh first to seed cache) is not documented, making the default target misleading for new contributors.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/fetch-cc-changelog.sh",
+      "start_line": 29,
+      "end_line": 31,
+      "message": "The script comment says \"CC has ~75 releases as of 2026-04\" and warns to add pagination if releases exceed 100. As of the current date (May 2026), Claude Code release count is likely close to that 100-release ceiling, after which this script will silently miss older releases (since the API returns the newest first, and the filtering compares the cached `last_checked` against the page-1 set). Once `last_checked` falls off the first page, the script will produce `STATUS: UP_TO_DATE` while having missed entries. Recommend implementing Link-header pagination now (it's a small, bounded change), or at minimum logging a warning when the returned count equals `PER_PAGE` so the missed-versions failure mode is visible rather than silent.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claimed failure mode (UP_TO_DATE when last_checked falls off page 1) is incorrect. When last_checked is old and absent from page 1, all 100 returned releases are newer than it, so all pass the filter and the script returns STATUS: NEW_VERSIONS. The UP_TO_DATE result would only occur if all returned releases were older than last_checked, which is impossible when the API returns newest-first and last_checked is old.",
+      "severity_justification": "There is a real but differently-described limitation (missed intermediate releases if >100 new versions accumulate), but the code comment already acknowledges this and it's extremely unlikely in normal contributor use.",
+      "category_justification": "The concern is about data completeness when paginating external API results.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 140,
+      "end_line": 141,
+      "message": "This only scores the standard positive/negative buckets and ignores `hard_should_trigger` and `hard_should_not_trigger`, which are present in the trigger corpora and included by the deterministic trigger scorer. As a result, the behavioral metrics miss the hard/confusable cases even though the cache hash includes them.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: behavioral_scorer.py lines 140-141 only reads `should_trigger` and `should_not_trigger` buckets. All 52 trigger files have `hard_should_trigger` and `hard_should_not_trigger` entries, which trigger_scorer.py uses via PROMPT_BUCKETS. The content_hash includes hard bucket data (causing cache invalidation on hard-prompt changes) but score_skill() never evaluates those prompts.",
+      "severity_justification": "The behavioral metric still functions — it produces accuracy/precision/recall scores from the standard buckets. The hard cases would provide more signal (harder confusable pairs), but their omission doesn't make results wrong, just less rigorous. This is a contributor tool, not shipped.",
+      "category_justification": "The code claims to score trigger accuracy but silently ignores a category of test cases that are present and expected to be evaluated, producing an incomplete metric.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/scorer.py",
+      "start_line": 140,
+      "end_line": 142,
+      "message": "Calling `score_all(behavioral=True)` programmatically injects behavioral checks before registering their matcher functions, so it raises `ValueError: Unknown check type` unless the caller mutates `matchers.MATCHERS` exactly like the CLI does. The function should register the behavioral matchers itself or otherwise keep the public `behavioral` flag usable outside `main()`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `score_all(behavioral=True)` injects checks with type `behavioral_accuracy/precision/recall` but doesn't register the corresponding matcher functions in `matchers.MATCHERS`. `_run_check()` raises `ValueError` for unknown check types. The two internal callers work only because they manually register the matchers beforehand — any external caller or future code calling `score_all(behavioral=True)` directly would raise ValueError.",
+      "severity_justification": "This is a contributor-only internal tool. All current code paths correctly register matchers before calling score_all(behavioral=True). The risk is for future maintainers adding code that calls the function without knowing the hidden precondition.",
+      "category_justification": "The public function signature `score_all(behavioral=bool)` implies it's self-contained, but it has an invisible side-effect precondition (caller must mutate matchers.MATCHERS). This is an API contract violation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/scorer.py",
+      "start_line": 154,
+      "end_line": 156,
+      "message": "`score_core(behavioral=True)` has the same matcher-registration problem as `score_all`: it injects `behavioral_*` checks but does not register those matchers unless the caller came through `main()`. Programmatic callers will hit an unknown-check `ValueError` instead of getting behavioral scores.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `score_core(behavioral=True)` at lines 154-156 injects behavioral checks via `_inject_behavioral()` but does not register `_behavioral_accuracy/precision/recall` in `matchers.MATCHERS`. This is the same root cause as Finding 6 but applied to `score_core`. Any programmatic caller of `score_core(behavioral=True)` without prior matcher registration would hit `ValueError`.",
+      "severity_justification": "Same reasoning as Finding 6 — contributor-only tool, current callers (only `main()`) work correctly because they register matchers first, low risk for new code.",
+      "category_justification": "Same design flaw as Finding 6: public parameter implies self-contained behavior but has a hidden mutate-MATCHERS precondition.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Makefile",
+      "start_line": 66,
+      "end_line": 68,
+      "message": "This target never fails when behavioral assertions fail: `lab.eval.scorer --all --behavioral` only prints JSON and returns 0 for `--all`, and no threshold/check is applied to the output. That makes `make eval-behavioral` an informational report rather than a test target that catches routing regressions.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `scorer.py --all --behavioral` always exits 0 regardless of how many behavioral assertions fail. The `--fail-under` option only applies in the single-skill code path. `make eval-behavioral` has no failure threshold and is not part of the CI gate. The finding is factually accurate.",
+      "severity_justification": "The behavioral dimension is explicitly documented as optional and LLM-based (non-deterministic). The design intent appears informational rather than a gating check, and the CI gate (eval-ci) is separate. The limitation is real but appears intentional given the non-deterministic nature of the results.",
+      "category_justification": "The finding is about whether a test target actually enforces quality thresholds or just produces reports that can't catch regressions.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "package.json",
+      "start_line": 28,
+      "end_line": 28,
+      "message": "The npm behavioral eval script exits successfully even when behavioral checks fail, because the scorer's `--all` path only prints JSON and this script does not apply any threshold or parse failed assertions. As a result, `npm run eval:behavioral` will not catch routing regressions despite being documented as a test command.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `npm run eval:behavioral` runs `scorer --all --behavioral --pretty` with no `--fail-under`, so it always exits 0 regardless of behavioral assertion failures. This is the same root issue as Finding 8, applied to the npm script surface.",
+      "severity_justification": "Same as Finding 8 — the behavioral dimension is explicitly designed as optional and informational (non-deterministic LLM-based, not in CI gate). Duplicate of Finding 8 at the npm invocation layer.",
+      "category_justification": "npm script documented as a test command that cannot actually catch routing regressions due to missing failure threshold.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Makefile",
+      "start_line": 74,
+      "end_line": 76,
+      "message": "The fresh behavioral target also only prints the behavioral score report and does not enforce the behavioral thresholds, so a fresh run with low accuracy/precision/recall still exits 0 unless the scorer itself crashes.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `eval-behavioral-fresh` runs `python3 -m lab.eval.scorer --all --behavioral --pretty` with no --fail-under, so it always exits 0 regardless of behavioral assertion failures. Identical root cause to Findings 8 and 9, just at the fresh-run Makefile target.",
+      "severity_justification": "Same as Findings 8/9 — behavioral dimension is intentionally optional and informational, not a CI gate. This is a third instance of the same pattern.",
+      "category_justification": "Test target that cannot enforce quality thresholds due to missing failure mechanism.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "package.json",
+      "start_line": 30,
+      "end_line": 30,
+      "message": "The fresh npm behavioral eval has the same gating gap as the cache-only script: after rerunning Haiku, it invokes `scorer --all --behavioral` without any threshold enforcement, so failed behavioral assertions do not make the command fail.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `npm run eval:behavioral:fresh` (package.json line 30) runs `scorer --all --behavioral --pretty` with no --fail-under, always exits 0. Fourth instance of the same pattern as Findings 8-10.",
+      "severity_justification": "Same reasoning as Findings 8-10 — behavioral dimension is intentionally optional/informational, not a CI gate. This is a fourth duplicate of the same pattern.",
+      "category_justification": "Test command that cannot enforce quality thresholds due to missing failure mechanism.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "package.json",
+      "start_line": 29,
+      "end_line": 29,
+      "message": "The verbose cache-only behavioral script also lacks any threshold enforcement after printing the scorer JSON, so failed behavioral assertions still result in a successful npm command.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `npm run eval:behavioral:verbose` (package.json line 29) runs `scorer --all --behavioral --pretty` with no --fail-under. Fifth instance of the same pattern as Findings 8-11.",
+      "severity_justification": "Same as Findings 8-11 — behavioral dimension is intentionally optional/informational. Fifth duplicate of the same no-threshold pattern.",
+      "category_justification": "Verbose test command that cannot enforce quality thresholds due to missing failure mechanism.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "package.json",
+      "start_line": 31,
+      "end_line": 31,
+      "message": "The verbose fresh behavioral script reruns Haiku but still does not fail when the resulting behavioral assertions fail, because the following scorer invocation only prints JSON.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `npm run eval:behavioral:fresh:verbose` (package.json line 31) runs `scorer --all --behavioral --pretty` with no --fail-under. Sixth instance of the same pattern as Findings 8-12.",
+      "severity_justification": "Same as Findings 8-12 — behavioral dimension intentionally optional/informational. Sixth duplicate of the same no-threshold pattern.",
+      "category_justification": "Test command that cannot enforce quality thresholds due to missing failure mechanism.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Makefile",
+      "start_line": 70,
+      "end_line": 72,
+      "message": "The verbose cache-only target has the same issue as `eval-behavioral`: it produces a report but does not fail when behavioral thresholds are missed, so regressions are easy to miss in automated use.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `eval-behavioral-verbose` runs `scorer --all --behavioral --pretty` with no --fail-under. Seventh instance of the same pattern as Findings 8-13.",
+      "severity_justification": "Same as Findings 8-13 — behavioral dimension intentionally optional/informational. Seventh duplicate of the same no-threshold pattern.",
+      "category_justification": "Test target that cannot enforce quality thresholds due to missing failure mechanism.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Makefile",
+      "start_line": 78,
+      "end_line": 80,
+      "message": "The verbose fresh target also does not enforce the behavioral scores it just generated; low accuracy/precision/recall still exits successfully after printing the JSON report.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `eval-behavioral-fresh-verbose` runs `scorer --all --behavioral --pretty` with no --fail-under. Eighth instance of the same pattern as Findings 8-14.",
+      "severity_justification": "Same as Findings 8-14 — behavioral dimension intentionally optional/informational. Eighth duplicate of the same no-threshold pattern.",
+      "category_justification": "Test target that cannot enforce quality thresholds due to missing failure mechanism.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/behavioral_scorer.py",
+      "start_line": 127,
+      "end_line": 131,
+      "message": "This assumes the cache JSON root is an object. A valid-but-wrong cache file such as `[]` will parse successfully and then crash on `cached.get(...)`, instead of being treated as a corrupted cache and skipped/rebuilt.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: if cache JSON parses successfully but as a non-dict (e.g., `[]`), `cached.get('content_hash')` raises `AttributeError` since lists have no `.get()` method. The `except` block only catches `json.JSONDecodeError` and `OSError`, not `AttributeError`. The code would crash instead of treating it as corrupted.",
+      "severity_justification": "Cache files are always written as dicts by the same code, so this only triggers on manual file corruption. Impact is an uncaught exception that would surface as a traceback in the contributor tool, not a silent failure or data loss.",
+      "category_justification": "Error handling gap — valid-but-wrong-typed JSON causes an unhandled exception instead of a graceful corrupted-cache fallback.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/dimensions/behavioral.py",
+      "start_line": 41,
+      "end_line": 43,
+      "message": "This parses the cache but does not verify that the root is an object. Valid JSON with the wrong shape will bypass the exception handler and later fail on `data.get(...)`, causing the behavioral dimension to crash instead of treating the cache as unreadable.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `dimensions/behavioral.py` lines 41-43 parse the cache JSON but only catch `json.JSONDecodeError` and `OSError`. If the file parses as a non-dict (e.g., `[]`), `data.get('error')` raises `AttributeError`, crashing the dimension scorer instead of returning the neutral score. Same root cause as Finding 16, different file.",
+      "severity_justification": "Cache files are always written as dicts by behavioral_scorer.py, so manual corruption is the only trigger. Impact is a traceback in a contributor tool rather than silent failure or data loss.",
+      "category_justification": "Error handling gap — valid-but-wrong-typed JSON causes an unhandled AttributeError instead of a graceful neutral-cache fallback.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/fetch-cc-changelog.sh",
+      "start_line": 37,
+      "end_line": 41,
+      "message": "`--set=` with an empty value is accepted and writes a blank state file, effectively clearing the last-checked version while reporting success. This flag should reject empty versions so accidental invocations do not reset the changelog state.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `--set=` with no value strips to an empty string, writes a blank state file, and exits 0 reporting success. On the next run, `last_checked` reads as empty, triggering the unfiltered path (equivalent to --all). An accidental `--set=` silently resets changelog tracking state.",
+      "severity_justification": "Impact is limited to a contributor tool — an accidental `--set=` causes the next run to dump all CC releases rather than just new ones. No data loss, no security impact. Easily recovered by re-running `--set=<correct_version>`.",
+      "category_justification": "Missing input validation on a state-mutating flag that can silently corrupt tool state.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/scorer.py",
+      "start_line": 190,
+      "end_line": 192,
+      "message": "The behavioral scorer validates cache freshness with `content_hash`, but this reader accepts any cache that lacks an `error` field. A stale `lab/eval/triggers/results/<skill>.json` can therefore still affect `--behavioral` and `--compare` results even after `behavioral_scorer --cache` reports it as stale/missing, because the stale file remains on disk.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `behavioral_scorer.py` with `--cache` validates content_hash and returns `{'error': 'no valid cache (stale or missing)'}` — but this return value is ephemeral and the stale file on disk is unchanged. `_get_behavioral_data()` in scorer.py only skips files containing an `'error'` key; a stale-but-present cache file has no error key, so scorer.py reads and uses it regardless of hash mismatch.",
+      "severity_justification": "Affects only the contributor behavioral eval tool. The stale data used is likely close to current (skill descriptions change slowly), and the user can always run eval-behavioral-fresh to regenerate. No production impact.",
+      "category_justification": "Inconsistent cache validation between two components using the same cache files — behavioral_scorer respects content_hash, scorer.py ignores it, producing subtly different views of cache validity.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lab/eval/scorer.py",
+      "start_line": 187,
+      "end_line": 191,
+      "message": "This also assumes parsed cache data is a dict. If the ignored cache file contains valid JSON with the wrong shape (for example an array), `_get_behavioral_data` returns it and the metric matchers crash when they call `.get(...)` on the result.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: if cache JSON parses as a list, `'error' in data` evaluates without error (list membership check), `return data` returns the list, and callers (`_behavioral_accuracy`, `_behavioral_precision`, `_behavioral_recall`) call `data.get(...)` → `AttributeError`. Third instance of the same pattern as Findings 16 and 17, here in `_get_behavioral_data()` in scorer.py.",
+      "severity_justification": "Cache files are always written as dicts by behavioral_scorer.py; manual corruption is the only realistic trigger. Impact is an uncaught exception in a contributor tool.",
+      "category_justification": "Missing type validation after JSON parse allows a wrong-shaped but valid JSON file to propagate and cause AttributeError in callers.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

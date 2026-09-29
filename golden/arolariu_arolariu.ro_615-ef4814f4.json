@@ -1,0 +1,713 @@
+{
+  "pr_key": "arolariu_arolariu.ro_615-ef4814f4",
+  "pr": {
+    "repo": "https://github.com/arolariu/arolariu.ro",
+    "pr_number": 615,
+    "base": "ffbc51dba52141fe693a4991ff911b4456fb5078",
+    "head": "ef4814f491112c82ae7e2fe9a821b71f9994b506"
+  },
+  "findings": [
+    {
+      "file": "scripts/dev-local.ts",
+      "start_line": 336,
+      "end_line": 344,
+      "message": "When any single child process exits (e.g., exp crashes because the Python environment is not set up), Promise.race resolves and main() returns without killing the remaining child processes. The remaining services (website, API) are left running without any signal to the user about which service exited or why. The registered SIGINT handler is never invoked on this code path. The fix is to call shutdown() inside the exit handler so all sibling processes are killed and the user gets feedback.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: after Promise.race resolves (any child exits), main() returns without killing sibling processes or printing which service died. The shutdown() function is only wired to SIGINT/SIGTERM, so it is never called on this code path. Remaining services (website, API) are left running as orphaned processes.",
+      "severity_justification": "A crashed service (e.g., exp missing Python env) silently leaves the other two services running with no user feedback, causing a confusing developer experience where the stack appears up but is actually partially broken.",
+      "category_justification": "Error handling and graceful process lifecycle management in the dev orchestrator.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/dev-local.ts",
+      "start_line": 143,
+      "end_line": 146,
+      "message": "The SQL Server SA password 'qazWSXedcRFV1234!' is hardcoded in the docker exec command. The AGENTS.md policy explicitly prohibits committing credentials. More practically, if the MSSQL_SA_PASSWORD value in docker-compose.yml is changed, this script will silently fail (caught by the catch block), leaving the SQL schema uninitialized with no actionable error. The password should be read from an environment variable, e.g. process.env['MSSQL_SA_PASSWORD'] ?? 'qazWSXedcRFV1234!'.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The password is indeed hardcoded in dev-local.ts while selfhost-start.sh already correctly reads it from $MSSQL_SA_PASSWORD. This creates drift risk: if docker-compose.yml changes the password, dev-local.ts silently swallows the failure. The credential is local-dev-only and already committed in docker-compose.yml, but the inconsistency with the existing shell script pattern is a genuine maintainability/reliability concern.",
+      "severity_justification": "The credential is a local-only SQL Server dev emulator password with no production exposure. The real risk is silent drift if the docker-compose password changes, but this is a local dev tool, so the blast radius is limited to developer experience.",
+      "category_justification": "The core issue is that a hardcoded value can silently diverge from docker-compose.yml, causing the schema init to fail silently — a reliability concern in the dev tooling.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sites/arolariu.ro/src/lib/config/configProxy.ts",
+      "start_line": 158,
+      "end_line": 158,
+      "message": "CONFIG_FETCH_TIMEOUT_MS still uses HAS_AZURE_CLIENT_ID instead of the new USE_AZURE_AUTH flag introduced in this PR. When EXP_PROXY_URL is set to http://localhost:5002 and AZURE_CLIENT_ID is also present (common when developers copy Azure env vars into their local environment), the timeout is 10 seconds per config key fetch against a local service. With 3+ keys fetched per request, this causes multi-second stalls on every server action when exp is not running locally. The PR introduced USE_AZURE_AUTH specifically to decouple this, but only applied it to getBearerToken().",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: CONFIG_FETCH_TIMEOUT_MS at line 159 uses HAS_AZURE_CLIENT_ID while getBearerToken() was updated to USE_AZURE_AUTH. When EXP_PROXY_URL is set and AZURE_CLIENT_ID is also present, USE_AZURE_AUTH=false (correct) but the timeout stays at 10s (wrong). This is an inconsistency the PR introduced by only partially applying the new USE_AZURE_AUTH flag.",
+      "severity_justification": "When AZURE_CLIENT_ID is set alongside EXP_PROXY_URL (e.g., a dev copied their Azure credentials locally), each config key fetch against a localhost service that is slow or unreachable will wait 10s before falling back, causing multi-second stalls on every server-side request.",
+      "category_justification": "The timeout logic is inconsistent with the intent of USE_AZURE_AUTH — the PR introduced the flag specifically to decouple this but incompletely applied it.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sites/arolariu.ro/src/lib/config/configProxy.ts",
+      "start_line": 208,
+      "end_line": 208,
+      "message": "CIRCUIT_RESET_MS still uses HAS_AZURE_CLIENT_ID instead of USE_AZURE_AUTH. When EXP_PROXY_URL=http://localhost:5002 and AZURE_CLIENT_ID is set, the circuit breaker resets every 30 seconds instead of the intended 5 minutes. This causes repeated 10-second timeout probes to a non-running local exp service, making Next.js server responses slow for 10 seconds every 30 seconds. The same fix applies: replace HAS_AZURE_CLIENT_ID with USE_AZURE_AUTH.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: CIRCUIT_RESET_MS at line 208 uses HAS_AZURE_CLIENT_ID, not USE_AZURE_AUTH. When EXP_PROXY_URL=http://localhost:5002 overrides to local exp but AZURE_CLIENT_ID is also set, HAS_AZURE_CLIENT_ID=true → CIRCUIT_RESET_MS=30_000ms (30s). The comment and intent say local dev should use 300_000ms (5 min). Same incomplete USE_AZURE_AUTH adoption as finding 3.",
+      "severity_justification": "When local exp is not running and AZURE_CLIENT_ID is set, the circuit resets every 30s, triggering a 10s timeout probe on each reset cycle, causing periodic 10-second stalls in Next.js server responses every half-minute during development.",
+      "category_justification": "The circuit breaker reset interval is incorrect for the local-dev-with-AZURE_CLIENT_ID scenario — a logic error in applying the USE_AZURE_AUTH refactor.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sites/api.arolariu.ro/src/Core/Domain/General/Extensions/WebApplicationBuilderExtensions.cs",
+      "start_line": 122,
+      "end_line": 123,
+      "message": "useAzureAuth is determined by exact string equality (baseUrl == ConfigProxyUrlAzure). If EXP_PROXY_URL is set to 'https://exp.arolariu.ro/' (trailing slash), 'HTTPS://EXP.AROLARIU.RO' (different case), or any variation of the Azure URL, bearer-token auth is silently skipped while the request goes to the live production exp service, resulting in 401 errors. The same fragility exists in configProxy.ts (USE_AZURE_AUTH = EXP_BASE_URL === AZURE_EXP_URL). A URI comparison or a normalized startsWith check would be safer.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The exact string equality check baseUrl == ConfigProxyUrlAzure is verified at line 122. If EXP_PROXY_URL is set to 'https://exp.arolariu.ro/' (trailing slash) or any URL variation, useAzureAuth=false and bearer-token auth is silently skipped for a request going to the live production service. The same pattern is in configProxy.ts.",
+      "severity_justification": "The scenario requires a developer to set EXP_PROXY_URL to a near-variation of the production Azure URL, which is not the intended use case (it's meant for localhost overrides). The practical likelihood is low, though the failure mode (silent 401s to production) is confusing when it occurs.",
+      "category_justification": "Logic error in the auth-gating condition — URL normalization is missing, causing auth to be silently skipped for near-match URLs.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sites/exp.arolariu.ro/project.json",
+      "start_line": 25,
+      "end_line": 35,
+      "message": "Both the test and lint targets run 'python -m pip install -q -r requirements-dev.txt' before every invocation. This adds pip dependency resolution and potential network I/O to every nx run exp:test and nx run exp:lint call, including Nx cache-miss scenarios. Since Nx's nx run-many calls these targets frequently, the repeated pip install significantly degrades CI and local test performance. Dependencies should be pre-installed as a prerequisite step or in a separate setup target.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: both test and lint targets in project.json prepend pip install on every invocation. The claim is factually correct. The performance impact is real — pip still does dependency resolution and cache checks on every call — though the '-q' flag and local pip cache significantly reduce actual overhead compared to a cold install.",
+      "severity_justification": "In practice, pip install with cached packages completes in under a second, so the actual CI/local performance hit is modest. The finding slightly overstates the impact by implying significant network I/O, but the pattern is still suboptimal and worth addressing.",
+      "category_justification": "Unnecessary repeated package installation on every test/lint invocation is a performance concern for CI and local dev workflows.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/generate.env.ts",
+      "start_line": 73,
+      "end_line": 75,
+      "message": "The else branch of the USE_AZURE_AUTH check logs 'ℹ️ No AZURE_CLIENT_ID — skipping bearer token acquisition', but the condition is now !USE_AZURE_AUTH (not !HAS_AZURE_CLIENT_ID). When a developer sets EXP_PROXY_URL=http://localhost:5002 with AZURE_CLIENT_ID also set, the message incorrectly claims AZURE_CLIENT_ID is absent. This misdirects debugging when a developer is troubleshooting why auth is skipped during npm run generate:env.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the else branch of 'if (USE_AZURE_AUTH)' at line ~75 prints 'No AZURE_CLIENT_ID — skipping bearer token acquisition'. USE_AZURE_AUTH is false when EXP_PROXY_URL overrides to localhost, even when AZURE_CLIENT_ID is set. The log message is therefore factually wrong in that scenario, misdirecting debugging.",
+      "severity_justification": "This only affects the npm run generate:env diagnostic log — no behavior is wrong, just the log message. A developer troubleshooting why auth is skipped will get a misleading message, but the underlying operation is correct.",
+      "category_justification": "The issue is a misleading log/diagnostic message that gives incorrect information about why a code path was taken.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sites/arolariu.ro/messages/fr.json",
+      "start_line": 4681,
+      "end_line": 4681,
+      "message": "The PR removes the trailing newline from fr.json (diff shows '\\No newline at end of file'). The file previously ended with a newline and the en.json/ro.json files presumably still do. This inconsistency can cause false-positive diffs in editors and may fail linters or i18n sync scripts that expect consistent file endings across locale files.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified with xxd: fr.json ends at the final '}' with no trailing newline, while en.json and ro.json both have a trailing CRLF. The diff explicitly shows 'No newline at end of file'. The inconsistency across sibling locale files is confirmed.",
+      "severity_justification": "Missing trailing newline is a cosmetic/style issue with negligible functional impact. The claim about failing i18n sync scripts is speculative and unverified. It's a minor inconsistency worth fixing but not blocking.",
+      "category_justification": "Inconsistent file endings across sibling locale files (en.json, ro.json have trailing newlines; fr.json does not) is a style/consistency issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".vscode/backend.code-workspace",
+      "start_line": 94,
+      "end_line": 94,
+      "message": "The `projectPath` in the `.NET API: Debug` launch configuration is incorrect. It uses `arolariu.Backend.Core.csproj` which is the old name. The project was renamed to `arolariu.API.Core.csproj`, which will cause the debugger to fail to launch.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The project file at sites/api.arolariu.ro/src/Core/ is named 'arolariu.Backend.Core.csproj', not 'arolariu.API.Core.csproj'. The finding's claim of a rename is false — the workspace file uses the correct project name.",
+      "severity_justification": "The finding is incorrect so there is no actual defect, but if it were true it would prevent debugger launch.",
+      "category_justification": "The finding makes an incorrect factual claim about the project file name.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".vscode/fullstack.code-workspace",
+      "start_line": 121,
+      "end_line": 121,
+      "message": "The `projectPath` in the `.NET API: Debug` launch configuration is incorrect. It uses `arolariu.Backend.Core.csproj` which is the old name. The project was renamed to `arolariu.API.Core.csproj`, which will cause the debugger to fail to launch.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Already verified in finding 9: the actual project file at sites/api.arolariu.ro/src/Core/ is named 'arolariu.Backend.Core.csproj'. The claimed rename to 'arolariu.API.Core.csproj' never happened. The workspace file uses the correct name.",
+      "severity_justification": "The finding is factually incorrect so there is no defect, but if it were true it would break debugger launch.",
+      "category_justification": "The finding makes an incorrect factual claim about the project file name.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".vscode/fullstack.code-workspace",
+      "start_line": 200,
+      "end_line": 200,
+      "message": "The `command` for the `Build: API for Debug` task is incorrect. It references `arolariu.Backend.Core.csproj` which is the old project name. The project file was renamed to `arolariu.API.Core.csproj`, so this build task will fail.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Already verified: the project file is named 'arolariu.Backend.Core.csproj', not 'arolariu.API.Core.csproj'. No rename occurred. The build task command is correct.",
+      "severity_justification": "The finding is factually incorrect — no defect exists.",
+      "category_justification": "The finding makes an incorrect factual claim about the project file name.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".vscode/launch.json",
+      "start_line": 70,
+      "end_line": 70,
+      "message": "The `projectPath` in the `.NET API: Debug` launch configuration is incorrect. It uses `arolariu.Backend.Core.csproj` which is the old name. The project was renamed to `arolariu.API.Core.csproj`, which will cause the debugger to fail to launch.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Already verified: the actual project file is 'arolariu.Backend.Core.csproj'. The claimed rename to 'arolariu.API.Core.csproj' is false. The launch.json uses the correct name.",
+      "severity_justification": "The finding is factually incorrect — no defect exists.",
+      "category_justification": "The finding makes an incorrect factual claim about the project file name.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".vscode/tasks.json",
+      "start_line": 86,
+      "end_line": 86,
+      "message": "The `command` for the `Build: API for Debug` task is incorrect. It references `arolariu.Backend.Core.csproj` which is the old project name. The project file was renamed to `arolariu.API.Core.csproj`, so this build task will fail.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Already verified: the actual project file is 'arolariu.Backend.Core.csproj'. The claimed rename to 'arolariu.API.Core.csproj' is false. The tasks.json command references the correct project name.",
+      "severity_justification": "The finding is factually incorrect — no defect exists.",
+      "category_justification": "The finding makes an incorrect factual claim about the project file name.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/dev-local.ts",
+      "start_line": 218,
+      "end_line": 218,
+      "message": "The Azure Storage connection string is hardcoded in the `initDatabases` function, which includes the account key `Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==`. Secrets like this should not be in source code and should instead be loaded from a secure configuration source.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The key 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==' is the publicly documented, hardcoded default account key for the Azurite local storage emulator. It is not a real credential — it is published by Microsoft in official docs and used in every Azurite deployment. It is already committed in multiple pre-existing files in this repo and only connects to localhost:10000.",
+      "severity_justification": "No real secret exposure — this is the publicly known Azurite emulator default key with no production access.",
+      "category_justification": "The finding frames this as a secret/credential exposure, which is the security category, but the claim is incorrect.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/components/project.json",
+      "start_line": 19,
+      "end_line": 19,
+      "message": "The `dev` command for the components package is `npx rslib build --watch`. This command does not exist in the referenced `rslib` tool, which only provides a `build` command without a watch mode. This will cause an error when running `npm run dev:components`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Checked rslib's CLI source on GitHub: the build command accepts '-w, --watch' to enable watch mode. 'rslib build --watch' is a valid command. The finding's claim that rslib has no watch mode is factually incorrect.",
+      "severity_justification": "The finding is incorrect — no defect exists.",
+      "category_justification": "The finding makes an incorrect factual claim about rslib's CLI capabilities.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/dev-local.ts",
+      "start_line": 1,
+      "end_line": 349,
+      "message": "The newly introduced hybrid development orchestrator `dev-local.ts` fetches remote resources and manipulates file systems in certain scopes (e.g., Docker tasks). Error handling for cases like failed fetches or network issues is weak or absent in areas like health checks (`waitForHealth`) and database initialization — posing risks of silent failures during development.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The script does not have absent error handling — waitForHealth logs a warning and returns false, waitForInfra logs a warning and proceeds, SQL/CosmosDB/Azurite init all have try/catch with logWarning. The finding makes a vague, generic claim about 'weak error handling' without identifying a specific code path where a failure is truly silent. This is a boilerplate observation that could apply to any orchestrator script.",
+      "severity_justification": "Even if partially valid, the script is a local dev tool where partial failures are expected and non-blocking by design.",
+      "category_justification": "The finding concerns error handling in a dev orchestrator script.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sites/api.arolariu.ro/src/Core/Domain/General/Extensions/WebApplicationBuilderExtensions.cs",
+      "start_line": 88,
+      "end_line": 117,
+      "message": "`WebApplicationBuilderExtensions` configuration logic relies on environment variables (`EXP_PROXY_URL`, `AZURE_CLIENT_ID`) for determining environment-specific endpoints, but falls back to defaults implicitly. If these values aren't set due to system misconfigurations, services might silently fail or use incorrect targets. Consider improving diagnostics or making misconfigurations explicit.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code has explicitly documented 3-tier priority logic (EXP_PROXY_URL > AZURE_CLIENT_ID > Docker default). The default of 'http://exp' is intentional Docker Compose behavior, not an implicit misconfiguration. The finding makes a vague 'consider adding diagnostics' suggestion without identifying a specific scenario where the code silently fails incorrectly. This is a generic best-practice comment, not a code-specific finding.",
+      "severity_justification": "No concrete failure mode is identified — the fallback behavior is intentional and documented.",
+      "category_justification": "The finding concerns configuration fallback behavior and implicit defaults.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".vscode/fullstack.code-workspace",
+      "start_line": 30,
+      "end_line": 35,
+      "message": "Inconsistent workspace settings for the 'dotnet.hotReload.applyOnSave' flag. While it's good for development, there should be contextual cross-checks to toggle it dynamically (based on live/debug preferences); otherwise, debug-intensive `dotnet` fault breaks occur.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "VS Code workspace settings are static JSON — they cannot be made 'dynamic' or 'contextual' as suggested. The setting 'dotnet.hotReload.applyOnSave: true' is the standard recommended configuration for C# DevKit Hot Reload. The finding's claim of 'debug-intensive fault breaks' is vague, unsupported, and the suggested fix is not achievable in a .code-workspace file. This is a generic, unactionable suggestion.",
+      "severity_justification": "No concrete defect is identified — the setting is standard and intentional.",
+      "category_justification": "The finding is about a VS Code workspace configuration setting.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/dev-local.ts",
+      "start_line": 214,
+      "end_line": 219,
+      "message": "[javascript.lang.security.audit.spawn-shell-true.spawn-shell-true] Found '$SPAWN' with '{shell: true}'. This is dangerous because this call will spawn the command using a shell process. Doing so propagates current shell settings and variables, which makes it much easier for a malicious actor to execute commands. Use '{shell: false}' instead.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The spawn arguments are fully hardcoded — 'service' comes from BARE_METAL_SERVICES which is a static const Record with fixed values like 'exp', 'website', 'api'. No user-controlled input flows into the command. The shell: true is standard practice for cross-platform npx invocation on Windows. This is a generic static analysis template alert with no demonstrated exploitable path.",
+      "severity_justification": "Even if taken at face value, this is a developer-only local script with no external input surface.",
+      "category_justification": "The finding frames this as a shell injection security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.spawn-shell-true.spawn-shell-true"
+      }
+    },
+    {
+      "file": "scripts/dev-local.ts",
+      "start_line": 254,
+      "end_line": 256,
+      "message": "The banner box characters and the inner text length are mismatched. The top/bottom borders contain 46 box-drawing horizontal segments, but the title row \"║   arolariu.ro Local Development Orchestrator  ║\" has 47 characters between the vertical bars, so the box renders crooked in the terminal.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified by counting: the top/bottom border has 46 ═ characters, but the middle line's content between the vertical bars is 47 characters, causing a visually crooked box in the terminal.",
+      "severity_justification": "Purely cosmetic — the banner still displays and conveys the intended message; only the box alignment is off by one character.",
+      "category_justification": "This is a formatting/cosmetic issue in terminal output with no behavioral impact.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/dev-local.ts",
+      "start_line": 290,
+      "end_line": 298,
+      "message": "The right border (`│`) of these rows is not aligned: the top/bottom borders use 50 horizontal dashes, the header row \"Docker Infrastructure\" pads to 50, but each of the URL rows here has a different content length so the trailing `│` ends up at different column positions. Either trim all rows to the same fixed width or use a small helper that pads each line to the box width.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified by measuring string lengths: border/header rows are 54 chars, Traefik row is 55, and all other URL rows are 56, meaning the right │ lands at different column positions than the top/bottom borders.",
+      "severity_justification": "Purely cosmetic terminal output misalignment with no behavioral or functional impact.",
+      "category_justification": "A formatting/visual consistency issue in terminal output.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".devcontainer/devcontainer.json",
+      "start_line": 62,
+      "end_line": 62,
+      "message": "Shell precedence here is a bit subtle: `&&` and `||` have equal precedence and are left-associative, so this expands to `(npm run generate 2>/dev/null || true) && echo '✅ Devcontainer ready'`. That happens to work (echo always runs), but the intent reads as \"if generate succeeds, then echo\", which is not what's encoded. Consider rewriting as two separate commands (`bash -lc 'npm run generate 2>/dev/null; echo \"✅ Devcontainer ready\"'`) for clarity, and so the success indicator is not silently masking a failed generate.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The shell precedence claim is factually correct: `||` and `&&` are left-associative with equal precedence, so `|| true` makes the first group always succeed, meaning the ✅ echo always runs regardless of whether generate failed — masking failures behind a success indicator. The code's behavior is technically accurate but misleading.",
+      "severity_justification": "The masking of generate failures is mild in a devcontainer postStartCommand context where failure is explicitly allowed, but the ✅ success indicator being unconditional could mislead developers into thinking the environment is fully ready when generate may have silently failed.",
+      "category_justification": "The issue is about code clarity and misleading output rather than a functional bug — the command achieves its runtime goal but is confusingly written.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sites/exp.arolariu.ro/project.json",
+      "start_line": 6,
+      "end_line": 38,
+      "message": "The `executor`/`options.command` keys are duplicated between `dev`, `build`, `test`, and `lint` targets, with the only difference being the shell command. Consider extracting `cwd` to a top-level `options` block or using nx target inheritance to reduce duplication and make future changes (e.g., env vars) easier to apply consistently.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The suggested 'top-level options block' doesn't exist in Nx's project.json format, and the cwd-per-target pattern is the universal convention across all other project.json files in this repo (cv, api, website, docs, components all repeat cwd identically). The new exp project.json correctly follows the established pattern.",
+      "severity_justification": "Even if the repetition is mild, the proposed fix is not applicable given Nx's schema and the codebase convention.",
+      "category_justification": "The finding concerns code structure and DRY principles in configuration files.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/dev-local.ts",
+      "start_line": 152,
+      "end_line": 202,
+      "message": "The CosmosDB init in dev-local.ts mirrors the existing `selfhost-start.sh` curl calls and warns on every non-409 response. With the vnext-preview emulator, the first call typically succeeds and subsequent runs return 409, but if the emulator is still warming up the unauthenticated POSTs can return 401/503 and the script will log \"CosmosDB init incomplete\" — which is harmless but easy to misread as a real failure during a fresh `npm run dev:local`. Consider extending the retry/wait loop (similar to `waitForHealth`) before issuing the POSTs, so the warning only fires when the emulator is genuinely unhealthy.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The root health check at http://localhost:8081/ passing does not guarantee the CosmosDB data plane is ready for POST /dbs requests. The emulator can return 401/503 on data plane ops even after the root responds with 200, causing the 'CosmosDB init incomplete' warning on normal fresh starts. The DEVELOPMENT.md documents CosmosDB's extended startup time, confirming the timing gap is real.",
+      "severity_justification": "This only affects developer experience — the warning is confusing but harmless (services still start and the application handles the situation). No production code is affected.",
+      "category_justification": "The issue is a timing/race condition in infrastructure initialization that causes misleading status output and potentially incomplete init on fresh starts.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sites/exp.arolariu.ro/project.json",
+      "start_line": 24,
+      "end_line": 29,
+      "message": "This new project participates in `npm run test:unit` because the root script runs `nx run-many --target=test --configuration=unit --all`, but this target does not define a `unit` configuration while the other testable projects do. Add a `configurations.unit` entry (even if it uses the same command) so the repo-wide unit test command continues to work after adding `exp`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: exp has no configurations.unit while all other testable projects (website, cv, api, components) do. With nx run-many --configuration=unit, Nx falls back to base options for exp, meaning `npm run test:unit` would include a pip install + full pytest run as 'unit tests'. The codebase pattern clearly expects a configurations.unit entry.",
+      "severity_justification": "The missing configuration causes `npm run test:unit` to silently include exp's full test suite (with pip install) in every unit test run, adding unexpected latency and potentially running non-unit tests as part of the unit test suite — a real but non-blocking inconsistency.",
+      "category_justification": "The issue directly affects the unit test target configuration and the repo-wide test command behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sites/api.arolariu.ro/project.json",
+      "start_line": 32,
+      "end_line": 32,
+      "message": "The `--verbose` flag is being forwarded after `run`, which means it is parsed by `dotnet run` rather than by `dotnet watch`; the established command examples in this repo use `dotnet watch --project sites/api.arolariu.ro/src/Core` without this trailing flag. As written, `npm run dev:api` can fail or pass an unexpected argument instead of starting the watched API.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`dotnet run` does not support `--verbose` (it uses `--verbosity <LEVEL>`); `--verbose` is a `dotnet watch` option that must come before the subcommand. Placing it after `run` sends it to `dotnet run`, which may error on it or (in older tooling) silently pass it to the application — neither is correct behavior.",
+      "severity_justification": "If dotnet run fails on the unrecognized --verbose flag (as .NET 8+ strict parsing suggests), `npm run dev:api` would be broken entirely for developers. Even if it doesn't fail, watch verbosity is not enabled as intended.",
+      "category_justification": "The flag is in the wrong position for the dotnet watch/run command structure, causing incorrect behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".devcontainer/devcontainer.json",
+      "start_line": 62,
+      "end_line": 62,
+      "message": "This setup command invokes `npm run generate` without any generation flags. The generator’s entrypoint only prints help and selects no tasks when called with no arguments, so the post-start hook does not actually generate the env/i18n/GraphQL files that the devcontainer setup is intended to prepare.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed by reading generate.ts: when called with no arguments, argv.length === 0 causes it to print help then execute main() with all generator flags false, printing 'No generation tasks selected. Nothing to do.' and exiting 0. No env/i18n/GraphQL files are generated. The PR description explicitly states the intent was to auto-generate files in the postStartCommand.",
+      "severity_justification": "Devcontainer/Codespaces users won't have env files, i18n translations, or GraphQL types auto-generated on container start, meaning builds may fail and configuration will be missing — but the ✅ success message masks this, leading to confusing failures later.",
+      "category_justification": "The command doesn't do what it's intended to do — the generate invocation is missing the required flags to actually trigger any generation tasks.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/dev-local.ts",
+      "start_line": 123,
+      "end_line": 126,
+      "message": "The infrastructure wait only checks CosmosDB and Azurite, but `initDatabases()` immediately runs the SQL Server schema setup and silently skips it if MSSQL is still starting. Since the storage compose file defines a SQL healthcheck and the API depends on the `arolariu-sql` database created by that script, the orchestrator should wait for SQL readiness (or retry the schema init) before proceeding.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "waitForInfra() only checks CosmosDB and Azurite via HTTP but not SQL Server (which has no HTTP endpoint). initDatabases() immediately runs SQL schema init after the health checks, and silently swallows MSSQL failures. If MSSQL isn't ready, the schema is skipped and the API crashes on startup trying to access non-existent tables.",
+      "severity_justification": "On fresh starts, SQL Server may not be ready when initDatabases() runs, leading to a silently skipped schema init that causes the API to crash on startup — a confusing failure requiring re-running setup manually.",
+      "category_justification": "Infrastructure initialization timing/race condition that causes silent failures during developer workflow setup.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".vscode/launch.json",
+      "start_line": 86,
+      "end_line": 91,
+      "message": "The compound starts the Python exp debug configuration in parallel with the API configuration’s `preLaunchTask`. That preLaunch task is what starts storage and stops the Docker exp container on port 5002, so the Python debugger can try to bind 5002 while the Docker container is still running and fail. Move the infra setup to a compound-level prelaunch flow or make exp launch wait until the port has been freed.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "VS Code compound configurations launch all members in parallel. Python: exp FastAPI Debug has no preLaunchTask and immediately tries to bind port 5002. The .NET API: Debug preLaunchTask (Infra: Setup Docker → dev:local:setup) is what stops the Docker exp container that occupies port 5002 — but that happens asynchronously. On fresh starts with Docker Compose running, the Python debugger races against the Docker stop and can fail with 'address already in use'.",
+      "severity_justification": "Breaks the advertised one-click 'Full Stack' compound debug experience on fresh starts when Docker infrastructure is running (the normal case), requiring manual intervention to stop the Docker exp container first.",
+      "category_justification": "A race condition in the VS Code debug compound setup causing non-deterministic launch failures.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".vscode/fullstack.code-workspace",
+      "start_line": 145,
+      "end_line": 150,
+      "message": "The full-stack compound launches exp at the same time as the API configuration’s `preLaunchTask`. Since that task is responsible for starting storage and stopping the Docker exp container on port 5002, the Python debug session can race and fail to bind before the port is released.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed in fullstack.code-workspace: the compound launches .NET API: Debug (preLaunchTask: 'Build: API for Debug' which runs Infra: Setup Docker to stop the Docker exp container on port 5002) and Python: exp FastAPI (no preLaunchTask, immediately binds port 5002) in parallel — same race condition as in the root launch.json.",
+      "severity_justification": "Breaks the one-click 'Full Stack' compound debug experience in the fullstack workspace on fresh starts when Docker exp is running, same as in the root launch.json.",
+      "category_justification": "A race condition in workspace compound debug configuration causing non-deterministic launch failures.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "DEVELOPMENT.md",
+      "start_line": 182,
+      "end_line": 184,
+      "message": "This says Docker-in-Docker is enabled, but the devcontainer config uses the `docker-outside-of-docker` feature, which mounts/uses the host Docker daemon rather than running a nested daemon. That distinction matters for troubleshooting container state and Docker availability in Codespaces/devcontainers.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "DEVELOPMENT.md line 184 states 'Docker-in-Docker is enabled' but devcontainer.json uses ghcr.io/devcontainers/features/docker-outside-of-docker:1, which mounts the host Docker socket rather than running a nested daemon. The distinction is factually incorrect in the documentation.",
+      "severity_justification": "Incorrect documentation about Docker setup — misleads developers troubleshooting container networking or Codespaces availability, but doesn't break functionality since docker-outside-of-docker still provides Docker access.",
+      "category_justification": "The finding is about an inaccurate statement in DEVELOPMENT.md describing the Docker setup mechanism.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/dev-local.ts",
+      "start_line": 14,
+      "end_line": 16,
+      "message": "The example says `--infra` starts infrastructure only, but this script maps the `infra` profile to `['exp']`, so it also starts the bare-metal exp service. Update the example or the profile behavior so users do not get an unexpected service on port 5002.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the JSDoc example at line 16 says '--infra starts infra only (no services)' but BARE_METAL_SERVICES maps infra to ['exp'], so it actually starts bare-metal exp on port 5002. The comment and the code directly contradict each other.",
+      "severity_justification": "Misleading documentation in the script JSDoc — developers expecting '--infra' to start only Docker infrastructure will get an unexpected exp service on port 5002, but the discrepancy is in comments rather than breaking functionality.",
+      "category_justification": "The mismatch is between the JSDoc @example comment and the actual profile behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".env.example",
+      "start_line": 43,
+      "end_line": 49,
+      "message": "This reference claims to document all monorepo environment variables, but the exp service uses `EXP_LOCAL_SHARED_TOKEN` for optional local/proxy authorization and the exp README lists it as a supported variable. Without it here, developers enabling local token auth will not know which variable to set from the centralized example.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "EXP_LOCAL_SHARED_TOKEN is a real, actively used environment variable (in security/authz.py and documented in exp/README.md) that is absent from .env.example, which claims to document all monorepo environment variables. The finding is factually correct.",
+      "severity_justification": "The variable is optional — developers who don't enable local token auth won't be affected — but the omission makes the centralized reference incomplete for those who do need to configure it.",
+      "category_justification": "The issue is an omission from the environment variables reference file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sites/exp.arolariu.ro/project.json",
+      "start_line": 7,
+      "end_line": 11,
+      "message": "The new `dev:exp` target starts uvicorn directly, but neither `npm install`, `npm run setup`, nor `dev-local.ts` installs the Python requirements first. In the documented quick start, `npm run dev:local` will therefore fail for a fresh checkout unless the developer manually runs `pip install -r requirements-dev.txt`. Consider making the dev target bootstrap the requirements like the test/lint targets or documenting that prerequisite in the quick start.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the dev target runs uvicorn directly with no pip install, setup.ts doesn't install Python deps, dev-local.ts doesn't either, and DEVELOPMENT.md's quick start doesn't document the pip install prerequisite. The test/lint targets both include pip install, making the dev target's omission inconsistent and leaving fresh-checkout users with a failing `npm run dev:local`.",
+      "severity_justification": "Breaks the documented 'Recommended' quick start workflow (npm run dev:local) on fresh checkouts — exp fails to start because Python packages aren't installed, which would silently cascade into API config failures too.",
+      "category_justification": "Missing bootstrap step causes the primary developer workflow to fail on fresh checkouts.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sites/exp.arolariu.ro/project.json",
+      "start_line": 31,
+      "end_line": 35,
+      "message": "This new lint target is not wired into the repository’s primary `npm run lint` path: `scripts/lint.ts` only dispatches the `packages`, `website`, and `cv` ESLint targets, and package.json does not add a `lint:exp` script. As a result, ruff will not run in the standard local/CI lint command unless developers know to invoke `nx run exp:lint` manually.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: scripts/lint.ts only handles packages/website/cv ESLint targets, and npm run lint doesn't invoke exp:lint. However, the finding overstates the CI impact — official-exp-trigger.yml does run ruff in CI. The gap is local development only, and matches the existing pattern (API also has no lint in npm run lint).",
+      "severity_justification": "CI coverage exists via the dedicated exp workflow. The only real gap is that local `npm run lint` won't catch Python linting issues, which matches the pre-existing pattern for non-JS services.",
+      "category_justification": "Missing integration of a new lint target into the standard developer workflow, affecting code quality consistency locally.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

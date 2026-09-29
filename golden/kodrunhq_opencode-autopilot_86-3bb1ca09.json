@@ -1,0 +1,731 @@
+{
+  "pr_key": "kodrunhq_opencode-autopilot_86-3bb1ca09",
+  "pr": {
+    "repo": "https://github.com/kodrunhq/opencode-autopilot",
+    "pr_number": 86,
+    "base": "817c1a45ed2e4496274fe09bf6efc0e34aba4c82",
+    "head": "3bb1ca09fd515c03d77e168e48ba347734b2ef16"
+  },
+  "findings": [
+    {
+      "file": "src/memory/retrieval.ts",
+      "start_line": 231,
+      "end_line": 237,
+      "message": "KIND_DISPLAY_ORDER puts 'preference' (weight 1.0) before 'project_fact' (weight 1.1), contradicting KIND_WEIGHTS. The declared weight ordering is mistake(1.5) > workflow_rule(1.4) > decision(1.3) > project_fact(1.1) > preference(1.0), but the display order injects preference sections before project_fact. This silently deprioritizes project facts relative to the documented intent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "KIND_DISPLAY_ORDER has 'preference' (weight 1.0) at index 3 and 'project_fact' (weight 1.1) at index 4, directly contradicting KIND_WEIGHTS which declares project_fact higher priority. When the token budget is tight, the loop breaks early, so project_fact memories are silently dropped before preference memories — the opposite of the stated intent.",
+      "severity_justification": "Only affects the relative ordering of the two lowest-weight kinds (project_fact vs preference). Higher-priority kinds (mistake, workflow_rule, decision) are ordered correctly. Impact is limited to edge cases where the token budget is nearly exhausted.",
+      "category_justification": "The display/injection order contradicts the declared weight semantics, causing incorrect behavior when the token budget is tight.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/injector.ts",
+      "start_line": 71,
+      "end_line": 79,
+      "message": "The V1 fallback (`if (context.length === 0)`) can never trigger. `retrieveMemoryContextV2` always returns a non-empty string — at minimum it returns MEMORY_INSTRUCTIONS_BLOCK — even when there are zero memories. Once the memories table exists (which happens for every database after this upgrade), V1 observations, lessons, and error observations are permanently invisible in the injected context, even though V1 data was never migrated.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "retrieveMemoryContextV2 always returns at least MEMORY_INSTRUCTIONS_BLOCK (non-empty string), confirmed in buildMemoryContextV2. hasMemoriesTable always returns true because initMemoryDb unconditionally creates the memories table. The V1 fallback `if (context.length === 0)` is therefore dead code — V1 observations, lessons, and error notes (not covered by migratePreferencesToMemories) are permanently invisible after upgrade, contradicting the stated backward-compatibility guarantee.",
+      "severity_justification": "Existing V1 data (observations, lessons, error observations) is silently dropped from context injection for all users upon upgrade, contradicting the documented backward-compatibility guarantee. Only confirmed preferences are migrated; the rest of V1's accumulated knowledge is lost. Impact is limited to users with existing V1 data.",
+      "category_justification": "The fallback condition is logically dead — it can never trigger — causing V1 data to be permanently excluded from injection despite the stated intent.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/memories.ts",
+      "start_line": 314,
+      "end_line": 317,
+      "message": "searchMemories wraps every query in double-quotes, making all searches strict FTS5 phrase matches. A multi-word query like 'TypeScript testing' only matches documents containing that exact phrase in that order. Users expecting keyword/AND search will silently get far fewer results. A query like `TypeScript AND testing` or token-separated search would be more appropriate.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `safeFtsQuery` wraps the entire user query in double-quotes, making it a strict FTS5 phrase match. A multi-word query like 'TypeScript testing' only matches documents containing that exact adjacent phrase, silently returning far fewer results than a keyword/AND search would. The finding is factually correct.",
+      "severity_justification": "This is a functionality limitation rather than a crash or data loss. For an AI-driven tool the agent can use single keywords or exact phrases intentionally. The impact is reduced recall on multi-word searches, not a blocking defect, and the behavior is deterministic.",
+      "category_justification": "The search function does not behave as a general-purpose keyword search, silently restricting results in a non-obvious way that contradicts likely user/caller expectations.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/retrieval.ts",
+      "start_line": 332,
+      "end_line": 353,
+      "message": "bumpAccessCounts calls db.run('BEGIN') directly, bypassing the withTransaction depth-tracking mechanism (transactionDepthByDatabase WeakMap). Every other database write in this codebase uses withTransaction, which guards against nesting via enterTransaction/exitTransaction. If bumpAccessCounts is ever called from within a withTransaction context — or if a future refactor introduces that path — SQLite will throw 'cannot start a transaction within a transaction' because withTransaction's depth guard won't know a BEGIN is already active.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "bumpAccessCounts calls db.run('BEGIN') directly, confirmed in retrieval.ts:336. withTransaction's enterTransaction throws if depth > 0 (preventing nesting), but direct BEGIN calls bypass this WeakMap tracking entirely. The inconsistency is real and verified. The same pattern exists in V1 (line 199), so V2 replicates a pre-existing inconsistency. Current call paths don't nest this in a transaction, so there's no active bug — but the pattern is fragile.",
+      "severity_justification": "No current call path nests bumpAccessCounts inside a withTransaction context, so there is no active failure. The risk is a future maintenance hazard. The function is best-effort and errors are caught silently, further limiting impact.",
+      "category_justification": "Bypassing the codebase's established transaction depth-guard creates a fragile pattern that could cause SQLite errors if the call chain is refactored, inconsistent with the withTransaction convention used everywhere else.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/memories.ts",
+      "start_line": 199,
+      "end_line": 225,
+      "message": "The duplicate-merge path is not atomic. mergeIntoExisting (content + confidence update) commits in its own transaction, then evidence insertion runs in a separate withTransaction call. If the process crashes between these two, the memory's content and confidence are updated but evidence_count is not incremented and no evidence row is written, permanently breaking the invariant that evidence_count equals the number of evidence rows for this memory.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: mergeIntoExisting commits its own withTransaction (content/confidence update), then the evidence insertion and evidence_count increment run in a separate withTransaction. A crash between the two leaves the memory updated but with no new evidence row and stale evidence_count, breaking the stated invariant.",
+      "severity_justification": "The memory itself remains functionally correct after a partial failure — only the evidence_count bookkeeping counter and evidence row are missing. The memory is still searchable and injectable. A mid-commit crash on a local SQLite with WAL mode is rare in practice, and the downstream impact (slightly wrong count) is cosmetic.",
+      "category_justification": "A non-atomic write sequence across two committed transactions creates an invariant-violation risk on process crash, a classic reliability/durability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/database.ts",
+      "start_line": 190,
+      "end_line": 201,
+      "message": "The mem_au trigger only fires when content, summary, or tags change (WHEN old.content != new.content OR ...). When forgetMemory sets status='rejected' (changing only status and last_updated), the trigger does not fire, leaving the rejected memory in the memories_fts index permanently. There is no compensating DELETE or REMOVE entry for status-change updates. Stale FTS entries accumulate without bound since there is no periodic FTS cleanup.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: mem_au trigger only fires on content/summary/tags changes; forgetMemory only changes status and last_updated, so the trigger never fires on forget. FTS entries for rejected memories remain in memories_fts permanently with no cleanup path. searchMemories does filter by status='active' via JOIN, so search correctness is preserved, but FTS index accumulates stale entries without bound.",
+      "severity_justification": "Search correctness is not affected because searchMemories joins back to memories and filters on status='active', preventing rejected entries from appearing in results. The issue manifests only as growing FTS index size and marginally degraded BM25 scoring performance over time — negligible for typical usage volumes.",
+      "category_justification": "Stale FTS index entries accumulate without cleanup, an operational concern about resource growth and index integrity over time.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/injector.ts",
+      "start_line": 109,
+      "end_line": 122,
+      "message": "activeMemoryInjector is module-level mutable state. Each call to setActiveMemoryInjector replaces the previous injector without any lifecycle tie to plugin shutdown or reload. In test environments (where initMemoryDb is called on fresh databases) or if the plugin is re-loaded, notifyMemoryChanged will call invalidateCache on whatever injector was most recently set — potentially the wrong instance from a previous test or initialization. resetActiveMemoryInjector exists but is never called from a plugin shutdown/cleanup hook.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: activeMemoryInjector is module-level mutable state, setActiveMemoryInjector is called once from index.ts but resetActiveMemoryInjector is never called from any plugin lifecycle hook. The concern is factually correct. However, no tests call setActiveMemoryInjector (confirmed by search), so test contamination doesn't occur. In production, the plugin loads once per process, making stale-injector scenarios unlikely.",
+      "severity_justification": "In the actual deployment model (single plugin load per process), the module-level singleton is set once and stays valid. Tests never populate it. The worst case of calling invalidateCache on a stale injector is harmless (clears a Map). This is primarily a future maintainability concern.",
+      "category_justification": "Unmanaged module-level mutable state without proper lifecycle cleanup is a design concern, but not a current runtime defect given the single-load deployment model.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/tools/memory-forget.ts",
+      "start_line": 18,
+      "end_line": 36,
+      "message": "TOCTOU race: getMemoryById reads the status, then forgetMemory performs the UPDATE in a separate operation. If the memory's status changes between these two calls (concurrent async operation or test teardown), forgetMemory returns false (0 rows changed), but the code returns { ok: true, forgotten: false } — a misleading success. The pre-flight status check should be removed and the result of forgetMemory (changes > 0) should drive the response, or the check and update should be done atomically inside a transaction.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: getMemoryById and forgetMemory are two separate operations. If forgetMemory returns false (0 changes), the code still returns { ok: true, forgotten: false } — an ambiguous success. The TOCTOU scenario is real though unlikely in a single-process plugin. The misleading ok:true when nothing was changed is the core issue regardless of concurrent access.",
+      "severity_justification": "Concurrent access to SQLite in a single-process AI plugin is highly unlikely. The misleading ok:true/forgotten:false response is a UX/API issue for the AI caller, but not a data corruption risk. Status transitions are one-directional, further limiting the window.",
+      "category_justification": "The function returns ok:true even when no state change occurred, which is semantically incorrect and can mislead the AI tool caller about whether the forget operation succeeded.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/dedup.ts",
+      "start_line": 143,
+      "end_line": 171,
+      "message": "findDuplicateCandidate loads all active memories for a project/scope into application memory and computes bigram overlap for each one in a linear scan. There is no index-assisted pre-filtering. Every call to oc_memory_save triggers this full scan. For a project that has accumulated hundreds or thousands of memories, each save becomes progressively slower with no cap (the V1 system allowed up to MAX_OBSERVATIONS_PER_PROJECT = 10,000 entries). An FTS-based or summary-hash pre-filter would reduce candidate set before bigram comparison.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: findDuplicateCandidate has no LIMIT and fetches all active memories for the project/scope into memory for linear bigram comparison. MAX_MEMORIES_PER_QUERY=50 is not applied here. There is no pruning mechanism for the memories table. Each oc_memory_save call is O(n) in stored memories with no upper bound.",
+      "severity_justification": "In practice, AI-curated memories accumulate slowly and a project is unlikely to exceed hundreds of entries. The kind filter reduces the scan when provided, SQLite reads are fast, and bigram computation on short strings is cheap. This is a theoretical scalability concern rather than an immediate practical bottleneck.",
+      "category_justification": "Unbounded linear scan on every write operation is a performance concern that worsens proportionally with data volume.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/memories.ts",
+      "start_line": 415,
+      "end_line": 430,
+      "message": "migratePreferencesToMemories passes scope='project' with projectId=null when a V1 preference_record has scope='project' but project_id=null (malformed legacy data). saveMemory does not reject this combination — it stores a memory with scope='project' and project_id=NULL in the database. This is semantically inconsistent: getActiveMemories(null) will return it as if it were a user-scoped memory, while getActiveMemories(someProjectId) will not return it. The oc_memory_save tool correctly guards against this, but the migration path does not.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: migration passes scope='project' with projectId=null when row.scope==='project' and row.project_id===null. normalizeScope returns 'project' when scope is explicitly provided regardless of projectId. saveMemory has no validation rejecting this combination. The oc_memory_save tool guards against it but migration does not. The inconsistent storage behavior (retrieved by getActiveMemories(null) as user-scoped) is confirmed.",
+      "severity_justification": "Only affects users with malformed V1 preference_records where scope='project' but project_id=NULL. The V1 capture code always sets project_id when scope is project, so such records are extremely unlikely to exist in practice. The worst outcome is a preference being treated as user-scoped.",
+      "category_justification": "The migration path produces semantically inconsistent data (scope='project' with project_id=NULL) that is silently misrouted in subsequent retrieval, contradicting the scope semantics.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/tools/memory-search.ts",
+      "start_line": 56,
+      "end_line": 64,
+      "message": "When `args.scope` is 'all', the `deduped` map may drop records. `Map.has()` only checks for key existence, but `map.set()` overwrites the value. If `projectMemories` and `userMemories` return memories with the same `id` but different content (e.g., from a search query returning a stale user memory that was later updated for a project), the project-specific memory will be overwritten by the user-scoped one, leading to incorrect search results.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's premise is impossible: projectMemories and userMemories come from the same memories table filtered by mutually exclusive project_id conditions (non-null vs IS NULL). Auto-increment PKs in the same table are unique, so they can never share the same id. Additionally, the finding incorrectly describes the overwrite direction — the code uses first-wins (if !has), so project memories (spread first) would win over user memories, not be overwritten by them.",
+      "severity_justification": "The described scenario cannot occur given the data model, so there is no actual bug.",
+      "category_justification": "The finding alleges incorrect search results due to ID collision, which is the correctness category.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/tools/memory-save.ts",
+      "start_line": 23,
+      "end_line": 26,
+      "message": "The `resolveProjectId` function returns `null` if the resolved project ID starts with `project:`, which seems to be the prefix for a non-Git-repository-based project identifier. This will cause `memorySaveCore` to incorrectly fail with a \"no known project identity\" error when trying to save a project-scoped memory in a directory that isn't a Git repository but is tracked by the autopilot plugin.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The 'project:' prefix is the sentinel for 'not found in database when allowCreate=false', not a prefix for non-git project IDs. A non-git directory that IS tracked by the plugin has a real UUID stored in the projects table found by getProjectByCurrentPath. The error only fires for completely untracked projects, which is correct behavior. The finding misidentifies what the prefix means.",
+      "severity_justification": "The scenario described cannot happen for properly tracked projects; the error only fires for projects with no history in the DB, which is an intentional guard.",
+      "category_justification": "The finding alleges an incorrect failure path for a valid use case.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/database.ts",
+      "start_line": 155,
+      "end_line": 155,
+      "message": "The `mem_au` trigger condition `old.tags IS NOT new.tags` is unreliable for comparing JSON string content in SQLite. It will only be true if one of the values is NULL and the other is not. It will not detect changes in the content of the tags array, such as `[\"a\"]` vs `[\"b\"]`. The correct comparison is `old.tags != new.tags`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Empirically confirmed: SQLite's IS NOT operator works like != for non-NULL values ('['a']' IS NOT '['b']' = 1). It also correctly handles NULL cases (NULL IS NOT 'x' = 1), whereas != returns NULL when either operand is NULL. The trigger condition is correct and actually more robust than the suggested != replacement. The finding's core claim is factually wrong.",
+      "severity_justification": "No actual bug exists; the trigger condition behaves correctly for all cases including NULL values.",
+      "category_justification": "The finding incorrectly claims the trigger condition fails to detect content changes.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/retrieval.ts",
+      "start_line": 208,
+      "end_line": 208,
+      "message": "The `userMemories` array is incorrectly left empty when a project context exists but has no associated project ID (e.g., a non-Git folder). This prevents user-scoped memories from being injected into the prompt for projects that are not Git repositories, leading to inconsistent behavior. The check `projectId !== null` should be removed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "When projectId is null, projectMemories already fetches user-scoped memories via getActiveMemories(null, ...), which returns rows WHERE project_id IS NULL. The userMemories=[] guard prevents fetching the same rows twice. Removing the check as suggested would cause user memories to appear duplicated in allMemories. User-scoped memories are correctly injected in both cases.",
+      "severity_justification": "No actual bug — the code correctly handles the no-project case by routing user memories through the projectMemories variable to avoid duplication.",
+      "category_justification": "The finding alleges user-scoped memories are not injected for non-git projects, which is factually incorrect.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/memories.ts",
+      "start_line": 257,
+      "end_line": 257,
+      "message": "The `RETURNING id` clause is used, but the `inserted` variable is only checked for truthiness. If `id` `0` were ever returned (not possible with AUTOINCREMENT but a risk with other integer primary keys), it would be treated as a failure, potentially leading to a `Failed to insert memory` error for a successful database operation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "!inserted checks if .get() returned null (no rows), not whether inserted.id is zero. In JavaScript, any object including {id: 0} is truthy, so !{id:0} === false and the check would not throw. The concern about id=0 is inapplicable to this code pattern. SQLite also auto-assigns rowids starting from 1, making id=0 impossible via normal insertion.",
+      "severity_justification": "No actual bug — the truthiness check on the object works correctly for all cases.",
+      "category_justification": "The finding alleges a potential incorrect failure for a successful insert, which is factually wrong.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/memories.ts",
+      "start_line": 395,
+      "end_line": 397,
+      "message": "The V1 preference migration does not handle potential database transaction failures. If `saveMemory` fails inside the loop (e.g., due to a disk I/O error), the migration will stop, but the `v1_migration_done` marker will still be written in the `finally` block of `withTransaction` (if used at a higher level) or just after the loop. This would prevent the migration from re-running on the next startup, leaving some V1 preferences unmigrated permanently.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The marker insertion is sequential code after the loop, not in a finally block. If saveMemory throws mid-loop, the exception propagates past the marker insertion (skipping it), bubbles to the catch in index.ts which swallows it. On next startup the marker is absent and migration re-runs; already-migrated rows are skipped by duplicate detection. The described failure mode does not exist in this code.",
+      "severity_justification": "No actual bug — the control flow correctly leaves the marker unwritten on failure, allowing re-execution on next startup.",
+      "category_justification": "The finding concerns migration durability and failure recovery.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/retrieval.ts",
+      "start_line": 142,
+      "end_line": 145,
+      "message": "The `MEMORY_INSTRUCTIONS_BLOCK` is appended to the prompt context. If the preceding content exactly fills the token budget, this append operation could cause the total context to exceed the budget. While the final `slice` call handles overflow, it's safer to check the budget *before* appending the instructions block.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code already performs the pre-check the finding recommends: `if (totalChars + instrLen <= charBudget)` guards the append, where instrLen exactly equals the length of the pushed string. The final slice is an additional safety net. The finding incorrectly states the budget is only checked after appending.",
+      "severity_justification": "No actual bug exists; the budget is checked before appending the instructions block.",
+      "category_justification": "The finding alleges a token budget overflow that the existing guard already prevents.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/retrieval.ts",
+      "start_line": 307,
+      "end_line": 312,
+      "message": "The `buildMemoryContextV2` function has its own `sortMemoriesByWeight` logic which differs from the sort order in `retrieveMemoryContextV2`. `retrieveMemoryContextV2` sorts by `last_updated DESC` within each scope, but `buildMemoryContextV2` re-sorts all memories together, mixing project and user memories and breaking the intended grouping. The sort inside `buildMemoryContextV2` is redundant and produces an inconsistent final ordering.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The mixing of project and user memories within kind sections is intentional per the documented design — memories are grouped by kind (KIND_DISPLAY_ORDER), with user-scoped entries annotated _(user-wide)_. sortMemoriesByWeight is not redundant: it provides lastUpdated DESC ordering within each kind group. KIND_DISPLAY_ORDER drives section order, not the weight sort. The finding misidentifies intentional design as a bug.",
+      "severity_justification": "No actual bug — the sort and grouping logic implements the stated design intent correctly.",
+      "category_justification": "The finding alleges incorrect ordering and grouping behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.ts",
+      "start_line": 372,
+      "end_line": 376,
+      "message": "The one-time migration `migratePreferencesToMemories` is wrapped in a `try/catch` block that silently swallows all errors. If the migration fails for any reason (e.g., a subtle schema issue, disk I/O error), it will fail silently and never be retried on subsequent loads because it's designed to run only once. This could lead to partial or completely failed V1 data migration with no indication to the user.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The central claim 'never be retried' is factually wrong. The v1_migration_done marker is only written after the loop completes (sequential code, not finally). Any exception propagates before the marker write, leaving no marker and enabling retry on next startup. Already-migrated rows are caught by dedup on retry. The silent swallowing is intentional best-effort design documented in the comment.",
+      "severity_justification": "No actual bug — the retry behavior is correct, and V1 migration is advisory (the system works without it).",
+      "category_justification": "The finding concerns migration failure recovery and observability.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/dedup.ts",
+      "start_line": 109,
+      "end_line": 113,
+      "message": "The `selectMergedContent` function has a hardcoded overlap threshold of 0.85 to decide whether to replace content. This threshold is not configurable and is distinct from the main `DEDUP_JACCARD_THRESHOLD`. This could lead to surprising behavior where content with significant overlap (e.g., 0.8) is completely replaced rather than being treated as a minor variation of the existing memory.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The behavior at overlap=0.8 (new content replaces old) is intentional and reasonable — a 20% bigram difference represents a meaningful update worth preserving. The policy is coherent: significantly different content gets replaced, near-identical content keeps the longer version. The only valid sub-concern is that 0.85 is an unnamed magic number rather than a named constant, but this is a minor style issue, not a behavioral bug.",
+      "severity_justification": "No correctness bug; the threshold choice is a defensible design decision. The magic number concern is a minor maintainability issue.",
+      "category_justification": "The substantive concern reduces to a magic number not extracted as a named constant, which is a code style/maintainability issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/dedup.ts",
+      "start_line": 125,
+      "end_line": 128,
+      "message": "The function `computeBigramOverlap` does not account for normalization of the input string within its logic, potentially leading to false mismatches based on punctuation or spacing variations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "computeBigramOverlap calls toWordBigrams internally, which applies normalizeContent on line 70 before building bigrams. Every input is normalized regardless of the caller. findDuplicateCandidate passes one pre-normalized string and one raw DB string — the raw one is normalized inside toWordBigrams. No false mismatches from punctuation or spacing variations can occur.",
+      "severity_justification": "No actual bug; normalization is correctly applied inside the helper.",
+      "category_justification": "The finding alleges false mismatches due to missing normalization.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/memories.ts",
+      "start_line": 60,
+      "end_line": 63,
+      "message": "The `parseMemoryKind` function throws an error for invalid input, but there is no fallback or handling for unexpected exceptions when this function is called in `saveMemory`, which could lead to unhandled exceptions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "parseMemoryKind throwing propagates to memorySaveCore's top-level try/catch in memory-save.ts, returning { ok: false, error: message }. The exception is handled at the tool boundary. Additionally, parseMemoryKind can only throw for DB-corrupted kind values, which are guarded by both Zod validation before insert and a DB CHECK constraint.",
+      "severity_justification": "No unhandled exception path exists; the tool boundary catch handles all exceptions from saveMemory.",
+      "category_justification": "The finding concerns exception handling and error propagation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/injector.ts",
+      "start_line": 98,
+      "end_line": 104,
+      "message": "The `cache.set` method in the memory injector may cause memory bloat over time as the cache is keyed by session IDs without a mechanism for pruning or limiting cache size.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Each cached value is bounded by the token budget (2000 tokens × 4 chars ≈ 8KB max). The injector is a per-process singleton in a single-user CLI tool; realistically 1–10 session IDs accumulate per process lifetime, totaling well under 1MB. The invalidate() function clears the whole cache on memory changes. This is a generic 'add LRU limits to caches' recommendation with no concrete bloat scenario in this codebase.",
+      "severity_justification": "In practice the cache holds a handful of entries per process lifetime, making actual memory impact negligible for a single-user CLI tool.",
+      "category_justification": "The concern is about unbounded memory growth from an uncapped cache.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/retrieval.ts",
+      "start_line": 313,
+      "end_line": 316,
+      "message": "The `bumpAccessCounts` function updates `last_accessed` even if the memory data is not queried for injection. This can distort data tracking and lead to inflated access metrics.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: bumpAccessCounts is called on all fetched memories after buildMemoryContextV2, but buildMemoryContextV2 drops entire kind-sections when the token budget is exceeded. Memories in those dropped sections never appear in the injected context but still have access_count incremented and last_accessed updated, making these metrics semantically incorrect.",
+      "severity_justification": "access_count and last_accessed are not used in any current V2 retrieval, scoring, or dedup logic, so inflated metrics have no current behavioral impact. The concern is forward-looking: future features relying on these fields would get distorted data.",
+      "category_justification": "The function attributes 'accessed' status to memories that were not actually injected into the context, producing semantically inaccurate tracking data.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/database.ts",
+      "start_line": 143,
+      "end_line": 145,
+      "message": "The `checks` within the `create table` statement for `kind` and `scope` assume implicit string constraints; however, if a bug leads to invalid writes bypassing these checks, the database may not adhere to its defined schema consistency.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding describes a hypothetical scenario where a bug bypasses CHECK constraints, then asserts the database won't maintain consistency. This is circular reasoning (a bug causes a bug) and is not a specific code issue. SQLite enforces CHECK constraints at the engine level; they cannot be bypassed by application code short of disabling constraint checking entirely. The finding does not identify any actual code path where invalid data could reach the DB, making it generic boilerplate.",
+      "severity_justification": "No actual vulnerability or code defect identified; the concern is purely hypothetical.",
+      "category_justification": "The finding concerns database schema integrity and constraint enforcement.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/memory/dedup.test.ts",
+      "start_line": 196,
+      "end_line": 201,
+      "message": "The test for `computeBigramOverlap` does not include edge cases such as inputs with mixed case, punctuation, or inputs with extreme lengths, leading to reduced test coverage.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "computeBigramOverlap calls toWordBigrams which internally calls normalizeContent on every input, handling mixed case and punctuation automatically. Testing those cases on computeBigramOverlap would be redundant — they are covered by the normalizeContent tests in the same file. The finding identifies a perceived test coverage gap that does not exist given the implementation's internal normalization.",
+      "severity_justification": "No actual test gap for the described inputs; normalization is tested separately and applied internally.",
+      "category_justification": "The finding concerns test coverage for edge cases.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/tools/memory-save.ts",
+      "start_line": 122,
+      "end_line": 123,
+      "message": "The `notifyMemoryChanged` method call lacks error logging or confirmation and may silently fail if the cache is not properly updated, introducing the risk of stale contextual data in injections.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "notifyMemoryChanged calls cache.clear() via invalidateCache, which is a synchronous infallible Map operation that cannot throw or fail silently. The only non-execution path is when activeMemoryInjector is null (intentional no-op). There is no error-producing operation in this call chain that would require logging or confirmation.",
+      "severity_justification": "No actual failure mode exists in the described code path.",
+      "category_justification": "The finding concerns error handling and silent failures in cache invalidation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/memory-system.md",
+      "start_line": 165,
+      "end_line": 175,
+      "message": "The documentation here is inconsistent with the implementation in `src/memory/retrieval.ts`. The hardcoded `KIND_DISPLAY_ORDER` is `[mistake, workflow_rule, decision, preference, project_fact]`, but the weights for `preference` (1.0) and `project_fact` (1.1) mean this is not actually \"weight order\" — `project_fact` is heavier than `preference` yet displayed after it. Either the doc should be updated to reflect that the display order is a fixed precedence (and noting the deviation from numeric weights), or `KIND_DISPLAY_ORDER` and the display ordering in the doc should be corrected to match the weights.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: KIND_WEIGHTS has project_fact=1.1 > preference=1.0, but KIND_DISPLAY_ORDER and the doc both place preferences (#4) before project_facts (#5). The doc explicitly claims items are displayed 'in weight order', which is incorrect for this pair.",
+      "severity_justification": "This is a doc/code inconsistency with no runtime impact — the display order is what it is, and neither ordering causes functional failure. It could mislead a developer reasoning about priority.",
+      "category_justification": "The discrepancy is between the documented claim ('weight order') and the actual implementation, affecting the accuracy of the memory-system.md documentation.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/memory-system.md",
+      "start_line": 55,
+      "end_line": 59,
+      "message": "This documentation table for `oc_memory_search` does not match the actual tool schema in `src/tools/memory-search.ts`:\n- `query` is documented as Required, but the tool schema marks it `.optional()` (and the description explicitly says \"Omit to list all active memories\").\n- `limit` is documented with a default of `10`, but the tool schema uses `.default(20)`.\n- The `kind` filter parameter is missing entirely from this table, though it is supported by the tool.\n\nPlease update the table to reflect the actual schema.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "All three specific claims are verified: (1) query is marked Required in docs but is .optional() in the tool schema; (2) limit default is documented as 10 but the schema uses .default(20); (3) kind filter parameter is present in the tool schema but absent from the doc table.",
+      "severity_justification": "Documentation inaccuracy with no runtime impact. Users or AI agents relying on the docs to understand the tool's interface may be confused, but the tool itself works correctly.",
+      "category_justification": "The finding is about inaccuracies in the API documentation table describing oc_memory_search parameters versus the actual tool schema.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/memories.ts",
+      "start_line": 192,
+      "end_line": 225,
+      "message": "`memorySaveCore` always reuses the existing memory when a duplicate is found, regardless of scope mismatch. If a user-scope duplicate exists (`project_id IS NULL`) and a new save requests `scope: \"project\"` with a `projectId`, `findDuplicateCandidate` is called with the project-specific `projectId`, so it won't match the user-scope memory — that's fine. However, the converse case (saving a `user`-scope memory when a `project`-scope duplicate exists in some project) is also correctly skipped because `findDuplicateCandidate` scopes by `project_id IS NULL`. \n\nThe real concern is that `findDuplicateCandidate` here is called with `validated.projectId`, which can be `null` for `user` scope or a project id for `project` scope; this is correct. But `mergeIntoExisting` does NOT update the `scope` or `project_id` columns of the existing row, so the merge silently inherits the existing memory's scope even if `input.scope` differs. If the caller intentionally passes a different scope expecting the new save to upgrade/downgrade the memory, this will surprise them. Worth either documenting this behavior on `saveMemory` or rejecting saves where the requested `scope`/`projectId` would conflict with the duplicate's scope.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "findDuplicateCandidate filters by project_id (null for user-scope, specific ID for project-scope), so it can only return a duplicate with the identical project_id as the save request. A scope-mismatching memory can never reach mergeIntoExisting. The finding's own analysis acknowledges both cross-scope scenarios are correctly excluded, and the 'real concern' it raises is a hypothetical that the existing scoping logic already prevents.",
+      "severity_justification": "Even if the concern were valid, it would only cause unexpected behavior in a contrived edge case, not data loss or security failure.",
+      "category_justification": "The finding is about potential incorrect behavior in merge logic when scopes differ.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/constants.ts",
+      "start_line": 41,
+      "end_line": 43,
+      "message": "`project_fact` is weighted higher than `preference`, but `buildMemoryContextV2` renders preferences before project facts and stops when the budget is exhausted. This mismatch means lower-weight preferences can displace higher-weight project facts, so either the weights or the display order should be made consistent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: KIND_WEIGHTS has project_fact=1.1 > preference=1.0, but KIND_DISPLAY_ORDER places preference before project_fact. The budget loop breaks when charBudget is exceeded, so preference sections rendered first can crowd out project_fact sections with higher weight. This is a genuine functional inconsistency in the token-budget injection logic.",
+      "severity_justification": "Only manifests under tight token budgets, and the weight difference is small (1.0 vs 1.1). Project_fact content getting omitted when preferences fill the budget is non-ideal but unlikely to cause significant harm in practice.",
+      "category_justification": "The token budget logic does not honor the defined KIND_WEIGHTS ordering, causing higher-priority memories to be potentially omitted in favor of lower-priority ones.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/memory-system.md",
+      "start_line": 57,
+      "end_line": 59,
+      "message": "The documented `oc_memory_search` contract does not match the tool schema: `query` is optional (omitting it lists active memories), and the default `limit` is 20, not 10. This can mislead users or tests that rely on the documented API.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same underlying facts as Finding 2, already verified: query is .optional() in the tool schema (not required as documented), and limit defaults to 20 (not 10 as documented). The claims are factually correct against the code.",
+      "severity_justification": "Documentation inaccuracy with no runtime impact on the tool's behavior.",
+      "category_justification": "Inaccurate parameter documentation for oc_memory_search in memory-system.md.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/retrieval.ts",
+      "start_line": 311,
+      "end_line": 315,
+      "message": "This checks the budget only after building the whole section. A single large high-priority group can cause all memories in that group—and every lower-priority group—to be omitted, even though several individual memory lines would fit. Apply the budget per memory line so retrieval injects as many prioritized memories as possible.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the section is fully built before the budget check, and a break exits all remaining groups. With up to 50 memories per kind at 500-char summaries each (25,000 chars), a single large group can easily exceed the 8,000-char default budget, causing all memories from that group and every lower-priority group to be omitted entirely even though individual lines would fit.",
+      "severity_justification": "Under realistic conditions (many memories of one kind), the injector can inject zero memories while individual high-priority lines would have fit. This undermines the core purpose of the memory system.",
+      "category_justification": "The budget enforcement logic produces suboptimal and potentially empty injection results due to all-or-nothing section granularity.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/tools/memory-search.ts",
+      "start_line": 88,
+      "end_line": 92,
+      "message": "The same limit-before-kind-filter issue exists for list-all searches: `getActiveMemories(..., limit)` can return only other kinds, and the requested kind is filtered out afterward. This makes `oc_memory_search` with a `kind` filter miss valid active memories depending on recency/order.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: getActiveMemories is called with the user-supplied limit before the kind filter is applied in memory-search.ts. If the top-N most recent memories are all other kinds, a kind-filtered search returns zero results even though matching memories exist in the database.",
+      "severity_justification": "Makes the kind filter on oc_memory_search unreliable — results depend on memory recency rather than actually searching by kind. The AI could fail to find previously saved memories of a specific kind, degrading the utility of the memory tool.",
+      "category_justification": "The limit-before-filter ordering produces incorrect/incomplete search results when a kind filter is specified.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/tools/memory-search.ts",
+      "start_line": 58,
+      "end_line": 62,
+      "message": "Kind filtering happens after each scoped query has already applied `limit`. If the top `limit` matches are other kinds, this can return an empty or incomplete result even when matching memories of the requested kind exist just beyond that limit. Apply the kind predicate before limiting, or fetch enough candidates to filter safely.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same root issue as Finding 7, verified for the FTS branch: searchMemories(args.query, projectId, limit, ...) applies limit at the SQL level before the kind filter is applied in-memory at line ~60. Top-limit FTS matches being other kinds can leave valid kind-matched memories unreturned.",
+      "severity_justification": "Kind-filtered FTS searches can return incomplete or empty results despite matching memories existing in the database, making oc_memory_search with kind+query unreliable.",
+      "category_justification": "Limit applied before kind filter causes incorrect/incomplete results for kind-filtered searches.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/memory/schemas.ts",
+      "start_line": 84,
+      "end_line": 88,
+      "message": "`memorySchema` validates `scope` and `projectId` independently but does not enforce that project-scoped memories have a non-null `projectId` and user-scoped memories have a null `projectId`. Unlike the older preference schema, this allows callers of the exported `saveMemory` API to persist inconsistent rows that are retrieved under the wrong scope.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: memorySchema has no .refine() cross-checking scope vs projectId, unlike preferenceSchema which explicitly enforces (global→null, project→non-null). normalizeScope only applies when scope is omitted; an explicit scope:'project' with projectId:null passes schema validation and would persist an inconsistent row, causing it to surface under user-scope queries.",
+      "severity_justification": "All current callers (memorySaveCore, migratePreferencesToMemories) handle the invariant correctly, so no production code path currently creates inconsistent rows. The risk is to future callers of the exported saveMemory API.",
+      "category_justification": "Missing schema-level invariant on a public exported function — the cross-field constraint between scope and projectId should be enforced at the schema boundary as it is for the V1 preference schema.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

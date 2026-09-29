@@ -1,0 +1,691 @@
+{
+  "pr_key": "anokye-labs_kbexplorer_38-cf24fe27",
+  "pr": {
+    "repo": "https://github.com/anokye-labs/kbexplorer",
+    "pr_number": 38,
+    "base": "84bf940b71ac021cbe2afa4b1f445959774c4d63",
+    "head": "cf24fe27c4aa8f149ca00001846f56bfe23e8f70"
+  },
+  "findings": [
+    {
+      "file": "src/api/github.ts",
+      "start_line": 141,
+      "end_line": 147,
+      "message": "resolveImageUrl uses `import.meta.env.DEV` as a fallback condition, so any dev-server run in remote mode (without VITE_KB_LOCAL=true) will serve images from the local Vite base URL instead of raw.githubusercontent.com. This silently breaks image/sprite loading for all remote-mode users running `npm run dev`, which is the default developer workflow.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The condition `import.meta.env.VITE_KB_LOCAL === 'true' || import.meta.env.DEV` is confirmed at line 142. The `||` means any `npm run dev` session (where DEV is always true) will use the local base URL regardless of whether VITE_KB_LOCAL is set. Remote-mode devs running `npm run dev` will get broken image URLs.",
+      "severity_justification": "Silently breaks image loading for all remote-mode developers using the default `npm run dev` workflow, which is the primary developer experience. Not data-loss or security, but meaningfully degrades functionality.",
+      "category_justification": "It's a logic error in the condition — the `|| import.meta.env.DEV` branch fires unintentionally for remote mode, producing wrong image URLs.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/generate-manifest.js",
+      "start_line": 263,
+      "end_line": 274,
+      "message": "fetchLocalCommits uses '|||' as a field separator in the git-log format string (`%s` is the commit subject, `%an` is the author name). Both can legitimately contain '|||', causing incorrect splitting that maps fields to wrong positions (e.g., part of the message treated as the sha, author name mangled). Use a NUL-separated format with `--format='%H%x00%s%x00%an%x00%aI'` and split on '\\0' to avoid ambiguity.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at lines 262-263: git log format uses '|||' as separator, but %s (commit subject) and %an (author name) can contain arbitrary text including '|||'. A commit message like 'fix: handle foo|||bar' would cause line.split('|||') to produce 5 elements, shifting author and date to wrong positions.",
+      "severity_justification": "This is a data-correctness issue in the manifest generation, but the impact is limited: commits are displayed as informational nodes, the worst case is garbled commit metadata in the graph, and '|||' in commit messages/author names is uncommon in practice.",
+      "category_justification": "Logic error in field splitting — using a non-safe separator for untrusted input fields, causing incorrect field-to-variable mapping when the separator appears in a field value.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/generate-manifest.js",
+      "start_line": 305,
+      "end_line": 306,
+      "message": "writeFileSync writes to `src/generated/repo-manifest.json` without first ensuring the directory exists via mkdirSync. The directory is tracked in git via a .gitignore file, so a normal clone keeps it, but if the user deletes the directory the script fails with ENOENT. A `mkdirSync(resolve(kbRoot, 'src', 'generated'), { recursive: true })` call is needed before the write.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `writeFileSync` at line 305 writes directly to `src/generated/repo-manifest.json` with no preceding `mkdirSync`. The directory is preserved in a fresh clone only via the tracked `.gitignore` file, but if the user removes `src/generated/` the script will throw ENOENT. No defensive `mkdirSync(..., { recursive: true })` guard exists.",
+      "severity_justification": "Fails only if the user explicitly deletes the `src/generated/` directory, which is an unlikely but not impossible scenario (e.g., cleanup scripts, CI environments that strip gitignored dirs). Easy to trigger but an uncommon edge case.",
+      "category_justification": "Missing defensive directory creation before a file write — an operational robustness gap that causes script failure in certain environments.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/generate-manifest.js",
+      "start_line": 116,
+      "end_line": 119,
+      "message": "readAuthoredContent builds `new RegExp(\\`^${contentPath}/\\`)` without escaping `contentPath`. If contentPath contains regex metacharacters (e.g. a path with `.` or `+`), the regex is malformed and may match incorrectly. Additionally the replacement is always a no-op — it replaces `contentPath/` with `contentPath/` — so this is dead code that adds risk without benefit. The `relPath` passed to the recursive call should simply be `relPath` directly.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at lines 116-119: the regex `new RegExp(\\`^${contentPath}/\\`)` with replacement `contentPath + '/'` is a no-op — it replaces the prefix with the same prefix. The relPath passed to the recursive walk is always unchanged. Additionally, contentPath is unescaped in the RegExp constructor, so values like 'content.v2' would create a regex matching unintended strings. Both claims are factually correct.",
+      "severity_justification": "The no-op means the code works correctly in practice (the walk still functions as expected since relPath is passed unchanged). The unescaped regex is latent risk only if contentPath contains metacharacters, which is uncommon for directory names. No current breakage, but dead code with a risk pattern.",
+      "category_justification": "Dead code with a latent regex injection risk — the RegExp construction is unescaped and the replace call has no effect, indicating a logic error in the original intent.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "package.json",
+      "start_line": 9,
+      "end_line": 9,
+      "message": "The `build:local` script uses `VITE_KB_LOCAL=true vite build`, which is Unix-only inline env-var syntax and fails on Windows CMD and PowerShell. The PR description documents a Windows workaround only for `npm run dev`, not for `build:local`. This should use cross-env or a `.env` file approach to be portable.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at package.json line 9: `VITE_KB_LOCAL=true vite build` uses Unix inline env syntax. This fails on Windows CMD/PowerShell. The PR description documents a Windows workaround for `npm run dev` but not `build:local`, confirming the gap.",
+      "severity_justification": "Affects Windows users trying to do a local build, but it's a convenience script — they can work around it manually as documented for dev. Not a runtime bug or data issue.",
+      "category_justification": "Platform portability issue in a build script — fails on Windows, limiting the usability of the `build:local` command for non-Unix developers.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/engine/local-loader.ts",
+      "start_line": 167,
+      "end_line": 192,
+      "message": "The comment says auto-linking issue→directory connections happens 'before splitting so connections stay on the original nodes', but splitIntoSections creates a brand-new parent KBNode initialised only with section-ID connections and content-based title matches. It does not accept or carry forward the existing connections array from the original issueNode. So for any issue that gets split, the auto-linked directory connections are silently dropped from the resulting graph — the opposite of what the comment implies.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: splitIntoSections creates a parent node with connections initialized only from sectionIds and content-based word matching on allNodes. It does not accept or use the existing node.connections array. The auto-link loop at lines 167-177 mutates issueNode.connections, but when the node is replaced by splitIntoSections output, those directory connections are dropped. The comment is misleading.",
+      "severity_justification": "Silently drops explicitly computed issue→directory connections from the graph for any issue that gets split into sections. This is a real data-loss bug in graph construction that affects the knowledge graph's correctness.",
+      "category_justification": "Logic error — the code comment states a behavioral guarantee (connections stay on original nodes before splitting) that the implementation does not honor, resulting in dropped graph edges.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/engine/local-loader.ts",
+      "start_line": 55,
+      "end_line": 64,
+      "message": "The module-level `_manifestPromise` singleton caches the result — including null on failure — forever. During Vite HMR, if the developer reruns `npm run prebuild` to update the manifest, the cached promise (pointing at the old import) will never be re-attempted. The module must be reloaded (full page refresh) for any manifest update to take effect, which is a non-obvious footgun during iterative content development with local mode.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The singleton pattern is confirmed. The null-on-failure case is never retried. For HMR: dynamic imports inside functions are less reliably tracked by Vite's HMR graph than static imports, so manifest updates may not propagate. The project's own AGENTS.md explicitly warns HMR is unreliable for structural changes. The finding correctly identifies a real DX footgun during iterative local content development.",
+      "severity_justification": "This is a developer experience issue during local content iteration, not a production bug. The workaround (full page refresh) is simple and the null-caching case is an edge condition. No user-facing data is corrupted.",
+      "category_justification": "Module-level state that doesn't account for HMR module lifecycle or error retry, causing stale data to persist during iterative development sessions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "package.json",
+      "start_line": 6,
+      "end_line": 6,
+      "message": "The `prebuild` npm lifecycle hook runs unconditionally before every `npm run build`, generating `src/generated/repo-manifest.json` regardless of VITE_KB_LOCAL. Because local-loader.ts contains a dynamic `import('../generated/repo-manifest.json')`, Vite will include the generated file as a bundle chunk in all builds — including standard remote-mode production builds. The manifest may embed sensitive content (issue bodies, PR descriptions, commit messages) into public build artifacts for repos that never intend to use local mode.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: (1) `prebuild` runs unconditionally before every `npm run build`, (2) `useKnowledgeBase.ts` statically imports `local-loader.ts`, (3) `local-loader.ts` contains a dynamic `import('../generated/repo-manifest.json')` that Rollup will bundle as an async chunk regardless of runtime mode. Remote-mode builds will include the manifest JSON (with issue bodies, PR descriptions, commits) as a public bundle artifact.",
+      "severity_justification": "Potentially embeds issue/PR/commit content into public build artifacts for repos that never enable local mode, creating an inadvertent data exposure. Severity depends on repo visibility and content sensitivity, but the behavior is clearly unintended for remote-mode users.",
+      "category_justification": "Unintended inclusion of repository content (issues, PR descriptions, commit messages) in public-facing build artifacts — a data exposure issue introduced by the unconditional prebuild hook and static import chain.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/engine/local-loader.ts",
+      "start_line": 204,
+      "end_line": 208,
+      "message": "When a node is split into sections, the original node is removed from the `nodes` array by finding its index and using `splice`. However, the loop continues to iterate over `issueNodes`, which is a separate array. If `issueNodes` contains other items that have already been processed and removed from `nodes`, this operation will not fail but is operating on a stale view of the primary `nodes` list. This can lead to unexpected behavior if the logic were to change. The modification should happen on the list being iterated over, or a new list should be built.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The current code is correct: each issueNode object is added to `nodes` exactly once, and each is only removed during its own iteration step. The `nodes.indexOf(node)` for the current node will always find it (idx >= 0) since no prior iteration removes it. The guard `if (idx >= 0)` provides additional safety. The finding's concern is speculative ('if the logic were to change'), not a real current defect.",
+      "severity_justification": "Even as a speculative concern, the code pattern is straightforward and the guard handles the edge case. No actual bug exists.",
+      "category_justification": "The concern is about code clarity/maintainability (iterating one list while modifying another), not an actual correctness issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/generate-manifest.js",
+      "start_line": 313,
+      "end_line": 315,
+      "message": "The script determines if it's being run directly by comparing `import.meta.url` with `process.argv[1]`. This check is fragile and can fail on Windows due to path format differences (e.g., `C:\\path` vs `/C:/path`). A more robust method, like comparing the resolved path of `process.argv[1]` with `fileURLToPath(import.meta.url)`, should be used to ensure cross-platform compatibility.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code already handles Windows path differences via `replace(/\\/g, '/')` which converts backslashes to forward slashes before constructing the `file:///` URL. The resulting string matches how Node.js formats `import.meta.url` on Windows. A second fallback condition `endsWith('generate-manifest.js')` provides additional robustness. The specific concern raised by the finding is already addressed by the existing code.",
+      "severity_justification": "Even if the primary comparison had edge cases, the endsWith fallback covers the common invocation patterns.",
+      "category_justification": "Cross-platform compatibility of a script entrypoint check.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "vite.config.ts",
+      "start_line": 10,
+      "end_line": 10,
+      "message": "The Vite manifest plugin runs `execSync('node scripts/generate-manifest.js')` which can fail if `node` is not in the system's PATH. It's more robust to use `process.execPath` to get the path to the current Node.js executable, ensuring the script runs with the same Node version that's running Vite.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at vite.config.ts line 12: `execSync('node scripts/generate-manifest.js')` relies on `node` being in PATH. Using `process.execPath` would be more robust and guarantee version consistency. The concern is technically valid, though it's an unlikely failure scenario in practice.",
+      "severity_justification": "In practice, if Vite is running, Node.js is on PATH. The scenario where `node` is unavailable during `npm run dev` is very unlikely. This is a best-practice improvement rather than a fix for a likely failure.",
+      "category_justification": "Build tool robustness — using a potentially different or missing Node.js executable rather than the guaranteed-present one running the current process.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/engine/local-loader.ts",
+      "start_line": 182,
+      "end_line": 186,
+      "message": "In `loadLocalRepoContent`, issue content is checked for directory references using `node.rawContent.toLowerCase().includes(dir.toLowerCase())`. This is a very broad check that can lead to false positives, creating incorrect connections in the knowledge graph. For example, an issue mentioning a common word like \"state\" could incorrectly link to a `state/` directory.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at lines 174-177: the third OR condition `node.rawContent.toLowerCase().includes(dir.toLowerCase())` is an unanchored substring match. Any directory name appearing as a substring anywhere in issue text triggers a connection, e.g. a `src` directory links to any issue containing 'description' or 'search', and a `state` directory links to any issue with 'statement'.",
+      "severity_justification": "Creates incorrect/spurious edges in the knowledge graph (cosmetic/quality issue), but doesn't break functionality, cause data loss, or affect security. The graph still renders and navigates; connections are just noisy.",
+      "category_justification": "Logic error in the matching heuristic — overly broad substring matching produces false positive connections that don't reflect real relationships in the repo.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/api/github.ts",
+      "start_line": 5,
+      "end_line": 7,
+      "message": "The constant `CACHE_VERSION` has been updated to 12, but there is no evidence that the version has been incremented intentionally to reflect recent changes. This could lead to old cached data causing inconsistent behavior if the cache shape has indeed changed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "CACHE_VERSION = 12 was set in a previous commit (for folder icon shape change), not by this PR. The diff shows no change to CACHE_VERSION. This PR's changes (local mode, resolveImageUrl tweak) don't alter the shape of cached GitHub API data, so no bump is required per the project's own AGENTS.md cache-bump rules.",
+      "severity_justification": "Even if the claim were valid, cache mismatches cause stale UI rendering that clears on manual data clear — not data loss or security issues.",
+      "category_justification": "The finding makes a factually incorrect claim that CACHE_VERSION was changed without justification in this PR.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/hooks/useKnowledgeBase.ts",
+      "start_line": 44,
+      "end_line": 65,
+      "message": "When loading local mode using `loadLocalKnowledgeBase`, the error when the manifest file is missing or malformed is not propagated correctly. Instead, the system will fail silently and only indicate 'No content found in local manifest' without specifying the root cause of the failure.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: loadManifest() catches all import errors and returns null, causing both 'missing manifest' and 'malformed manifest' to produce the same generic 'No content found' error. The actual root cause is swallowed. The finding is factually correct.",
+      "severity_justification": "This is a developer experience issue — the error message is actionable enough ('Run npm run prebuild') but doesn't distinguish root causes. Not a runtime correctness issue or data loss.",
+      "category_justification": "Error information is lost through silent catch-and-null in loadManifest, making diagnosis harder when the manifest is absent or malformed.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/generate-manifest.js",
+      "start_line": 180,
+      "end_line": 204,
+      "message": "In the `fetchLocalIssues` function, using the `gh` CLI without validating assumptions (e.g., CLI version compatibility) could lead to silent errors in environments where `gh` is outdated or behaves differently.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code already guards against gh being absent via isGhAvailable() and wraps execution in try/catch with graceful degradation. The finding doesn't cite a specific gh version incompatibility, breaking change, or minimum version where the used flags/JSON output were introduced. It's a generic 'validate your CLI dependencies' suggestion that applies to any CLI tool usage, not a concrete issue in this code.",
+      "severity_justification": "gh CLI's --json flag and the fields used have been stable for years. The graceful degradation (return []) already handles any failure.",
+      "category_justification": "The concern is about runtime dependency version compatibility.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/generate-manifest.js",
+      "start_line": 234,
+      "end_line": 258,
+      "message": "In the `fetchLocalPullRequests` function, pull request numbers and titles are fetched, but there is no validation of response format (e.g., expected `pr` fields). If unexpected fields arise in responses, it could lead to runtime errors or inconsistent data representation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code already uses null-coalescing operators on every mapped field, defensive typeof checks for label shapes, and a wrapping try/catch that returns []. The --json flag with explicit field list constrains the response. The finding is generic boilerplate ('validate response format') without identifying a specific field, schema change, or concrete failure mode.",
+      "severity_justification": "No concrete failure scenario is identified; existing defensive coding handles missing/null fields.",
+      "category_justification": "Generic concern about response format validation without a specific identified risk.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/generate-manifest.js",
+      "start_line": 288,
+      "end_line": 315,
+      "message": "The `fetchLocalCommits` function does not account for the case when `git log` may be unavailable or produce unexpected output in certain environments. This could lead to manifest generation failing silently in restricted or non-standard environments.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The function already has a try/catch wrapping the entire git log call, returning [] with a warning on any error. If git is unavailable, execSync throws and the catch handles it gracefully. The empty output case is explicitly checked. The finding is a generic 'handle errors' concern that the code already addresses.",
+      "severity_justification": "No concrete unhandled failure scenario exists; the existing try/catch covers all error cases including git being unavailable.",
+      "category_justification": "Generic concern about error handling that is already addressed by the existing code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "vite.config.ts",
+      "start_line": 6,
+      "end_line": 20,
+      "message": "The `manifestPlugin` for Vite executes a pre-build script synchronously upon build start, yet it does not have robust error handling for cases when the script fails. This should be a fatal operation with proper error messaging to avoid inconsistent build artifacts.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The warn-and-continue pattern is an intentional design choice consistent with the script's best-effort/graceful degradation approach used throughout (issues, PRs, commits all degrade gracefully). The finding argues for fail-fast behavior without demonstrating that continuing after a manifest failure produces corrupt artifacts — the worst case is an empty local mode showing a user-visible error. This is a design preference disagreement, not a concrete bug.",
+      "severity_justification": "If manifest generation fails, local mode returns empty content and displays an error to the developer. The build artifact isn't corrupted — it just won't have local content.",
+      "category_justification": "Error handling strategy in a build plugin — whether to fail-fast or degrade gracefully on manifest generation failure.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/transform-catalogue.js",
+      "start_line": 14,
+      "end_line": 14,
+      "message": "These imports (`relative`, `extname`, `basename`) are not used anywhere in this file and should be removed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims `relative`, `extname`, and `basename` are unused imports in `transform-catalogue.js` line 14, but that file's `node:path` import only contains `resolve` and `dirname` — the named identifiers don't exist there at all. The actual unused imports (`relative`, `basename`) are in `generate-manifest.js`, which the finding does not reference.",
+      "severity_justification": "Unused imports are a minor style/cleanliness issue even if correctly identified.",
+      "category_justification": "Unused imports are a code cleanliness / maintainability concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/transform-catalogue.js",
+      "start_line": 97,
+      "end_line": 106,
+      "message": "The cluster name, title, and subtitle values are interpolated directly into double-quoted YAML strings without escaping. If any of these values contain a double-quote character or backslash (which can easily come from catalogue JSON), the generated `config.yaml` will be malformed and fail to parse. Consider escaping these strings before interpolation, or using `yaml.stringify` from the `yaml` package that's already a project dependency to produce valid output.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: lines 98–106 (and 119) interpolate raw strings into YAML double-quoted scalars with no escaping. A title or cluster name containing a `\"` or `\\` from the JSON catalogue would break the generated config.yaml. The `yaml` package is already a dependency and could safely serialise these values.",
+      "severity_justification": "A catalogue with a double-quote in any title/subtitle/cluster name silently produces malformed YAML that will fail to parse, breaking the entire content generation pipeline. Likely in practice when titles come from real repo names or descriptions.",
+      "category_justification": "The bug causes generated YAML to be syntactically invalid under certain inputs, making the output incorrect rather than merely unclean.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/transform-catalogue.js",
+      "start_line": 117,
+      "end_line": 136,
+      "message": "The frontmatter values (`id`, `title`, `emoji`, `parent`, connection `to`/`description`) are interpolated into double-quoted YAML strings without escaping. Titles and descriptions coming from the catalogue JSON commonly contain quotes, colons, or backslashes; that will produce malformed frontmatter which the kbexplorer parser will fail to read. Consider escaping these strings or constructing the frontmatter object and using `yaml.stringify` to serialize it.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: lines 118–131 build YAML frontmatter by raw string interpolation into double-quoted scalars. Values like `node.title` or `c.description` coming from catalogue JSON can contain `\"`, `\\`, or `:` characters that would make the frontmatter unparseable. The `yaml` package is already a project dependency and could safely serialise these values.",
+      "severity_justification": "Any catalogue node whose title or description contains a double-quote or backslash produces a skeleton .md file with broken YAML frontmatter that the kbexplorer parser cannot read, silently dropping that node from the graph.",
+      "category_justification": "The interpolation produces syntactically invalid YAML for certain inputs, causing the generated output to be incorrect.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/engine/local-loader.ts",
+      "start_line": 67,
+      "end_line": 75,
+      "message": "The PR description states \"Mode detection: `VITE_KB_LOCAL=true` or manifest presence\", but `isLocalMode()` only checks the env var. As a result, if a developer regenerates the manifest but forgets to set `VITE_KB_LOCAL=true`, the app silently falls back to the remote (GitHub API) loader. If \"manifest presence\" is intended to also trigger local mode, this check needs to additionally detect the manifest (e.g., attempt a dynamic import and check for null); otherwise the PR description should be updated to match the implemented behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `isLocalMode()` only checks the env var and the JSDoc says 'requires explicit VITE_KB_LOCAL=true'. The PR description claims 'manifest presence' also triggers local mode, but no such detection is implemented. Either the feature was omitted or the description is wrong — either way it's a real discrepancy.",
+      "severity_justification": "The code itself is internally consistent and documented correctly in the JSDoc. The issue is a PR description inaccuracy / missing feature rather than a runtime bug — the app will still work correctly when VITE_KB_LOCAL=true is set.",
+      "category_justification": "The finding is about an inconsistency between the stated (PR description) and implemented behaviour, not a logic error in the running code.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/engine/local-loader.ts",
+      "start_line": 156,
+      "end_line": 156,
+      "message": "When `manifest.readme` is present but the manifest's tree is empty (so `treeToNodes` returns no nodes and there is no `repo-root` node), this code still unconditionally pushes a connection from the README to `repo-root`. That produces a dangling edge whose target does not exist. Consider only adding this connection when a `repo-root` node was actually created (e.g., guard with `dirNodes.length > 0` or check the produced node list).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "treeToNodes in parser.ts unconditionally creates the repo-root node before any directory/file iteration, so even an empty manifest.tree produces a repo-root node. The dangling edge scenario the finding describes cannot occur.",
+      "severity_justification": "Even if the finding were correct, a dangling edge would be a minor graph rendering issue rather than a crash.",
+      "category_justification": "The finding concerns a potential invalid graph edge.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/engine/local-loader.ts",
+      "start_line": 83,
+      "end_line": 88,
+      "message": "`loadLocalConfig` ignores the `source` field from the user's `config.yaml` and forces `DEFAULT_CONFIG.source`. As a result, `loadLocalRepoContent` always passes `DEFAULT_CONFIG.source.repo` (e.g. `kbexplorer`) to `treeToNodes`, so the repo-root node will be misnamed when the manifest was generated for a different (host) repo via the submodule mode supported by `generate-manifest.js`. Consider preserving the parsed `source` (at least `repo` and `path`) from the config, or sourcing `repo`/`path` directly from the manifest.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: loadLocalConfig explicitly overwrites source with DEFAULT_CONFIG.source (line 85). loadLocalRepoContent passes source.repo to treeToNodes for the repo-root node title. In submodule mode, the default repo name is 'kbexplorer' (unless VITE_KB_OWNER/VITE_KB_REPO env vars are set), producing a misnamed repo-root node for the host repo.",
+      "severity_justification": "Submodule mode is explicitly supported by generate-manifest.js (detectHostRoot) and the PR description. The repo-root node being misnamed is a visible correctness issue for that use case, though it does not break functionality.",
+      "category_justification": "The source override causes the repo-root node to display the wrong repo name, which is a logic error in the data produced.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/__tests__/generate-manifest.test.js",
+      "start_line": 163,
+      "end_line": 164,
+      "message": "This integration test writes `src/generated/repo-manifest.json` in the real project because `generateManifest` always uses its module-level output path. Running `npm test` therefore leaves a fixture-based manifest behind, which can be picked up by later local-mode runs and makes the test suite mutate the working tree; the generator should allow a temporary output path or the test should clean up the generated file.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: generateManifest always writes to resolve(kbRoot, 'src/generated/repo-manifest.json') regardless of the root argument. The integration test calls generateManifest(FIXTURES) but never cleans up the generated file. Running npm test leaves a fixture-based manifest in the real project directory that could be picked up by subsequent VITE_KB_LOCAL=true runs.",
+      "severity_justification": "The mutation of the working tree by test runs is a real reliability problem: it can cause confusing behavior in development (local mode loading fixture data) and could cause CI issues if the manifest is stale or fixture-based.",
+      "category_justification": "The issue is that the test mutates production output paths and doesn't clean up, making the test suite non-isolated.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/generate-manifest.js",
+      "start_line": 33,
+      "end_line": 39,
+      "message": "Submodule setup in this repo uses `.kbexplorer` directly under the host repo, but this resolves the host as two directories above `kbRoot`. In that documented layout the generator will scan the host's parent instead of the host repo, so the local manifest can contain the wrong tree/README/config/issues for submodule installs.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "In the documented submodule layout (host-repo/.kbexplorer), kbRoot resolves to host-repo/.kbexplorer and parentRoot = resolve(kbRoot, '../..') resolves to the parent of host-repo, not host-repo itself. detectHostRoot will check the wrong directory for .git and package.json, never correctly detecting the host root in the standard submodule setup.",
+      "severity_justification": "Submodule mode is an explicitly documented and supported deployment scenario. The detection bug means generateManifest will always fall back to scanning kbRoot (the .kbexplorer directory itself) rather than the host repo, silently producing a manifest for the wrong codebase with no error.",
+      "category_justification": "The path arithmetic in detectHostRoot is wrong for the stated layout, causing the function to scan the wrong directory.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/engine/local-loader.ts",
+      "start_line": 72,
+      "end_line": 75,
+      "message": "The PR description says local mode is detected by `VITE_KB_LOCAL=true` or by manifest presence, but this path only checks the env var. If a manifest exists without the flag, the hook will still enter remote mode and make GitHub API calls, so the manifest-only fallback described for self-exploration is not implemented.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified (same code as Finding 4): isLocalMode() only checks VITE_KB_LOCAL=true, and detectLocalMode() just wraps it. No manifest-presence detection exists. The PR description's claim of 'manifest presence' triggering local mode is not implemented — a developer who regenerates the manifest without the env var will silently hit the remote GitHub API loader.",
+      "severity_justification": "The app works correctly when VITE_KB_LOCAL=true is set as documented. The missing manifest-presence fallback is a UX inconvenience (extra step for developers) rather than a data corruption or security issue. The JSDoc in the code already documents the correct behaviour, so the discrepancy is mainly in the PR description.",
+      "category_justification": "The core issue is a discrepancy between the stated behaviour in the PR description and the actual implementation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/engine/local-loader.ts",
+      "start_line": 83,
+      "end_line": 86,
+      "message": "This discards the `source` block from `config.yaml` and replaces it with `DEFAULT_CONFIG.source`, even though `source` is part of the documented config schema. In local mode that can make the repo title, authored-content exclusion path, and image resolution use the default kbexplorer source instead of the manifest's target repository configuration.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same code as Finding 6, independently verified: line 85 explicitly sets source: DEFAULT_CONFIG.source, discarding any source block from config.yaml. In local mode this means repo title (treeToNodes uses source.repo), content path exclusion (source.path), and image URL resolution all use the default kbexplorer source rather than the actual repo being explored.",
+      "severity_justification": "Affects repo-root naming, content exclusion, and image URLs in local mode — all user-visible — particularly for submodule installs which are an explicitly supported use case.",
+      "category_justification": "The forced override causes multiple derived values (repo name, path, image URLs) to be incorrect when the user's config.yaml has a different source.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/transform-catalogue.js",
+      "start_line": 121,
+      "end_line": 127,
+      "message": "The generated YAML interpolates catalogue values directly inside double quotes without escaping. Titles, ids, or emoji/prompts containing quotes, backslashes, colons, or newlines can produce invalid frontmatter that `parseMarkdownFile` will fail to parse, causing generated content to lose metadata or be skipped; serialize these values through a YAML writer or escape them before writing.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same code block as Finding 3, independently verified: lines 121-127 interpolate node.id, node.title, node.emoji, node.parent, c.to, and c.description directly into YAML double-quoted scalars. Any of these containing quotes, backslashes, colons, or newlines produces malformed frontmatter that the kbexplorer parser cannot read.",
+      "severity_justification": "A catalogue node with a double-quote or backslash in its title or description produces a broken .md file whose frontmatter is unreadable, silently dropping that node from the knowledge graph.",
+      "category_justification": "Raw string interpolation into YAML produces syntactically invalid output for certain inputs, causing generated files to be unparseable.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/transform-catalogue.js",
+      "start_line": 97,
+      "end_line": 105,
+      "message": "Cluster names/colors and catalogue title/subtitle are written into YAML via string interpolation without escaping. A catalogue title like `Bob's \"API\"` or a cluster name containing `:`/newline can make `content/config.yaml` invalid, which then makes the generated knowledge base fall back to defaults or fail to load its intended clusters.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same code as Finding 2, independently verified: lines 97-105 interpolate cluster names/colors and catalogue title/subtitle directly into YAML double-quoted scalars. A title like `Bob's \"API\"` or a cluster name containing a colon or newline produces an invalid config.yaml, causing clusters to fail to load.",
+      "severity_justification": "Malformed config.yaml causes the knowledge base to fall back to defaults or fail to load clusters entirely, breaking the visual organisation of the graph for any catalogue with special characters in titles or cluster names.",
+      "category_justification": "Unescaped string interpolation into YAML produces syntactically invalid output for certain inputs, causing the generated config file to be unparseable.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/generate-manifest.js",
+      "start_line": 290,
+      "end_line": 296,
+      "message": "The manifest generator reads `VITE_KB_PATH` only from the process environment, but the documented submodule setup writes these Vite settings to `.env.kbexplorer` and relies on `VITE_ENV_DIR` for Vite to load them. This Node prebuild script never loads that env file, so custom content paths from the init wizard are ignored and the manifest is generated from `content` instead.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: generate-manifest.js reads process.env.VITE_KB_PATH (line 293) but never loads .env.kbexplorer. The init wizard writes VITE_KB_PATH to .env.kbexplorer in the host root; Vite only loads that via VITE_ENV_DIR for import.meta.env, not for spawned subprocesses. When the manifest script runs (prebuild npm script or manifestPlugin execSync), VITE_KB_PATH is absent and the manifest scans 'content/' instead of the configured custom path.",
+      "severity_justification": "Any submodule user who configured a non-default content directory via the init wizard will silently get a manifest built from the wrong path, producing missing authored content in local mode with no error message.",
+      "category_justification": "The manifest generator reads the wrong content directory due to a missing env file load, producing incorrect manifest output for submodule setups with custom content paths.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "vite.config.ts",
+      "start_line": 9,
+      "end_line": 12,
+      "message": "This checks only `process.env`, but Vite env files are not loaded into `process.env` automatically while evaluating the config. If `VITE_KB_LOCAL=true` is set in `.env`/`.env.kbexplorer`, the client will see local mode via `import.meta.env` but this plugin will skip manifest generation, leaving local mode to load a missing or stale manifest.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: the plugin guard uses process.env.VITE_KB_LOCAL (line 10), but Vite does not inject VITE_*-prefixed vars from .env files into process.env — they only go to import.meta.env. If VITE_KB_LOCAL=true is placed in a .env/.env.kbexplorer file, the client enters local mode while the plugin skips manifest generation, leaving the app trying to load a missing or stale manifest.",
+      "severity_justification": "The split between client mode detection (import.meta.env) and plugin guard (process.env) creates a silent misconfiguration scenario where the app enters local mode with no valid manifest and no error from the generator, making it hard to diagnose.",
+      "category_justification": "The inconsistency between how the plugin reads the env var and how the client reads it can lead to incorrect runtime behavior for a plausible configuration pattern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/transform-catalogue.js",
+      "start_line": 142,
+      "end_line": 145,
+      "message": "`node.id` is used directly to build the output filename. A catalogue entry containing path separators or `..` can write outside `outputDir` and overwrite arbitrary files relative to the project, so the transform should validate/sanitize ids to a safe basename before resolving the path.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 142 resolves node.id directly into a file path with no sanitization. An id containing ../ sequences (e.g. '../../src/App') would write outside outputDir. The .md extension is forced but cannot prevent overwriting existing .md files elsewhere in the project.",
+      "severity_justification": "This is a developer-facing CLI tool processing locally-provided JSON, reducing real-world exploitability — but a malicious or compromised catalogue.json could silently overwrite arbitrary .md files in the project. Worth fixing with a simple basename sanitization.",
+      "category_justification": "Path traversal via unsanitized user-controlled input written to the filesystem is a security vulnerability.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/generate-manifest.js",
+      "start_line": 53,
+      "end_line": 59,
+      "message": "The skip list does not exclude `src/generated/repo-manifest.json`, so after the first run the next manifest includes the previous generated manifest as part of the repository tree. That makes the generated data self-referential/stale and can surface the internal manifest file as a code node in local mode; exclude the generated output path from the filesystem walk.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: src/generated is not in SKIP_DIRS, repo-manifest.json is not in SKIP_FILES, and .json is in KEY_EXTENSIONS. After the first run, the filesystem walk includes src/generated/repo-manifest.json in the tree, and treeToNodes creates a file node for it, surfacing the internal manifest as a code node in local mode.",
+      "severity_justification": "The manifest file appearing as a graph node is confusing and the tree data becomes self-referential, but it does not break functionality — the app still loads and navigates correctly. A simple exclusion fix resolves it.",
+      "category_justification": "The generated output file being included in the tree it describes causes the manifest to contain stale/self-referential data and a spurious code node.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

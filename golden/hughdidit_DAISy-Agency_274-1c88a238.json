@@ -1,0 +1,291 @@
+{
+  "pr_key": "hughdidit_DAISy-Agency_274-1c88a238",
+  "pr": {
+    "repo": "https://github.com/hughdidit/DAISy-Agency",
+    "pr_number": 274,
+    "base": "72ccdfaa52365466e9ce3a07b096f8c0f096b8a2",
+    "head": "1c88a2381c97cfc434d381876515f003078f83d9"
+  },
+  "findings": [
+    {
+      "file": "src/agents/tool-call-id.ts",
+      "start_line": 239,
+      "end_line": 262,
+      "message": "Preserved tool call IDs are never added to the `used` set, creating a silent collision risk. `makeUniqueToolId` deduplicates only against `used`, so if an earlier turn has a dirty ID that strips to the same alphanumeric string as a preserved latest-turn ID, `makeUniqueToolId` will return that same string (it's not in `used`), producing two different assistant turns with identical tool call IDs. Concrete example: latest turn has ID `callabc123def` (already clean), earlier turn has `call_abc123def` — strict sanitization strips the underscore to `callabc123def`, which passes the `used` check and is assigned, creating a duplicate. Fix: pre-populate `used` with all IDs in `preservedLatestToolCallIds` before the map loop.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified via grep and sed that `used.add(preservedId)` is absent from the code at this SHA. The `used` set is only populated via `makeUniqueToolId` during the map loop, meaning preserved IDs from the latest assistant turn are invisible to the deduplication logic. This creates a real collision risk if an earlier turn has a dirty ID that strips to match a preserved ID.",
+      "severity_justification": "The collision requires a specific combination: preserveLatestAssistantTurn enabled (Copilot Claude only), plus earlier dirty ID that strips to match a preserved clean ID. Unlikely in practice but would cause provider rejection when triggered.",
+      "category_justification": "A logic error in the ID deduplication path that can produce duplicate tool call IDs across assistant turns.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/tool-call-id.ts",
+      "start_line": 280,
+      "end_line": 287,
+      "message": "Tool result preservation is checked by ID value only, not by position relative to the latest assistant turn. If an earlier assistant turn used the same raw tool call ID as one in the preserved latest turn, the earlier turn's tool result is also incorrectly preserved: its ID stays unrewritten while the corresponding earlier assistant message was remapped through `resolve`. This produces an orphaned tool result whose ID no longer matches its paired assistant tool call. A position-aware check (e.g. only preserve tool results that appear after `latestAssistantIndex`) would prevent this.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: at SHA 1c88a238, the toolResult preservation check at line 286 is `if (toolResultId && preservedLatestToolCallIds.has(toolResultId))` with no position guard. If an earlier assistant turn has the same raw tool-call ID as one in the preserved latest turn, `resolve` rewrites the earlier assistant's ID but the earlier tool result is preserved verbatim, creating an orphaned pair.",
+      "severity_justification": "Requires the same raw tool-call ID to appear in both an earlier assistant turn and the preserved latest turn — unusual but possible. When triggered in the Copilot Claude flow it would produce an orphaned tool result that doesn't match its rewritten assistant message, likely causing provider rejection.",
+      "category_justification": "Logic error in the position-unaware preservation check that can produce mismatched tool-call/tool-result ID pairs in the transcript.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/pi-embedded-runner/run/attempt.ts",
+      "start_line": 1082,
+      "end_line": 1101,
+      "message": "The stream wrapper calls `sanitizeToolCallIdsForCloudCodeAssist` with a fresh `map` and `used` on every outbound request. This means that across successive requests, the same original dirty IDs from historical messages are re-resolved on each call. While the mapping is internally consistent within each call (same input → same sanitized output), it interacts badly with the preserved-IDs-not-in-`used` collision bug: on every request the preserved latest-turn IDs are absent from `used`, so any earlier turn whose dirty ID strips to the same value as a preserved ID will collide anew on each call. Once the collision bug in `tool-call-id.ts` is fixed (pre-populating `used`), this wrapper inherits the fix automatically, but it should be noted that the wrapper amplifies the collision surface by re-resolving on every request.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is entirely derivative of Finding 1 — it correctly describes fresh per-call state but explicitly acknowledges no independent fix is needed (the wrapper inherits the fix automatically). Fresh instantiation is correct design; the sanitization is deterministic and produces consistent results per call. No independent bug or actionable concern is identified beyond what Finding 1 already covers.",
+      "severity_justification": "Not an independent issue; entirely contingent on the collision bug in Finding 1 being present.",
+      "category_justification": "The claim is about interaction behavior in the sanitization path, which falls under correctness concerns.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/tool-call-id.ts",
+      "start_line": 239,
+      "end_line": 240,
+      "message": "The loop to find the latest assistant message only checks the `role` property. If it encounters a message that is not an object or is null, it will continue without breaking, potentially missing the true last assistant message if it is preceded by invalid entries in the array. This could lead to incorrect sanitization if `messages` contains malformed data.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The loop iterates backwards and `continue`s on null/non-object entries — this correctly skips invalid entries and proceeds to find the actual last assistant message. The finding incorrectly claims invalid entries could cause the true last assistant to be missed, but in a backward scan, null entries after the last assistant are safely skipped before the assistant is found.",
+      "severity_justification": "The described scenario is factually incorrect about what the code does, so there is no real impact.",
+      "category_justification": "The finding concerns the correctness of the backward-scanning loop logic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/tool-call-id.ts",
+      "start_line": 251,
+      "end_line": 261,
+      "message": "The code to find the latest assistant turn and its tool calls is duplicated. An almost identical loop exists in `stripAssistantThinking` within the same file. This duplication increases maintenance overhead and could lead to inconsistencies if one is updated and the other is not.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims an 'almost identical loop exists in `stripAssistantThinking` within the same file', but `stripAssistantThinking` does not exist anywhere in tool-call-id.ts or in the codebase. There is only one such backward-scanning loop in the file.",
+      "severity_justification": "The premise is factually wrong so there is no real duplication issue to address.",
+      "category_justification": "The concern is about code duplication and maintenance overhead.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/pi-embedded-helpers/images.ts",
+      "start_line": 43,
+      "end_line": 45,
+      "message": "The `sanitizeToolCallIdsForCloudCodeAssist` call does not verify whether the returned `sanitizedIds` list is of the same length and order as the original `messages`. If the sanitization function inadvertently changes the structure, it could introduce inconsistencies.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The function uses `Array.prototype.map()` which guarantees same-length, same-order output. There is no code path that could add, remove, or reorder messages. The finding is a generic defensive-programming suggestion with no concrete bug in the current implementation.",
+      "severity_justification": "No real issue exists; the concern is entirely hypothetical.",
+      "category_justification": "The suggestion is about adding a defensive assertion, which is a code quality/robustness concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/pi-embedded-runner/google.ts",
+      "start_line": 433,
+      "end_line": 437,
+      "message": "The addition of `preserveLatestAssistantTurn` to `sanitizeSessionMessagesImages` relies on the `policy` object but does not check if that flag is used appropriately or conflicts with other policies already in place (e.g., `sanitizeMode: 'full'`).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The policy logic in `resolveTranscriptPolicy` ensures `preserveLatestAssistantTurn=true` only for Copilot Claude, which always receives `sanitizeMode='images-only'`. The allegedly conflicting combination (`sanitizeMode='full'` + `preserveLatestAssistantTurn=true`) is never produced by the current policy resolution. The finding is speculative about a hypothetical future conflict that doesn't exist today.",
+      "severity_justification": "No current conflict exists; the concern is entirely speculative about potential future policy changes.",
+      "category_justification": "The finding concerns a potential policy interaction bug, which is a correctness concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/pi-embedded-runner/run/attempt.ts",
+      "start_line": 1080,
+      "end_line": 1092,
+      "message": "The `runEmbeddedAttempt` wrapper logic for `sanitizeToolCallIdsForCloudCodeAssist` assumes that all messages in `context.messages` conform to the `AgentMessage` structure. There are no defensive programming steps in place to ensure that this assumption does not lead to exceptions during runtime.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually wrong. The wrapper guards against non-array messages at line 1088. `sanitizeToolCallIdsForCloudCodeAssist` defensively checks `!msg || typeof msg !== 'object'` for each entry, checks the role before dispatching, and the rewrite helpers check content structure before modifying. Malformed messages are returned unchanged at each level.",
+      "severity_justification": "The described gap doesn't exist — the code is already defensive throughout the relevant call path.",
+      "category_justification": "The finding concerns error handling and defensive programming for unexpected input.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/tool-call-id.ts",
+      "start_line": 252,
+      "end_line": 257,
+      "message": "The `rewriteAssistantToolCallIds` method does not ensure that the `message.content` array is valid or that elements contain proper `type` and `id` fields. This presents a possible failure scenario where invalid content is passed through without sanitization.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. `rewriteAssistantToolCallIds` explicitly checks `!Array.isArray(content)` (returns message unchanged), `!block || typeof block !== 'object'` (skips null/non-object), and validates both `type` (must be functionCall/toolUse/toolCall) and `id` (must be a non-empty string) before rewriting. Blocks that fail validation are returned unchanged, which is correct.",
+      "severity_justification": "No real issue exists; the described defensive checks are already present.",
+      "category_justification": "The concern is about input validation and handling of malformed data.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/reference/transcript-hygiene.md",
+      "start_line": 115,
+      "end_line": 117,
+      "message": "The documentation mentions pairing tool-result IDs but does not specify the impact of mismatched IDs if the `preserveLatestAssistantTurn` policy is misapplied. This creates potential ambiguity for developers modifying related code.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a generic 'docs should describe failure modes' suggestion that could apply to any documentation bullet in any codebase. The added documentation accurately describes the intended behavior. There is no specific ambiguity or missing information that would concretely mislead a developer reading this reference doc.",
+      "severity_justification": "No concrete gap in the documentation that would cause developer confusion; the behavior is described correctly.",
+      "category_justification": "The finding is about documentation completeness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/pi-embedded-helpers/images.ts",
+      "start_line": 52,
+      "end_line": 58,
+      "message": "The `options.sanitizeToolCallIds` check does not handle cases where `toolCallIdMode` or `preserveLatestAssistantTurn` interacts improperly with mismatched modes for tool ID sanitization.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is vague and speculative — 'interacts improperly with mismatched modes' is not grounded in any concrete failure scenario. The `mode` parameter defaults to 'strict' if undefined, `preserveLatestAssistantTurn` is optional and defaults to false, and `resolveTranscriptPolicy` ensures consistent combinations (toolCallIdMode is always set when sanitizeToolCallIds is true). No actual bug is demonstrated.",
+      "severity_justification": "No concrete bug exists; the concern is entirely hypothetical and the current combinations produced by policy resolution are consistent.",
+      "category_justification": "The concern is about potential incorrect behavior from flag combinations, which is a correctness category.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/tool-call-id.ts",
+      "start_line": 239,
+      "end_line": 257,
+      "message": "The implementation for checking and preserving the latest assistant turn fails to remove improperly formatted tool calls (e.g., those without valid `id` fields) before determining the latest assistant index. This could leave broken or redundant data in the sanitized messages.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`extractToolCallsFromAssistant` already skips tool calls without valid `id` fields (`typeof rec.id !== 'string' || !rec.id`), so only valid IDs reach `preservedLatestToolCallIds`. Moreover, the design intent is verbatim preservation of the latest turn — removing malformed tool calls from it would directly contradict the feature's purpose. The finding misunderstands both the filtering logic and the design intent.",
+      "severity_justification": "The concern is based on incorrect premises about what the code does; no real issue exists.",
+      "category_justification": "The finding concerns whether invalid data is properly handled in the sanitization path.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/tool-call-id.ts",
+      "start_line": 222,
+      "end_line": 222,
+      "message": "The new `preserveLatestAssistantTurn` behavior is not covered by the existing `sanitizeToolCallIdsForCloudCodeAssist` tests. This is the branch that preserves the latest assistant and matching tool results, including collision/pairing edge cases, and the adjacent test file already exercises the other sanitization modes.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed zero test coverage for preserveLatestAssistantTurn in tool-call-id.test.ts (grep returns no matches). The adjacent test file covers all other sanitization modes. The new branch involves index-based turn detection, ID set collection, used-set pre-population, and conditional skip logic — all untested edge cases including collision between preserved and rewritten IDs.",
+      "severity_justification": "The new branch handles Copilot Claude provider compatibility in a non-trivial way (multiple interdependent conditions). A regression in any of the edge cases would produce orphaned or mismatched tool results for real user requests, but the blast radius is limited to the Copilot Claude provider path.",
+      "category_justification": "The finding is specifically about missing test coverage for newly introduced logic in a function that already has a test file covering sibling behaviors.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/agents/pi-embedded-runner/google.ts",
+      "start_line": 436,
+      "end_line": 436,
+      "message": "The new startup-history pass-through for `preserveLatestAssistantTurn` is not asserted in the existing `sanitizeSessionHistory` tests; those tests mock `sanitizeSessionMessagesImages` and already verify other policy fields passed here. Without a Copilot Claude case that expects this flag, this regression path could be dropped again without test failure.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: sanitizeSessionMessagesImages is mocked at line 24 with vi.fn, toHaveBeenCalledWith assertions at lines 190/212/228/247 check other policy fields via objectContaining, but zero occurrences of preserveLatestAssistantTurn exist in the test file. The new pass-through at google.ts:436 could be removed without any test failing.",
+      "severity_justification": "Regression is narrow (Copilot Claude only) and would surface in staging. This is a test hygiene gap rather than a current production bug, but it removes the safety net against future drift of this specific flag.",
+      "category_justification": "The finding is specifically about a missing assertion in existing tests that would catch regression of the newly introduced preserveLatestAssistantTurn pass-through.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

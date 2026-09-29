@@ -1,0 +1,727 @@
+{
+  "pr_key": "chrisdevchroma_gsd-ng_16-3a6681c0",
+  "pr": {
+    "repo": "https://github.com/chrisdevchroma/gsd-ng",
+    "pr_number": 16,
+    "base": "8b21a0c2ca2bf79c3ca5b4e0de3f1ba14a8eecb7",
+    "head": "3a6681c0e9f84cec275f191bb2960d35990f02c1"
+  },
+  "findings": [
+    {
+      "file": "gsd-ng/workflows/execute-phase.md",
+      "start_line": 667,
+      "end_line": 670,
+      "message": "`staleness-check` is called without `--json`, so its output is the scalar displayValue (a comma-separated filename string like `'file1.md, file2.md'` or `'none'`), not a JSON object. The immediately following instruction (line 670) tells the agent to iterate over `the 'stale' array from STALE_JSON`, which is only available in the JSON-mode response. The old code always returned JSON by default; the new API changed the default to the scalar displayValue. `--json` must be added here.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 667 calls `staleness-check` without `--json`. With the new API, `output()` emits the scalar displayValue (comma-separated filenames or 'none') when a displayValue is provided and `--json` is absent. Line 670 instructs parsing the `stale` array from `STALE_JSON`, which requires JSON. The old default was always JSON; the new default is scalar. `--json` must be added.",
+      "severity_justification": "The agent would receive a scalar string instead of a JSON object with a `stale` array, breaking the incremental mapper spawn logic when stale docs exist.",
+      "category_justification": "The command output format no longer matches what the consuming code expects, causing a behavioral mismatch.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/complete-milestone.md",
+      "start_line": 796,
+      "end_line": 804,
+      "message": "`version-bump` is called without `--json`, so `BUMP_RESULT` is now just the scalar version string (e.g., `1.2.3`) — the `displayValue` passed to `output()`. Line 799 instructs the agent to \"Parse `version`, `previous`, `level`, `scheme` from result JSON\", but there is no JSON here anymore. The user-facing prompt on line 804 (`Version bump: {previous} -> {version} ({level} bump, {scheme} scheme)`) requires all four fields, but only `version` (= the whole `BUMP_RESULT`) is available. `previous`, `level`, and `scheme` cannot be extracted from the scalar string. The old default was JSON; `--json` must be added.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 796 calls `version-bump` without `--json`. `cmdVersionBump` calls `output(versionResult, newVersion)` where `newVersion` is just the version string. Without `--json`, the new `output()` emits the scalar. Line 799 instructs parsing `version`, `previous`, `level`, `scheme` from result JSON, and line 804 requires `{previous}`, `{level}`, `{scheme}` — none extractable from the scalar. This is a real regression introduced by the output API change.",
+      "severity_justification": "The user-facing confirmation prompt showing previous/level/scheme cannot be populated, breaking the version bump confirmation flow in the complete-milestone workflow.",
+      "category_justification": "The workflow instruction to parse JSON fields from the output is now incorrect because the output is a scalar, not JSON.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/plan-phase.md",
+      "start_line": 54,
+      "end_line": 57,
+      "message": "`roadmap get-phase` is called without `--json`, so `PHASE_INFO` is the raw markdown section text (the `section` displayValue), not a JSON object. Line 57 instructs the agent to check `found` and extract `phase_number`, `phase_name`, `goal` from JSON, and line 88 references `the 'section' field from PHASE_INFO JSON`. In the old API, the default output was always JSON; with the new API the default is the scalar displayValue. This means the agent cannot check `found` or extract any structured fields. `--json` must be added.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `cmdRoadmapGetPhase` calls `output({found, phase_number, phase_name, goal, section, ...}, section)` where the displayValue is the raw markdown section text. Without `--json`, the new `output()` emits just the scalar section string. Line 57 instructs parsing `found`, `phase_number`, `phase_name`, `goal` from JSON, and line 88 references the `section` field from JSON — impossible with scalar output. This is a real regression from the output API change.",
+      "severity_justification": "The plan-phase workflow cannot validate whether the phase exists or extract structured fields needed to build plans, breaking the core planning workflow.",
+      "category_justification": "The workflow instructions expect JSON but receive scalar output due to the new API default, causing a behavioral mismatch.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/map-codebase.md",
+      "start_line": 52,
+      "end_line": 57,
+      "message": "The workflow uses `staleness-check --count` to get the count, then directs the agent to \"fetch the full stale list with `staleness-check` (no `--count`)\" and iterate over stale docs. Without `--json`, `staleness-check` returns a comma-separated filename string, not a JSON object with a `stale` array. Any iteration pattern that expects JSON structure (as described in the referenced `execute-phase` `incremental_remap` step) will fail to parse the correct list of documents.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: map-codebase.md line 57 instructs fetching the full stale list with `staleness-check` (no flags) and using 'the same pattern as execute-phase `incremental_remap` step'. That execute-phase step (line 667-670) stores the output in STALE_JSON and iterates over the `stale` array, which requires JSON. Without `--json`, `staleness-check` emits a scalar comma-separated string as displayValue. The same bug affects both workflows.",
+      "severity_justification": "The incremental remap path in map-codebase workflow would receive an unparseable scalar instead of a JSON object with a stale array, breaking the incremental update flow.",
+      "category_justification": "The workflow references a pattern that expects JSON output but the command now emits scalar output by default.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bin/install.js",
+      "start_line": 995,
+      "end_line": 996,
+      "message": "`fs.readFileSync(templatePath, 'utf8')` in `injectAstSafetyBlock` is not wrapped in a try-catch. If the `ast-safety-rules.md` template is missing (e.g., partial install, corrupted package, or an older version being re-run), the entire installer crashes with an unhandled exception rather than a clean error message. The analogous `copilot-instructions.md` template read (line ~1129) correctly checks `fs.existsSync` before reading.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `injectAstSafetyBlock` at line ~995 calls `fs.readFileSync(templatePath, 'utf8')` with no try-catch and no `fs.existsSync` guard. The analogous copilot-instructions template read at line 1129 uses `if (fs.existsSync(templatePath))` before reading. If `ast-safety-rules.md` is absent, the installer throws an unhandled exception instead of a clean error.",
+      "severity_justification": "Only affects installs where the template file is missing (partial install or corruption), which is an edge case. The crash is noisy but limited to the install step, not runtime behavior.",
+      "category_justification": "Missing error handling for a file read that can fail under abnormal but possible conditions, causing an unhandled crash.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/bin/lib/core.cjs",
+      "start_line": 107,
+      "end_line": 109,
+      "message": "`writeToTempFile` uses `Date.now()` as the sole unique component of the temp filename (`gsd-${Date.now()}.json`). Two calls within the same millisecond — which can happen in test suites or in any scenario where `--file` is used multiple times rapidly — will produce the same path. The second `writeFileSync` silently overwrites the first, corrupting the output of whichever caller reads the file first. A process-unique counter or `crypto.randomUUID()` would prevent this.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `writeToTempFile` uses `gsd-${Date.now()}.json` as the filename with no additional uniqueness. Two separate process invocations with `--file` starting within the same millisecond would generate identical paths, with the second silently overwriting the first. The claim is factually correct.",
+      "severity_justification": "`--file` is an opt-in rarely-used flag, each CLI invocation is its own process, and the collision window is a single millisecond. The risk is real but narrow and unlikely in normal use.",
+      "category_justification": "Race condition between concurrent processes sharing a temp file path, leading to silent data corruption.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/bin/lib/core.cjs",
+      "start_line": 103,
+      "end_line": 105,
+      "message": "The fallback tmpDir path in `writeToTempFile` uses `process.getuid()`, which does not exist on Windows and throws `TypeError: process.getuid is not a function`. While the tool is primarily Unix-targeted, the crash happens in the error-handling branch where the primary tmpDir was already unwritable — the most hostile environment. The second `fs.mkdirSync` on line 105 also has no try-catch, so a failure there propagates as an unhandled exception.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `process.getuid()` is called unconditionally in the catch branch at line 103, which throws on Windows. The second `fs.mkdirSync` at line 105 also has no try-catch. Both claims are factually correct. The package.json has no OS restriction field.",
+      "severity_justification": "The tool is thoroughly Unix-targeted (bash scripts, ~/.claude/ paths, Unix sandbox comments), `--file` is opt-in and rarely used, and this code path only executes when the primary tmpDir is already unwritable — a rare edge case within an already-rare flag. Windows is not a realistic deployment target.",
+      "category_justification": "Platform-incompatible API call and missing error handling in a fallback path.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/bin/lib/commands.cjs",
+      "start_line": 3392,
+      "end_line": 3393,
+      "message": "`cmdGenerateAllowlist` now calls `output(result)` with no `displayValue`. Because `result` is an object, the new auto-detection path in `output()` always serialises it as JSON. The previous code explicitly emitted a human-readable summary string (`Generated allowlist with N entries ...`) when `--raw` was absent. Any caller or documentation that relied on the human-readable output now receives raw JSON instead, breaking the expected CLI UX without a `--json` opt-in.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The behavioral change is intentional per the PR's stated API redesign. `generate-allowlist` produces JSON that needs to be written to settings.json — emitting JSON by default is more correct than the old human-readable summary. There are zero callers anywhere in the codebase that relied on the human-readable output. The PR explicitly documents that objects without a displayValue auto-emit JSON.",
+      "severity_justification": "Even if considered a concern, there are no callers relying on the old human-readable output and the new JSON default is more useful for the command's purpose.",
+      "category_justification": "The finding claims a behavioral regression but the change is intentional and actually more correct for the command's purpose.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/bin/gsd-tools.cjs",
+      "start_line": 987,
+      "end_line": 991,
+      "message": "The `--default` flag value is retrieved as `args[defaultIdx + 1]`. If a user (or workflow) passes `--default` as the last argument with no following value (e.g., `config-get workflow.key --default`), `args[defaultIdx + 1]` is `undefined`, making `defaultValue = undefined`. The function then falls through to the normal error path — indistinguishable from no `--default` at all — with no diagnostic. `validateArgs` does not detect missing flag values for `--default` (unlike `--pick` which explicitly checks). The same pattern exists for `frontmatter get --default`, `roadmap get-phase --default`, and `summary-extract --default`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: all four `--default` flag handlers use `args[defaultIdx + 1]` without validation. If `--default` is passed without a value, `defaultValue` silently becomes `undefined`, making the flag a no-op and falling through to the normal error path. `--pick` explicitly guards against this with `if (!pickField || pickField.startsWith('--')) error('Missing value for --pick')` — the inconsistency is real.",
+      "severity_justification": "This is a developer/workflow-authoring mistake scenario. The failure mode is misleading (silent fallthrough to error instead of a helpful diagnostic) but limited to cases where the flag is malformed. Normal correct usage is unaffected.",
+      "category_justification": "Missing input validation for a flag value that silently produces incorrect behavior, inconsistent with the validated `--pick` flag pattern in the same file.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/validate-phase.md",
+      "start_line": 30,
+      "end_line": 30,
+      "message": "`config-get workflow.nyquist_validation` is called without `--default` and without `2>/dev/null`. When the key is absent (common for users who have not explicitly configured Nyquist validation), `cmdConfigGet` calls `error()`, which writes to stderr and exits with code 1. Claude Code treats a non-zero exit from a Bash tool step as a failure and may abort the workflow. The intended behavior (absent key = enabled) requires either `--default true` or `2>/dev/null` to suppress the error. The `audit-milestone.md` counterpart (line 142) correctly uses `2>/dev/null`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: validate-phase.md line 30 calls `config-get workflow.nyquist_validation` with no `--default` or `2>/dev/null`. When the key is absent, `cmdConfigGet` calls `error()` which exits with code 1. The old code used `--raw` (no `2>/dev/null` either), so the key-absent behavior is identical before and after the PR. The issue is real — audit-milestone.md correctly uses `2>/dev/null` — but was not introduced by this PR.",
+      "severity_justification": "Only affects users who haven't explicitly set `workflow.nyquist_validation` in config (which is most users), causing workflow failure at this step. The PR added `--default` as the fix pattern but missed this location.",
+      "category_justification": "Missing error suppression causes an unintended non-zero exit on a configuration key lookup that should treat absence as 'enabled'.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/bin/lib/commands.cjs",
+      "start_line": 638,
+      "end_line": 638,
+      "message": "[javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal] Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sanitize or validate user input first.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `file` at line 638 is sourced from `fs.readdirSync(todosPending).filter(f => f.endsWith('.md'))` — enumerated filesystem entries, not user input. `readdirSync` returns bare filenames without path separators, making traversal via `path.join` impossible. This is a generic static analysis false positive triggered by seeing a variable in `path.join` without tracing the actual source.",
+      "severity_justification": "No real vulnerability exists; the data source is a controlled directory listing.",
+      "category_justification": "The finding is framed as a path traversal security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal"
+      }
+    },
+    {
+      "file": "gsd-ng/bin/lib/commands.cjs",
+      "start_line": 638,
+      "end_line": 638,
+      "message": "[javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal] Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sanitize or validate user input first.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical to finding 11 — same file, same line, same boilerplate rule. The `file` variable at line 638 is sourced from `fs.readdirSync(todosPending).filter(f => f.endsWith('.md'))`, which produces bare filenames from a controlled directory listing, not user input. No path traversal is possible.",
+      "severity_justification": "No real vulnerability; the data source is a controlled filesystem enumeration.",
+      "category_justification": "The finding is framed as a path traversal security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal"
+      }
+    },
+    {
+      "file": "gsd-ng/bin/lib/commands.cjs",
+      "start_line": 668,
+      "end_line": 668,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `phase` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `phase` argument is properly escaped via `replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')` before being interpolated into the RegExp at line 668. After escaping, only literal characters remain. The static analysis tool flagged non-literal RegExp without tracing the escaping applied. Additionally, this is a local CLI tool processing the developer's own files, not a server handling untrusted input.",
+      "severity_justification": "No exploitable ReDoS: input is escaped, the pattern is simple with no catastrophic backtracking, and the tool runs locally on developer-controlled data.",
+      "category_justification": "The finding is framed as a ReDoS security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "gsd-ng/bin/lib/commands.cjs",
+      "start_line": 698,
+      "end_line": 698,
+      "message": "[javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal] Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sanitize or validate user input first.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `f` value at line 698 is parsed from the developer's own ROADMAP.md file (the `**Source Todos**` field), not external user input. The operation is `fs.existsSync` only — it checks existence without reading or exposing file contents. This is a generic static analysis false positive with no concrete exploitable vulnerability path.",
+      "severity_justification": "No real vulnerability: data comes from the developer's own project file, and the operation only checks file existence.",
+      "category_justification": "The finding is framed as a path traversal security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal"
+      }
+    },
+    {
+      "file": "gsd-ng/bin/lib/commands.cjs",
+      "start_line": 698,
+      "end_line": 698,
+      "message": "[javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal] Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sanitize or validate user input first.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical to finding 14 — same file, same line, same boilerplate rule. The `f` value is parsed from the developer's own ROADMAP.md file, not external user input. The operation is `fs.existsSync` only, which checks existence without reading or exposing file contents. No exploitable vulnerability exists.",
+      "severity_justification": "No real vulnerability: data source is the developer's own project file and the operation only checks file existence.",
+      "category_justification": "The finding is framed as a path traversal security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal"
+      }
+    },
+    {
+      "file": "bin/install.js",
+      "start_line": 995,
+      "end_line": 995,
+      "message": "Can block like this be pulled out of the code and included as template files instead. Check if there are more blocks like this. Reasoning: changes in templates should not be part of code file changes as this is not functional code. ",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `injectAstSafetyBlock` function at line 995 already reads from a template file (`gsd-ng/templates/ast-safety-rules.md`) — there is no hardcoded content block in the code. The finding appears to misread the code and suggests an approach that is already implemented. The finding is also generic and lacks any specific code evidence.",
+      "severity_justification": "The finding is incorrect about the code — the template-file pattern it recommends is already in use.",
+      "category_justification": "The finding is about code organization and separation of template content from functional code.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "chrisdevchroma",
+        "url": "https://github.com/chrisdevchroma/gsd-ng/pull/16#discussion_r3035514619",
+        "created_at": "2026-04-04T12:09:46Z",
+        "alignment": "code_changed",
+        "original_commit": "9fe951963e97204ec4d8d43cfa425366303982b7",
+        "original_start_line": 995,
+        "original_end_line": 995
+      }
+    },
+    {
+      "file": "tests/pick-flag.test.cjs",
+      "start_line": 75,
+      "end_line": 75,
+      "message": "The test title \"--file with still writes raw value to stdout (not @file:)\" reads as a grammatical error — there is a stray \"with\" before \"still\". It looks like this should read \"--file alone still writes raw value to stdout (not @file:)\" or similar.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 75: the test title reads '--file with still writes raw value to stdout (not @file:)' — the word 'with' is orphaned and makes the title grammatically incorrect.",
+      "severity_justification": "Pure test naming issue with no impact on behavior or correctness.",
+      "category_justification": "A cosmetic naming/readability issue in a test description string.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/sync-issues.md",
+      "start_line": 18,
+      "end_line": 18,
+      "message": "This command now captures the default scalar output of `detect-platform`, but the next step still parses `PLATFORM` as JSON. `cmdDetectPlatform` calls `output(result, platform || 'unknown')`, so without `--json` this will be just `github`, `gitlab`, or `unknown`, causing the JSON parsing step to fail or skip the CLI availability fields.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the old workflow had `detect-platform --raw` (producing JSON). This PR removed --raw without adding --json, so the command now emits scalar output (e.g. 'github'). The workflow still instructs 'Parse JSON for platform, cli_installed, cli_install_url' — those fields are only in the JSON object, causing the agent to fail when it tries to extract cli_installed and cli_install_url.",
+      "severity_justification": "The platform CLI availability check is bypassed — the agent will either error or skip the guard that ensures a CLI tool is installed before syncing, potentially causing downstream sync failures.",
+      "category_justification": "A functional regression: the workflow produces wrong output type, breaking the JSON-parsing step that depends on it.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/sync-issues.md",
+      "start_line": 50,
+      "end_line": 50,
+      "message": "`issue-list-refs` supplies a display string by default (`Found N external ref(s)`), but this workflow later expects `REFS` to contain JSON with `count` and `refs`. Add JSON mode here; otherwise the count check cannot parse the captured value.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old workflow had `issue-list-refs --raw` (JSON), new has bare `issue-list-refs`. cmdIssueListRefs calls `output(result, 'Found N external ref(s)')` — without --json, the agent receives the display string, not JSON. The workflow then instructs 'If count is 0' requiring a JSON field that is no longer available.",
+      "severity_justification": "The refs count check and table rendering will break — the agent cannot parse count or the refs array from a plain display string, potentially causing the sync workflow to proceed incorrectly or error.",
+      "category_justification": "Functional regression: --raw was removed without replacing it with --json, breaking the JSON-dependent step.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/sync-issues.md",
+      "start_line": 80,
+      "end_line": 80,
+      "message": "`issue-sync` defaults to a human-readable summary string, but the workflow immediately parses `SYNC` as JSON for `synced`, `conflicts`, and `skipped`. This needs JSON mode or the sync result parsing/display logic will not have the structured fields it expects.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old workflow had `issue-sync --raw` (JSON), new has bare `issue-sync`. cmdIssueSync calls `output(result, 'Synced N ref(s)...')` — without --json the agent gets the display string, not JSON. The workflow then instructs 'Parse JSON for synced, conflicts, skipped', which will fail.",
+      "severity_justification": "Sync result parsing, conflict display and resolution prompting all depend on the structured JSON fields; without them the sync workflow's outbound/inbound reporting and conflict resolution loop cannot function.",
+      "category_justification": "Functional regression: --raw removed without --json replacement, breaking the JSON-dependent parsing step.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/import-issue.md",
+      "start_line": 18,
+      "end_line": 18,
+      "message": "This has the same scalar-vs-JSON mismatch as the sync workflow: `detect-platform` emits only the platform display value unless JSON mode is requested, but the following instructions parse platform metadata from JSON. The workflow will not have `cli_installed` or `cli_install_url` available from this value.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old workflow had `detect-platform --raw` (JSON), new has bare `detect-platform`. cmdDetectPlatform calls `output(result, platform || 'unknown')` — without --json, only the scalar platform name is emitted. The workflow instruction then says 'Parse JSON. If platform unavailable or CLI not installed...' requiring cli_installed and cli_install_url fields that are only in the JSON object.",
+      "severity_justification": "The CLI availability guard cannot function — the agent cannot check cli_installed or retrieve cli_install_url, potentially allowing the import workflow to proceed without a required CLI tool.",
+      "category_justification": "Functional regression: --raw removed without --json replacement, breaking JSON-dependent workflow logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/import-issue.md",
+      "start_line": 49,
+      "end_line": 49,
+      "message": "`issue-import` returns a human-readable display string by default (`Imported ... -> ...`). If this workflow needs to parse the import result or inspect fields such as `todo_file`, this invocation must request structured output; otherwise `RESULT` is not JSON.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old workflow had `issue-import ... --raw` (JSON), new has bare `issue-import`. cmdIssueImport calls `output(result, 'Imported ... -> ...')` — without --json, only the display string is emitted. The workflow then instructs 'parse JSON for imported, todo_file, title, external_ref, commented', which all require the JSON object.",
+      "severity_justification": "Import result fields (todo_file, title, external_ref, commented) are unavailable to the agent, breaking the display logic and potentially the security gate check that reads output content.",
+      "category_justification": "Functional regression: --raw removed without --json replacement, breaking JSON-dependent workflow steps.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/import-issue.md",
+      "start_line": 116,
+      "end_line": 116,
+      "message": "This bulk import invocation also captures the default human-readable `issue-import` display string rather than the structured result. Any downstream handling that expects fields from the import response will fail to parse it as JSON.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old bulk import had `issue-import ... --raw` (JSON), new has bare `issue-import`. Without --json the agent only gets the scalar display string. The summary table requires title, todo_file, and external_ref fields that are only available in the JSON result object.",
+      "severity_justification": "Bulk import summary table cannot be populated correctly; the agent cannot extract todo_file, title, or external_ref from the plain display string.",
+      "category_justification": "Functional regression: --raw removed without --json replacement, breaking JSON-dependent summary rendering.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/check-todos.md",
+      "start_line": 19,
+      "end_line": 19,
+      "message": "`list-todos` defaults to the count display value, not the `{ count, todos }` object; the next step parses `TODOS_JSON` for those fields. This should request JSON output, otherwise the workflow only receives a number string.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old workflow had `list-todos ... --raw` (JSON), new is bare `list-todos`. cmdListTodos calls `output(result, count.toString())` — without --json only the scalar count string is emitted. The workflow then says 'Parse TODOS_JSON: extract count and todos array' — the todos array requires JSON.",
+      "severity_justification": "The todo list cannot be displayed (only count available as a string), and recurring-due also regressed similarly, breaking the main check-todos workflow output.",
+      "category_justification": "Functional regression: --raw removed without --json replacement, breaking JSON-dependent workflow step.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/check-todos.md",
+      "start_line": 20,
+      "end_line": 20,
+      "message": "`recurring-due` now emits a display string by default (`none due` or a file list), but the workflow treats `RECURRING_JSON` as structured data with `count` and `todos`. Request JSON here to keep the recurring-count logic working.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old workflow had `recurring-due --raw` (JSON), new is bare `recurring-due`. cmdRecurringDue calls `output({count, todos}, 'none due' or file list)` — without --json only the scalar display string is emitted. The workflow checks 'recurring count is 0' and 'If recurring count > 0, display the recurring reminders table' — both require the count field from the JSON object.",
+      "severity_justification": "The recurring-due count check and table rendering are broken — 'none due' cannot be parsed as JSON to extract count and todos.",
+      "category_justification": "Functional regression: --raw removed without --json replacement, breaking JSON-dependent workflow logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/execute-phase.md",
+      "start_line": 631,
+      "end_line": 631,
+      "message": "`issue-sync` now returns a human-readable summary by default, but the next step says to parse `SYNC_RESULT` as JSON. Without structured output this auto-sync branch cannot inspect whether any refs were synced.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old workflow had `issue-sync ... --raw` (JSON), new has bare `issue-sync ... --auto`. cmdIssueSync calls `output(result, 'Synced N ref(s)...')` — without --json only the display string is emitted. The workflow then says 'Parse SYNC_RESULT JSON. If synced array has entries, display:', requiring the synced array that only exists in JSON.",
+      "severity_justification": "The auto-sync display step cannot show which issues were synced; the synced array is unavailable from the scalar string.",
+      "category_justification": "Functional regression: --raw removed without --json replacement, breaking JSON-dependent workflow parsing.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/execute-plan.md",
+      "start_line": 136,
+      "end_line": 136,
+      "message": "`phases list --type summaries` emits a newline-delimited file list by default because `cmdPhasesList` passes `files.join('\\n')` as the display value. The following instruction still says to extract from the JSON result, so this invocation/output contract is inconsistent and will break JSON-based parsing.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old workflow had `phases list --type summaries --raw` (JSON), new is bare. cmdPhasesList calls `output(result, files.join('\\n'))` — without --json only the newline-delimited file list string is emitted. The workflow comment says 'Extract the second-to-last summary from the JSON result', requiring the files array from JSON.",
+      "severity_justification": "The previous phase check is a soft guard — if it can't parse JSON, it may fail silently or skip the check. The impact is limited since it's a non-blocking pre-flight check.",
+      "category_justification": "Functional regression: --raw removed without --json replacement, breaking JSON-dependent workflow logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/pick-flag.test.cjs",
+      "start_line": 75,
+      "end_line": 75,
+      "message": "The test name is missing the noun after \"with\", which makes the assertion description hard to read.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same issue as Finding 1, verified at line 75: test title reads '--file with still writes raw value to stdout (not @file:)' — 'with' is orphaned making the title grammatically incomplete/unclear.",
+      "severity_justification": "Purely cosmetic test naming issue with no behavioral impact.",
+      "category_justification": "Readability issue in a test description string.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/references/decimal-phase-calculation.md",
+      "start_line": 40,
+      "end_line": 40,
+      "message": "This phrase is grammatically incomplete after removing the flag name; it should identify the default/scalar-output mode rather than saying \"with flag\".",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old text read 'Or with --raw flag:' and showed the --raw invocation. PR removed --raw from the code block but left label as 'Or with flag:' — a dangling, incomplete phrase that no longer identifies what the example demonstrates.",
+      "severity_justification": "Documentation-only issue; the code block itself is correct, only the prose label is incomplete/confusing.",
+      "category_justification": "Incomplete/stale label in a reference document introduced by this PR's refactor.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/create-pr.md",
+      "start_line": 212,
+      "end_line": 212,
+      "message": "`summary-extract --fields one_liner` still returns a JSON object because the command does not provide a display value for filtered fields. This workflow assigns it to `ONE_LINER` as if it were a scalar, so the generated squash message will contain JSON instead of just the summary text.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old workflow used --raw to get scalar output. New code: cmdSummaryExtract with --fields calls `output(filtered)` with no displayValue — since filtered is an object, output() auto-JSON-serializes it. ONE_LINER gets the full JSON object string instead of just the one-liner text, corrupting the squash commit message body.",
+      "severity_justification": "The squash commit message will contain raw JSON instead of the intended summary text, producing malformed git commit messages for all phases using this workflow.",
+      "category_justification": "The output API change broke the scalar extraction path for filtered fields, producing incorrect output in a user-visible artifact (git commit messages).",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/create-pr.md",
+      "start_line": 303,
+      "end_line": 303,
+      "message": "This has the same output-contract issue: `summary-extract --fields one_liner` emits a structured object by default, not the one-liner scalar. As written, `PLAN_SUMMARIES` will embed JSON snippets rather than the actual one-line descriptions.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: line 303 has the identical `summary-extract --fields one_liner --default \"\"` invocation as Finding 14. cmdSummaryExtract calls `output(filtered)` with no displayValue for filtered fields, auto-serializing to JSON. ONE_LINER gets the JSON object, embedding JSON snippets in PLAN_SUMMARIES instead of one-liner text.",
+      "severity_justification": "PR description body will contain raw JSON object strings instead of human-readable plan summaries, producing malformed PR descriptions.",
+      "category_justification": "Same output-contract regression as Finding 14, affecting the PR description generation path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/workflows/progress.md",
+      "start_line": 48,
+      "end_line": 48,
+      "message": "This example no longer uses the removed raw mode, but `summary-extract --fields one_liner` does not output a scalar by default; it outputs a JSON object with `path` and `one_liner`. Anyone following this command to print the one-liner will get JSON instead of the bare text.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old workflow had `--raw` giving scalar output, new is bare. cmdSummaryExtract with --fields calls `output(filtered)` with no displayValue — filtered is an object, so output() auto-JSON-serializes it. Anyone following this example to print the one-liner gets the full JSON object, not bare text.",
+      "severity_justification": "This is a documentation example in a workflow reference. An AI agent following it would get JSON instead of scalar text, but it's a documented example rather than a direct execution path like Findings 14/15.",
+      "category_justification": "Same output-contract regression as Findings 14/15 — --raw removed without --pick or displayValue fix, breaking the scalar extraction pattern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/templates/ast-safety-rules.md",
+      "start_line": 14,
+      "end_line": 14,
+      "message": "The pipe characters in the safe-alternative cell are not escaped, so this Markdown table row is parsed as extra columns instead of a three-column table. The agent-shared version escapes these pipes, which avoids the formatting break.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: templates/ast-safety-rules.md line 14 has unescaped pipe characters in the safe-alternative column (`echo \"$VAR\" |`), breaking the three-column Markdown table. agent-shared-context.md line 34 has the same row with escaped pipes (`\\|`), confirming the template version has the formatting bug.",
+      "severity_justification": "Documentation formatting issue — the table renders incorrectly for readers/agents parsing the CLAUDE.md injection, but the information is still partially readable.",
+      "category_justification": "Markdown table formatting error in a template file injected into CLAUDE.md.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gsd-ng/bin/lib/roadmap.cjs",
+      "start_line": 96,
+      "end_line": 100,
+      "message": "Making `roadmap get-phase` default to the section text is not safe while existing workflow callers still parse its output as JSON. For example, `gsd-ng/workflows/list-phase-assumptions.md:27-30` invokes `roadmap get-phase \"${PHASE}\"` and then parses `found`, `goal`, and `success_criteria`; after this change it will receive only the markdown section unless that caller is updated to request JSON.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Confirmed: old `output(result, raw, rawValue)` emitted JSON by default when raw=false (no --raw flag). New `output(result, displayValue)` emits the displayValue string when provided. cmdRoadmapGetPhase passes `section` as displayValue, so now emits markdown text by default. list-phase-assumptions.md calls `roadmap get-phase` without --json and parses found/goal/success_criteria from JSON — this worked before and is broken by this PR.",
+      "severity_justification": "The list-phase-assumptions workflow cannot validate phase existence or extract goal/success_criteria, breaking a core planning workflow feature.",
+      "category_justification": "Behavioral regression: the output API change flipped the default output mode for commands that have a displayValue, breaking callers that relied on getting JSON by default.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "commands/gsd/divergence.md",
+      "start_line": 21,
+      "end_line": 21,
+      "message": "After the output refactor, `divergence` defaults to its display text rather than the structured object, but the next line still says to parse `RESULT` as JSON. This invocation should opt into structured output, otherwise the workflow cannot read `status` or the commit counts.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Confirmed: old `output(result, false, summaryText)` emitted JSON by default. New `output(result, summaryText)` with displayValue provided emits scalar text. The workflow at line 21 captures bare `divergence` output and says 'Parse JSON output. If status is no_upstream...' — status and commit counts are only in JSON, now unavailable.",
+      "severity_justification": "The divergence workflow cannot detect no_upstream state or display commit triage counts, breaking the core divergence tracking feature.",
+      "category_justification": "Same API-flip regression as Finding 18: old default was JSON, new default is scalar when displayValue is provided, breaking callers that relied on JSON-by-default.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,711 @@
+{
+  "pr_key": "brendanjerwin_simple_wiki_766-dc1bd9ae",
+  "pr": {
+    "repo": "https://github.com/brendanjerwin/simple_wiki",
+    "pr_number": 766,
+    "base": "642528cca446173e59a044717165351a2b9c3f52",
+    "head": "dc1bd9aecf652eaa797a22df901c3792b71b0d59"
+  },
+  "findings": [
+    {
+      "file": "static/js/web-components/wiki-checklist.ts",
+      "start_line": 53,
+      "end_line": 60,
+      "message": "wiki-checklist.ts does not import or include colorCSS in its styles array, but uses --color-hover-overlay at lines 133 and 169 (and other tokens like --color-info, --color-text-inverse) without fallback values. --color-hover-overlay is only defined in colorCSS's :host block and is not present in default.css :root, so it does not cascade into this component's shadow DOM. The result is no hover background on list items and no focus background on item text inputs in both light and dark mode.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: wiki-checklist.ts does not import colorCSS, uses --color-hover-overlay at lines 133 and 169, and that token is absent from default.css :root (only defined in colorCSS's :host block). Since the component is rendered directly on the page, there is no ancestor to inherit the token from, causing the hover/focus backgrounds to be unresolved.",
+      "severity_justification": "Visual regression only — hover background on list items and focus background on text inputs silently disappear. Functionality is unaffected; no data loss or breakage of core flows.",
+      "category_justification": "The tokens used in CSS rules produce no visible effect because the variable is undefined, directly contradicting the intended styling behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/inventory-add-item-dialog.ts",
+      "start_line": 117,
+      "end_line": 117,
+      "message": "--color-border-focus (#4a90d9) is used as the color for .search-result-container anchor links. This is a focus-ring token, not a link color. In dark mode colorCSS keeps --color-border-focus at #4a90d9 (unchanged from light mode), resulting in a dull mid-blue link color that lacks contrast on dark surfaces. The intended token is --color-text-link or --color-action-link.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the checked-out file at dc1bd9ae: line 117 of inventory-add-item-dialog.ts uses var(--color-border-focus) for the anchor link color in .search-result-container a. --color-border-focus is a focus-ring token valued at #4a90d9 with no dark mode override in either default.css or shared-styles.ts colorCSS dark block. The semantically correct token would be --color-text-link (dark mode: #6ea8fe). The discrepancy with the PR diff is because this is a merge commit where the merge apparently reverted the correct change.",
+      "severity_justification": "A purely visual/semantic misuse of a token — the link remains blue-colored and visible; it just uses the wrong shade without dark mode adaptation. No functional impact.",
+      "category_justification": "Semantic misuse of a design token — a focus-ring token is used where a link-color token belongs, which undermines the token system's intent and produces suboptimal dark-mode adaptation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/inventory-move-item-dialog.ts",
+      "start_line": 128,
+      "end_line": 138,
+      "message": ".move-to-button uses --color-border-focus (#4a90d9) as its background and --color-action-confirm (#007bff) as the hover background. Using a focus-ring token as a button background is semantic misuse. Worse, the hover color (#007bff) is a different hue than the base (#4a90d9), and neither is overridden for dark mode, so in dark mode the button has an inconsistent, undark-adapted appearance. The correct token for a confirm/primary action button is --color-action-confirm for the base state.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at dc1bd9ae: .move-to-button uses --color-border-focus (#4a90d9) as base background and --color-action-confirm (#007bff) as hover background. --color-border-focus is a focus-ring token, not a button background token (semantic misuse). The base/hover states are also effectively inverted vs the correct confirm/confirm-hover pair. Neither token has a dark mode override in default.css or shared-styles.ts colorCSS, leaving both at light-mode values in dark mode.",
+      "severity_justification": "Visual/semantic issue only — the button remains blue and functional. The color is perceptually similar (#4a90d9 vs #007bff are both blues) so the visual breakage is subtle.",
+      "category_justification": "Semantic misuse of design tokens — a focus-ring token used as a button background, and base/hover states using tokens from different semantic groups, undermining the design token system's intent.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/inventory-move-item-dialog.ts",
+      "start_line": 188,
+      "end_line": 215,
+      "message": "Multiple hardcoded colors remain in the changed file that are not dark-mode-aware: `color: #333` (line 188) will be invisible against dark backgrounds; `background: #e8e8e8` on hover (line 194) won't contrast on dark surfaces; the scanned-result-header uses `background: #d1fae5`, `border: #10b981`, and `color: #047857` (lines 211-215) which are fixed light-mode green values with no dark override. These were not tokenised despite the PR's stated goal.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at dc1bd9ae: .qr-scan-button has color: #333 and hover background: #e8e8e8; .scanned-result uses hardcoded #10b981/#ecfdf5; .scanned-result-header uses #d1fae5/#10b981/#047857. All are light-mode-only values not adapted for dark mode. The PR diff confirms these should have been tokenized but the merge commit left them as hardcoded values.",
+      "severity_justification": "Multiple visible UI elements (interactive button, hover state, scan result display area) fail to adapt to dark mode, directly undermining the stated goal of this PR. #333 text color will have poor contrast on dark surfaces.",
+      "category_justification": "The code produces incorrect visual output in dark mode — the PR's explicit goal — due to remaining hardcoded colors that override the token system.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/chat-message-bubble.ts",
+      "start_line": 42,
+      "end_line": 42,
+      "message": "The user message bubble still uses the hardcoded colour #3a5a8c. The PR description explicitly states that dedicated --color-chat-user-bg and --color-chat-user-text tokens were added, but no such tokens appear anywhere in the codebase (default.css or shared-styles.ts). This means the user bubble does not adapt to dark mode at all — it will appear as a medium-blue box on a very dark page background.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at dc1bd9ae: chat-message-bubble.ts line 42 uses hardcoded background: #3a5a8c and line 45 uses color: #ffffff. A grep for 'color-chat' across all .ts/.css/.js files returns zero results — the tokens don't exist anywhere. The PR diff confirms both the token definitions (in default.css) and the component usage were intended but neither made it into the merge commit.",
+      "severity_justification": "The user message bubble is a prominent UI element that will appear as a fixed medium-blue box on a dark background, directly contradicting the PR's stated purpose of full dark mode support.",
+      "category_justification": "The PR's explicit goal is dark mode support; the chat bubble hardcodes light-mode colors and the token definitions were never committed, causing incorrect visual rendering in dark mode.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 40,
+      "end_line": 46,
+      "message": "The action tokens --color-action-confirm, --color-action-confirm-hover, --color-action-danger, --color-action-danger-hover, --color-action-warning-btn, --color-action-warning-btn-text, and --color-action-warning-btn-hover are defined only in the light-mode :host block and have no @media (prefers-color-scheme: dark) overrides in colorCSS. Components that use these tokens (e.g. confirmation-dialog button-primary, button-danger, button-warning) will render with light-mode button colours in dark mode. Compounding this, --color-text-inverse is overridden to #1e1e1e in dark mode, so buttons using `color: var(--color-text-inverse)` will have near-black text on undarkened backgrounds.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: --color-action-confirm/danger/warning-btn tokens have no dark mode overrides in either colorCSS or default.css. Meanwhile --color-text-inverse is overridden to #1e1e1e in dark mode. confirmation-dialog.ts includes colorCSS and uses var(--color-text-inverse) for button text on these undarkened button backgrounds, producing near-black text on light-mode-colored buttons in dark mode.",
+      "severity_justification": "Confirmation dialog buttons (primary, danger, warning, cancel) all have incorrect dark mode styling — dark text on undarkened backgrounds — directly affecting a high-visibility interactive UI element used for destructive actions.",
+      "category_justification": "The dark mode token system is incomplete: critical button color tokens lack dark overrides while the inverse text token does override, creating an inconsistent and visually broken result in dark mode.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/css/default.css",
+      "start_line": 57,
+      "end_line": 97,
+      "message": "The dark mode :root block in default.css is missing --color-border-focus. The PR description explicitly claims this override was added (#58a6ff), but it is absent from the diff. Light DOM inputs and focusable elements styled via default.css will keep the light-mode focus ring colour (#4a90d9) in dark mode rather than the higher-contrast #58a6ff value called for by the PR's own a11y requirements.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: default.css dark mode :root block has no --color-border-focus override (only border-default/subtle/strong are overridden). shared-styles.ts colorCSS dark block also has --color-border-focus: #4a90d9 (unchanged from light mode). The PR description claims #58a6ff was added but it exists nowhere in the codebase.",
+      "severity_justification": "Focus rings remain visible at #4a90d9 in dark mode — the color is just not the higher-contrast #58a6ff value intended by the PR. Accessibility impact is modest: focus rings don't disappear, they're just slightly less visible than designed.",
+      "category_justification": "The PR's stated fix for a11y focus-ring contrast in dark mode was not committed — the promised token value is absent from the code.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/frontmatter-key.ts",
+      "start_line": 40,
+      "end_line": 40,
+      "message": ".key-input:focus retains a hardcoded `box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1)` (the old #007bff blue) instead of being derived from --color-border-focus. The focus border-color was correctly migrated to var(--color-border-focus), but the accompanying glow still references the old literal colour. In dark mode this creates a mismatched focus ring (border from token, glow from hardcoded light-mode value).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 40: border-left-color correctly uses var(--color-border-focus) but box-shadow still has hardcoded rgba(0, 123, 255, 0.1). The PR diff confirms the box-shadow should have been updated to color-mix(in srgb, var(--color-border-focus) 15%, transparent) but the merge commit left the old literal.",
+      "severity_justification": "The glow is at 10% opacity so the color mismatch is barely perceptible. Both the border (#4a90d9) and glow (#007bff) are similar blues; the visual defect is subtle.",
+      "category_justification": "Incomplete token migration — the border-color was updated to use the token but the companion glow still uses the old hardcoded value, creating an inconsistency within the same focus rule.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/table-filter-popover.ts",
+      "start_line": 233,
+      "end_line": 264,
+      "message": "The search-input and range-input focus box-shadows still use hardcoded `rgba(13, 110, 253, 0.15)` — the old Bootstrap primary blue (#0d6efd) — rather than deriving from --color-border-focus. The border-color was correctly migrated to var(--color-border-focus), but the glow ring still uses a fixed colour that does not adapt to dark mode or the chosen focus token value.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: both .search-input:focus and .range-input:focus have border-color correctly using var(--color-border-focus) but box-shadow still hardcoded as rgba(13, 110, 253, 0.15). The PR diff confirms these should have been updated to color-mix(in srgb, var(--color-border-focus) 15%, transparent) but the merge commit left the old literals.",
+      "severity_justification": "At 15% opacity the glow mismatch is subtle — both the border (#4a90d9) and glow (#0d6efd) are blue tones. The visual defect is barely perceptible but it is an incomplete token migration.",
+      "category_justification": "Incomplete token migration — border-color correctly uses the focus token but the companion glow still references the old Bootstrap primary blue literal, creating inconsistency within the same focus rules.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/blog-new-post-dialog.ts",
+      "start_line": 152,
+      "end_line": 155,
+      "message": "The component uses a `--color-action-confirm` token which is not defined. Based on `confirmation-dialog.ts`, this was likely intended to be `--color-action-link` or another existing action token. Using an undefined token will result in the button having no background color.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "--color-action-confirm is defined in colorCSS (shared-styles.ts line 42: #007bff). blog-new-post-dialog.ts uses dialogStyles() which includes colorCSS, so the token is available in the component's shadow DOM. The button will correctly render with a blue background. The claim that the token is undefined is factually wrong.",
+      "severity_justification": "The finding describes a non-existent bug; the button works correctly.",
+      "category_justification": "The finding makes an incorrect claim about a missing CSS custom property definition.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/confirmation-dialog.ts",
+      "start_line": 158,
+      "end_line": 185,
+      "message": "The component uses several tokens that are not defined in the design system: `--color-action-confirm`, `--color-action-confirm-hover`, `--color-action-danger`, `--color-action-danger-hover`, `--color-action-warning-btn`, `--color-action-warning-btn-text`, and `--color-action-warning-btn-hover`. These tokens need to be added to `shared-styles.ts` to ensure consistent button styling.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "All seven tokens claimed to be undefined are defined in colorCSS in shared-styles.ts (lines 40-46: --color-action-danger, --color-action-danger-hover, --color-action-confirm, --color-action-confirm-hover, --color-action-warning-btn, --color-action-warning-btn-text, --color-action-warning-btn-hover). confirmation-dialog.ts explicitly imports and includes colorCSS, so all tokens are available. The finding's factual premise is wrong.",
+      "severity_justification": "The finding describes a non-existent problem; the tokens are defined and the component renders correctly.",
+      "category_justification": "The finding makes an incorrect claim about missing CSS custom property definitions.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 28,
+      "end_line": 28,
+      "message": "The CSS variable `--color-surface-elevated` is declared with the same value as `--color-surface-primary` for the default light theme. In dark mode, they have distinct values. This seems unintentional, as elevated surfaces should typically be visually distinct from the primary surface in both themes to indicate a change in elevation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Both tokens being #ffffff in light mode is a common, intentional design pattern: light-mode elevation is conveyed through shadows (--shadow-subtle/medium), not color shifts. Dark mode correctly uses distinct values. The finding's claim that this 'seems unintentional' is speculative and contradicts standard design system conventions. No actual visual or functional defect is demonstrated.",
+      "severity_justification": "No functional impact — elevated elements still look correct in both modes due to shadow usage.",
+      "category_justification": "The finding is a design opinion about token values rather than a code correctness issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 78,
+      "end_line": 78,
+      "message": "The token `--color-hover-error` with value `#ff6b7a` is defined but does not have a corresponding override for dark mode. This will cause the light-theme color to be used in dark mode, which may not provide sufficient contrast and will be inconsistent with the dark theme's color palette.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "While the absence of a dark mode override is factually correct, the finding's concerns are unsubstantiated: #ff6b7a (bright pink) on dark surfaces (#1e1e1e/#2d2d2d) actually has excellent contrast. The PR description explicitly notes the token was kept intentionally. The base --color-error token also lacks a dark override by design. The finding restates a generic best practice without demonstrating an actual problem.",
+      "severity_justification": "No real contrast or visual problem — bright colors have good visibility on dark backgrounds.",
+      "category_justification": "The finding is a generic concern about missing dark mode override without evidence of actual harm.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/automagic-identifier-input.ts",
+      "start_line": 72,
+      "end_line": 75,
+      "message": "The token `--color-hover-overlay` is used for the `background` property on hover. This token is defined as `rgba(0, 0, 0, 0.05)` in light mode, which is appropriate for layering on top of another color. However, using it directly as a background will result in a nearly transparent background, making the button appear to vanish on hover. It should probably be applied on top of the default background color using `color-mix` or by using a solid color token instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The pattern is confirmed: rgba(0,0,0,0.05) replaces the background rather than layering on it. While the default button hover is subtle but directionally correct, the .automagic and .manual variant backgrounds (blue and yellow) are completely wiped on hover because the :hover rule has higher specificity. The finding correctly identifies the core problem even if 'appear to vanish' overstates the default-state behavior.",
+      "severity_justification": "Hover state provides reduced or absent visual feedback compared to the original design, but buttons remain functional and detectable via border-color changes. Primarily a UX polish regression.",
+      "category_justification": "The token is used in a way that produces incorrect visual behavior — variant button backgrounds disappear on hover due to specificity and opacity semantics.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/inventory-move-item-dialog.ts",
+      "start_line": 139,
+      "end_line": 141,
+      "message": "The component uses a `--color-action-confirm` token which is not defined in the design system. This will result in the button having no background color. It should be replaced with a valid token from `shared-styles.ts`, such as `--color-action-link`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "--color-action-confirm is defined in colorCSS (shared-styles.ts line 42: #007bff). inventory-move-item-dialog.ts uses dialogStyles() which includes colorCSS, making the token fully available. The button hover will render with a blue background. The finding's core claim that the token is undefined is factually incorrect.",
+      "severity_justification": "The described problem (no background color) does not exist; the button renders correctly with the token.",
+      "category_justification": "The finding makes a factually wrong claim about a missing CSS custom property definition.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/collapsible-heading.ts",
+      "start_line": 49,
+      "end_line": 51,
+      "message": "The focus outline uses a hardcoded color value (`#0066cc`). It should use the `--color-border-focus` token to ensure it adapts to theme changes and remains consistent with other focusable elements.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims a hardcoded #0066cc exists at lines 49-51, but the file at dc1bd9ae has 'outline: 2px solid var(--color-text-link)' — a CSS custom property, not a hardcoded color. The old #0066cc was already replaced (though with --color-text-link rather than --color-border-focus). The finding's factual premise is incorrect.",
+      "severity_justification": "No hardcoded color exists; the element uses a token that does adapt to theme changes.",
+      "category_justification": "The finding makes a factually incorrect claim about the presence of a hardcoded color value.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 138,
+      "end_line": 138,
+      "message": "The `--color-border-focus` token is missing from the dark mode overrides in `:host`. It is defined for the light theme and in the root dark mode block in `default.css`, but web components using shadow DOM won't inherit it correctly in dark mode without it being specified here. This will cause focus rings to use the light theme color in dark mode.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims --color-border-focus is in the default.css dark mode :root block — it is not (only defined once in light mode at line 27, confirmed by grep). It also incorrectly claims shadow DOM won't inherit CSS custom properties from :root — custom properties are inherited properties per spec and do cascade through shadow DOM boundaries. The concern about a missing dark override is real (finding 7 already covers it) but this finding's specific factual claims are both wrong.",
+      "severity_justification": "The finding misidentifies both the location of the token and the CSS inheritance mechanism; the actual gap was already identified in finding 7.",
+      "category_justification": "The finding makes factually incorrect claims about both the token's definition location and CSS custom property inheritance behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/system-info.ts",
+      "start_line": 73,
+      "end_line": 75,
+      "message": "The `.drawer-tab` has hardcoded text color `#888`. This should use a design token, likely `--color-editor-text`, to ensure it is legible in both light and dark themes, as the editor panel colors are explicitly dark-themed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims line 75 has hardcoded #888 but the file at dc1bd9ae shows 'color: var(--color-editor-text)' — the token migration was correctly applied. The PR diff confirms #888 was replaced with var(--color-editor-text). No hardcoded color exists at the referenced lines.",
+      "severity_justification": "No actual problem exists in the code at this SHA.",
+      "category_justification": "The finding is about a hardcoded color that should be tokenized, but it was already tokenized.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 12,
+      "end_line": 84,
+      "message": "This change renames the tokens `--color-background-primary`, `--color-border-primary`, and `--color-hover-light` (e.g. to `--color-surface-elevated`, `--color-border-default`, `--color-hover-overlay`) and removes the originals from `colorCSS`, but existing consumers were not updated. `page-chat-panel.ts` still references `var(--color-background-primary)` and `var(--color-border-primary)` (lines 67, 68, 96, 97, 111, 205, 217), and `toast-message.ts` still references `var(--color-hover-light)` (line 141). These vars are no longer defined anywhere, so those styles will silently fall back to the initial value and produce broken visuals (transparent backgrounds / no hover state). Either keep aliases for the old names or update the call sites.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified against the repository: page-chat-panel.ts uses --color-background-primary (lines 67, 96), --color-border-primary (lines 68, 97, 111, 205, 217), and toast-message.ts uses --color-hover-light (line 141). Both import colorCSS. The current colorCSS in shared-styles.ts at this SHA no longer defines any of these three tokens — they were renamed in the PR to --color-surface-elevated, --color-border-default, and --color-hover-overlay — and no other stylesheet defines them either. The consumers were not updated, so those styles silently fall back to initial values. The PR diff provided shows these files being updated, but git history confirms those changes were never committed to the repository at this SHA.",
+      "severity_justification": "Produces visual breakage — transparent backgrounds and missing borders in the chat panel (a primary UI component) and missing hover state on toasts — but does not break functionality or data integrity.",
+      "category_justification": "The code references CSS custom properties that are no longer defined, causing styles to silently fall back to initial values instead of the intended design tokens.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/inventory-add-item-dialog.ts",
+      "start_line": 101,
+      "end_line": 103,
+      "message": "`.search-result-item:hover` now uses `var(--color-surface-sunken)`, which is the same background as `.search-results-header` above it (line 80). On a list of items where the header has the same shade as a \"hovered\" item, the hover state will be visually indistinct (and especially so in dark mode where surface-sunken is `#141414` against the host `#1e1e1e`). Consider using `--color-hover-overlay` for the hover state to match conventions used elsewhere in this PR (e.g. `wiki-table.ts`, `table-filter-popover.ts`).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: both .search-results-header (line 80) and .search-result-item:hover (line 102) use var(--color-surface-sunken). They are identical values (#f8f9fa light, #141414 dark), so hovering over a list item produces no visual feedback distinct from the header. Before the PR, hover was #f3f4f6 while the header was #f9fafb. The PR introduced this regression by mapping both to the same token. Other components in this same PR correctly use --color-hover-overlay for hover states.",
+      "severity_justification": "The hover feedback on search result items is lost, which is a UX regression but not a functional failure — the component still works, items are still clickable. It has no impact on data integrity or functionality.",
+      "category_justification": "The hover state token assignment is semantically wrong — it uses a surface background token instead of an interactive state token, erasing the intended visual feedback. This matches the convention used elsewhere in the PR.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 571,
+      "end_line": 573,
+      "message": "The PR description states focus `box-shadow` rgba values in `dialogCSS` and `inputCSS` were converted to `color-mix()`, but these focus shadows still use hardcoded `rgba(74, 144, 217, …)` values (here on line 573 and on line 685 in `inputCSS`, as well as in `wiki-checklist.ts` line 331 / `table-filter-popover.ts` lines 233, 264). In dark mode the focus border color is `--color-border-focus`, but the focus glow is locked to a fixed light-blue rgba, which may not match a future change to the focus token. Consider deriving the shadow from the focus token via `color-mix()` as the description claims.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: color-mix() is used zero times anywhere in static/ at this SHA. All focus box-shadows in shared-styles.ts (lines 573, 685), wiki-checklist.ts (line 331), and table-filter-popover.ts (lines 233, 264) still use hardcoded rgba() values. The PR diff and PR description checklist both claim this was converted to color-mix(), but the committed code does not reflect that. This means the focus glow color is locked to light-mode-specific rgba values that won't match the --color-border-focus token in dark mode.",
+      "severity_justification": "In dark mode the focus glow ring colour will be slightly off (#4a90d9 vs the token #58a6ff), which is a minor visual inconsistency. It does not break functionality, accessibility of focus visibility, or data integrity.",
+      "category_justification": "The focus box-shadow uses hardcoded rgba values instead of deriving from the design token, causing a colour mismatch in dark mode that contradicts the stated intent of the PR's token system.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/inventory-qr-scanner.ts",
+      "start_line": 56,
+      "end_line": 59,
+      "message": "The `.scanner-container` below this still hardcodes `background: #000;` (line 59). Other backgrounds in this file were migrated to tokens; this one was likely missed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The #000 background on .scanner-container is a camera/video viewfinder container. The PR diff shows the adjacent border was migrated to a token while the background was explicitly not changed, and sibling scanner-specific styles (#1a1a1a header background, #fff header text) were also left hardcoded — all consistent with a deliberate decision to keep the camera scanner UI dark-themed independently of the site design token system. Black is the standard background for camera viewfinders regardless of color scheme. The claim that it was 'likely missed' is not supported by the evidence.",
+      "severity_justification": "Even if it were an oversight, a black background on a camera viewfinder causes no visual regression — it is the correct and expected appearance.",
+      "category_justification": "The concern is about stylistic consistency of token migration, not a functional or behavioral bug.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/chat-message-bubble.ts",
+      "start_line": 45,
+      "end_line": 45,
+      "message": "This added `color` does not affect the actual message text because the nested `.content` rule sets its own `color: var(--color-text-primary)`. With the new light-mode tokens, user messages render dark text on the dark blue user bubble; the user-bubble-specific color needs to target the child content (and related metadata) or use the dedicated chat text token there.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: .bubble.user sets color: #ffffff (line 45) but .content explicitly sets color: var(--color-text-primary) (line 64), which resolves to #333333 in light mode. CSS specificity/cascade means .content's explicit rule wins over the inherited value, rendering dark text on the #3a5a8c dark blue bubble. This was introduced by the PR's change to --color-text-primary from the original dark-themed #e9ecef to light-themed #333333 without fixing the .content rule. The finding correctly identifies that adding color to .bubble.user alone does not fix the issue.",
+      "severity_justification": "User message bubbles in light mode render dark text (#333333) on a dark blue background (#3a5a8c), which fails WCAG contrast requirements. This affects a primary UI element (chat messages) in the default light theme.",
+      "category_justification": "The CSS cascade interaction is incorrect: the intended text color token is not actually applied to the message content because the child .content rule explicitly overrides it, causing wrong visual output.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 842,
+      "end_line": 842,
+      "message": "Adding `colorCSS` to every `dialogStyles()` consumer makes dialogs use dark-mode text/surface tokens, but several existing dialog containers still hard-code `background: white` (for example `blog-new-post-dialog.ts`, `inventory-add-item-dialog.ts`, `insert-new-page-dialog.ts`, `frontmatter-editor-dialog.ts`, and `page-import-dialog.ts`). In dark mode those dialogs can render light tokenized text on a white modal, so the shared dialog helper should also standardize the dialog surface/foreground or the consumers need to be updated together.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: all five named dialogs use dialogStyles() which now includes colorCSS (added in this PR). colorCSS's dark mode block sets --color-text-primary: #e9ecef (near-white). dialogCSS uses color: var(--color-text-primary) for titles and labels. But all five dialogs still have hardcoded background: white for their .dialog containers. In dark mode this renders near-white text on white background — essentially invisible. The PR introduced this by adding colorCSS to dialogStyles() without migrating the dialog surface backgrounds.",
+      "severity_justification": "In dark mode, five user-facing dialog components become nearly unreadable (near-white text on white background). While dark mode may not be the primary tested path, this is a substantial regression that affects core user workflows like creating blog posts, inserting pages, and editing frontmatter.",
+      "category_justification": "The dialog surface background was not migrated to match the new token system, causing wrong visual output (unreadable text) in dark mode for all five named dialog components.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/css/default.css",
+      "start_line": 380,
+      "end_line": 383,
+      "message": "These dark-mode code block overrides do not cover highlight.js token classes. `static/vendor/css/highlight.css` defines colors like `.hljs-string { color: #880000 }` and `.hljs-comment { color: #888888 }`; those spans remain dark/low-contrast inside the new dark code blocks because this rule only styles `code`/`pre` themselves. Add dark-mode overrides for the `.hljs-*` token classes as well.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: default.css at this SHA contains zero .hljs-* rules (grep returns nothing). The dark mode block only sets background/color on .markdown-body code and .markdown-body pre, not on .hljs-* token spans. The vendor highlight.css uses colors designed for a light background (#880000 for strings, #397300 for built-ins, #888888 for comments) which have very poor contrast against the dark mode code block background (#141414). The PR diff claims these were added but they were never committed.",
+      "severity_justification": "Syntax highlighting in dark mode will display hard-to-read colors (dark maroon/green on near-black background), but code blocks are still readable via the base color token. This is a visual quality issue rather than a functional failure.",
+      "category_justification": "The dark mode override is incomplete — the vendor highlight.css token classes are not overridden, causing low-contrast syntax highlighting in dark mode code blocks.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/css/default.css",
+      "start_line": 77,
+      "end_line": 78,
+      "message": "The dark-mode primary action color is still `#6c757d` while buttons use `--color-text-inverse: #1e1e1e` for their foreground, which gives insufficient contrast for primary buttons in dark mode. Use the higher-contrast dark token value consistently here so global controls remain readable.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: default.css line 77 and shared-styles.ts line 108 both set --color-action-primary: #6c757d in dark mode. --color-text-inverse is #1e1e1e in dark mode (default.css line 68, shared-styles.ts line 98). buttonCSS uses background: var(--color-action-primary) with color: var(--color-text-inverse). The contrast ratio of #6c757d vs #1e1e1e is approximately 3.65:1, failing WCAG AA for normal text (4.5:1 required). The PR description explicitly states this was supposed to be bumped to #8b949e for better contrast, but neither file was updated.",
+      "severity_justification": "Primary action buttons in dark mode fail WCAG AA contrast requirements (~3.65:1 vs the 4.5:1 threshold), affecting accessibility for all dark-mode users interacting with primary action buttons across multiple components.",
+      "category_justification": "The finding identifies a WCAG contrast failure for primary action button text in dark mode, directly affecting accessibility compliance.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 108,
+      "end_line": 109,
+      "message": "The component-scoped dark-mode primary action token also remains `#6c757d`, so Lit components using `buttonCSS` render `#1e1e1e` text on a low-contrast gray primary button in dark mode. This needs to match the higher-contrast dark value used for the global token set.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the previous finding's investigation: shared-styles.ts line 108 sets --color-action-primary: #6c757d in the dark mode block, and line 98 sets --color-text-inverse: #1e1e1e. buttonCSS (lines 370-372) uses background: var(--color-action-primary) and color: var(--color-text-inverse). The contrast ratio of #6c757d vs #1e1e1e is approximately 3.65:1, failing WCAG AA for normal text. This is the same underlying issue as finding 8 but affecting shadow-DOM Lit components via colorCSS rather than the global :root tokens. Both files have the same uncorrected value.",
+      "severity_justification": "Primary action buttons in Lit components fail WCAG AA contrast in dark mode (~3.65:1 vs 4.5:1 required), affecting all components that use buttonCSS with the primary button style.",
+      "category_justification": "WCAG contrast failure for primary action button text in dark mode directly affects accessibility compliance for Lit web components.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/wiki-checklist.ts",
+      "start_line": 330,
+      "end_line": 331,
+      "message": "This focus state tokenizes the border color but leaves the focus ring tied to a hard-coded gray `rgba()`. In dark mode or custom themes the ring can be visually inconsistent with the action/focus token; derive it from the same token instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: wiki-checklist.ts line 330-331 has border-color: var(--color-action-primary) but box-shadow: 0 0 0 2px rgba(108, 117, 125, 0.15) hardcoded. rgba(108,117,125) = #6c757d which is only the current light-mode value of --color-action-primary. color-mix() is used zero times in the codebase despite the PR description claiming focus shadows were converted. The glow is locked to a fixed color that will not track the token.",
+      "severity_justification": "The visual inconsistency (focus ring glow mismatching the border color in non-default themes or if the token changes) is a minor cosmetic issue that does not break functionality or cause immediate contrast failures, since #6c757d happens to equal the current token value.",
+      "category_justification": "The inconsistency between a tokenized border-color and a hardcoded rgba box-shadow creates a drift risk — the glow won't follow future token changes — which is a maintainability concern rather than a current functional bug.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 572,
+      "end_line": 573,
+      "message": "The border color is now tokenized but the focus-ring shadow remains a fixed `rgba(74, 144, 217, ...)`, so themes that override `--color-border-focus` will get a mismatched ring. Use the focus token for both parts of the focus treatment.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in finding 3's investigation: shared-styles.ts line 573 has border-color: var(--color-border-focus) tokenized but box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.2) hardcoded. rgba(74,144,217) = #4a90d9, the light-mode value of --color-border-focus. In dark mode --color-border-focus is #4a90d9 (same value, so no immediate visible mismatch), but the intent to use color-mix() was stated in the PR description and never committed. color-mix() is used zero times in the codebase. The glow is locked to the light-mode hex and won't track any future override of the focus token.",
+      "severity_justification": "The current dark mode value of --color-border-focus happens to also be #4a90d9 so there is no visible mismatch today. The issue is a future drift risk if the token value changes, making this a low-severity maintainability concern rather than an immediate visual bug.",
+      "category_justification": "The hardcoded rgba focus glow won't track overrides to --color-border-focus, creating a token consistency and maintainability gap rather than a current functional or visual failure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 684,
+      "end_line": 685,
+      "message": "The input focus border uses the token while the box-shadow still hard-codes the old blue. This makes custom/dark focus styling inconsistent; the shadow should be derived from `--color-border-focus` as well.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in finding 3's investigation: shared-styles.ts line 685 has border-left-color: var(--color-border-focus) tokenized but box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.1) hardcoded. rgba(74,144,217) = #4a90d9, the light-mode value of --color-border-focus. color-mix() is used zero times in the codebase despite the PR description claiming this was converted. The glow won't track any future override of --color-border-focus.",
+      "severity_justification": "The current --color-border-focus value is #4a90d9 in both light and dark mode so there is no immediate visual mismatch. This is a future drift risk if the token changes, making it a low-severity consistency concern.",
+      "category_justification": "The hardcoded rgba focus glow won't track overrides to --color-border-focus, creating a token consistency gap rather than a current functional failure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 17,
+      "end_line": 20,
+      "message": "The old `--color-background-primary`, `--color-border-primary`, and `--color-hover-light` tokens were removed without keeping aliases, but they are still consumed by existing components (`page-chat-panel.ts` uses the background/border tokens and `toast-message.ts` uses `--color-hover-light`). Those styles will resolve to invalid values after this change, breaking the chat panel surfaces/borders and toast hover state.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "This is the same issue thoroughly verified in finding 1. page-chat-panel.ts has 7 references to --color-background-primary and --color-border-primary (lines 67, 68, 96, 97, 111, 205, 217), and toast-message.ts has one reference to --color-hover-light (line 141). Neither token is defined anywhere in the codebase at this SHA (confirmed by grep). Both components import colorCSS which no longer defines these tokens. The styles silently fall back to initial values, breaking chat panel backgrounds/borders and the toast hover state.",
+      "severity_justification": "Produces visible broken UI — transparent backgrounds and missing borders on the chat panel (a primary UI component) and missing hover feedback on toasts — though it does not break functionality or data integrity.",
+      "category_justification": "CSS custom properties that are referenced but not defined resolve to their initial value, causing styles to silently fail and produce incorrect visual output.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/css/default.css",
+      "start_line": 361,
+      "end_line": 364,
+      "message": "The markdown dark-mode heading overrides only update the `h1`/`h2` borders. Vendor `github-markdown.css` also sets heading-related colors such as `h6 { color: #777 }` and `.octicon-link { color: #000 }`; those remain low-contrast or invisible on the dark markdown background. Include the heading text/anchor color overrides in this dark-mode block.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: vendor github-markdown.css has .markdown-body h6 { color: #777 } and .markdown-body h1-h6 .octicon-link { color: #000 } as explicit rules with higher specificity than the dark-mode .markdown-body { color: var(--color-text-primary) } override. The dark mode block in default.css only sets border-bottom-color for h1/h2 with no h6 text color or .octicon-link color overrides. In dark mode, #777 on #1e1e1e is approximately 4.3:1 (marginal WCAG AA fail for normal text), and #000 on #1e1e1e is approximately 1.2:1 (effectively invisible for hover-shown anchor icons).",
+      "severity_justification": "h6 headings are rarely used in typical wiki content and anchor icons only appear on hover, making these edge-case issues rather than primary content problems.",
+      "category_justification": "The dark mode override is incomplete — vendor CSS rules with higher specificity retain light-mode colors that have poor contrast on the dark background.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/css/default.css",
+      "start_line": 65,
+      "end_line": 68,
+      "message": "The dark-mode muted text token (`#6c757d`) is used for normal-sized UI text throughout the app, but it has insufficient contrast on the `#1e1e1e` / `#141414` dark surfaces. Use a lighter muted value for dark mode so labels, metadata, and menu text remain readable.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: both default.css line 67 and shared-styles.ts line 97 set --color-text-muted: #6c757d in dark mode. Contrast ratios: 3.56:1 on #1e1e1e, 3.93:1 on #141414, and 2.94:1 on #2d2d2d (elevated surface). All fail WCAG AA for normal text (4.5:1); the elevated surface case even fails the 3:1 UI component minimum. The token is used broadly for menu items, labels, metadata, placeholder text, and section titles throughout the app.",
+      "severity_justification": "The muted text token is used widely for secondary text throughout the UI. Contrast failures range from 2.94:1 to 3.93:1 against the required 4.5:1 for normal text, making labels and metadata noticeably hard to read in dark mode across multiple components.",
+      "category_justification": "The finding identifies concrete WCAG contrast failures (3.56:1, 3.93:1, 2.94:1) for a broadly-used text token in dark mode, directly impacting readability and accessibility compliance.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/shared-styles.ts",
+      "start_line": 95,
+      "end_line": 98,
+      "message": "The component-scoped dark muted text token is too low-contrast for the dark surfaces and is used on many small labels/metadata (`--color-text-muted`). This will make muted UI text hard to read in dark mode; use a lighter dark-mode muted color consistently with the global token.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "This is the same issue verified in finding 15. shared-styles.ts line 97 sets --color-text-muted: #6c757d in the dark mode block. Contrast ratios: 3.56:1 on #1e1e1e, 3.93:1 on #141414, and 2.94:1 on #2d2d2d — all failing WCAG AA for normal text (4.5:1), with the elevated surface case failing even the 3:1 UI component minimum. The token is used extensively in Lit components for section titles, help text, entry dates, placeholder text, and metadata labels.",
+      "severity_justification": "The muted text token is used widely in shadow-DOM Lit components and its contrast ratios (2.94:1 to 3.93:1) fall well below the 4.5:1 WCAG AA threshold for normal text, making small labels and metadata noticeably hard to read in dark mode.",
+      "category_justification": "Concrete WCAG contrast failures for a broadly-used text token in dark mode directly affect readability and accessibility compliance across Lit components.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "static/js/web-components/wiki-checklist.ts",
+      "start_line": 95,
+      "end_line": 97,
+      "message": "`--color-info` is not overridden for dark mode and remains `#6c757d`, which is low-contrast on the new dark checklist surfaces. Since this saving indicator is small text, use a dark-mode-safe text token (or add a higher-contrast dark `--color-info`) so the status remains readable.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: wiki-checklist.ts uses color: var(--color-info) at font-size: 12px for the saving indicator. --color-info: #6c757d is defined only in light mode — neither shared-styles.ts nor default.css dark mode blocks contain a --color-info override. Contrast of #6c757d on the dark surface #1e1e1e is 3.56:1, failing WCAG AA for 12px normal text (4.5:1 required). The PR introduced this by tokenizing the color and adding dark surfaces without adding a dark mode override for --color-info.",
+      "severity_justification": "The saving indicator is a secondary status element that appears briefly during saves. The contrast failure makes it harder to read in dark mode but does not affect core functionality.",
+      "category_justification": "The missing dark mode override for --color-info causes a WCAG contrast failure (3.56:1) for 12px text on the dark checklist surface, directly affecting accessibility.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

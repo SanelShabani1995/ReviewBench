@@ -1,0 +1,317 @@
+{
+  "pr_key": "stuckj_mkvdup_180-4177c9e4",
+  "pr": {
+    "repo": "https://github.com/stuckj/mkvdup",
+    "pr_number": 180,
+    "base": "538ee9455c82b96e15746003cd21e1670f9dc696",
+    "head": "4177c9e48dd263a9f2f82299348a77b1aef4abd1"
+  },
+  "findings": [
+    {
+      "file": "internal/matcher/matcher_parallel.go",
+      "start_line": 766,
+      "end_line": 785,
+      "message": "markChunksCovered acquires coverageMu.Lock() and writes m.coveredChunks on every successful match during parallel processing, but m.coveredChunks is never read anywhere in production code — only in the test-only helper isRangeCoveredGlobal. The comment in recordMatch says the global bitmap is 'for TrueHD gap-fill' but fillTrueHDTrackGaps reads m.matchedRegions, not m.coveredChunks. This is dead code imposing real mutex contention on every match in the hot parallel path.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: all production code coverage reads use localCov (batch-local); m.coveredChunks is written by markChunksCovered under coverageMu.Lock() on every match but is never read in production code — only in the test-only isRangeCoveredGlobal helper. fillTrueHDTrackGaps reads m.matchedRegions, not m.coveredChunks. The PR removed the old isRangeCoveredParallel/isChunkCoveredParallel readers but kept the writers, leaving dead mutex-guarded writes on the hot path.",
+      "severity_justification": "Every successful NAL match during parallel processing acquires a mutex and writes to a global bitmap that is never read, imposing unnecessary contention on the hot path. This is a real performance regression with no offsetting correctness benefit.",
+      "category_justification": "Dead mutex-guarded writes on the hot parallel matching path impose unnecessary lock contention without serving any functional purpose.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_locality.go",
+      "start_line": 68,
+      "end_line": 69,
+      "message": "m.diagLocalityAttempts.Add(1) and m.diagLocalityAttempts.Load() are two separate atomic operations. Between them any other goroutine can increment the counter, so debugN may not reflect this goroutine's actual increment value. The debug gate 'debugN <= 10' may skip the first attempts or fire on later ones. The correct idiom is: debugN := m.diagLocalityAttempts.Add(1), which returns the post-increment value atomically.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: lines 68-69 do m.diagLocalityAttempts.Add(1) then debugN := m.diagLocalityAttempts.Load() as two separate operations. Between them, other goroutines can increment the counter, so debugN may not correspond to this goroutine's Add. The correct idiom is debugN := m.diagLocalityAttempts.Add(1). The finding is factually correct.",
+      "severity_justification": "This is a diagnostic/debug counter only used when verboseWriter is non-nil. The race causes at most slightly incorrect debug gate behavior (may show more or fewer than 10 debug lines), with no impact on matching correctness or normal-mode operation.",
+      "category_justification": "Two separate atomic operations on a shared counter with a TOCTOU race between them, causing the debug gate to potentially fire incorrectly.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_parallel.go",
+      "start_line": 697,
+      "end_line": 726,
+      "message": "newLocalCoverage pre-allocates chunkMap entries only for the batch's own packet ranges. When tryVerifyAndExpand expands a region beyond the batch's last packet (into the next batch's territory), localCov.markCovered silently skips marking those out-of-map chunks. The following batch starts with an empty localCov, so all sync points in the previously-expanded range are re-processed: hash lookup, source verify, and a duplicate matchedRegion is produced. mergeRegions handles the duplicates, but the redundant I/O and compute (especially for audio tracks where consecutive frames often expand into each other) is real overhead.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: newLocalCoverage only maps chunks from the batch's own packet ranges. When tryVerifyAndExpand expands into the next batch's territory, markCovered silently skips those out-of-map chunks. The next batch's fresh localCov has those chunks in its map (from its packets) but unmarked, so sync points in already-matched territory are re-tried. mergeRegions handles resulting duplicates, confirming correctness is preserved but with redundant I/O and compute. The global bitmap provides no backstop since it is never read in production.",
+      "severity_justification": "Real overhead (redundant hash lookups, source verification, and I/O) occurs whenever a match expands across a batch boundary, which is common for audio tracks with consecutive frames. The correctness impact is zero due to mergeRegions, but the performance regression is real and could be significant for large files with many cross-boundary expansions.",
+      "category_justification": "Redundant computation and I/O introduced by a design gap in the batch-local coverage tracking — not a correctness bug but a genuine performance concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_determinism_test.go",
+      "start_line": 187,
+      "end_line": 192,
+      "message": "TestMatchDeterminism explicitly sets UsesESOffsets=false, which causes syncBatchEdges to return immediately for every edge (the !m.sourceIndex.UsesESOffsets early-exit). The entire inter-batch edge sync code path — including edgeMissHead tracking, locality chain propagation, and tryLocalityMatch retry — is therefore never exercised by any unit test. The comment acknowledges this and defers to 'real-world Blu-ray tests' which are not in the repo, leaving a critical new code path without automated coverage.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: TestMatchDeterminism sets UsesESOffsets=false (line 155), and syncBatchEdges has an explicit early-exit on !m.sourceIndex.UsesESOffsets. No test calls syncBatchEdges with UsesESOffsets=true through the Match() flow. The edgeMissHead tracking, batchEdgeInfo propagation, and tryLocalityMatch retry in syncBatchEdges are entirely without automated test coverage. The test's own comment confirms this and defers to non-repo Blu-ray tests.",
+      "severity_justification": "The inter-batch edge sync is the critical new mechanism enabling determinism at batch boundaries for Blu-ray (ES offset) content. It is non-trivial code introduced by this PR. Without a test, a regression or logic bug in syncBatchEdges would be undetected by CI, potentially silently degrading match quality on real Blu-ray inputs.",
+      "category_justification": "A newly introduced code path (syncBatchEdges with UsesESOffsets=true) has no automated test coverage, acknowledged by the test's own comment.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_parallel.go",
+      "start_line": 168,
+      "end_line": 179,
+      "message": "processBatch re-derives cross-packet locality from pktResults[last] using a duplicate computation (matchLen = last.mkvEnd - last.mkvStart; loc.offset = last.srcOffset + matchLen/2) instead of returning the already-computed pktLoc from matchPacketBatch. The two computations currently agree, but matchPacketBatch's recordMatch closure also updates pktLoc — if any future match path updates pktLoc without appending to results (e.g., a 'soft' locality update), the divergence will be silent and hard to debug. matchPacketBatch should return pktLoc so there is a single source of truth.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: matchPacketBatch maintains pktLoc internally via recordMatch but doesn't return it; processBatch re-derives the same locality from pktResults[last] using identical arithmetic. Two sources of truth exist for the same datum. The computations currently agree only because recordMatch always appends to results, but any future 'soft' locality update (updating pktLoc without appending to results) would cause a silent divergence.",
+      "severity_justification": "There is no current bug — both computations produce identical results. The risk is a future silent divergence if a new code path updates locality without adding a region. This is a real but low-urgency maintainability concern.",
+      "category_justification": "Duplicate locality-derivation logic with two sources of truth, creating a future divergence risk with no current functional impact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_parallel.go",
+      "start_line": 428,
+      "end_line": 479,
+      "message": "syncBatchEdges only retries the single first NAL (headSyncOff) of the first packet of each batch. If the first packet has multiple NALs that fail hash-based matching (common for Blu-ray frames near scene cuts where the indexer skipped adjacent NALs), only headSyncOff gets a locality recovery attempt. All other missed NALs in that packet are permanently lost. The old per-track hint propagated locality across every packet continuously; the new design resets it at every 64-packet boundary and recovers at most one NAL per boundary.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: batchEdgeInfo records only one NAL (headSyncOff) per batch boundary. syncBatchEdges retries exactly that NAL. In matchPacketBatch, the first packet of a batch starts with loc.valid=false, so tryLocalityMatch returns nil for all its NALs (mkvDelta check is skipped but !loc.valid causes immediate return). The edge sync adds at most one recovered NAL per boundary, leaving all subsequent missed NALs in the first packet without locality recovery.",
+      "severity_justification": "Silently reduces match coverage for Blu-ray (ES offset) content whenever a batch-boundary packet has multiple hash-miss NALs — the second and later NALs in that packet are permanently unrecoverable by locality. This is a regression versus the old continuous per-track hint approach, trading determinism for reduced match quality.",
+      "category_justification": "The design produces systematically lower match coverage near batch boundaries compared to the pre-PR continuous locality propagation, specifically for Blu-ray ES-offset content.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher.go",
+      "start_line": 404,
+      "end_line": 406,
+      "message": "fillTrueHDGaps is called with the original (caller-order) packets slice rather than sortedPackets. This works correctly today because fillTrueHDTrackGaps sorts packets by offset internally. However, if the caller happens to pass packets in an order where TrueHD packets are interspersed with long runs of other-track packets, the intermediate map construction in fillTrueHDGaps is still correct. The subtle risk is that sortedPackets was the slice actually processed by matchParallel, but the diagnostic/gap-fill code operates on the original slice — if those two ever diverge (e.g. if fillTrueHDGaps used packet indices instead of offsets), the mismatch would be silent.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct about the inconsistency (packets vs sortedPackets) but the risk scenario it describes is purely hypothetical. fillTrueHDGaps explicitly sorts by .Offset internally and uses only MKV offsets for all logic — never array indices. Both slices contain identical Packet objects. There is no current bug. The finding itself admits it 'works correctly today' and the claimed risk requires a future rewrite to index-based access, making it speculative and sub-threshold.",
+      "severity_justification": "No current bug exists. The hypothetical risk requires a significant future code change to manifest.",
+      "category_justification": "The concern is about a consistency/clarity issue between which slice is passed to different functions, with no current behavioral impact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_truehd.go",
+      "start_line": 86,
+      "end_line": 93,
+      "message": "`fillTrueHDTrackGaps` reads `m.matchedRegions` without a mutex after the mutex was removed. Because `m.matchedRegions` is now populated by appending batch results sequentially at the end of `matchParallel`, this function will read an incomplete list of regions if called before `matchParallel` completes. This can lead to missed gap-filling opportunities.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "fillTrueHDGaps is called sequentially after matchParallel returns (which itself blocks until wg.Wait() and the merge loop complete). There is no concurrent access to m.matchedRegions at this point. The removed mutex was protecting against concurrent goroutine writes during the parallel phase, which is no longer needed since matchParallel now writes to per-batch slices and merges them sequentially before returning. The finding's premise is factually incorrect.",
+      "severity_justification": "The described race condition does not exist in the actual call sequence.",
+      "category_justification": "The finding claims a race/ordering issue in data access, which is the correctness category.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_truehd.go",
+      "start_line": 179,
+      "end_line": 182,
+      "message": "`fillTrueHDTrackGaps` appends to `m.matchedRegions` without a mutex. This can lead to a data race if other parts of the code were to access `m.matchedRegions` concurrently, although no other concurrent access seems to exist after `matchParallel` completes. Even without a race, it's inconsistent with how `m.matchedRegions` is populated in `matchParallel`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding explicitly admits no concurrent access exists after matchParallel completes. fillTrueHDGaps is called sequentially after matchParallel returns with all goroutines done. The 'inconsistency' claim is also wrong: matchParallel's own final merge into m.matchedRegions is also mutex-free (sequential loop after wg.Wait()). There is no race and no real inconsistency — the design intentionally eliminates the mutex by making all m.matchedRegions writes sequential.",
+      "severity_justification": "No actual race condition exists; the finding describes a theoretical concern that the code's own analysis immediately dismisses.",
+      "category_justification": "The finding concerns potential concurrent access safety of a shared data structure.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_parallel.go",
+      "start_line": 204,
+      "end_line": 204,
+      "message": "In `matchPacketBatch`, a new `edgeMissInfo` is initialized for each call, but the parameter `loc packetLocality` is passed by value. The call to `matchPacketBatch` from `processBatch` passes a copy of `loc`, so any updates to `loc`'s fields within `matchPacketBatch` will not be propagated back to the `loc` variable in `processBatch`. This breaks the intra-batch locality chain, as state from one packet will not be available to the next.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "processBatch explicitly updates loc from pktResults after each matchPacketBatch call (lines 172-178), and then passes the updated loc to the next iteration. The intra-batch locality chain is maintained correctly. Passing loc by value to matchPacketBatch is intentional — state propagates via pktResults return, not via parameter mutation. The finding misses the explicit loc update in the calling loop.",
+      "severity_justification": "If the finding were correct it would be a serious bug breaking the locality chain entirely, but it is factually wrong.",
+      "category_justification": "The finding claims a broken locality chain — a correctness concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_parallel.go",
+      "start_line": 396,
+      "end_line": 421,
+      "message": "The second loop in `matchPacketBatch` to scan the rest of an Annex B video packet does not update `edgeMiss` information if it finds an unmatched NAL. If the first 4096 bytes are fully covered by previous matches within the batch (`firstNALProcessed` is false), and the first uncovered NAL is in the second part of the packet and is not matched, `edgeMiss.firstNALMiss` will remain `false`. This prevents a potential recovery during the inter-batch edge sync.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The second loop contains the same !firstNALProcessed guard that sets edgeMiss.firstNALMiss = region == nil. In the scenario the finding describes (all first-loop NALs skipped by coverage, firstNALProcessed=false, first second-loop NAL unmatched), the guard fires and correctly sets edgeMiss.firstNALMiss=true. The finding's claim that it 'will remain false' is factually incorrect.",
+      "severity_justification": "The finding describes a bug that does not exist; the code handles the described scenario correctly.",
+      "category_justification": "The finding claims incorrect edgeMiss tracking affecting inter-batch edge sync recovery.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_determinism_test.go",
+      "start_line": 4,
+      "end_line": 4,
+      "message": "[go.lang.security.audit.crypto.math_random.math-random-used] Do not use `math/rand`. Use `crypto/rand` instead.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "math/rand/v2 is used in a test file with a fixed seed (rand.NewPCG(42, 0)) to generate deterministic synthetic test data. Using crypto/rand would be wrong here — the test requires reproducible data, not cryptographically secure randomness. This is a generic static analysis rule applied without regard to context.",
+      "severity_justification": "No security risk exists; this is test-only deterministic data generation where math/rand is the correct choice.",
+      "category_justification": "The finding is a crypto/security rule about random number generation.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "go.lang.security.audit.crypto.math_random.math-random-used"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_parallel.go",
+      "start_line": 27,
+      "end_line": 27,
+      "message": "Is tailLocality still needed here since we removed tail recovery?",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "tailLocality is actively used in syncBatchEdges: curr.tailLocality is checked and passed to tryLocalityMatch (lines 450, 459), and next.tailLocality is conditionally updated after a successful recovery (lines 464-470). The field is essential. The PR comment about 'tail recovery' refers to the reverse direction (using next batch's locality to retry the current batch's tail NAL), which was not implemented — but forward use of tailLocality (current batch's tail to retry next batch's head) is the core of the feature.",
+      "severity_justification": "The finding is incorrect; tailLocality is actively used and removing it would break inter-batch edge sync.",
+      "category_justification": "The finding is a code review question about whether a field is still needed — a code clarity/maintainability concern.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "stuckj",
+        "url": "https://github.com/stuckj/mkvdup/pull/180#discussion_r3040928057",
+        "created_at": "2026-04-06T18:15:12Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "4177c9e48dd263a9f2f82299348a77b1aef4abd1"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_parallel.go",
+      "start_line": 160,
+      "end_line": 163,
+      "message": "Each batch starts with an empty locality state, and `syncBatchEdges` only restores locality for video. For audio tracks this means the first packet of every batch loses the cross-packet hint that the existing DTS Phase 2 tests rely on to avoid the expensive/capped full search, so repeated-header audio can regress every 64 packets. Consider carrying deterministic tail locality between same-track batches for all track types before processing the next batch, or otherwise seeding audio batch heads.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Factually confirmed: processBatch initializes `var loc packetLocality` (zero value, invalid) for every batch; syncBatchEdges explicitly skips non-video tracks (line 438-440). The old code maintained per-track trackCrossPacketHint that persisted across all packet boundaries. This means the first packet of each audio batch (every 64 packets) loses the cross-packet locality that previously seeded Phase 1, forcing Phase 2 with a 64-attempt cap — risking missed matches for repeated-header audio with many hash collisions.",
+      "severity_justification": "Every 64 audio packets, the cross-packet locality hint is dropped, causing Phase 1 to be skipped and falling back to capped Phase 2 (64 attempts). For highly-repeated audio patterns (DTS-MA with hundreds of matching locations), the correct location may exceed the cap and the match is missed — a real correctness regression. However, it only affects batch boundary packets (1 in 64), limiting overall impact.",
+      "category_justification": "The issue can cause missed audio packet matches at batch boundaries when Phase 2's 64-attempt cap prevents finding the correct source location — a direct correctness regression from the locality hint loss.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/matcher/matcher_parallel.go",
+      "start_line": 126,
+      "end_line": 132,
+      "message": "`packetMatched` is only updated by the batch that processes a packet (plus the synced head packet). Because coverage from matches in other batches is intentionally not read, a region that expands across a batch boundary can fully cover later packets while their `packetMatched` entries remain false, under-reporting the user-facing matched-packet statistic compared with the actual matched regions.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually confirmed: matchPacketBatch reads only from localCov (batch-local) for all coverage checks (lines 311, 360, 367, 381, 399, 408). The global coveredChunks bitmap is only written to. tryVerifyAndExpand can expand up to 16MB forward, covering packets owned by subsequent batches. The old code had an isRangeCoveredParallel early-return (using the global bitmap) that counted globally-covered packets as matched; this was removed. So a packet covered by another batch's expansion has packetMatched=false, under-counting MatchedPackets.",
+      "severity_justification": "MatchedPackets is used exclusively for user-facing display statistics ('X/Y packets matched, Z%') — it does not affect the actual .mkvdup file output, which is derived from matchedRegions/Entries. The under-reporting means the displayed percentage is pessimistic but the functional deduplication result is correct.",
+      "category_justification": "The matched-packet statistic is factually incorrect compared to actual coverage — a specific computed value diverges from its defined meaning — making this a correctness issue in the reporting logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

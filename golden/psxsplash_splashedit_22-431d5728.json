@@ -1,0 +1,791 @@
+{
+  "pr_key": "psxsplash_splashedit_22-431d5728",
+  "pr": {
+    "repo": "https://github.com/psxsplash/splashedit",
+    "pr_number": 22,
+    "base": "fd3707d5cfef99ea11984af0811b7c82119895e2",
+    "head": "431d5728e1849863d3c4e23b65f6b98cca67b114"
+  },
+  "findings": [
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 103,
+      "end_line": 108,
+      "message": "When the clip ScriptableObject is destroyed while preview is active (the `!_state.Clip` branch), `StopPreview()` is never called. The code only nulls `_state.Clip` and calls `Repaint()`. Scene transforms, camera pivot/rotation/FOV, and AnimationMode are left in their modified state permanently, corrupting the scene until the editor is restarted or another preview is started and stopped.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Lines 103-108 in PSXTimelineWindow.cs confirm: when _state.Clip is destroyed mid-preview, the code only nulls _state.Clip and calls Repaint(), never calling _preview.StopPreview(_state). StopPreview restores saved object transforms, scene-view camera pivot/rotation/FOV, and stops AnimationMode. These are left permanently modified. The normal stop paths (OnDisable, Stop toolbar action, EndPreview toolbar action) all call StopPreview correctly — only this branch misses it.",
+      "severity_justification": "Leaves the Unity SceneView camera and scene object transforms in a corrupted state until the editor is restarted or another preview cycle completes. Annoying but not data-destructive and a workaround exists.",
+      "category_justification": "Improper cleanup of preview state — missing restore/teardown of scene modifications when a clip asset is deleted while previewing.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 592,
+      "end_line": 615,
+      "message": "`DeleteSelectedKeyframe` calls `_state.ClearSelection()` at line 598, which internally calls `MultiSelection.Clear()`. The subsequent block at line 604 (`if (_state.MultiSelection.Count > 0)`) therefore never executes — it is dead code. Keyframes added to the multi-selection via shift-click are never deleted, making the multi-select delete feature completely broken.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: ClearSelection() (line 598) clears MultiSelection before the multi-selection delete block at line 604. When a user shift-clicks to build a multi-selection, SelectedKeyframeIndex remains set (the shift-click handler adds to MultiSelection without clearing SelectedKeyframeIndex). So when Delete is pressed, the first block fires ClearSelection() which empties MultiSelection, making the `MultiSelection.Count > 0` check always false in the common case. Multi-select delete is effectively broken.",
+      "severity_justification": "The multi-select delete feature is completely non-functional — only the primary selected keyframe is ever deleted, silently ignoring shift-selected keyframes. This is a correctness bug in an advertised feature.",
+      "category_justification": "Logic error causes a feature (multi-keyframe deletion) to never execute — dead code caused by premature clearing of the selection state.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelinePreview.cs",
+      "start_line": 321,
+      "end_line": 321,
+      "message": "`GetInitialValue` for `CameraH` computes `PSX_HALF_HEIGHT / Mathf.Tan(_savedFOV * 0.5f * Mathf.Deg2Rad)` without clamping `_savedFOV` first. The old `PSXCutsceneEditor.FOVToH` clamped the angle to [1°, 179°] before calling `Tan`. If `_savedFOV` is 0 (yielding `Tan(0) = 0`, division by zero → Infinity) or 180 (yielding `Tan(π/2)` → very large or Infinity), the returned Vector3 contains Infinity/NaN, which propagates into `EvaluateTrack` and the scene view camera FOV.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed at line 321 of PSXTimelinePreview.cs: the CameraH initial value computes PSX_HALF_HEIGHT / Mathf.Tan(_savedFOV * 0.5f * Mathf.Deg2Rad) without clamping _savedFOV. The original PSXCutsceneEditor.FOVToH explicitly clamped to [1f, 179f] before tan. If _savedFOV is 0 or close to 0, Tan(0)=0 causes division by zero yielding Infinity, which propagates into EvaluateTrack and the scene-view camera FOV. The guard was lost during the refactor.",
+      "severity_justification": "Unity's SceneView camera FOV is practically never 0 or 180 in normal use, so this is an edge-case defect. If triggered, it would corrupt the scene-view FOV during preview, but is easily recovered by stopping the preview.",
+      "category_justification": "A clamping guard present in the original code was dropped during refactoring, introducing a potential division-by-zero / Infinity value in a numeric computation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelinePreview.cs",
+      "start_line": 294,
+      "end_line": 305,
+      "message": "`SeedFiredEventsUpTo` uses `audioEvents[i].Frame <= (int)state.PlayheadFrame` to mark events as already fired. The old `PSXCutsceneEditor` used strict `<`, meaning events exactly at the playhead frame would still fire when playback started from that position. The new `<=` means an audio event positioned exactly at the current playhead will be silently skipped when the user starts playback from that frame, causing audio events to be missed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed by examining the original PSXCutsceneEditor (fd3707d commit): the seeding used strict `< (int)_previewFrame`, leaving events at exactly the current frame eligible to fire. The new SeedFiredEventsUpTo uses `<= (int)state.PlayheadFrame`, pre-marking events at the current frame as already fired. Starting playback from a frame where an audio event is placed will silently skip that event.",
+      "severity_justification": "Only affects the edge case where the user starts playback from precisely the same frame as an audio event. The audio event fires correctly in all other cases (during continuous playback), so it's a minor behavioral regression.",
+      "category_justification": "A behavioral difference from the original code — using <= instead of < changes which audio events fire when starting playback from an exact frame, causing events to be incorrectly skipped.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineKeyframeInspector.cs",
+      "start_line": 86,
+      "end_line": 220,
+      "message": "`DrawKeyframeProperties`, `DrawTrackProperties`, `DrawAudioEventProperties`, and `DrawSkinAnimEventProperties` all directly mutate ScriptableObject fields without a preceding `Undo.RecordObject` call. The old inspectors called `Undo.RecordObject(clip, \"Edit Cutscene\")` at the top of `OnInspectorGUI`. Changes made through these inspector panels (frame number, value, track type, event parameters) cannot be undone with Ctrl+Z.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: PSXTimelineKeyframeInspector.cs has no Undo.RecordObject calls anywhere. PSXTimelineWindow.cs has only one, at line 350 for drag operations. The old PSXCutsceneEditor called Undo.RecordObject at the top of OnInspectorGUI. All edits made via the inspector panel (frame, value, interp, track type, event params) are not undoable.",
+      "severity_justification": "Ctrl+Z is a standard editor expectation. Losing undo support for all property edits in the inspector panel degrades the editing experience and risks data loss when mistakes are made, since there's no way to revert changes short of manually re-entering values.",
+      "category_justification": "Missing Undo.RecordObject calls means editor state cannot be rolled back — a standard Unity editor pattern that was present in the old code but dropped in the refactor.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 620,
+      "end_line": 648,
+      "message": "`HandleDoubleClickAddKeyframe` does not check whether a keyframe already exists at `targetFrame` before adding. Double-clicking at the same position as an existing keyframe creates a duplicate keyframe at the same frame number. `FindIndex(kf => kf.Frame == targetFrame)` then returns the first match (not necessarily the newly added one), so the wrong keyframe may be selected afterward. Duplicate keyframes at the same frame are also confusing for the `EvaluateTrack` logic.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: HandleDoubleClickAddKeyframe adds a keyframe unconditionally without checking for existing keyframes at targetFrame. FindIndex returns the first match (the pre-existing keyframe, not the new one) causing wrong selection. EvaluateTrack with two keyframes at the same frame causes span=0, yielding NaN from (frame-before.Frame)/span when frame equals both keyframe frames.",
+      "severity_justification": "Requires the user to precisely double-click on an existing keyframe's pixel position, which is somewhat likely but not common. The resulting NaN would corrupt preview evaluation, but the primary editing workflow still works. The duplicate can also be manually deleted.",
+      "category_justification": "Missing guard against duplicate keyframes at the same frame causes incorrect selection state and NaN propagation in track evaluation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineDrawer.cs",
+      "start_line": 221,
+      "end_line": 225,
+      "message": "`DrawEventLaneHeader` retrieves the shared cached `_trackHeaderStyle` singleton via `GetTrackHeaderStyle()`, sets `style.normal.textColor = color` and `style.fontStyle = FontStyle.Italic`, then only restores `fontStyle` to `Normal` but does NOT restore `textColor`. The cached singleton is permanently left with whatever color was last used for an event lane header. If a subsequent code path calls `GetTrackHeaderStyle()` without immediately overwriting `textColor`, it will render with the stale event-lane accent color instead of the expected color.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: DrawEventLaneHeader sets style.fontStyle=Italic then restores it but does NOT restore textColor on the cached singleton. However, every current call site (track labels at line 183, add-track row at line 209) always overwrites textColor before use, so there's no visible bug today. The finding correctly identifies the pattern is fragile — future code using GetTrackHeaderStyle() without setting textColor would render with a stale accent color.",
+      "severity_justification": "No visible rendering bug exists in the current code since all callers set textColor before rendering. The risk is limited to future callers of the cached style singleton, making this a maintainability concern rather than a current bug.",
+      "category_justification": "Mutating a cached singleton style without restoring all modified fields is a fragile pattern that creates implicit state dependencies between callers.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineDrawer.cs",
+      "start_line": 429,
+      "end_line": 429,
+      "message": "`DrawAudioEventLane` calls `events[i].ClipName.Length` directly. If `ClipName` is null (it defaults to `\"\"` but is a public field that can be explicitly set to null, e.g. via serialized data from a prior version), this throws a `NullReferenceException`. The same problem occurs in `HitTestEvent` at line 657 (`state.AudioEvents[i].ClipName.Length`) and line 673 (`state.SkinAnimEvents[i].TargetObjectName` in string interpolation, though null in interpolation is safe, `ClipName.Length` is not).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: lines 429 and 657 call events[i].ClipName.Length directly without null check — would throw NullReferenceException if ClipName is null. Both PSXAudioEvent.ClipName and PSXSkinAnimEvent.ClipName default to empty string but are public serializable fields that could be null in edge cases (manual YAML editing, prior version data). The skin-anim string interpolation at line 673 is actually safe since interpolation handles null and label is never null, so that part is slightly overstated.",
+      "severity_justification": "Unity's serializer returns empty string for missing string fields in practice, making the null case unlikely. If triggered, it would cause an NRE in every OnGUI repaint frame while the timeline is open, which is noticeable but not data-destructive.",
+      "category_justification": "Missing defensive null check on a string field access that could throw NullReferenceException in an editor GUI repaint loop.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 455,
+      "end_line": 481,
+      "message": "`ScrollY` is only clamped to a minimum of 0 in `HandleZoomPan` (lines 458, 481) but is never clamped to an upper bound (`_state.TotalTracksHeight`). A user scrolling down with the mouse wheel or middle-button drag can push all tracks off-screen indefinitely, leaving the timeline area entirely blank. `TotalTracksHeight` is computed and exposed on `PSXTimelineState` specifically for this purpose but is never used to cap the scroll.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: both ScrollY assignments (lines 458 and 481) only use Mathf.Max(0, ...) with no upper bound. TotalTracksHeight is defined on PSXTimelineState but grep shows it is never used in PSXTimelineWindow.cs or PSXTimelineDrawer.cs. A user can scroll all tracks off-screen indefinitely.",
+      "severity_justification": "Purely a UX issue — the user can scroll tracks off-screen but can scroll back by reversing direction. No data is lost or corrupted. The scroll can be recovered easily.",
+      "category_justification": "Missing upper-bound clamping on vertical scroll causes the viewport to scroll past all content, leaving the timeline area blank — a usability defect in the editor tool.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 16,
+      "end_line": 17,
+      "message": "`_state` (a `PSXTimelineState` instance) and `_preview` are not `[SerializeField]` and `PSXTimelineState` is not serializable. On domain reload (every recompile), Unity serializes `EditorWindow` fields but these plain C# objects are discarded. `_state.Clip` — the reference to the asset being edited — is lost on every recompile, so the window reverts to the empty \"Drag a clip here\" state after every script change. Users must manually reopen their clip after each compile cycle.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Confirmed: _state is a plain C# PSXTimelineState with no [Serializable] attribute and no [SerializeField] on the field. PSXTimelineWindow has no ISerializationCallbackReceiver or instance-ID-based clip restoration. On domain reload, _state is discarded, losing the clip reference and reverting the window to the empty state. This is verifiable Unity behavior for non-serialized EditorWindow fields.",
+      "severity_justification": "Annoying UX issue during development — requires manually reopening the clip after every recompile — but causes no data loss or corruption. Many simpler EditorWindow tools have the same behavior.",
+      "category_justification": "State lost on domain reload is a standard Unity EditorWindow concern. The clip reference should be preserved via [SerializeField] on the ScriptableObject reference or instance ID restoration.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineState.cs",
+      "start_line": 154,
+      "end_line": 154,
+      "message": "The `Clip` field is a `ScriptableObject`, but it is being compared to `null` with `!_state.Clip`. Unity overrides the `==` operator for `UnityEngine.Object` subclasses to check for object destruction, but this check will use the default `object.ReferenceEquals` for a `ScriptableObject` variable, failing to detect if the underlying asset has been destroyed (e.g., deleted from the project). This can lead to a `MissingReferenceException` when it's later cast to a `UnityEngine.Object`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim is factually incorrect. Clip is typed as ScriptableObject which inherits from UnityEngine.Object. Unity's UnityEngine.Object defines implicit operator bool(Object exists) which handles destroyed-object detection. !_state.Clip invokes this implicit bool conversion, not ReferenceEquals. Similarly _state.Clip == null uses Unity's overloaded == operator. Both checks correctly detect destroyed/missing assets.",
+      "severity_justification": "The underlying concern about detecting destroyed assets is valid in general Unity coding, but in this specific code the checks work correctly due to ScriptableObject inheriting UnityEngine.Object's operator overloads.",
+      "category_justification": "The finding makes an incorrect claim about which operator is invoked for a UnityEngine.Object subclass comparison.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineDrawer.cs",
+      "start_line": 646,
+      "end_line": 649,
+      "message": "The hit test for keyframes has a hitbox that is a square (`Mathf.Abs(localPos.x - kfX) <= KF_SIZE + 2 && Mathf.Abs(localPos.y - centerY) <= KF_SIZE + 2`), which does not match the diamond shape used for drawing them. This will lead to mis-clicks at the corners of the square bounding box where no part of the diamond is visible.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: HitTestKeyframe uses a square bounding box (KF_SIZE=5, effective radius 7px), while the drawn diamond only has pixels where |dx|+|dy| <= KF_SIZE. The four corner regions of the square hitbox (where |dx|>0, |dy|>0, |dx|+|dy|>KF_SIZE) contain no visible diamond pixels but register as hits. The finding is factually correct.",
+      "severity_justification": "The phantom hit zones are tiny (corner triangles of a ~7px square), and having a slightly larger-than-visual hitbox is common and often desirable for small click targets. No visible pixels are missed; only invisible corner areas produce false positives. This is a cosmetic/minor UX issue.",
+      "category_justification": "The hitbox shape doesn't match the visual shape, which is a minor inconsistency in the UI interaction model but causes no functional breakage.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineKeyframeInspector.cs",
+      "start_line": 196,
+      "end_line": 204,
+      "message": "The logic to convert from FOV to the H register value is incorrect. It calculates `half = ... * Deg2Rad`, but then uses `Mathf.Tan(half)` which expects radians. However, the calculation of `fov` from `h` in `DrawKeyframeProperties` uses `* Mathf.Rad2Deg`. The issue is in the `Capture from Scene Camera` action, where the captured `fovDeg` is already in degrees but is being multiplied by `Mathf.Deg2Rad`, effectively converting it to radians twice before the `tan` call. The `* Mathf.Deg2Rad` should be removed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually incorrect. The code `Mathf.Clamp(fovDeg, 1f, 179f) * 0.5f * Mathf.Deg2Rad` correctly converts a degree FOV to half-angle in radians before passing to Mathf.Tan (which takes radians). This is identical to the original FOVToH function in PSXCutsceneEditor. There is no double conversion — only one * Mathf.Deg2Rad is applied.",
+      "severity_justification": "No bug exists; the conversion is correct and matches the original implementation.",
+      "category_justification": "The finding incorrectly claims a mathematical conversion error that does not exist in the code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 126,
+      "end_line": 133,
+      "message": "The `_state.Clip == null` check before `!_state.Clip` is redundant. More importantly, the `!_state.Clip` check for a destroyed Unity object is incorrect here. The `_state.Clip` field is typed as `ScriptableObject`, which is a `UnityEngine.Object` subclass. The `==` operator is overloaded for `UnityEngine.Object` to check for destroyed objects, so `_state.Clip == null` is sufficient and correct, while `!_state.Clip` will perform a boolean conversion that is not what is intended for checking the lifetime of a Unity object.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding's central claim that !_state.Clip is 'incorrect' for checking Unity object lifetime is factually wrong. UnityEngine.Object defines implicit operator bool(Object exists) specifically for this purpose — it returns false for both null and destroyed objects, making !_state.Clip semantically equivalent to _state.Clip == null. While the second == null check at line 103 is indeed redundant (since line 96 already handles it), that is a trivial cosmetic observation with no behavioral impact.",
+      "severity_justification": "The redundancy at line 103 is cosmetic dead code with no behavioral impact. The implicit bool conversion is correct.",
+      "category_justification": "The only valid part of the finding is that the second == null check is redundant dead code — a minor style/clarity concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineKeyframeInspector.cs",
+      "start_line": 140,
+      "end_line": 143,
+      "message": "The calculation to convert the `H` register value to field-of-view (FOV) is duplicated from the `PSXTimelinePreview` class. This could lead to inconsistencies if the formula is updated in one place but not the other. This logic should be centralized in a single utility method, likely within `PSXTimelinePreview` since it's already there, and called from this inspector.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the H-to-FOV conversion `2f * Mathf.Atan(120f / h) * Mathf.Rad2Deg` is duplicated between PSXTimelineKeyframeInspector.cs (line 138, using hardcoded 120f) and PSXTimelinePreview.cs (line 42, as private HToFOV using PSX_HALF_HEIGHT constant). The inspector inlined the formula because HToFOV is private on PSXTimelinePreview.",
+      "severity_justification": "The formula is a hardware constant tied to the PSX's 240-line display height, making real-world drift very unlikely. The duplication is a minor DRY violation with low practical risk.",
+      "category_justification": "Duplicated domain logic across two classes with no shared utility method, creating a maintenance burden if the formula ever needs updating.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 523,
+      "end_line": 536,
+      "message": "If the add track menu is opened and the user adds a track, `_state.Tracks` will be modified while it is being iterated over by the `foreach` loop that generates the menu items. This is because `ShowAddTrackMenu` calls `menu.ShowAsContext()`, which does not block, and the callback that adds the track can execute immediately. This can lead to a `InvalidOperationException: Collection was modified` error if another menu item is hovered or interacted with.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The foreach loop iterates System.Enum.GetValues(typeof(PSXTrackType)) — the PSXTrackType enum values — not _state.Tracks. The callback modifies _state.Tracks but that's a different collection from the one being iterated. Additionally, ShowAsContext() shows a UI menu; callbacks only fire when the user clicks an item in a later event cycle, after ShowAddTrackMenu() has already returned. There is no concurrent modification.",
+      "severity_justification": "No actual bug exists — the finding is based on an incorrect reading of which collection is being iterated.",
+      "category_justification": "The finding incorrectly identifies which collection is being iterated, leading to a false conclusion about concurrent modification.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 425,
+      "end_line": 435,
+      "message": "Sorting the keyframes list after a drag operation and then finding the new index of the dragged keyframe is inefficient and can be incorrect if there are multiple keyframes at the same frame. Instead of re-sorting the entire list on every `MouseUp`, it's better to insert the keyframe at its new sorted position, which is more performant and robust.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "PSXKeyframe is a class (reference type). List.IndexOf(draggedKf) uses reference equality, so it correctly identifies the exact dragged keyframe instance even when multiple keyframes share the same frame number. The correctness claim is wrong. The performance claim is sub-threshold: the list is capped at 64 items, sorted once on MouseUp, which is trivially fast.",
+      "severity_justification": "No correctness issue exists due to reference equality, and the performance concern is negligible for the capped 64-item list.",
+      "category_justification": "The finding concerns algorithmic efficiency of sort-then-search vs insert-at-position, though the concern is unfounded for this scale.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 484,
+      "end_line": 486,
+      "message": "The `shift` modifier check for vertical scroll is only inside `HandleZoomPan`. However, `HandleRulerInput` and `HandleTimelineInput` also call `HandleZoomPan`, but they don't check for `e.shift` themselves. This means that if the user holds `shift` and scrolls the wheel over the ruler or timeline, it will both zoom and scroll vertically, which is likely not the intended behavior. The event should be consumed (`e.Use()`) after handling the vertical scroll to prevent it from being processed again as a zoom.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The if/else structure is mutually exclusive — when e.shift is true only vertical scroll executes, when false only zoom executes. They cannot both run. Additionally, e.Use() is already called after the if/else block regardless of which branch executed, properly consuming the event. Both claims in the finding are factually incorrect.",
+      "severity_justification": "No bug exists — the code correctly handles shift+scroll as exclusive from regular scroll-to-zoom behavior.",
+      "category_justification": "The finding incorrectly claims two operations execute simultaneously when the code uses a mutually exclusive if/else.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineState.cs",
+      "start_line": 173,
+      "end_line": 179,
+      "message": "The TotalTracksHeight property does not account for the 'add track' row properly. The height calculation ignores the potential lack of Tracks and assumes one add-track row regardless of existing conditions. This could lead to incorrect height computations in edge cases.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The null Tracks case is handled via (Tracks?.Count ?? 0). The add-track row is always rendered unconditionally in DrawTrackHeaders, so always including TrackHeight for it in TotalTracksHeight is correct. The finding doesn't identify a specific incorrect edge case and TotalTracksHeight is never used in the codebase anyway (as established in Finding 9).",
+      "severity_justification": "No actual bug exists in the property, and the property is never used, making any concern moot.",
+      "category_justification": "The finding makes a vague correctness claim about height computation that is not borne out by examining the actual code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 790,
+      "end_line": 805,
+      "message": "Zoom handling in HandleZoomPan directly adjusts ScrollX based on cursor position but does not bound ScrollX to the timeline's frame limits. This could lead to the user panning out of a valid timeline range, creating an erroneous interface experience.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: ScrollX in both the zoom and pan paths only applies Mathf.Max(0, ...) with no upper bound. The user can scroll past the end of the timeline indefinitely. The finding's line numbers are wrong (file is 724 lines, not 805+) but the substance is correct.",
+      "severity_justification": "Scrolling past the end of the timeline is common behavior in timeline editors and doesn't prevent use of the tool. The duration end marker remains visible. This is a minor UX concern similar to Finding 9 but arguably even less impactful for horizontal scroll.",
+      "category_justification": "Missing upper-bound clamping on horizontal scroll allows the viewport to pan past all content, though this is a lesser concern than vertical scrolling which completely hides all tracks.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelinePreview.cs",
+      "start_line": 289,
+      "end_line": 317,
+      "message": "The ApplyPreview method does not handle edge cases where the SceneView is unavailable (e.g., batch mode or headless operation). This could result in a NullReferenceException when accessing sv.camera.transform properties.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code explicitly checks sv != null in the if-condition before any sv.camera access. The batch/headless scenario is inapplicable since PSXTimelineWindow is an EditorWindow wrapped in #if UNITY_EDITOR that cannot be open without an interactive editor. The claim that there is an unguarded NullReferenceException path is factually incorrect.",
+      "severity_justification": "No actual NRE path exists in the code as described — the sv != null guard is present and batch mode is inapplicable.",
+      "category_justification": "The finding incorrectly claims a null check is missing when it is present in the code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineDrawer.cs",
+      "start_line": 179,
+      "end_line": 206,
+      "message": "The DrawTimeRuler method has hardcoded tick intervals without taking into consideration timebases different from 30fps. This assumption could lead to inaccuracies if the timeline logic is used for non-standard framerates.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "30fps is an intentional architectural constant throughout the entire PSX toolchain — PSXAnimationClip, PSXCutsceneClip, PSXKeyframe, PSXSceneWriter all hardcode 30fps with explicit documentation. The system is designed specifically for PlayStation 1 hardware. Treating this as a defect ignores the deliberate domain-specific design, and no non-standard framerate support exists anywhere in the data model.",
+      "severity_justification": "No bug exists — the hardcoding is intentional for a PSX hardware toolchain. A non-standard framerate scenario cannot even be represented in the data model.",
+      "category_justification": "The finding is a generic 'avoid hardcoding' suggestion that doesn't account for the intentional PSX hardware constraints of this tool.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 515,
+      "end_line": 517,
+      "message": "The OnGUI method clears the clip reference (_state.Clip = null) but does not check if this is due to a Unity serialization refresh, possibly leading to unexpected behavior if the window's state was set externally.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The referenced line numbers are wrong. More importantly, _state is a plain C# object with no serialization — on domain reload it's discarded entirely, not partially refreshed. The claim that _state.Clip = null could occur due to a serialization refresh has no basis: Unity's serializer never touches _state.Clip. The finding is vague and ungrounded.",
+      "severity_justification": "No concrete bug is identified — the scenario described (serialization refresh causing spurious null) cannot occur with unserialized state.",
+      "category_justification": "The finding incorrectly claims a serialization interaction that doesn't exist for an unserialized plain C# object.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineDrawer.cs",
+      "start_line": 133,
+      "end_line": 153,
+      "message": "In DrawTrackHeaders, track labels are drawn with dynamic generation of style properties including text color. This frequent style mutation could lead to graphical glitches or performance concerns in EditorGUI.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding makes two unsupported claims: (1) IMGUI processes GUI.Label calls immediately so per-call textColor mutation is standard and doesn't cause graphical glitches within a frame; (2) setting a Color field is trivially cheap — no evidence of performance impact exists. The specific stale-color concern (across frames) was already precisely identified in Finding 7. This finding is too vague and generic to be independently actionable.",
+      "severity_justification": "No concrete graphical glitch or performance impact is demonstrated. The underlying pattern concern was more precisely captured in Finding 7.",
+      "category_justification": "The finding primarily raises performance and visual concerns about style mutation, both of which are unfounded for IMGUI's immediate-mode rendering model.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineKeyframeInspector.cs",
+      "start_line": 333,
+      "end_line": 346,
+      "message": "When capturing keyframe properties, there is no check to validate that the target GameObject or SceneView data is not null or invalid. This could cause runtime errors when interacting with unprepared data.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The referenced lines 333-346 don't exist in a 326-line file. The actual capture code has proper null checks: sv is checked with `if (sv != null)` before accessing sv.camera, and go is checked with `if (go != null)` before accessing go.transform. The finding's claim that null checks are absent is factually wrong.",
+      "severity_justification": "No actual missing null check exists for the primary scenarios described. The only theoretical gap (sv.camera possibly null) is an extreme edge case.",
+      "category_justification": "The finding incorrectly claims null checks are absent when they are present in the code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 254,
+      "end_line": 274,
+      "message": "The Delete, Backspace, and Space shortcuts are consumed unconditionally for any KeyDown event reaching the window, even when a text field (e.g. clip name, frame number, object name, clip name fields in the inspector panel) currently has keyboard focus. This means pressing Backspace while editing a text field will delete the selected keyframe(s) instead of editing the text, and pressing Space will toggle playback while typing. Consider skipping shortcut handling when `EditorGUIUtility.editingTextField` (or `GUIUtility.keyboardControl` corresponds to a text field) is true.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: HandleInput() routes all KeyDown events directly to HandleKeyDown() before any region/focus checks. HandleKeyDown() unconditionally consumes Backspace (deletes selected keyframe) and Space (toggles playback) without checking EditorGUIUtility.editingTextField. The window contains multiple text fields in the inspector panel that users type into, so this conflict is real.",
+      "severity_justification": "Pressing Backspace while editing a text field would silently delete the selected keyframe, which is data-destructive and unexpected. Space toggling playback while typing is also disruptive, though less harmful. These interactions would be confusing but not catastrophic since undo is available.",
+      "category_justification": "The shortcut handlers fire incorrectly during text field editing, causing wrong behavior (keyframe deletion instead of text editing).",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 348,
+      "end_line": 350,
+      "message": "`HandleInput` runs before any keyframe/event/clip-name field is drawn, and it calls `e.Use()` for clicks anywhere inside `TimelineAreaRect`/`TimeRulerRect`/`TrackHeaderRect`. That's fine, but `Undo.RecordObject(_state.Clip, \"Move Keyframe\")` is the only place undo is registered in this window. Direct mutations made by the keyframe/track inspector panel, the \"Add Keyframe\"/\"Add Track\"/\"Remove Track\" context menus, drag-and-drop clip changes, and the duration/name fields in the toolbar all bypass the undo system. As a result, most edits made through the new window cannot be undone with Ctrl+Z, which is a regression compared to the previous custom inspectors that wrapped their mutations with `Undo.RecordObject`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: only one Undo.RecordObject call exists in the entire Timeline folder (for keyframe dragging). All other mutations (add/delete keyframes via context menu/double-click, add/remove tracks, inspector value edits, duration and name changes via the toolbar) call EditorUtility.SetDirty() only. The old PSXCutsceneEditor (HEAD~2) had Undo.RecordObject at the top of OnInspectorGUI, confirming this is a regression.",
+      "severity_justification": "Losing undo for most edits in an animation/cutscene editor is a meaningful usability regression — users can accidentally delete keyframes or tracks and have no way to recover them without manually recreating the data. It's not data-corrupting, but it degrades workflow quality noticeably.",
+      "category_justification": "The undo system integration is functionally broken for most operations in the new window, which is a behavioral regression from the old editors.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelinePreview.cs",
+      "start_line": 423,
+      "end_line": 441,
+      "message": "`ApplyPreview` calls `Object.FindObjectsByType<PSXSkinnedObjectExporter>(FindObjectsSortMode.None)` on every editor update tick during playback and on every scrub, plus a `GameObject.Find(track.ObjectName)` for every Object/UI track on every track in the loop above. Both are O(scene-size) scans run many times per second. The old inspectors had the same issue, but since this is now factored into a reusable preview class, consider caching the lookup tables (`_skinAnimatorCache` already does this for animators; do the same for the exporter list and target GameObjects) once in `StartPreview` and reusing them in `ApplyPreview` to avoid noticeable editor slowdowns on large scenes.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: ApplySkinAnimPreview calls Object.FindObjectsByType<PSXSkinnedObjectExporter>() on every invocation (per frame during playback, per scrub), and ApplyPreview calls GameObject.Find(track.ObjectName) per track per frame. No caching of these lookups exists in ApplyPreview, while StartPreview already caches the Animator objects. The finding's claim is factually correct.",
+      "severity_justification": "This is an editor-only performance concern affecting only scenes with many GameObjects/skinned exporters during animation preview. The impact is bounded to the number of tracks (max 8) and the scene size, and editor slowdowns are tolerable up to a point. It's also a pre-existing pattern simply refactored into the new class.",
+      "category_justification": "The issue is unnecessary per-frame scene scans in the editor preview path.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineDrawer.cs",
+      "start_line": 695,
+      "end_line": 709,
+      "message": "`HitTestTrackHeader` advances `y` by `EventLaneHeight` for the audio lane whenever `state.IsCutscene` is true, but `DrawTrackHeaders` only draws the audio lane header via `DrawEventLaneHeader(... \"Audio Events\", ...)` unconditionally when `state.IsCutscene` is true (line 196-199), so those agree. However, `TotalTracksHeight` in `PSXTimelineState` adds the audio event lane height only when `IsCutscene` is true *and* doesn't gate on `AudioEvents != null`, while the skin-anim lane is gated on `SkinAnimEvents != null && Count > 0` in both `DrawTrackHeaders` (line 200) and `HitTestTrackHeader` (line 703). This is consistent, but `DrawTrackLanes` only draws the audio lane when `state.IsCutscene && state.AudioEvents != null` (line 295) — if `AudioEvents` is somehow null on a cutscene clip, the header reserves space and `HitTestTrackHeader` skips that space, but the lane itself isn't drawn and clicks in that gap won't hit anything. With default field initializers this is unlikely in practice, but the gating inconsistency between the four locations is a maintenance hazard.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "All four inconsistency claims are verified in the code: DrawTrackHeaders draws audio header unconditionally on IsCutscene, DrawTrackLanes gates on AudioEvents!=null, HitTestTrackHeader skips y unconditionally on IsCutscene, HitTestEvent gates on AudioEvents!=null. The gating logic is genuinely inconsistent across these locations.",
+      "severity_justification": "PSXCutsceneClip.AudioEvents is field-initialized to new List<>() making null essentially impossible in practice. The inconsistency is a real maintainability hazard but has negligible runtime impact.",
+      "category_justification": "The inconsistent null-guarding across four drawing/hit-testing locations is a code quality issue that could lead to subtle bugs if the data model changes, not a current functional bug.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 557,
+      "end_line": 584,
+      "message": "There is no way to add audio events or skin-anim events from this new editor. The old inspectors had \"+ Add Audio Event\" and \"+ Add Skin Anim Event\" buttons; here the only ways an event can appear in the timeline are if it already exists on the asset, or if the user re-opens the asset in the legacy inspector (which no longer has those buttons either). The `ShowAddTrackMenu` only adds `PSXCutsceneTrack` entries; it should also expose \"Add Audio Event\" (for cutscenes) and \"Add Skin Anim Event\" actions, or another UI affordance such as right-click on the dedicated event lanes should be added.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: no code path in the new timeline editor (PSXTimelineWindow, PSXTimelineKeyframeInspector, context menus) allows adding audio events or skin-anim events. ShowAddTrackMenu only adds PSXCutsceneTrack entries. The old PSXCutsceneEditor had explicit add buttons for both event types, now replaced with a summary-only inspector.",
+      "severity_justification": "This is a feature regression — core editing functionality (creating audio and skin-anim events) has been removed with no replacement. Users cannot create new events of these types at all through the editor UI, making the feature essentially broken for new cutscenes.",
+      "category_justification": "Required editing operations are missing from the new editor, representing a functional regression compared to the replaced code.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/PSXCutsceneEditor.cs",
+      "start_line": 10,
+      "end_line": 38,
+      "message": "The new inspector summary drops several pieces of validation/UX that the old inspector provided: there is no warning when the cutscene name exceeds the 24-character export limit, no validation of object/canvas/audio-clip references against the scene, and no easy way to rename the clip from the inspector (the name is displayed read-only). Since this is now the only inspector view, the truncation warning in particular is silently lost — names longer than 24 chars will still be truncated on export with no feedback. Consider preserving at least the truncation warning and a way to edit the name from this summary (the Timeline window does allow renaming, but that's not obvious from the inspector).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: new PSXCutsceneEditor shows CutsceneName as a read-only LabelField with no length check. Old inspector had a HelpBox warning for names > 24 chars and editable TextField. The Timeline window also has no 24-char check. Scene reference validation for tracks/events is also gone from the inspector.",
+      "severity_justification": "The 24-character truncation is an export-time data loss constraint — users creating cutscene names exceeding this limit will silently get truncated names on PS1 export with no feedback. The loss of scene reference validation is also a UX regression but not data-destructive.",
+      "category_justification": "An export constraint (24-char name limit) is no longer enforced or warned about in the UI, which can lead to unexpected behavior at export time.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelinePreview.cs",
+      "start_line": 233,
+      "end_line": 236,
+      "message": "Object-active preview can get stuck off because `GameObject.Find` only finds active objects. Once this code deactivates the target, later preview frames cannot find it to reactivate it, and `StopPreview` also uses `GameObject.Find` so the original active state may not be restored. Cache the target object references (or include inactive objects) when preview starts instead of looking them up by name after deactivation.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ApplyPreview uses GameObject.Find for ObjectActive tracks (line 233-236), which only finds active objects. Once deactivated, later frames can't find the object to reactivate it. StopPreview (line 166) also uses GameObject.Find and would fail to restore the original active state for deactivated objects. This is a real correctness bug.",
+      "severity_justification": "An ObjectActive track that deactivates an object will permanently hide it for the rest of preview, and StopPreview won't restore it, leaving the scene in a dirty state after preview ends. This is user-visible data corruption of scene state.",
+      "category_justification": "GameObject.Find silently fails on inactive objects, causing wrong preview behavior and failure to restore scene state on stop.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 503,
+      "end_line": 513,
+      "message": "The timeline context menu only creates keyframes, and the old cutscene inspector has been reduced to an “Open in Timeline” button. There is no replacement path to add audio events, even though the lane can display and edit existing ones, so users cannot create new cutscene audio events from the new editor.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified (confirmed while investigating Finding 5): no code path in PSXTimelineWindow, its context menus, ShowAddTrackMenu, or PSXTimelineKeyframeInspector allows creating new audio events. The timeline context menu only adds keyframes. The old PSXCutsceneEditor with its '+ Add Audio Event' button has been replaced by a read-only summary. The finding is factually correct.",
+      "severity_justification": "Same as Finding 5: creating audio events was a core editing operation in the old inspector and is now completely inaccessible, making cutscene audio authoring broken for new clips.",
+      "category_justification": "A required editing operation (adding audio events) is missing from the new editor, representing a functional regression.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineDrawer.cs",
+      "start_line": 200,
+      "end_line": 203,
+      "message": "The skin-animation event lane is hidden when the list is empty, and the old inspectors no longer expose the “Add Skin Anim Event” controls. This makes it impossible to create the first skin animation event for either animations or cutscenes from the new editor.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: SkinAnimEvents lane header and body are gated on Count > 0 (lines 200, 300). Combined with the already-confirmed absence of any add path for skin-anim events in the window (same root as Findings 5 and 8), creating the first skin-anim event is impossible. The audio lane at least renders for cutscenes; the skin-anim lane is completely hidden when empty.",
+      "severity_justification": "Skin-anim events cannot be created at all for new clips, and the lane provides no affordance when empty. This is a complete feature regression for an entire category of editing.",
+      "category_justification": "A required editing operation (adding skin-anim events) is absent, and the UI actively hides the relevant lane when empty, compounding the regression.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineKeyframeInspector.cs",
+      "start_line": 222,
+      "end_line": 228,
+      "message": "This assigns the selected enum value before validating it, so an animation clip can still be changed to a camera track and saved despite the warning. `PSXAnimationClip` explicitly disallows camera tracks, and the add-track menu filters them out, so the inspector should reject or revert camera types for non-cutscene clips rather than persisting invalid data.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: new code does track.TrackType = EnumPopup(...) then checks IsCameraTrack for a warning — assignment happens before validation. Old PSXAnimationEditor stored in a local variable, showed warning + continued (skipping assignment) for camera types. The new code allows invalid camera track types to be persisted to PSXAnimationClip assets.",
+      "severity_justification": "Camera tracks in animation clips are explicitly disallowed and would likely cause export errors or undefined behavior on export. However, the invalid data can only enter through deliberate UI action (changing the type via inspector), not accidentally, and the warning is at least shown.",
+      "category_justification": "Invalid data (camera track in animation clip) can be persisted due to validate-after-write ordering, a regression from the old check-before-assign pattern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineKeyframeInspector.cs",
+      "start_line": 96,
+      "end_line": 99,
+      "message": "Changing a keyframe frame here does not re-sort the track or update the selected index. Other creation/drag paths sort keyframes because preview and drawing assume chronological order; editing the frame in the inspector can leave the list out of order and make preview interpolation select the wrong surrounding keyframes.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: inspector writes kf.Frame without sorting or updating SelectedKeyframeIndex. EvaluateTrack picks 'after' as first-in-list with Frame>=frame (not nearest in time), which is wrong with unsorted keyframes. DrawValueTrack also draws connections using consecutive list indices. Drag and context-menu-add both sort after changes; inspector is the only path that doesn't.",
+      "severity_justification": "Editing a keyframe's frame number in the inspector can silently corrupt preview interpolation (wrong curve segments selected) and produce visually incorrect connection lines. The effect is subtle and only triggered by intentional editing, but the resulting bad preview gives false feedback about the animation.",
+      "category_justification": "Missing sort after frame edit causes incorrect interpolation evaluation and rendering, a logic error with visible wrong behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineWindow.cs",
+      "start_line": 509,
+      "end_line": 511,
+      "message": "This mutates the clip asset without registering an undo operation. Most timeline edit paths (adding/removing tracks or keyframes and inspector property edits) use direct field mutation plus `SetDirty`, so users cannot undo those changes in the Unity editor; record the clip with `Undo.RecordObject` before changing serialized data.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: lines 509-511 add a keyframe and call SetDirty without any Undo.RecordObject. The code is exactly as described. This is the same root issue as Finding 2 (missing undo throughout the timeline window) but specifically called out for the context menu add-keyframe action.",
+      "severity_justification": "Same as Finding 2 — losing undo for keyframe additions means users can't recover from accidental adds. Medium severity rather than high because it's a workflow issue, not data loss.",
+      "category_justification": "Serialized asset data is mutated without registering an undo operation, causing Ctrl+Z to silently fail for this action.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelinePreview.cs",
+      "start_line": 567,
+      "end_line": 573,
+      "message": "Preview can permanently add an `Animator` component to scene objects. There is no corresponding cleanup in `StopPreview`, so simply previewing a skin animation mutates and dirties the scene. Track whether the component was created for preview and remove it on stop, or use a non-mutating sampling target.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ResolveAnimatorForSkinExp calls AddComponent<Animator>() at line 570 for models without an existing Animator. StopPreview has no corresponding RemoveComponent or DestroyImmediate call — the component is permanently added to the scene object. The same bug existed in both old inspectors (PSXCutsceneEditor line 811, PSXAnimationEditor line 496) with no cleanup.",
+      "severity_justification": "Previewing a skin animation on a model without an Animator permanently adds a component to the scene object, dirtying the scene unexpectedly. Users would discover unexpected Animator components on their objects after using preview, which could affect other workflows or exports.",
+      "category_justification": "A scene object is mutated (component added) during preview with no cleanup on stop, leaving the scene in a modified state after the preview operation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Timeline/PSXTimelineKeyframeInspector.cs",
+      "start_line": 35,
+      "end_line": 42,
+      "message": "The editor now lets clip names be changed here but no longer shows the 24-character export limit warning that the old inspectors provided. Both animation and cutscene exporters truncate names at 24 characters, so add validation feedback near this field to avoid silent name changes on export.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: PSXTimelineKeyframeInspector line 36 has an editable TextField for clip name with no length check. Both PSXCutsceneExporter and PSXAnimationExporter define MAX_NAME_LEN = 24 and truncate via Substring. Old inspector had an explicit HelpBox for this. The finding correctly identifies the specific editable field that's missing validation.",
+      "severity_justification": "Silently truncated names on export is a real issue but low friction — names only matter for Lua references, a developer-facing concern. The truncation happens silently without error but doesn't crash or corrupt the clip itself. The Timeline window is the primary editing path, so placing the warning there would be meaningful.",
+      "category_justification": "An enforced export constraint (24-char name limit) has no corresponding UI feedback at the point of editing, leading to silent data divergence between what the editor shows and what gets exported.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

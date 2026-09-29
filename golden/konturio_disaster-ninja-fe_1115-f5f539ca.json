@@ -1,0 +1,111 @@
+{
+  "pr_key": "konturio_disaster-ninja-fe_1115-f5f539ca",
+  "pr": {
+    "repo": "https://github.com/konturio/disaster-ninja-fe",
+    "pr_number": 1115,
+    "base": "49802085fc7ba9e94925a8c776026bfd1aaf9227",
+    "head": "f5f539ca6460793eea0cf060ac518a144b15f509"
+  },
+  "findings": [
+    {
+      "file": "docs/mva-config-interface.md",
+      "start_line": 32,
+      "end_line": 34,
+      "message": "The `colors` field is documented as a flat union but the actual type (`MultivariateColorConfig`) is a discriminated union. When `type` is `'bivariate'`, only `ColorTheme` is valid for `colors`; when `type` is `'mcda'`, only `ColorsBySentiments | ColorsByMapLibreExpression` is valid. The documentation incorrectly implies any combination of `type` and `colors` is acceptable, which misrepresents the constraint enforced by the TypeScript types in `types.ts`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The actual MultivariateColorConfig in types.ts is a discriminated union (BivariateColorConfig | MCDAColorConfig) where 'bivariate' only allows ColorTheme and 'mcda' only allows ColorsBySentiments | ColorsByMapLibreExpression. The doc incorrectly flattens this into a single object type with open unions for both type and colors fields.",
+      "severity_justification": "This is a documentation inaccuracy. TypeScript would catch misuse at compile time, so it won't cause runtime bugs, but it misrepresents the actual constraint and could mislead developers reading the docs.",
+      "category_justification": "The issue is in the documentation file mva-config-interface.md — it inaccurately represents the TypeScript type definition.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/mva-config-interface.md",
+      "start_line": 63,
+      "end_line": 63,
+      "message": "`createMultivariateLayer()` does not accept a `MultivariateLayerConfig` directly. Its actual signature is `action((ctx, style: MultivariateLayerStyle)` where `MultivariateLayerStyle = { type: 'multivariate', config: MultivariateLayerConfig }`. The documentation tells readers to pass a bare config object, which would cause a runtime error (the function guards on `style.type !== 'multivariate'` and returns early).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "createMultivariateLayer() in multivariateLayerActions.ts has signature `action((ctx, style: MultivariateLayerStyle)` where MultivariateLayerStyle = { type: 'multivariate', config: MultivariateLayerConfig }. The doc says to pass a bare MultivariateLayerConfig which would fail the style.type !== 'multivariate' guard and return early without creating any layer.",
+      "severity_justification": "The documentation actively misleads developers on how to use the function — passing a bare config would cause a silent failure (early return with console.error) and no layer would be created, making this more than a cosmetic error.",
+      "category_justification": "The inaccuracy is in the documentation file describing the API usage, misrepresenting the function signature.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/mva-config-interface.md",
+      "start_line": 57,
+      "end_line": 57,
+      "message": "The claim that the result of `createMultivariateConfig()` can be saved and later uploaded is incorrect. `createMultivariateConfig()` returns a `MultivariateLayerConfig`, but the download handler serialises the full `MultivariateLayerStyle` wrapper (`{ type: 'multivariate', config: ... }`) and the upload handler casts the file to `MultivariateLayerStyle`. A bare `MultivariateLayerConfig` JSON would be misinterpreted on upload because `style.type` would not equal `'multivariate'`, silently producing no layer.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: the download handler serializes state.source.style (MultivariateLayerStyle = { type: 'multivariate', config: ... }) not a bare MultivariateLayerConfig. The upload handler casts parsed JSON to MultivariateLayerStyle and calls createMultivariateLayer() which guards on style.type !== 'multivariate'. The doc incorrectly implies createMultivariateConfig() output can be directly saved and uploaded.",
+      "severity_justification": "Documentation inaccuracy about the save/upload workflow. The practical impact is mainly on developers trying to programmatically build and upload configs — they would get a silent failure. The end-user workflow (create via UI then download/upload) works correctly.",
+      "category_justification": "The issue is in the documentation file describing the workflow for createMultivariateConfig(), misrepresenting the expected file format for the upload control.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/mva-config-interface.md",
+      "start_line": 51,
+      "end_line": 51,
+      "message": "The extrusion is described as '3D cylinders', but the renderer uses MapLibre `fill-extrusion` on a hexagonal grid source, producing hexagonal prisms, not cylinders. This is verifiable in `createExtrusionLayerSpecification.ts` which sets `type: 'fill-extrusion'` with `fill-extrusion-height` and `fill-extrusion-base` on hex grid tiles.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "createExtrusionLayerSpecification.ts confirms the renderer uses type: 'fill-extrusion' on SOURCE_LAYER_MCDA (a hexagonal grid), producing hexagonal prisms not cylinders. The doc at line 51 incorrectly calls these '3D cylinders'.",
+      "severity_justification": "Minor terminology inaccuracy in documentation. Hexagonal prisms vs cylinders is a cosmetic distinction that won't mislead developers about how to configure or use the feature, but it is factually wrong.",
+      "category_justification": "The issue is a factual inaccuracy in the documentation file describing the visual output of the extrusion feature.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/mva-config-interface.md",
+      "start_line": 7,
+      "end_line": 8,
+      "message": "The “Interface definition” snippet references `Step`, `MultivariateDimension`, `ColorTheme`, `ColorsBySentiments`, and `ColorsByMapLibreExpression`, but only imports the MapLibre types. As a result, the documented definition is not self-contained or copyable even though it is presented as the interface definition.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified against types.ts: the doc snippet uses Step, MultivariateDimension, ColorTheme, ColorsBySentiments, and ColorsByMapLibreExpression without importing them. The actual source imports these from ~utils/bivariate, ~core/types, and ../stylesConfigs/mcda/types respectively.",
+      "severity_justification": "This is a documentation-only issue — the code itself is unaffected. The doc does reference the canonical source file, so readers can find the real definition. Impact is limited to developer experience when using the snippet.",
+      "category_justification": "The finding is entirely about the accuracy and completeness of a documentation code snippet, not runtime code.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

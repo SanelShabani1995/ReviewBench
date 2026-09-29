@@ -1,0 +1,491 @@
+{
+  "pr_key": "haoling_diary-notebook-blog-transformer_24-876934a6",
+  "pr": {
+    "repo": "https://github.com/haoling/diary-notebook-blog-transformer",
+    "pr_number": 24,
+    "base": "d98d6da454bafa63c79df728790e0c50bb8ca668",
+    "head": "876934a63ff912a060320102a818b48476a59136"
+  },
+  "findings": [
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 177,
+      "end_line": 177,
+      "message": "getAppDataFileByName merges _fileId and _file into the returned data object. If a caller passes this result directly to updateFileContent, those metadata properties will be written back into the stored JSON file content, silently corrupting it. The file metadata should be returned separately (e.g. as a wrapper object), not spread into T.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: getAppDataFileByName spreads _fileId and _file into the returned T object. updateFileContent takes that same T and passes it directly to JSON.stringify. A caller doing a natural read-modify-write would silently write those metadata properties back into the stored file content.",
+      "severity_justification": "Silent data corruption is a real risk but only triggered by a specific (yet natural) usage pattern. The underscore prefix provides weak discoverability but does not prevent the issue.",
+      "category_justification": "This is an API design issue: the return type conflates domain data with retrieval metadata in a way that causes corruption at the call site.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 393,
+      "end_line": 393,
+      "message": "folderId is interpolated directly into the Drive query string without escaping: `'${folderId}' in parents`. All other user-controlled string values go through escapeDriveQueryValue, but folderId is skipped. A malformed or attacker-controlled folderId containing `'` or `\\` could inject additional query clauses and return unexpected files.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim is factually correct: folderId is not passed through escapeDriveQueryValue while name parameters are. The inconsistency is real code. However, Google Drive file IDs are opaque alphanumeric strings that cannot contain ' or \\, so the practical injection risk is negligible — but the inconsistency is still a valid observation worth noting.",
+      "severity_justification": "Google Drive file IDs are opaque strings with a restricted character set (no quotes or backslashes), so actual injection is not feasible in practice. The risk is theoretical but the inconsistency with how other parameters are handled is real.",
+      "category_justification": "The finding concerns query injection via unescaped user-controlled input in a Drive API query string.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 52,
+      "end_line": 52,
+      "message": "The multipart boundary is generated with Date.now(), giving a value like 'drive_boundary_1715000000000'. If JSON.stringify(data) or JSON.stringify(metadata) happens to contain this exact string (e.g. a value stored in a previous file that was loaded back), the multipart body will be structurally corrupted because the parser will treat the embedded string as a boundary delimiter. RFC 2046 requires boundaries to be chosen to not appear in the body; crypto.randomUUID() or crypto.getRandomValues() should be used instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: the boundary uses Date.now() which is predictable and theoretically could appear in serialized JSON data. RFC 2046 requires boundaries to not appear in the body. Both buildMultipartBody and uploadImage share this pattern.",
+      "severity_justification": "The practical collision probability is essentially zero for this app's data (diary settings JSON would need to contain the exact string 'drive_boundary_' + current millisecond timestamp). The fix (crypto.randomUUID) is trivial but the risk in practice is negligible.",
+      "category_justification": "The issue is a structural correctness concern about multipart body construction that could in theory cause malformed requests, rather than a security vulnerability.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 307,
+      "end_line": 307,
+      "message": "uploadImage also uses Date.now() for the boundary with the same collision risk as buildMultipartBody. For binary image content, the chance of the boundary string occurring in the blob is low but non-zero; use crypto.randomUUID() to eliminate the risk.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: uploadImage uses 'drive_boundary_' + Date.now() at line 307, same pattern as buildMultipartBody. Binary image blobs could contain the ASCII byte sequence of the boundary string, making this marginally more plausible than the JSON case.",
+      "severity_justification": "The probability of a JPEG/PNG blob containing the exact ASCII string 'drive_boundary_' + current millisecond is vanishingly small. The fix is trivial but the actual risk in practice is negligible.",
+      "category_justification": "Structural correctness concern about multipart body construction that could cause malformed upload requests.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 109,
+      "end_line": 109,
+      "message": "apiFetch returns `undefined as T` for 204 responses. All callers are typed to receive a concrete type (e.g. DriveFile), so they silently receive undefined without TypeScript catching it. deleteFile avoids this by using apiFetchRaw, but any future method that causes a 204 via apiFetch will have undefined returned where a value is expected. The overload should be separated or the 204 case made explicit in the return type.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually verified: apiFetch returns `undefined as T` for 204 responses while typed as Promise<T>. This is a genuine type unsafety. Current callers only use GET/POST/PATCH that return JSON (not 204), so no code is currently broken — but the issue is latent and would silently affect any future caller that triggers a 204.",
+      "severity_justification": "No current caller is broken by this — all existing apiFetch calls use methods that return JSON bodies. The risk is forward-looking: a future method that triggers 204 via apiFetch would silently receive undefined. Real but not immediately impactful.",
+      "category_justification": "The issue is a type contract violation in a private API method — the declared return type Promise<T> doesn't match the actual runtime value for 204 responses.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 161,
+      "end_line": 177,
+      "message": "getAppDataFileByName has no orderBy clause, so when multiple files share the same name in appDataFolder (which createAppDataFile allows, since it does no deduplication check), the returned file is non-deterministic. Combined with the lack of a duplicate-creation guard, repeated calls to createAppDataFile with the same name accumulate stale copies and the retrieved file is arbitrary.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: createAppDataFile has no duplicate check, and getAppDataFileByName has no orderBy clause (unlike findFolderByName which includes orderBy=name). Multiple files with the same name in appDataFolder are possible and list.files[0] is non-deterministic in that case.",
+      "severity_justification": "For a settings/metadata store this could silently return stale data and accumulate orphaned files. The impact depends on how callers use createAppDataFile vs updateFileContent — if callers incorrectly call create instead of update, they'll get non-deterministic reads.",
+      "category_justification": "Non-deterministic file retrieval when duplicates exist is a logic correctness issue that can return wrong data silently.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 385,
+      "end_line": 389,
+      "message": "findOrCreateFolder has a TOCTOU race: two concurrent calls (e.g. two browser tabs sharing the same access token) both see no existing folder, then both call createFolder, producing two folders with the same name. The Drive API's drive.file scope means both tabs can see and further corrupt each other's folder references. The Drive API has no atomic find-or-create primitive, but callers should be made aware that deduplication cannot be guaranteed, or the method should return an array / accept a known parent scope to reduce the window.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The TOCTOU race is factually correct — two concurrent calls will both see no folder and both create one. The Drive API has no atomic primitive. The finding correctly identifies that callers aren't warned about this.",
+      "severity_justification": "This is a single-user personal diary client-side app; simultaneous multi-tab access calling findOrCreateFolder concurrently is a very unlikely scenario. The impact (duplicate folders) is annoying but not catastrophic. The Drive API limitation means a perfect fix isn't possible anyway.",
+      "category_justification": "Concurrent access / race condition in resource management falls under reliability.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 147,
+      "end_line": 156,
+      "message": "createAppDataFile (and updateFileContent at line 238) bypass the buildHeaders / apiFetch helpers and call fetch directly with a manually constructed Authorization header. If the token management logic in buildHeaders ever changes (e.g. adding required headers), these paths will silently skip them. These upload paths should be refactored to use authFetch or a shared upload helper.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: createAppDataFile, updateFileContent, and uploadImage all call fetch() directly with manually constructed Authorization headers, bypassing buildHeaders/apiFetch. They miss the Accept: application/json header set by buildHeaders. The inconsistency creates a drift risk if buildHeaders is updated.",
+      "severity_justification": "Currently only the Accept header is missing from these paths, which Drive API doesn't require. The practical impact today is negligible, but the maintenance risk of divergence is real.",
+      "category_justification": "DRY violation — three methods duplicate auth header construction instead of using the shared buildHeaders helper, creating inconsistency and future drift risk.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 55,
+      "end_line": 62,
+      "message": "buildMultipartBody always sets 'Content-Type: application/json' for both the metadata and content parts. The data parameter is typed as unknown, so callers could theoretically pass non-JSON-serialisable values; JSON.stringify(data) would then produce 'null' or throw, silently losing data. The function should constrain data to a JSON-safe type (or document the JSON-only contract) to prevent silent data loss at the call site.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "buildMultipartBody is a private method with exactly two call sites, both passing typed T data from generic public methods. The 'unknown' typing is an implementation detail of a private helper. No current caller passes non-serializable data. The finding restates a general type-safety best practice without demonstrating a concrete issue in the actual call sites.",
+      "severity_justification": "Even if accepted as valid, the risk of data loss from non-JSON-serializable data in this private method with controlled callers is negligible.",
+      "category_justification": "The concern is about type constraints and documentation of a JSON-only contract.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 180,
+      "end_line": 196,
+      "message": "listAppDataFiles uses only 'trashed = false' as the query filter with spaces=appDataFolder. Unlike getAppDataFileByName it does not include \"'appDataFolder' in parents\", which means if the Drive API ever returns files from nested paths within that space, all of them are included without the caller being able to distinguish hierarchy. This is an inconsistency with getAppDataFileByName and may silently return unexpected files as the stored data grows.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The inconsistency is factually verified: listAppDataFiles omits 'appDataFolder' in parents from the query while getAppDataFileByName includes it. With spaces=appDataFolder, the API includes files at any depth; the parent filter restricts to direct children. The methods could return different result sets if nested structures exist.",
+      "severity_justification": "appDataFolder is used as a flat namespace in practice and the Drive API doesn't encourage nested structures within it. The risk of unexpected files from nested paths is theoretical for this app's use case.",
+      "category_justification": "Inconsistent query filters between sibling methods could produce different result sets, which is a correctness concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 310,
+      "end_line": 310,
+      "message": "`updateFileMetadata`の引数`patch`の型定義`{ name?: string; addParents?: string; removeParents?: string }`がインラインで定義されています。この型は他の場所で再利用される可能性があり、また可読性の観点からも、ファイル上部で`type`エイリアスとして定義することが望ましいです。",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The inline type is used exactly once and is idiomatic TypeScript for single-use parameter shapes. The finding restates a general preference for named types without identifying a concrete reuse case or inconsistency with existing conventions in this file. The same comment could apply to any codebase.",
+      "severity_justification": "Pure cosmetic style preference with no behavioral impact.",
+      "category_justification": "The suggestion is about code organization and naming conventions.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 435,
+      "end_line": 435,
+      "message": "`listFilesInFolder`メソッドは、ページネーションのために`nextPageToken`を使用していますが、変数名が`pageToken`となっています。`nextPageToken`という変数名は`listAppDataFiles`メソッドでは正しく使われており、一貫性を保つためにも`nextPageToken`に修正することが望ましいです。",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Both are valid local names; no bug or confusion introduced",
+      "severity_justification": "Pure naming inconsistency with no functional impact — both implementations are correct, just using different local variable names for the same concept.",
+      "category_justification": "Inconsistent naming convention between two sibling methods in the same file.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 30,
+      "end_line": 32,
+      "message": "`DriveFile`型は、このファイル内でDrive APIレスポンスの一部として複数回利用されています。一方で、将来的にはアプリケーションのドメインモデルとして`DriveFile`とは異なる構造の型が定義される可能性があります。この型がAPIクライアントの内部的なデータ転送オブジェクト（DTO）であることを明確にするため、`DriveFileDTO`のような名前に変更することを推奨します。",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggestion to rename DriveFile to DriveFileDTO is a speculative future-proofing preference with no concrete issue in the current code. The type is exported from the module, named clearly for its domain (Google Drive file metadata), and there is no existing conflicting domain model. The finding hypothesizes a future naming collision without demonstrating one exists. The same comment could be applied to any API client type in any codebase.",
+      "severity_justification": "Pure naming preference with no current behavioral or structural impact.",
+      "category_justification": "The suggestion concerns type naming conventions and future-proofing.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 81,
+      "end_line": 89,
+      "message": "The buildHeaders method defaults to setting 'Content-Type' to 'application/json' if the body is present. This might incorrectly override non-JSON content types. Explicitly check and respect the content type of the init.headers or the request body.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. buildHeaders already checks `!headers.has('Content-Type')` before setting the JSON default, and init.headers are copied before that check. A caller-provided Content-Type in init.headers is preserved, not overridden. The described bug does not exist in the code.",
+      "severity_justification": "The concern is moot since the code already handles it correctly.",
+      "category_justification": "The finding makes an incorrect claim about a logic error in the header construction.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 424,
+      "end_line": 435,
+      "message": "The uploadImage method creates a full Blob for the multipart request but does not handle potential memory overhead for large files. Consider streaming the file contents instead of building the entire payload in memory.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The input is already a Blob (data already in memory). Browser Blob construction is reference-based and doesn't eagerly copy data. The finding is a generic performance suggestion about memory that could apply to any file upload code, without demonstrating a concrete problem for this app's use case (scanned diary pages ≤5MB over multipart upload).",
+      "severity_justification": "Even if valid, the practical memory overhead is minimal for scanned images of typical size, and the Blob approach is standard browser practice.",
+      "category_justification": "The finding concerns memory usage during file upload.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 296,
+      "end_line": 299,
+      "message": "The updateFileContent method assumes the body content is JSON during the call to buildMultipartBody. Handling non-JSON data types uniformly with the buildHeaders logic would make the API more robust.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "updateFileContent is explicitly documented as JSON-only (「ファイルの内容を更新する（JSON）」). Non-JSON binary uploads are handled by uploadImage. The JSON assumption is intentional design, not an oversight. The finding suggests generalizing a correctly scoped method without identifying a concrete problem.",
+      "severity_justification": "No actual issue — the JSON-only contract is intentional and documented, with a separate method for binary content.",
+      "category_justification": "The suggestion is about API generality/flexibility.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 188,
+      "end_line": 207,
+      "message": "The listAppDataFiles method uses pageSize=100 but does not allow overriding this value. Exporting this parameter for caller configuration can improve flexibility and control.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a generic API flexibility suggestion — 'allow callers to configure pageSize' — that could apply to any paginated method in any codebase. The method fetches all pages and returns the complete list, so pageSize only affects network round-trips per page, not the result. There is no concrete problem identified, and the Drive API caps pageSize at 1000 anyway. The same comment could be copy-pasted onto any paginated method.",
+      "severity_justification": "pageSize is an internal implementation detail of pagination that doesn't affect the method's contract (returning all files). No functional issue is identified.",
+      "category_justification": "The suggestion concerns exposing an internal pagination parameter as part of the public API.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 320,
+      "end_line": 344,
+      "message": "The updateFileMetadata method allows free-form metadata updates but does not validate or sanitize the inputs. Validating input structure and preventing unexpected API payload failures would improve stability.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The method accepts a strongly-typed patch object `{ name?: string; addParents?: string; removeParents?: string }` — TypeScript already enforces the input structure at compile time. The finding's claim of 'free-form metadata updates' is factually inaccurate. If the Drive API rejects an invalid value, assertOk() will throw an appropriate DriveError. This is a generic validation suggestion with no concrete vulnerability or failure mode identified.",
+      "severity_justification": "TypeScript types already constrain the inputs; any API-level validation failure surfaces via assertOk/parseDriveError. No concrete issue exists.",
+      "category_justification": "The suggestion is about input validation to prevent API failures.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-errors.ts",
+      "start_line": 44,
+      "end_line": 53,
+      "message": "The DriveQuotaExceededError class conflates status codes 429 and 403 for rate-limiting scenarios, which might obscure distinguishing between quota and general permission errors. Clarify or split handling for better granularity.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The design is intentional: Google Drive API genuinely returns 403 for both permission errors and rate-limit errors, distinguished by the reason field in the body. parseDriveError only maps 403 to DriveQuotaExceededError when the reason is explicitly rateLimitExceeded/quotaExceeded — regular 403s produce DrivePermissionError. The class comment explicitly documents the dual-status behavior.",
+      "severity_justification": "No actual conflation occurs — the distinction between quota and permission 403s is correctly handled via reason codes.",
+      "category_justification": "The finding concerns error type hierarchy and status code handling in the error abstraction layer.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 402,
+      "end_line": 415,
+      "message": "The findFolderByName method sorts by name but does not handle cases with multiple matches. Returning the most recently modified or another prioritized match instead of the name order might improve precision.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a speculative preference — it suggests returning 'most recently modified' instead of name-ordered without demonstrating why that would be more correct. Returning the first alphabetically is a consistent, deterministic choice. The finding does not identify a concrete bug or failure mode, and the suggested alternative ('most recently modified') has no clear justification for being more correct. The same comment could apply to any method returning the first of multiple matches.",
+      "severity_justification": "No concrete issue — the current behavior is deterministic and documented. The multi-match scenario is the same TOCTOU issue raised in Finding 6/7 which is the real underlying concern.",
+      "category_justification": "The suggestion is about result ordering preference with no behavioral correctness impact.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 513,
+      "end_line": 516,
+      "message": "The getDownloadUrl method assumes webContentLink availability for downloadable files directly. Some file types might require additional API calls to generate links. Add handling for such cases.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The method already handles the unavailable case by returning null (documented in the JSDoc comment). The finding suggests adding fallback link generation for other file types, which is feature expansion not a bug. The method's null-return contract is deliberate and documented.",
+      "severity_justification": "No actual issue — null is returned when webContentLink is unavailable, and callers can handle that. The suggested enhancement is out of scope for the current design.",
+      "category_justification": "The suggestion is about expanding the method's contract to handle additional file types.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 368,
+      "end_line": 389,
+      "message": "`findFolderByName` searches `spaces=drive` for any folder matching the name. With the OAuth scopes currently requested in `auth-context.tsx` (`drive.file` + `drive.appdata`), the app can only see folders it has itself created/opened, which means this method silently returns `null` for folders the user created via the Drive UI. If that is intended behavior it should be documented in the JSDoc, otherwise callers may be surprised that `findOrCreateFolder` creates duplicate folders alongside user‑owned ones with the same name.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: auth-context.tsx uses `drive.file` + `drive.appdata` scopes. With `drive.file`, the Drive API only returns app-created files. `findFolderByName` uses `spaces=drive` but would silently return null for user-created folders, meaning `findOrCreateFolder` could create duplicate folders. Neither method's JSDoc documents this limitation.",
+      "severity_justification": "Could cause unexpected duplicate folder creation in user's Drive if they already have a folder with the same name, but limited to folders the user creates manually outside the app — the core workflow may still work correctly if the app controls all folder creation.",
+      "category_justification": "The method's behavior diverges from what callers would reasonably expect — finding an existing folder by name — due to an undocumented scope constraint that causes silent null returns and potential duplicate creation.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 341,
+      "end_line": 348,
+      "message": "`getDownloadUrl` relies on `webContentLink`, which Drive only returns for files that are publicly/anyone-with-link shared. For files uploaded via `uploadImage` to a private folder (the typical case for this app), the API will return no `webContentLink` and this method will return `null`, even though the file exists and is accessible. The JSDoc says \"非バイナリ等で取得不可\" but that is misleading — the real condition is the file's sharing state. Consider clarifying the doc, or switching to constructing an authenticated `?alt=media` URL (or returning a Blob URL via `getFileBlob`).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding's core claim — that `webContentLink` is only returned for publicly shared files — is factually incorrect. Drive API v3 returns `webContentLink` for any binary file the authenticated user has access to; the condition is binary content type, not sharing state. The JSDoc's mention of non-binary files is actually correct. Image files uploaded via `uploadImage` will have `webContentLink` populated.",
+      "severity_justification": "Even if the documentation point were valid, the impact would be minor — callers already see null propagation in the return type.",
+      "category_justification": "The finding is primarily about misleading JSDoc documentation rather than a code logic error.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/drive-client.ts",
+      "start_line": 370,
+      "end_line": 375,
+      "message": "`findFolderByName` is documented and paired with `createFolder` as operating on the My Drive root, but the query does not constrain the parent to `root`. Drive searches the whole `drive` space here, so `findOrCreateFolder` can return an unrelated same-named folder from a nested/shared location and subsequent uploads will go to the wrong folder. Add a parent constraint (for example the root folder, or an explicit parent parameter) to make lookup match creation.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `createFolder` creates at Drive root (no `parents` specified, Drive API defaults to root), but `findFolderByName`'s query has no `'root' in parents` constraint — it searches all accessible folders in `spaces=drive`. This asymmetry means `findOrCreateFolder` could return a same-named folder at a non-root location, causing subsequent uploads to go to the wrong folder.",
+      "severity_justification": "Could silently upload images to the wrong folder, corrupting the app's folder structure. The `drive.file` scope limits exposure but doesn't eliminate it if the app previously created nested folders or the user shared a same-named folder with the app.",
+      "category_justification": "Asymmetry between search scope and creation location creates a logic bug where `findOrCreateFolder` may return a folder that doesn't match where `createFolder` would create.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,251 @@
+{
+  "pr_key": "EtienneLescot_n8n-as-code_295-c85d30b5",
+  "pr": {
+    "repo": "https://github.com/EtienneLescot/n8n-as-code",
+    "pr_number": 295,
+    "base": "37ddb43db1a29de4d31fd06e3feb9c7e5966d5af",
+    "head": "c85d30b5427310cdd0365ff1c77d2b7c6b9d88c9"
+  },
+  "findings": [
+    {
+      "file": "packages/skills/src/services/ai-context-generator.ts",
+      "start_line": 433,
+      "end_line": 433,
+      "message": "The AGENTS.md guidance states that reading `workflowDir` from the instance matching `activeInstanceId` is 'always correct regardless of `--instance` overrides'. This is wrong. When `--instance` (i.e. `N8NAC_INSTANCE_NAME`) targets a different instance, `BaseCommand` sets `this.activeInstanceId = match.id` (the override) and uses `match.syncFolder` as the push directory. But `activeInstanceId` in the JSON file is the *globally* selected instance. The top-level `workflowDir` in `n8nac-config.json` reflects that globally-selected instance, not the overridden one. An agent following this guidance while using `--instance` will create workflow files in the wrong directory.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in base.ts: when N8NAC_INSTANCE_NAME is set, BaseCommand resolves a different instance (match.id, match.syncFolder) than the globally-active one. The top-level workflowDir in n8nac-config.json is computed from the globally-active instance via buildWorkspaceConfig's spread of toLocalConfig(active). The guidance claiming it's 'always correct regardless of --instance overrides' is factually wrong — an agent following it while using --instance would read the wrong workflowDir.",
+      "severity_justification": "Using --instance to target a non-default instance is a real use case, and following the guidance would cause the agent to create and push workflow files to the wrong directory, requiring manual correction.",
+      "category_justification": "The issue is incorrect guidance in the AI context/AGENTS.md documentation — the code is structured correctly but the generated documentation makes a false claim about correctness under --instance overrides.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/core/services/sync-manager.ts",
+      "start_line": 357,
+      "end_line": 361,
+      "message": "The new `if (relativePath.includes(path.sep))` check hard-rejects any file nested within the sync scope, but `ILocalConfig.folderSync` is documented as 'Mirror n8n folder hierarchy as local subdirectories'. If `folderSync: true` is ever implemented (the config field already exists and is propagated through `SyncManager.config`), this error would fire on every push of a sub-folder workflow with no escape hatch. The check contains no `folderSync`-aware bypass, permanently breaking future `folderSync` support without a coordinated change to this guard.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ISyncConfig lacks folderSync, SyncManager has zero folderSync references, and the new unconditional check at line 357 rejects all nested paths within the scope with 'not supported' — no escape hatch exists. The folderSync field is documented in ILocalConfig, included in getSyncConfig() output, and would require nested paths inside the sync scope, directly conflicting with this guard.",
+      "severity_justification": "folderSync is currently unimplemented (not in ISyncConfig, not used in SyncManager), so this creates no immediate breakage. A developer implementing folderSync would need to update this guard, but that's a manageable coordinated change rather than a silent bug.",
+      "category_justification": "The check doesn't break current behavior but creates a code-level obstacle to implementing a documented future feature, requiring coordinated changes across multiple files when folderSync is added.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/core/services/sync-manager.ts",
+      "start_line": 379,
+      "end_line": 381,
+      "message": "`quoteShellArg` wraps the value in POSIX single quotes and escapes embedded single quotes with the `'\\''` pattern. On Windows cmd.exe, single quotes are literal characters, not string delimiters; the suggested `n8nac push 'path\\to\\file'` command will be interpreted incorrectly. On PowerShell the escaping method is `''` not `'\\''`. Every error message in `resolvePushTarget` that calls `quoteShellArg` will produce a broken suggested command for Windows users.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: quoteShellArg does unconditional POSIX single-quote escaping with no process.platform check. The codebase has explicit Windows awareness elsewhere (directory-utils.ts platform check, UNC path tests in config-service), confirming Windows is a supported target. On Windows cmd.exe single quotes are literal characters; the suggested commands in error messages would be incorrect.",
+      "severity_justification": "Only affects the quality of error message suggestions (the suggested n8nac push command in the error text), not the actual error thrown or any functional behavior. Windows users would get a non-working suggested command but the error itself is still informative.",
+      "category_justification": "The quoteShellArg output is factually incorrect for Windows shells, making the suggested commands in error messages wrong rather than merely cosmetic.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/services/config-service.ts",
+      "start_line": 822,
+      "end_line": 829,
+      "message": "`workflowDir` is not cleared when its computed dependencies become unavailable. `sanitizeLocalConfig` copies an existing `workflowDir` string from the profile, then the recompute condition (`localConfig.syncFolder && localConfig.instanceIdentifier && localConfig.projectName`) is checked. If any dependency is absent (e.g. `saveBootstrapState` sets `projectName: undefined` — the spread of `{ ...current, ...bootstrapConfig }` passes the old `workflowDir` through `sanitizeLocalConfig` while making `projectName` falsy), the stale value from the prior project persists in the stored profile and is exposed at the top level of `n8nac-config.json`. Agents reading `workflowDir` immediately after a bootstrap/auth-refresh will see the wrong project directory.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified by tracing saveBootstrapState → updateInstanceConfig → saveLocalConfig → sanitizeInstanceProfile. bootstrapConfig omits workflowDir, so the old value from current passes through sanitizeLocalConfig (string check passes). The recompute condition fails because projectName is cleared, and there is no else-branch to clear workflowDir. The stale value is persisted to n8nac-config.json's top level via buildWorkspaceConfig.",
+      "severity_justification": "Agents reading workflowDir after init-auth (bootstrap) would see the old project's directory and create files in the wrong location. The stale state is eventually fixed by init-project, but between the two commands the config is misleading — precisely the scenario where agents are most likely to act on it.",
+      "category_justification": "The workflowDir field is incorrectly computed (not cleared) when its dependencies become undefined, causing stale data to persist in the config file.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/core/services/sync-manager.ts",
+      "start_line": 358,
+      "end_line": 361,
+      "message": "The nested-path error message builds its 'for example' suggestion using `path.join(normalizedScopeDir, path.basename(normalizedAbsolutePath))`. `normalizedScopeDir` is the result of `resolveExistingPath(syncScopeDir)` which calls `fs.realpathSync.native`, yielding an absolute path. The error message therefore always displays an absolute path as the corrected form, directly contradicting the rest of the PR's guidance (and the other error messages in the same function) which consistently show workspace-root-relative paths. An agent or user reading this error will be given an absolute path that may not work when passed to `n8nac push` if the tool relies on relative-path conventions.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: normalizedScopeDir is the result of resolveExistingPath (fs.realpathSync.native), making it absolute. The nested-path error uses path.join(normalizedScopeDir, basename), producing an absolute suggestion, while the other two error messages in the same function consistently use path.relative(process.cwd(), ...) for workspace-relative suggestions. The inconsistency is real. The claim that absolute paths 'may not work' is incorrect — resolvePushTarget explicitly handles isAbsolute(trimmed) — but the style inconsistency with other error messages is a genuine issue.",
+      "severity_justification": "The suggested command in the nested-path error message is inconsistent with other error messages in the same function and the PR's documented guidance, but the absolute path suggestion is functionally valid since absolute paths are accepted by n8nac push. No broken behavior results.",
+      "category_justification": "The error message produces factually inconsistent output compared to other error messages in the same function — an absolute path where the pattern established in this PR uses relative paths.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/core/services/sync-manager.ts",
+      "start_line": 317,
+      "end_line": 322,
+      "message": "When the bare-filename check fires, `suggestedPath` is computed as `path.join(scopeRelativeToCwd, trimmed)`. On Windows, `path.join` uses backslash separators. The result is then passed to `quoteShellArg` and embedded in an error message. On Windows the combined output is a backslash-separated path wrapped in POSIX single quotes — syntactically wrong for both cmd.exe and PowerShell — while the intent is to give a runnable corrective command.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: on Windows, path.join(scopeRelativeToCwd, trimmed) uses backslash separators, and quoteShellArg then wraps the result in POSIX single quotes. The compound output (backslash-path inside single-quotes) is syntactically incorrect for both cmd.exe and PowerShell. The path separator issue is independently real from the quoting issue in finding 3.",
+      "severity_justification": "Only affects the quality of the suggested corrective command in an error message. The error is still thrown with a meaningful message; the suggested command text is unusable on Windows but the core error information (bare filename not allowed) remains clear.",
+      "category_justification": "The suggested command in the error message is factually incorrect on Windows due to the combination of platform-native path separators and POSIX-style quoting.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/services/config-service.ts",
+      "start_line": 859,
+      "end_line": 878,
+      "message": "`normalizeConfigPath` processes segment[0] specially for UNC paths, rebuilding the `\\\\` prefix with `${path.sep}${path.sep}`. When running on Linux (`path.sep === '/'`), this reconstructs the first segment as `//server/share/...`, which `path.join` then normalises — but only because POSIX happens to preserve `//` as a special prefix. On POSIX systems that do not give `//` special treatment (per the POSIX spec, `//` is implementation-defined), `path.join('//server', ...)` may collapse to `/server/...`, silently corrupting the UNC prefix. The logic is fragile and its correctness depends on undocumented runtime behaviour of Node's `path.posix.join`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified by running the function on Linux: path.join does collapse //server to /server (confirmed), but the return statement '//' + joinedPath.replace(/^\\/+/g, '') strips all leading slashes and re-adds // independently of path.join's behavior. The UNC prefix is correctly preserved. The function produces //server/share/workflows/unc_instance/production as expected, matching the test assertion.",
+      "severity_justification": "The finding identifies a real quirk of path.join on POSIX but incorrectly concludes the code is broken — the defensive final return step makes the logic correct regardless of path.join's treatment of //.",
+      "category_justification": "The finding is about a potential correctness issue with path handling for UNC paths.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/skills/src/services/ai-context-generator.ts",
+      "start_line": 487,
+      "end_line": 487,
+      "message": "This example is not a runnable shell command: unquoted `<workflowDir>` is parsed by shells as input redirection rather than a placeholder path. Since this section is a command block/tip for agents to copy, use a concrete example path or a placeholder that is not shell syntax (for example `workflowDir/my-workflow.workflow.ts`) to avoid generating failing commands.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: `<workflowDir>/my-workflow.workflow.ts` in a shell context parses as redirect-stdin-from-workflowDir plus redirect-stdout-to /my-workflow.workflow.ts, which differs from the harmless standalone `<workflowId>` pattern used elsewhere. This specific pattern (with the `/path` continuation) could truncate an actual file if an agent copied the command literally. The finding correctly distinguishes this case from the pre-existing `<workflowId>` convention.",
+      "severity_justification": "This is documentation text consumed by AI agents that understand placeholder conventions; no automated execution of the literal string occurs. The risk of an agent running `<workflowDir>` verbatim and clobbering `/my-workflow.workflow.ts` is theoretical rather than likely.",
+      "category_justification": "The issue is in instructional content generated into AGENTS.md — a documentation artifact for AI agents — not in executable logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/skills/src/services/ai-context-generator.ts",
+      "start_line": 638,
+      "end_line": 638,
+      "message": "This command block shows `n8nac push <workflowDir>/...`, but `<workflowDir>` is shell redirection syntax when copied literally, so the documented command will fail before it reaches the CLI. Use a concrete path or a non-redirection placeholder format here.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 638 is confirmed inside a ```bash code block where `<workflowDir>/my-workflow.workflow.ts` would be parsed by a shell as stdin redirection from `workflowDir` plus stdout redirection to `/my-workflow.workflow.ts`. Being in a fenced bash block makes literal execution more likely than the inline tip at line 487. The claim is factually correct.",
+      "severity_justification": "Documentation in AGENTS.md for AI agents; agents are expected to substitute the placeholder, and the `<placeholder>` convention is widely understood. Practical risk of literal execution is low, though the bash code block context raises it slightly compared to prose.",
+      "category_justification": "The issue is in a fenced bash code block within generated AGENTS.md documentation, not in executable production logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/services/config-service.ts",
+      "start_line": 822,
+      "end_line": 829,
+      "message": "This recomputes `workflowDir` in memory for existing instance-library configs, but `loadWorkspaceConfig` still returns `shouldPersist: false` for any file with an `instances` array. As a result, upgraded workspaces whose `n8nac-config.json` lacks `workflowDir` will not actually get the new field written until some later mutating operation, even though the generated agent guidance now tells agents to read it directly from the file. Persist when normalization adds or changes `workflowDir` so existing configs are migrated reliably.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `loadWorkspaceConfig` returns `shouldPersist: false` for any existing config with an `instances` array (`isStoredWorkspaceConfig` returns true). `sanitizeInstanceProfile` computes `workflowDir` in memory (lines 822-829) but `getWorkspaceConfig` only writes when `shouldPersist` is true. Existing workspaces upgrading to this version will not have `workflowDir` persisted to `n8nac-config.json` until a mutating operation runs, breaking the agent guidance that instructs agents to read the field directly from the file.",
+      "severity_justification": "All existing users upgrading to this version will have a config file missing `workflowDir`, causing agents following the updated AGENTS.md instructions to fail to find the field — the exact problem this PR is trying to solve. The workaround is to perform any mutating operation (e.g. `instance select`), but agents have no way to know this is needed.",
+      "category_justification": "This is a migration/upgrade reliability issue: the in-memory state is correct but the persisted state is not updated, so read-only consumers of the config file (like AI agents) see stale data.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/skills/tests/ai-context-generator.test.ts",
+      "start_line": 198,
+      "end_line": 205,
+      "message": "The new AGENTS.md assertions cover the added push-path guidance, but they do not guard the key regression this change is meant to prevent: the old contradictory `Do **not** pass a path` instruction must stay absent. Add a negative assertion for that removed guidance so future edits cannot reintroduce both instructions while this test still passes.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the old `Do **not** pass a path` instruction is absent from the current code (grep returns nothing), but the new test at lines 198-205 only adds positive toContain assertions for new guidance. There is no not.toContain guard ensuring the contradictory old instruction stays removed. The codebase already uses not.toContain for exactly this kind of regression guard in multiple other tests in the same file.",
+      "severity_justification": "The current code is correct — the instruction is already gone. This is a missing regression guard, not a current bug. The risk is a future edit reintroducing the contradiction while all tests pass, which is a real but deferred concern.",
+      "category_justification": "The finding is about a missing negative test assertion to guard a specific behavioral regression — a test coverage gap.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/tests/unit/sync-manager.test.ts",
+      "start_line": 33,
+      "end_line": 42,
+      "message": "The updated contract requires callers to pass a full relative path from the workspace root, but the tests only exercise absolute paths and bare-filename rejection. Add a positive case that mocks `process.cwd()` to the workspace root and verifies `resolvePushTarget('workflows/<instance>/<project>/my-workflow.workflow.ts')` is accepted, otherwise the main documented success path could regress unnoticed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the only positive test (lines 19-31) uses an absolute path. All added tests exercise rejection cases. The new core behavior — resolving a workspace-root-relative path like `workflows/instance/project/my-workflow.workflow.ts` via `path.resolve(process.cwd(), trimmed)` — has no positive test. This is the primary documented usage and could silently regress if the resolution logic changes.",
+      "severity_justification": "The code logic for relative path resolution is straightforward, and the rejection tests indirectly confirm it runs. A regression would eventually surface from integration tests or real use. The gap is real but not high risk.",
+      "category_justification": "The finding identifies a missing positive test case for the main documented success path of a recently changed code path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

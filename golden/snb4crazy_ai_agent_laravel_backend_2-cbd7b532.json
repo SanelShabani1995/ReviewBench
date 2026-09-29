@@ -1,0 +1,831 @@
+{
+  "pr_key": "snb4crazy_ai_agent_laravel_backend_2-cbd7b532",
+  "pr": {
+    "repo": "https://github.com/snb4crazy/ai_agent_laravel_backend",
+    "pr_number": 2,
+    "base": "965f1889b05513602624f0e077d3e8534be36c5e",
+    "head": "cbd7b5329f29fc4c379242b44d4f21c7258799f3"
+  },
+  "findings": [
+    {
+      "file": "app/Jobs/ExecuteTaskStepJob.php",
+      "start_line": 54,
+      "end_line": 145,
+      "message": "Retry logic is broken. On first failure, both the step (line 113) and parent task (line 124) are immediately marked FAILED, then the exception is re-thrown. On the next retry attempt, the guard at line 54 fires (`step.status === FAILED`) and returns silently — the job is consumed without re-executing the action. The `$tries = 3` setting is effectively `$tries = 1` for actual business logic. Transient failures (network errors, AI API timeouts) will permanently fail tasks with no recovery.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in code: the catch block (lines ~113–136) persists FAILED status on both the step and the task, then re-throws. On any retry the guard at line 54 short-circuits before the action executes, making the retry a silent no-op. The $tries=3 setting has no practical effect on business-logic recovery.",
+      "severity_justification": "Transient failures (AI API timeouts, network blips) permanently fail tasks with no recovery path, directly breaking the core multi-step workflow introduced by this PR.",
+      "category_justification": "This is a fault-tolerance/retry design flaw: the retry mechanism is configured but rendered inoperable by premature persistent state mutation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Jobs/ExecuteTaskStepJob.php",
+      "start_line": 90,
+      "end_line": 94,
+      "message": "When `TaskActionService::execute` returns `executed: false` (unknown or misconfigured action name), the step is silently marked COMPLETED with `{'status': 'no_action_found'}` instead of FAILED. The pipeline then continues normally and the task eventually reaches COMPLETED. No error is surfaced to the caller, making it impossible to detect mis-spelled or missing action names in task configuration.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: TaskActionService returns executed=false for unknown actions, and ExecuteTaskStepJob always writes TaskStepStatus::COMPLETED regardless, storing {status: no_action_found} as output. The pipeline continues normally with no error propagation.",
+      "severity_justification": "Misconfigured or misspelled action names silently produce phantom 'completed' tasks with empty outputs, making configuration errors invisible at runtime. Not high severity because it doesn't corrupt existing data, but it breaks observability for a key error class.",
+      "category_justification": "The logic incorrectly treats a missing/misconfigured action as a success rather than a failure, producing wrong pipeline outcomes.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Services/TaskPlannerService.php",
+      "start_line": 127,
+      "end_line": 151,
+      "message": "`normalise()` accepts any string as `action_name` without validating it against `config/actions.php`. A user posting to `POST /api/v1/tasks` with a multi-step type (e.g., `multi_step_task`) can supply `input.steps[].action_name` with arbitrary values. Combined with the silent no-op in ExecuteTaskStepJob (finding #2), the entire pipeline completes successfully while performing no actual work. The action registry constraint that `RunSingleActionRequest` enforces is absent from the explicit-steps path.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: StoreTaskDispatchRequest applies no validation to input.steps[].action_name; normalise() accepts any string. RunSingleActionRequest does validate against the registry with Rule::in(), confirming an inconsistency. An arbitrary action_name flows through normalise() into TaskStep creation and silently no-ops at execution time.",
+      "severity_justification": "A caller can submit a task that appears to complete successfully while doing no actual work, making configuration errors and typos invisible. Not high because there's no data corruption or security escalation — it degrades reliability and observability.",
+      "category_justification": "Missing validation allows invalid action names to produce phantom 'completed' tasks, which is incorrect behavior relative to the system's intent.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Jobs/PlanTaskStepsJob.php",
+      "start_line": 107,
+      "end_line": 118,
+      "message": "On retry, `PlanTaskStepsJob` correctly skips creating steps whose sequence_order already exists, but still dispatches `ExecuteTaskStepJob` for the first PENDING step unconditionally (line 114). If the previous attempt had already dispatched step 1 (which may have executed, failed, and marked the task FAILED), the retry dispatches step 1 again. This can result in double execution of step 1 when combined with the task being reset to PLANNING status at line 55 (no guard against re-planning an already-FAILED task).",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`firstStep` filters by PENDING status; FAILED steps excluded",
+      "severity_justification": "The lack of a terminal-state guard can cause incorrect task state resets and unexpected re-execution chains on retries, but the double-execution path is largely blocked by ExecuteTaskStepJob's PENDING-only dispatch and its own terminal-state guard.",
+      "category_justification": "This is a fault-tolerance issue: retry idempotency is incomplete because the job doesn't guard against re-processing tasks that have already reached a terminal state.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Jobs/CompileTaskOutputJob.php",
+      "start_line": 55,
+      "end_line": 103,
+      "message": "The idempotency guard (`in_array($task->status, [COMPLETED, FAILED])` at line 55) and the subsequent `$task->fill([...COMPLETED...])->save()` at line 97 are not atomic. Two compile jobs dispatched concurrently (possible if retries overlap with normal flow, or if `dispatchNext` is called twice) can both pass the check before either writes. The second write will silently overwrite `output_json` and `finished_at`. A database-level unique constraint or pessimistic lock would fix this.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the guard (line 55) and write (line 97) are non-atomic with no lock/transaction. Two dispatch paths exist (ExecuteTaskStepJob and PlanTaskStepsJob) that can both enqueue CompileTaskOutputJob for the same task. Two concurrent instances can both pass the status guard.",
+      "severity_justification": "The race exists but practical damage is limited: both concurrent jobs read the same immutable step records and produce structurally identical output_json, so the second overwrite is idempotent. No data corruption or incorrect behavior results in the common case.",
+      "category_justification": "This is a concurrency/fault-tolerance design issue — a check-then-act sequence that is not atomic under concurrent access.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Jobs/LogTaskRequestJob.php",
+      "start_line": 52,
+      "end_line": 80,
+      "message": "The task is unconditionally marked COMPLETED (line 78) regardless of the action result. If the action returned `status: 'failed'` in its result array (e.g., `ScrapeUrlAction` with an invalid URL, `AskAiAction` with no prompt), the task is still marked COMPLETED. Callers polling `GET /api/v1/tasks/{id}` receive `status: completed` with a failed action result buried in `meta_json.action_result`, creating a misleading contract.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 78 unconditionally sets status=COMPLETED after action execution. Multiple action classes (ScrapeUrlAction, AskAiAction, SummarizeTextAction) can return status='failed' in their result array, which gets stored in meta_json.action_result while the task status reports COMPLETED.",
+      "severity_justification": "Callers polling GET /api/v1/tasks/{id} receive status:completed even when the underlying action failed, making programmatic error detection impossible without parsing the opaque meta_json.action_result field. This breaks the API contract for the legacy single-job task path.",
+      "category_justification": "The job produces incorrect task status output by treating action-level failures as task-level success.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/ScrapeUrlAction.php",
+      "start_line": 67,
+      "end_line": 73,
+      "message": "`$e->getMessage()` is returned directly in the API-visible `error` field. Exception messages from Laravel's HTTP client (connection refused, redirect to disallowed URL, SSL errors) can expose internal hostnames, IP addresses, or infrastructure details. The redirect callback at line 36 explicitly includes the disallowed URI in its exception message, which then surfaces to the caller. Error messages should be sanitised or mapped to generic user-facing strings.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the on_redirect callback throws RuntimeException with the full redirect URI embedded (line 36), and the catch block returns $e->getMessage() directly as the error field (lines 67-73). This surfaces to API callers via steps[].output or meta.action_result, potentially disclosing internal IPs/hostnames from redirect chains or cURL connection details.",
+      "severity_justification": "Leaks internal network topology (private IPs, internal hostnames) to API callers when a public URL redirects to an internal resource. Enables SSRF-adjacent infrastructure reconnaissance. Not high because SSRF itself is blocked; this is information disclosure only.",
+      "category_justification": "Internal infrastructure details (private IPs, hostnames) are leaked to API callers via unsanitised exception messages.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/SaveResultAction.php",
+      "start_line": 22,
+      "end_line": 30,
+      "message": "The entire `$input` array is written verbatim to local disk. At runtime this includes `task_id`, `task_step_id`, `task_public_id`, previous step outputs (including full AI responses), and any `options` the caller attached (which can contain model parameters or API metadata). Files accumulate with no TTL or cleanup. Additionally, the `path` is returned in the action result and propagated to `output_json`, revealing the internal storage layout to authenticated API consumers.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: full $input (including task_id, task_step_id, previous_output with AI responses) is written verbatim at line 22-26; 'path' is returned in the action result and surfaces in steps[].output. No cleanup mechanism exists. No file-access endpoint exists so path disclosure is low-impact, but unbounded disk accumulation and full AI response persistence are real concerns.",
+      "severity_justification": "The path disclosure is benign (no file-read endpoint), and sensitive data is only accessible to authenticated users of their own tasks. The data retention risk is real but operational in nature — not a direct security vulnerability or correctness bug.",
+      "category_justification": "Unbounded file accumulation with no TTL or cleanup is a primary operational concern; the security framing is overstated given no file-access endpoint exists.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Services/AI/AIServiceResolver.php",
+      "start_line": 14,
+      "end_line": 27,
+      "message": "`resolve()` instantiates concrete service classes directly via `app(OpenAIService::class)` etc., bypassing the DI binding registered in `AppServiceProvider`. If a developer rebinds `OpenAIService` in the container (e.g., for testing or to swap an implementation), `AIServiceResolver` will ignore it and construct the original class. The provider selection logic is now duplicated between `AppServiceProvider` and `AIServiceResolver`, creating a maintenance trap where adding a new provider requires changes in two places.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: identical four-entry match blocks exist in both AppServiceProvider::register() and AIServiceResolver::resolve(). AIServiceResolver resolves concrete classes directly via app(ConcreteClass::class), bypassing the AIServiceInterface binding registered in AppServiceProvider. Tests or rebindings against AIServiceInterface have no effect on the AskAiAction path.",
+      "severity_justification": "The duplication creates a realistic drift risk: a new provider added to AppServiceProvider but not AIServiceResolver (or vice versa) silently routes differently depending on which code path is used. Also breaks testability of AskAiAction via AIServiceInterface mocking.",
+      "category_justification": "Duplicated provider-selection logic across two classes creates a maintenance trap and inconsistent DI behaviour.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/AnalyzeSentimentAction.php",
+      "start_line": 46,
+      "end_line": 57,
+      "message": "`str_contains` matches anywhere in the lowercased text without word boundaries. 'great' matches 'grateful' and 'disintegrate'; 'issue' matches 'tissue' and 'mission'; 'good' matches 'goodbye'; 'hate' matches 'whatever'. Similarly, `ClassifyIntentAction` has the same flaw ('card' matches 'cardboard', 'billing' matches 'unwilling'). These actions are exposed via the production API and feed downstream logic in `GenerateReplyAction`, so false positives in sentiment/intent directly produce incorrect automated replies.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: both AnalyzeSentimentAction (line 51) and ClassifyIntentAction (line 27) use str_contains with no word boundaries. The specific false-positive examples are correct ('great' in 'grateful', 'hate' in 'whatever'). GenerateReplyAction does consume sentiment/intent from previous_output, so false positives cascade.",
+      "severity_justification": "These are explicitly documented PoC stub implementations intended to prove pipeline flow, not provide accurate classification. The algorithmic limitation is inherent to and expected of a keyword-list approach. Production accuracy is the concern, but the docs acknowledge these should be replaced with real AI calls.",
+      "category_justification": "The logic produces incorrect classification results for common English words due to substring matching without word boundaries, directly affecting downstream reply generation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/AnalyzeSentimentAction.php",
+      "start_line": 42,
+      "end_line": 46,
+      "message": "The `countHits` method incorrectly increments `hits` only once per dictionary word, even if the word appears multiple times in the text. For example, `str_contains('good good', 'good')` is true, and `hits` becomes 1 instead of 2. The method should count all occurrences of each word to accurately reflect sentiment. Consider using `substr_count()` for a more correct implementation.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: countHits uses str_contains (boolean), so repeated words contribute only 1 hit. 'good good good awful' yields score 0 (neutral) instead of 0.5 (positive). The finding is factually correct.",
+      "severity_justification": "This is a PoC stub implementation explicitly documented to be replaced with real AI. The per-word binary presence approach, while imprecise, is a coherent design choice. The practical impact on production behaviour is negligible given the PoC context.",
+      "category_justification": "The count method does not count all occurrences as the name implies, producing inaccurate sentiment scores for repeated words.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/ClassifyIntentAction.php",
+      "start_line": 23,
+      "end_line": 32,
+      "message": "The intent classification logic returns immediately upon finding the first matching keyword. This means if a text contains keywords for multiple intents (e.g., \"I want a refund for this broken product\"), only the intent corresponding to the first keyword found will be returned, which may not be the primary intent. The logic should consider all matches to determine the most likely intent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: nested foreach with immediate return means first matching keyword wins regardless of total matches per intent. The example 'refund + broken' would only surface refund_request. The claim is factually correct.",
+      "severity_justification": "Same PoC context as findings 10 and 11 — this is an explicitly documented stub implementation meant to be replaced with real AI classification. First-match-wins is a known simplification of naive keyword classifiers, not an inadvertent defect.",
+      "category_justification": "The classification logic produces intent labels that depend on keyword ordering rather than best match, potentially misidentifying primary intent.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/ScrapeUrlAction.php",
+      "start_line": 95,
+      "end_line": 113,
+      "message": "The `isAllowedUrl` check has a potential Server-Side Request Forgery (SSRF) vulnerability due to a Time-of-check to time-of-use (TOCTOU) race condition. The `isPublicHost` method checks the DNS record of the host, but the actual HTTP request is made later. An attacker could point a domain to a public IP during the check, and then switch it to a private IP before the HTTP client makes the request. The comment correctly identifies this risk but it remains a significant vulnerability.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The DNS rebinding TOCTOU vulnerability is real and exploitable — dns_get_record and the HTTP request are separate operations, enabling an attacker-controlled nameserver to return different IPs. The finding is factually correct and demonstrates a concrete SSRF attack path.",
+      "severity_justification": "Exploiting this requires controlling a domain's DNS with very low TTL and precise timing, which is a realistic but non-trivial attack. The code explicitly recommends network-level mitigations (egress firewall/VPC rules) as the intended defence layer.",
+      "category_justification": "This is a concrete SSRF vulnerability via DNS rebinding — untrusted user-supplied hostname leads to potential access of internal network resources.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Http/Requests/Api/V1/RunActionsPipelineRequest.php",
+      "start_line": 47,
+      "end_line": 51,
+      "message": "The validation for `skip_actions` checks that a skipped action is part of the selected pipeline, but it doesn't verify that the action name is a valid, registered action. If a user provides a typo or a non-existent action name in `skip_actions`, it will pass this validation as long as it's also not in the pipeline's allowed actions, leading to confusing behavior. The validation should ensure that all skipped actions are known to the system by checking against `config('actions.actions')`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's core claim is factually incorrect. The withValidator logic adds an error when the action is NOT in allowedActions (line 50: `if (! in_array($action, $allowedActions, true))`). A typo or nonexistent action name fails validation precisely because it is not in the pipeline's allowed actions — the opposite of what the finding claims.",
+      "severity_justification": "The finding is incorrect about validation behavior; no real issue exists here.",
+      "category_justification": "The finding makes a false claim about validation logic behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Services/AI/AzureOpenAIService.php",
+      "start_line": 48,
+      "end_line": 56,
+      "message": "The `batch` method constructs the request URL using `deploymentPath($model, 'batch')`, which implies the `model` parameter is a deployment ID. However, the method also includes `'model' => $model` in the JSON payload. According to Azure OpenAI documentation, when using a deployment-based endpoint, the model should not be specified in the request body. This is redundant and may lead to errors if the `model` in the payload doesn't align with the deployment.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified code inconsistency: chat() and embeddings() use deployment name in URL path only with no 'model' key in payload, while batch() includes both the deployment in the path AND 'model' in the body. The intra-class inconsistency is clear and consistent with how the other two methods are implemented.",
+      "severity_justification": "The batch method is not called from any action or job in the codebase, so there is zero runtime impact at this SHA. The inconsistency is a latent bug that would only surface if batch() were invoked.",
+      "category_justification": "Redundant conflicting model specification in a deployment-based API request path, inconsistent with the pattern used in the same class's other methods.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Services/AI/OpenAIService.php",
+      "start_line": 34,
+      "end_line": 37,
+      "message": "The `batch` method in `OpenAIService` constructs a request to `/batches`, but it includes `output_directory_id`. The OpenAI Batch API does not support this parameter. Batch API calls require an `endpoint` (e.g., `/v1/chat/completions`) and the input file should contain requests for that endpoint. The method appears to be incorrectly attempting to use a parameter from a different provider's API (Azure OpenAI).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: OpenAIService::batch() sends output_directory_id and model to /batches but the OpenAI Batch API requires endpoint instead and does not use output_directory_id. The interface was designed around Azure's batch API shape, leaking Azure-specific parameters into the OpenAI adapter.",
+      "severity_justification": "The batch() method is never called from any action or job in the codebase at this SHA, so there is zero runtime impact. The bug would only manifest if batch() were invoked.",
+      "category_justification": "The method sends incorrect parameters to the OpenAI Batch API, mixing Azure-specific fields into a standard OpenAI request.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Jobs/ExecuteTaskStepJob.php",
+      "start_line": 154,
+      "end_line": 154,
+      "message": "A failed step causes the entire parent task to be marked as `FAILED`. While this is a reasonable default, it's a rigid approach. For many workflows, it would be beneficial to allow certain non-critical steps to fail without stopping the entire pipeline. Consider introducing a `continue_on_failure` flag in the step definition to allow for more flexible and resilient task execution.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually correct about the current fail-fast behavior, but it is a generic feature-request suggestion ('consider introducing a continue_on_failure flag') rather than identifying a concrete bug. The fail-fast design is intentional and reasonable for a sequential step pipeline at this stage.",
+      "severity_justification": "No concrete bug is identified; this is a design enhancement suggestion with no current incorrect behavior.",
+      "category_justification": "The suggestion concerns the pipeline execution contract and step failure semantics — an architectural design choice.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Services/TaskPlannerService.php",
+      "start_line": 141,
+      "end_line": 141,
+      "message": "When normalizing caller-supplied steps, if a step definition is missing `input_json`, the service falls back to using the entire `$taskInput`. This can unintentionally leak sensitive data or large objects from the top-level task input into an action that doesn't expect it. The fallback should be to an empty array (`[]`) to ensure actions only receive explicitly provided input.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 141 falls back to $taskInput (full task input including steps array) when step.input_json is absent. This is factually correct — a step submitted without explicit input_json receives the entire task payload including potentially large or sensitive fields the action doesn't need.",
+      "severity_justification": "The full-input fallback is a consistent deliberate design used in both TaskPlannerService and ExecuteTaskStepJob. Actions read only their expected keys. The risk of data leakage is real but limited since all data stays server-side in step execution; it's an internal over-sharing issue rather than an external exposure.",
+      "category_justification": "The fallback passes more data than necessary to actions, violating the principle of minimal input and potentially causing unexpected action behavior with unrecognized keys.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/ScrapeUrlAction.php",
+      "start_line": 57,
+      "end_line": 60,
+      "message": "HTTP client timeout is set to 12 seconds, but no retry logic is implemented. This could cause failures for transient network issues, which could be mitigated by adding retries.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct that no HTTP-level retry is implemented, but this is a generic best-practice suggestion ('add retries to HTTP calls') that could be copy-pasted onto any codebase making HTTP requests. It doesn't identify a concrete bug or a specific failure mode unique to this code. Furthermore, ScrapeUrlAction runs inside ExecuteTaskStepJob which already has $tries=3 with backoff — transient failures cause the job to retry, providing retry coverage at the queue level.",
+      "severity_justification": "Transient failures are partially handled by ExecuteTaskStepJob's job-level retry mechanism. The absence of HTTP-level retries is a minor reliability gap, not a critical defect.",
+      "category_justification": "The finding concerns fault tolerance for transient network issues in an HTTP call.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/ScrapeUrlAction.php",
+      "start_line": 79,
+      "end_line": 89,
+      "message": "The URL redirection handling allows up to 5 redirects but doesn't prevent looping or excessive redirects from exhausting resources. Adding loop-detection or redirect count checks beyond 5 can enhance robustness.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually incorrect premise: 'max' => 5 in the Guzzle allow_redirects config already enforces a hard cap at 5 redirects. Guzzle throws TooManyRedirectsException when exceeded, which the catch block handles. Redirect loops are automatically terminated at 5 hops. The finding claims there is no such protection when one clearly exists.",
+      "severity_justification": "No real issue exists — redirect count is already bounded by the max:5 setting.",
+      "category_justification": "The finding concerns resource exhaustion from unbounded redirects, which is already handled.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/ClassifyIntentAction.php",
+      "start_line": 17,
+      "end_line": 42,
+      "message": "The 'ClassifyIntentAction' assumes a fixed set of intent categories and keywords. If unexpected inputs occur or if this list needs dynamic updates, classification will fail silently or require code changes to adapt.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic architectural observation about hardcoded classification rules that could be copy-pasted onto any keyword classifier. The finding doesn't identify a concrete bug — the code handles unexpected inputs gracefully by returning 'general_question' as a fallback. The need to update code when intent categories change is an inherent and expected property of a PoC stub implementation explicitly documented as such.",
+      "severity_justification": "No concrete failure mode exists; unexpected inputs fall through to the general_question default. This is a design preference on an acknowledged PoC.",
+      "category_justification": "The concern is about hardcoded classification configuration requiring code changes to update, which is a maintainability observation rather than a bug.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/SaveResultAction.php",
+      "start_line": 21,
+      "end_line": 26,
+      "message": "JSON is being encoded without error handling. Potential data encoding issues (e.g., unsupported characters or cyclic structures) could cause unexpected results without detailed logging or user notification.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's claim of 'no error handling' is factually incorrect. Line 29 explicitly checks for json_encode returning false and falls back to '{}'. The handling is minimal (no logging on failure), but the finding asserts the opposite of what the code does.",
+      "severity_justification": "No real gap exists beyond the silent fallback without logging, which is a minor observability issue.",
+      "category_justification": "The finding concerns error handling for a serialization operation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Services/TaskPlannerService.php",
+      "start_line": 58,
+      "end_line": 60,
+      "message": "The fallback plan for unknown task types defines a single 'save_result' action without validation or user feedback. This may silently result in unintended operations for incorrect task types.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The default case is an intentional, explicitly commented design decision ('no-op step so the task can still transition'). The controller gates PlanTaskStepsJob dispatch to only four known types, and pipeline tasks always carry explicit steps bypassing defaultPlan entirely. The finding is a generic suggestion about unknown-input handling applied to a deliberate fallback.",
+      "severity_justification": "No concrete bug; the fallback is intentional and largely unreachable via normal API paths.",
+      "category_justification": "The finding concerns silent incorrect behavior for unknown task types.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Jobs/ExecuteTaskStepJob.php",
+      "start_line": 237,
+      "end_line": 241,
+      "message": "When skipping step execution because a Task is marked as failed, the skipped step retains its 'pending' state, potentially causing confusion or inconsistency in future task analysis.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: lines 58-61 return silently when task is FAILED without updating the step status, leaving unexecuted steps as PENDING. The show endpoint returns step statuses to API consumers, making PENDING on a terminal FAILED task ambiguous — it could mean 'waiting' or 'never ran'.",
+      "severity_justification": "No functional bug; the task correctly shows as FAILED. The concern is observability: API consumers see PENDING steps on a terminal task with no way to distinguish 'scheduled but not run' from 'queued and waiting'. A 'skipped' status would resolve this.",
+      "category_justification": "The step status data is technically incorrect — PENDING implies the step may still run, but on a terminal FAILED task it never will.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Models/TaskStep.php",
+      "start_line": 20,
+      "end_line": 28,
+      "message": "The TaskStep model defines json cast attributes but does not validate the structure or format of 'input_json' or 'output_json', which may lead to inconsistent or corrupted data being stored.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic observation that Eloquent model JSON cast attributes lack schema validation, which could be said of virtually any Laravel model with JSON columns. The finding names specific fields but the claim applies universally to all JSON columns in any Laravel application. No concrete corruption scenario is demonstrated. Laravel's 'array' cast handles serialization safely; the fields are written by controlled server-side code (TaskPlannerService, ExecuteTaskStepJob), not directly from user input.",
+      "severity_justification": "No realistic corruption path is identified. The JSON fields are populated by internal services with typed PHP arrays, not raw user input.",
+      "category_justification": "The suggestion is about adding schema validation to model JSON attributes, which is a general design preference rather than a concrete defect.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/AskAiAction.php",
+      "start_line": 67,
+      "end_line": 74,
+      "message": "The error handling for AI service response assumes errors are always structured (e.g., no null checks for received response or keys within structures). In production, this might cause additional issues when using unreliable third-party providers.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's claim is inaccurate: extractAnswerText uses data_get() for null-safe path access, has explicit is_string/is_array type guards, and returns '' as a safe fallback for unrecognized structures. Exceptions from the AI service propagate to ExecuteTaskStepJob's catch block. No concrete unhandled error path is identified.",
+      "severity_justification": "No concrete vulnerability or unhandled case demonstrated; the code is defensively written for response parsing.",
+      "category_justification": "The finding concerns error handling robustness for external API calls.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Services/AI/AzureOpenAIService.php",
+      "start_line": 30,
+      "end_line": 34,
+      "message": "AzureOpenAIService does not sanitize or validate inputs for 'chat' or 'embeddings' payloads, leaving some room for potential abuse or malformed requests causing unexpected provider-side errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic best-practice observation that could be copy-pasted onto any API client class. It does not identify a specific unvalidated input that causes a concrete exploitable issue or a demonstrable incorrect behavior. Provider-side validation errors from malformed requests would surface as exceptions caught and handled by the job layer. No concrete attack path or data corruption scenario is demonstrated.",
+      "severity_justification": "No concrete vulnerability or failure mode is identified. The Azure OpenAI API itself validates inputs server-side and returns structured errors on malformed requests.",
+      "category_justification": "The finding frames the concern as potential abuse via unsanitized inputs to an AI provider.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/action-stubs.md",
+      "start_line": 26,
+      "end_line": 26,
+      "message": "This statement is incorrect. All actions in this PR (e.g. `AnalyzeSentimentAction`, `ScrapeUrlAction`, etc.) implement `App\\Actions\\Contracts\\ActionInterface`, not `ActionStubInterface`. `ActionStubInterface` is marked as `@deprecated` and kept only as a backward-compatible alias. Please update the documentation to reference `ActionInterface`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: docs/action-stubs.md line 26 says actions implement ActionStubInterface, but all action classes in the PR (AnalyzeSentimentAction, ScrapeUrlAction, etc.) implement ActionInterface directly. ActionStubInterface is marked @deprecated and is merely an empty extension of ActionInterface.",
+      "severity_justification": "This is a documentation inaccuracy in a developer-facing doc. It could mislead developers about the correct interface to implement, but there is no runtime impact.",
+      "category_justification": "The issue is in a markdown documentation file and the claim is factually wrong about the interface used.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Feature/Jobs/MultiStepPipelineTest.php",
+      "start_line": 123,
+      "end_line": 141,
+      "message": "This test (and `test_pipeline_honours_explicit_steps_in_input_json` if it included scrape) runs the full multi-step pipeline against the `scrape_and_summarize` task type. The default plan invokes `ScrapeUrlAction`, which performs a real outbound HTTP request (`Http::get(...)`) and a real DNS lookup (`dns_get_record(...)`) against `https://example.com`. There is no `Http::fake()` / DNS stub set up here, so this test depends on the CI/dev environment having network access and on `example.com` being reachable, making it flaky and slow. Consider faking the HTTP client (`Http::fake([...])`) or injecting/mocking `ScrapeUrlAction` for these tests so the suite remains hermetic.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: test_full_pipeline_completes_for_scrape_and_summarize (lines 123-141) runs the full pipeline with 'url' => 'https://example.com' and no Http::fake() or DNS stub is set up anywhere in the test class. ScrapeUrlAction makes real dns_get_record() and Http::get() calls, making this test dependent on network access.",
+      "severity_justification": "A real network-dependent test makes CI flaky and slow. It will fail in offline/restricted environments and can produce non-deterministic results depending on external site availability.",
+      "category_justification": "The issue is a missing Http::fake() / network stub in an integration test, causing network-dependent and potentially flaky tests.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Services/AI/AIServiceResolver.php",
+      "start_line": 31,
+      "end_line": 40,
+      "message": "`normalizeProvider()` falls back to `config('services.ai.provider', 'azure')` when the request-provided value is not in the allowlist, but it does so without re-validating the configured value against the same allowlist. If the configured default itself is an unsupported string (e.g. an env typo like `AI_PROVIDER=open-ai`), this method returns that invalid string as `provider`, while `resolve()`'s `match` falls through to `default => AzureOpenAIService`. The result is a misleading return payload where `provider` is, say, `'open-ai'` but the actual service is Azure. Consider re-running the allowlist check on the configured value and hard-falling back to `'azure'` when it is unknown.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: normalizeProvider() returns the raw config value without re-validating against the allowlist. If AI_PROVIDER is a typo like 'open-ai', the method returns 'open-ai' as the provider string while resolve()'s match default selects AzureOpenAIService — producing a misleading payload used in AskAiAction run logs.",
+      "severity_justification": "The bug produces incorrect provider labeling in logs and return values, but actual service selection (Azure as fallback) still works correctly. No user-facing data integrity issue, primarily a misleading observability/debugging problem.",
+      "category_justification": "The returned provider name does not match the actual service being used, which is a logic error in the normalization function.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Http/Controllers/Api/V1/TaskController.php",
+      "start_line": 32,
+      "end_line": 34,
+      "message": "The set of \"multi-step\" task types is hard-coded here and again in `TaskPlannerService::defaultPlan()`. Adding a new multi-step task type requires touching at least two unrelated places (and they can drift silently — e.g. a type added only to the planner would still be routed through the legacy `LogTaskRequestJob` path here, while a type added only here would dispatch the plan job but produce the default no-op `save_result` step). Consider centralizing this list (for example, in a config file or in `TaskPlannerService`) and consuming it from the controller, so the contract between routing and planning stays in sync.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the same four task type strings are hard-coded in TaskController line 33 and mirrored in TaskPlannerService::defaultPlan(). The described drift scenario is real — a type added only to the planner bypasses PlanTaskStepsJob and gets routed to LogTaskRequestJob instead.",
+      "severity_justification": "Silent drift between these two lists would cause a new multi-step task type to run through the wrong job path with no error, silently producing wrong behavior rather than failing loudly.",
+      "category_justification": "This is a DRY violation where duplicated domain-specific type lists can drift across two files, causing behavior inconsistency. The finding identifies a concrete architectural concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/ai-request-flow.md",
+      "start_line": 77,
+      "end_line": 80,
+      "message": "This statement is now outdated: the new pipeline can call AI services through `AskAiAction` (`TaskActionService` → `AskAiAction` → `AIServiceResolver`), so the API/job flow does use the AI adapter layer for `ask_ai` / `ask_ai_once`. Keeping this documentation as-is will mislead developers about the current integration point.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: docs/ai-request-flow.md sections 3 and 6 both state the AI adapter layer is not yet called from the job flow, but this PR introduces AskAiAction which calls AIServiceResolver → AIServiceInterface, and ask_ai_once task type routes through the pipeline to that action. The doc was outdated by changes in this same PR.",
+      "severity_justification": "This is a developer-facing documentation inaccuracy. It could mislead developers about the integration status but has no runtime impact.",
+      "category_justification": "The issue is stale documentation that contradicts the actual code introduced in this PR.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/ai-request-flow.md",
+      "start_line": 145,
+      "end_line": 149,
+      "message": "This section is also stale after the new `ask_ai` action and multi-step pipeline changes: `POST /api/v1/tasks` with type `ask_ai_once`, and the pipeline endpoints when they include `ask_ai`, can now invoke the AI service layer from queued jobs. Please update or remove this note so it matches the implemented behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: lines 145-149 (section 6) explicitly state the API 'does not call AIServiceInterface yet', which is directly contradicted by AskAiAction introduced in this PR that routes through AIServiceResolver for ask_ai_once tasks and pipeline tasks including the ask_ai action.",
+      "severity_justification": "Developer-facing documentation inaccuracy. No runtime impact, but misleads contributors about the actual integration state.",
+      "category_justification": "The finding identifies a stale explicit 'Important note' in developer documentation that was invalidated by code changes in this PR.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "database/migrations/2026_03_27_000000_add_task_steps_and_output.php",
+      "start_line": 28,
+      "end_line": 28,
+      "message": "The retry guard in `PlanTaskStepsJob` relies on a prior `pluck()` and this non-unique index, so two planner jobs for the same task can both observe no existing step and insert duplicate `(task_id, sequence_order)` rows. Add a unique constraint (and use an atomic upsert/firstOrCreate keyed by it) to make retries and duplicate dispatches safe under concurrency.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: migration creates only a non-unique composite index on (task_id, sequence_order). PlanTaskStepsJob guards via pluck()->in_array()->create() — a classic read-then-write TOCTOU race. Two concurrent retries could both pass the check and insert duplicate rows since the database enforces no uniqueness.",
+      "severity_justification": "A duplicate step row for the same sequence_order would cause the action to execute twice and produce duplicate run logs, corrupted output compilation, and potentially double side-effects (e.g., double saves). Likely under retry/duplicate dispatch scenarios but not every run.",
+      "category_justification": "This is a concurrency/race condition in the retry-safety mechanism, relevant to fault tolerance and correct behavior under concurrent job execution.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Jobs/ExecuteTaskStepJob.php",
+      "start_line": 67,
+      "end_line": 70,
+      "message": "Step claiming is a non-atomic read-then-update. If the same `ExecuteTaskStepJob` is delivered twice concurrently, both workers can read `pending` before either save, then both run the action; side effects like AI calls or `save_result` writes can happen twice. Claim the row with an atomic conditional update/lock before executing the action.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: ExecuteTaskStepJob reads status with findOrFail() then guards with in_array() before separately saving EXECUTING — a classic TOCTOU race. Two workers both reading 'pending' before either writes 'executing' can both proceed to execute the action, causing duplicate AI calls, double saves, etc. No lockForUpdate() or atomic update is used.",
+      "severity_justification": "Duplicate execution of actions like AskAiAction (AI API calls) or SaveResultAction (storage writes) represents a real correctness problem. While concurrency collisions may be infrequent, the job has tries=3 and explicit backoff, making retry races a realistic scenario.",
+      "category_justification": "This is a concurrency/race condition affecting fault tolerance and correct behavior under concurrent or retry execution.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Services/TaskActionService.php",
+      "start_line": 32,
+      "end_line": 33,
+      "message": "The registry validation only checks that the configured class exists. If an action is accidentally mapped to a class that does not implement `ActionInterface`, the service will still resolve it and then fail at runtime when calling `handle()`. Validate `instanceof ActionInterface` after resolving so misconfigured actions fail deterministically with the same non-executed/error path.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: TaskActionService::execute() checks class_exists() but not instanceof ActionInterface before calling handle(). A misconfigured class would bypass the clean 'executed: false' return path and throw a fatal error instead. The @var docblock is only a static analysis hint, not a runtime check.",
+      "severity_justification": "This only affects misconfigured action mappings in config/actions.php, which would be a developer error caught quickly in development. No real-world impact on correctly configured actions; the failure mode is a noisy exception rather than silent bad behavior.",
+      "category_justification": "The issue concerns error handling and deterministic failure paths when a misconfiguration occurs, which is a reliability concern rather than a correctness bug in normal operation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Jobs/PlanTaskStepsJob.php",
+      "start_line": 74,
+      "end_line": 76,
+      "message": "This check-then-insert retry guard is not atomic. If duplicate planner jobs run concurrently for the same task, both can read the same `$existingOrders` and create duplicate steps because the database does not enforce uniqueness on `(task_id, sequence_order)`. This should use a database-backed unique key with `upsert`/`firstOrCreate` semantics.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified (same as Finding 7 from the job side): PlanTaskStepsJob lines 74-76 use pluck()->in_array()->create() with no database-level unique constraint on (task_id, sequence_order). Two concurrent job instances can both read the same empty existingOrders and insert duplicate step rows.",
+      "severity_justification": "Duplicate step rows would cause actions to execute twice, corrupt output compilation, and produce incorrect run logs. Concurrency exposure is real given tries=3 and backoff settings.",
+      "category_justification": "This is a concurrency/race condition in the idempotency guard for a queued job, affecting fault tolerance under concurrent or retry execution.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/action-stubs.md",
+      "start_line": 26,
+      "end_line": 26,
+      "message": "This is inaccurate: the new action classes implement `ActionInterface`, not `ActionStubInterface`; the stub interface only extends `ActionInterface` for backward compatibility and is not what the listed actions implement. This can send developers to the deprecated interface when adding actions.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same issue as Finding 1, already verified: docs/action-stubs.md line 26 states actions implement ActionStubInterface, but all action classes implement ActionInterface directly. ActionStubInterface is @deprecated and an empty alias. The finding is factually correct.",
+      "severity_justification": "Documentation inaccuracy that could misdirect developers to use the deprecated interface when adding new actions, but no runtime impact.",
+      "category_justification": "Stale/incorrect documentation in a developer-facing markdown file about which interface to implement.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/pipeline-api-testing.md",
+      "start_line": 100,
+      "end_line": 102,
+      "message": "This worker command uses `ai-agent:service` and `ai-agent:task`, but jobs are dispatched to `QueueEnum::SERVICE`/`QueueEnum::TASK`, which resolve to `service` and `task`, and the supervisor docs use those same names. Following this command would leave the new pipeline jobs unprocessed.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: QueueEnum::SERVICE='service' and QueueEnum::TASK='task'. Jobs are dispatched to 'service' and 'task' queues. The doc instructs running --queue=ai-agent:service,ai-agent:task which are non-existent queue names. Supervisor docs confirm correct names are 'service' and 'task'. Following the doc leaves pipeline jobs unprocessed.",
+      "severity_justification": "A developer following this documentation to test the pipeline would find jobs dispatched but never processed, with no obvious error. This would appear as tasks stuck in PENDING_PLANNING indefinitely.",
+      "category_justification": "Incorrect queue names in a developer-facing testing guide that directly causes the described behavior (unprocessed jobs).",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/AskAiAction.php",
+      "start_line": 61,
+      "end_line": 65,
+      "message": "`AskAiAction` always returns `status: ok` after `chat()` even when the resolved provider response contains no extractable answer text. The bundled Ollama/Anthropic stubs return `status: not_configured` and no `choices`, so `ask_ai` reports success with an empty `text`, and pipeline tasks can complete as if an AI answer was generated.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: OllamaServiceStub/AnthropicServiceStub return no 'choices' key. extractAnswerText() returns '' for these responses. AskAiAction always returns status:'ok' with empty text, so ask_ai_once and pipeline tasks silently complete as if AI answered when stubs are active.",
+      "severity_justification": "Silent false success: tasks appear completed with AI-generated output when none was produced. This can mislead downstream consumers and pipeline compilation, hiding misconfigured providers. The stubs are the current state for Ollama and Anthropic.",
+      "category_justification": "The action returns an incorrect success status when no meaningful answer was produced, causing callers to treat a stub non-response as a successful AI interaction.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/Actions/ScrapeUrlAction.php",
+      "start_line": 55,
+      "end_line": 58,
+      "message": "The scraper reads the entire response body into memory before truncating it to 5,000 characters. A user-controlled URL can return a very large response and exhaust worker memory despite the 12-second timeout. Add a response size limit/streaming read or reject responses over a configured maximum before loading the whole body.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: ScrapeUrlAction calls $response->body() which buffers the full response in memory, then runs two preg_replace() calls on the full HTML before truncating to 5000 chars. No Content-Length check, no streaming, no max body size limit. A user-controlled URL can serve an arbitrarily large response exhausting worker memory.",
+      "severity_justification": "A malicious or accidentally large URL can exhaust queue worker memory, crashing the worker process and potentially affecting other jobs in the queue. Since the URL is user-supplied via the API, this is a realistic attack/misuse vector.",
+      "category_justification": "This is a resource exhaustion issue that can crash worker processes, affecting fault tolerance and operational stability of the queue system.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

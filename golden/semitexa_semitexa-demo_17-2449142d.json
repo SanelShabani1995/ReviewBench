@@ -1,0 +1,151 @@
+{
+  "pr_key": "semitexa_semitexa-demo_17-2449142d",
+  "pr": {
+    "repo": "https://github.com/semitexa/semitexa-demo",
+    "pr_number": 17,
+    "base": "09b148604dcdd5724e2b23a7d002d1c8c8b4c3c3",
+    "head": "2449142d3b557fe1b3f59e6977eb2827b396bf74"
+  },
+  "findings": [
+    {
+      "file": "src/Application/Static/css/demo.css",
+      "start_line": 3417,
+      "end_line": 3422,
+      "message": "border-color is set on .notification-bell, .notification-list, and .review-feed but none of these classes have a `border` or `border-style` declaration anywhere in the codebase. Setting border-color without an accompanying border-style has no visual effect, making this override a no-op in dark mode.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: .notification-bell, .notification-list, .review-feed, .notification-list__item, and .review-feed__item have no base border or border-style declarations anywhere in the codebase. The dark-mode overrides only appear in the newly added block. Since the CSS default border-style is none, the border-color declarations are no-ops and produce no visible border in dark mode.",
+      "severity_justification": "This is a cosmetic issue — the background overrides and text-color overrides function correctly; only the intended border theming is silently ineffective. No functionality is broken.",
+      "category_justification": "The code does not achieve its stated intent: the border-color declarations are meant to style borders in dark mode but have no effect because no border-style is defined for these elements.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Application/Static/css/demo.css",
+      "start_line": 3417,
+      "end_line": 3422,
+      "message": ".notification-bell is a direct child of .deferred-block--notification, and .review-feed is a direct child of .deferred-block--feed. Lines 3376-3382 already apply `background: var(--demo-surface-soft)` to both outer wrappers via the existing large selector group. Applying the same background again to the inner elements creates nested opaque layers with identical colours, eliminating any visual depth and defeating the translucency-based surface system (rgba values are meaningless when stacked with identical opaques).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: .deferred-block--notification and .deferred-block--feed already receive background: var(--demo-surface-soft) at line 3381. The new code at line 3420 applies the same value to .notification-bell (direct child of --notification) and .review-feed (direct child of --feed), as verified from the Twig templates. In dark mode --demo-surface-soft is rgba(19, 29, 39, 0.8), so the child's translucent background composites over the parent's already-rendered surface, producing a darker, more opaque appearance than intended.",
+      "severity_justification": "This is a dark-mode visual inconsistency — the inner areas appear slightly darker due to background layering, but no functionality is broken. It's a cosmetic artifact limited to dark mode.",
+      "category_justification": "The code does not produce the intended visual result: applying an identical translucent background to both a parent container and its direct child creates unintended compounded opacity rather than a uniform surface.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Application/Static/css/demo.css",
+      "start_line": 3429,
+      "end_line": 3432,
+      "message": "border-color is set on .notification-list__item but the class has no base border or border-style declaration anywhere in the stylesheet or any other CSS file. The override is inert and will never produce a visible border.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: .notification-list__item appears only once in the entire CSS codebase — in the newly added dark-mode override at line 3429. No base border or border-style declaration exists for this class in any CSS file, making the border-color override a no-op.",
+      "severity_justification": "Cosmetic dark-mode styling issue — the intended border treatment on list items won't render, but no functionality is broken.",
+      "category_justification": "The code does not achieve its stated intent: the border-color declaration produces no visible border because no border-style is defined for this element.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Application/Static/css/demo.css",
+      "start_line": 3434,
+      "end_line": 3437,
+      "message": ".review-feed__item receives `background: var(--demo-surface-soft)` and `border-color: var(--demo-glass-stroke)`, but has no base CSS rules at all. No border-style means border-color is inert. Additionally, this element sits inside .review-feed which already receives the same background (line 3419-3422), creating a third layer of the same opaque surface for items inside an already same-coloured container.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: .review-feed__item has no base CSS rules anywhere in the codebase (appears only at line 3434 in the dark-mode override). The border-color is inert for the same reason as Findings 1 and 3. Additionally, the template shows .review-feed__item is a direct child of .review-feed, which itself is a direct child of .deferred-block--feed — all three levels now receive the same background: var(--demo-surface-soft) in dark mode, creating three stacked translucent layers.",
+      "severity_justification": "A cosmetic dark-mode styling issue that compounds the background layering problem identified in Finding 2. No functional behavior is affected.",
+      "category_justification": "The code does not achieve its intended visual result: border-color is inert without border-style, and the triple-stacked identical backgrounds produce unintended compounded opacity rather than a coherent surface hierarchy.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Application/Static/css/demo.css",
+      "start_line": 3443,
+      "end_line": 3449,
+      "message": "The `.star` and `.star--filled` dark-mode selectors are not scoped to a parent component (e.g. `.review-feed .star`). Any element with class `star` on any page, in any component, will be affected by these overrides when dark mode is active. Currently the class is only used in review-feed.html.twig, but this unscoped selector is a latent collision risk.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both git show HEAD and the checked-out file confirm the actual committed code at SHA 2449142d uses unscoped selectors (:root[data-demo-theme=\"dark\"] .star and .star--filled), not .review-feed .star. The class is currently only used in review-feed.html.twig, but the global dark-mode override would affect any future element using the class name 'star' anywhere on the page.",
+      "severity_justification": "No immediate collision exists since .star is only used in one template today, but the unscoped selector is a latent risk that will silently affect unrelated components if the class name is reused.",
+      "category_justification": "This is a CSS scoping concern — the selector is insufficiently specific and could unintentionally collide with future components, which is a code quality and maintainability issue rather than a current functional bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Application/Static/css/demo.css",
+      "start_line": 3376,
+      "end_line": 3377,
+      "message": "There are no base (light-mode) CSS rules defined for any of the newly introduced classes: .notification-bell, .notification-list, .review-feed, .review-feed__item, .review-feed__body, .notification-bell__badge, .notification-list__item, .star, .star--filled. The PR adds only dark-mode overrides. Without light-mode base styles, these components rely entirely on browser defaults, which means sizing, spacing, border, and colour behaviour in the default theme is undefined and browser-dependent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed by exhaustive grep across all CSS files: zero base/light-mode rules exist for any of the classes named. The Twig templates predate this PR and have always relied on browser defaults. The PR is the first to write any CSS for these classes but only adds dark-mode overrides, creating an asymmetric styling situation. The factual claim is accurate.",
+      "severity_justification": "The components have been functioning in light mode with browser defaults since before this PR, so there is no regression. The concern is architectural — explicit base styles would make the light-mode appearance deterministic — but it is not causing a visible breakage.",
+      "category_justification": "The lack of base styles is a CSS architecture quality issue: the component's light-mode appearance is browser-dependent and the dark-mode overrides are orphaned from any base style layer, making the intent and normal state of these classes unclear.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Application/Static/css/demo.css",
+      "start_line": 3424,
+      "end_line": 3427,
+      "message": "notification-bell.js adds and removes the class `notification-bell__badge--pulse` to animate the badge when the count changes, but no CSS keyframe, transition, or rule for `.notification-bell__badge--pulse` exists anywhere in the project. The animation silently does nothing — the JS class toggle is dead code without the corresponding CSS.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: notification-bell.js explicitly adds/removes notification-bell__badge--pulse with a 600ms animation intent. A full search across all CSS files in the project finds zero rules for this class modifier — no keyframe, no transition, no style whatsoever. The JS animation toggle is dead code.",
+      "severity_justification": "The missing animation is a visual enhancement, not a functional regression. The notification badge still displays the count correctly; only the count-change pulse animation is silently missing. No data loss or broken behavior.",
+      "category_justification": "There is a concrete gap between what the JS code intends (a visual pulse animation on badge count change) and what the CSS delivers (nothing), making the JS class toggle functionally inert.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

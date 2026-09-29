@@ -1,0 +1,291 @@
+{
+  "pr_key": "demaconsulting_TemplateDotNetLibrary_84-917f008d",
+  "pr": {
+    "repo": "https://github.com/demaconsulting/TemplateDotNetLibrary",
+    "pr_number": 84,
+    "base": "0dd705cf7d10055bac341dae48705f81dfd4617e",
+    "head": "917f008daf391e82581ca0405850c71a16ff3a0e"
+  },
+  "findings": [
+    {
+      "file": "lint.bat",
+      "start_line": 70,
+      "end_line": 71,
+      "message": "`dotnet versionmark --lint` is not used anywhere else in the repository. The CI workflow uses `dotnet versionmark --validate` (for self-validation) and `--capture`/`--publish` for version tracking — never `--lint`. If versionmark does not support a `--lint` flag, this command will fail with a non-zero exit code on every run, setting LINT_ERROR=1 as a permanent false failure. The same issue appears at lint.sh line 63.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `dotnet versionmark --lint` call is introduced by this PR in both lint.bat and lint.sh. Across the entire repo (CI workflow, standards docs, config files), versionmark is only ever invoked with --capture, --publish, or no flags for self-validation. There is no documentation or usage of a --lint flag for versionmark anywhere, unlike reqstream and reviewmark which have their --lint flags documented in standards files. If the flag is unsupported, the lint scripts will always fail with LINT_ERROR=1.",
+      "severity_justification": "A permanently failing lint script undermines the linting workflow and any automation that relies on it, causing every developer and CI run to see a false lint failure.",
+      "category_justification": "The issue is about a script command that may always fail with a non-zero exit code, causing incorrect error reporting in the build/lint toolchain.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lint.sh",
+      "start_line": 63,
+      "end_line": 64,
+      "message": "`dotnet versionmark --lint` has no precedent in this repository. The CI workflow only uses `dotnet versionmark --validate`, `--capture`, and `--publish`. If `--lint` is not a valid versionmark flag, every lint.sh run will set `lint_error=1` for the versionmark step regardless of actual configuration validity. See also lint.bat line 70 for the same issue.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Duplicate of Finding 1 — same `dotnet versionmark --lint` call introduced by this PR, same evidence: the flag is not used anywhere else in the repo (CI workflow uses --capture, --publish, and no-arg self-validation only), and no documentation of a --lint mode for versionmark exists. The finding's minor inaccuracy about '--validate' doesn't affect the core correctness of the claim.",
+      "severity_justification": "Same as Finding 1: if the flag is unsupported, the lint script permanently sets lint_error=1 on every run, producing false failures.",
+      "category_justification": "Script command that may always fail, breaking the lint toolchain.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/standards/csharp-language.md",
+      "start_line": 1,
+      "end_line": 47,
+      "message": "Large sections of actionable C#-specific guidance were removed without equivalent coverage in the replacement `coding-principles.md`. Deleted content includes: constructor injection rules (and the rationale for avoiding static dependencies), specific exception types (`ArgumentException`, `InvalidOperationException`), input validation patterns, structured logging for audit trails, and a 6-item quality checklist. `coding-principles.md` covers these only as one-line bullets ('Dependency Injection', 'Error Handling') without C#-specific implementation guidance. Agents working on C# code will produce less compliant output.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified by reading both files: the new csharp-language.md is substantially reduced, and coding-principles.md only covers dependency injection, error handling, etc. as generic one-liners. Specific C# content — constructor injection rationale, typed exception guidance, structured logging, and 4 of 6 quality checklist items — was removed without equivalent replacement in any file.",
+      "severity_justification": "The affected files are agent guidance documents, not production code. The impact is that agents may produce less rigorous C# output, but the core principles (literate coding, XML docs, zero warnings) are retained. The loss is real but incremental rather than critical.",
+      "category_justification": "The finding is about a reduction in the detail and completeness of agent-facing standards documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/standards/csharp-testing.md",
+      "start_line": 113,
+      "end_line": 117,
+      "message": "The 'Requirements Coverage' section was deleted, removing the only guidance on how to satisfy the requirements that still appear in the quality checklist at lines 116-117 ('Tests linked to requirements with source filters where needed', 'Test results generate TRX format for ReqStream compatibility'). Neither `testing-principles.md` nor any other standard now explains the `windows@TestName` source filter syntax, how to configure TRX output, or how tests link to YAML requirements files. The quality gate mandates these behaviors but no longer tells agents how to implement them.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims 'no other standard' explains source filter syntax or test-to-YAML linkage, but reqstream-usage.md has an explicit 'Source Filter Requirements (CRITICAL)' section with windows@TestName examples, and explains test linkage via requirements YAML. The central factual claim is incorrect.",
+      "severity_justification": "Even if framed narrowly (csharp-testing.md quality checklist items lack a cross-reference to reqstream-usage.md), the impact is minor since AGENTS.md directs agents to load reqstream-usage.md for requirements/traceability work.",
+      "category_justification": "The finding is about completeness and cross-referencing in agent guidance documents.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/agents/quality.agent.md",
+      "start_line": 130,
+      "end_line": 135,
+      "message": "The `Result: SUCCEEDED` / `Result: FAILED` semantics were moved from before the report template to after its closing fence. The template at line 32 already contains `**Result**: (SUCCEEDED|FAILED)` as a field to fill in, but an agent constructing the report by reading the template will not encounter the defining semantics (what triggers SUCCEEDED vs FAILED) until 100+ lines later. Since this `Result` field is specifically described as critical for orchestrator decision-making, the displacement increases the risk that agents fill it in incorrectly.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding correctly identifies that Result semantics moved from before to after the template. The concern about agents filling the field before reading its definition is factually grounded, though the practical impact for LLMs that consume entire context windows at once is low.",
+      "severity_justification": "Modern LLMs read entire documents before generating output, so placement within a 137-line document has negligible effect on whether agents understand the SUCCEEDED/FAILED semantics when filling in the Result field.",
+      "category_justification": "This is an organizational/structural issue in agent guidance documentation — specifically the ordering of a template definition relative to its usage instructions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lint.sh",
+      "start_line": 38,
+      "end_line": 38,
+      "message": "`export PUPPETEER_SKIP_DOWNLOAD=true` prevents Chromium from downloading during `npm install`. `package.json` lists `@mermaid-js/mermaid-cli` and `mermaid-filter`, both of which require Puppeteer/Chromium at runtime. If a developer runs `lint.sh` (which installs node_modules without Chromium) and then uses the same `node_modules` for documentation generation with mermaid-filter, mermaid rendering will fail with a missing browser error. The same issue exists in lint.bat line 41 with `set PUPPETEER_SKIP_DOWNLOAD=true`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claim is factually correct: PUPPETEER_SKIP_DOWNLOAD=true prevents Chromium download, and mermaid-filter requires Chromium at runtime. If a developer uses lint.sh as their npm install step then tries to use mermaid-filter locally, it will fail. However, CI handles this correctly with a separate npm install that lacks the flag.",
+      "severity_justification": "Documentation generation is a CI-only step with its own npm install that doesn't set PUPPETEER_SKIP_DOWNLOAD. The failure scenario requires an unusual local dev workflow. The flag's benefit (avoiding hundreds of MB Chromium downloads during lint) outweighs the edge-case risk.",
+      "category_justification": "The finding concerns a tool dependency setup that could break a specific workflow (mermaid rendering) under certain conditions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lint.bat",
+      "start_line": 41,
+      "end_line": 41,
+      "message": "`set PUPPETEER_SKIP_DOWNLOAD=true` prevents Chromium download during `npm install`. Since `package.json` includes `@mermaid-js/mermaid-cli` and `mermaid-filter`, any subsequent use of mermaid from these node_modules (e.g., Pandoc docs generation) will fail because Chromium was not installed. Unlike lint.sh where `export` is scoped to the process, in batch `setlocal` scopes the variable to the script, so it won't leak — but the incomplete node_modules installation persists on disk and affects later mermaid invocations.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Duplicate of Finding 6's core concern on lint.bat. The factual claims are correct: setlocal scopes the variable to the script, but node_modules without Chromium persists on disk. The finding's technical nuance about setlocal vs export is accurate but not meaningfully different in impact between the two scripts.",
+      "severity_justification": "Same as Finding 6: CI uses its own npm install without this flag; local mermaid usage is an unusual workflow. The edge-case risk is real but narrow.",
+      "category_justification": "Tool dependency setup that could break mermaid rendering in certain local workflows.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/standards/csharp-language.md",
+      "start_line": 23,
+      "end_line": 23,
+      "message": "The documentation states to use `dotnet format MyProject.csproj` to format a specific project, but the correct syntax is `dotnet format MyProject.csproj --include <file>`. Without a file specified, it formats the solution. To format a whole project, the command is `dotnet format <project-or-solution>`. The example provided is misleading.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The official dotnet format documentation confirms `dotnet format [<PROJECT | SOLUTION>]` syntax, making `dotnet format MyProject.csproj` valid for formatting a specific project. The finding incorrectly claims this is wrong and that --include <file> is required.",
+      "severity_justification": "Even if the finding were correct, it would be a documentation issue in an agent standards file with limited runtime impact.",
+      "category_justification": "The finding concerns command syntax documentation in an agent standards file.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lint.bat",
+      "start_line": 15,
+      "end_line": 28,
+      "message": "The script uses `goto npm_section` to continue execution after the Python section, but `goto :npm_section` is the correct syntax for jumping to a label. This will cause the batch script to fail when it reaches this line.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "In Windows batch files, goto npm_section (without colon) is valid syntax and correctly jumps to the :npm_section label. The colon is optional on the goto target; only the label definition requires it. The script will not fail at this line.",
+      "severity_justification": "Even if the claim were correct it would be a script correctness bug, but it is factually wrong.",
+      "category_justification": "The finding claims incorrect syntax causes a script failure — a correctness assertion.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/standards/reqstream-usage.md",
+      "start_line": 28,
+      "end_line": 32,
+      "message": "The document states that 'Unit requirements → should NOT link upward to parent requirements', which contradicts the previous version that said 'should NOT link to higher-level requirements'. This change is confusing as 'parent' implies a direct hierarchical relationship, while 'higher-level' is more general. The original wording was clearer about preventing any upward linking in the hierarchy.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "While 'parent' is technically narrower than 'higher-level' in isolation, the surrounding context ('Requirements link downward only') makes the intent unambiguous. In the three-level hierarchy this document describes, the practical constraint is identical. The finding identifies a genuine but sub-threshold semantic nuance that would not meaningfully confuse any reader.",
+      "severity_justification": "Even if the wording is marginally less precise, the surrounding context makes the intent clear and the practical impact on agent behavior is negligible.",
+      "category_justification": "The finding is purely about word choice in agent guidance documentation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lint.bat",
+      "start_line": 33,
+      "end_line": 33,
+      "message": "The command `call npm install --silent` is executed, which can be very slow if `node_modules` is already up to date. Using `npm ci` is the recommended best practice for CI environments as it provides faster, more reliable builds by using the `package-lock.json` file.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "No package-lock.json exists in the repository, so npm ci would fail. The CI workflow also uses npm install consistently. The recommendation is both inapplicable and generic boilerplate that ignores the actual project state.",
+      "severity_justification": "The suggestion would break the script if applied, but the finding itself is just an incorrect generic best-practice note.",
+      "category_justification": "The finding is about tooling/build script efficiency, framed as a best practice.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lint.sh",
+      "start_line": 38,
+      "end_line": 38,
+      "message": "The command `npm install --silent` is used to install dependencies. For CI environments, `npm ci` is the recommended best practice as it is typically faster and ensures reproducible builds by strictly using the `package-lock.json` file.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Duplicate of Finding 11 on lint.sh. No package-lock.json exists in the repo, making npm ci inapplicable (it would fail). The finding is generic boilerplate advice that ignores the actual project state.",
+      "severity_justification": "Same as Finding 11 — the suggestion would break the script if applied.",
+      "category_justification": "Generic tooling/build script best-practice suggestion.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/standards/csharp-testing.md",
+      "start_line": 59,
+      "end_line": 68,
+      "message": "Guidelines on mock dependency usage were deleted. Mocking is essential for ensuring isolation of unit tests, especially for services with external dependencies, which can otherwise introduce flakiness or integration issues.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The Mock Dependencies section is present and intact in the current csharp-testing.md at this SHA, with NSubstitute guidance and three sub-bullets on isolation, interaction verification, and predictable behavior. The finding's claim that this content was deleted is factually incorrect.",
+      "severity_justification": "The finding is factually wrong; no actual content loss occurred.",
+      "category_justification": "The claim is about deleted agent guidance documentation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lint.bat",
+      "start_line": 80,
+      "end_line": 84,
+      "message": "Dotnet format now uses '--no-restore' even though package restoration is mandatory for a clean linting and formatting process. This might result in inconsistencies if the necessary packages are not restored prior to formatting.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`dotnet restore` is explicitly called immediately before `dotnet format --no-restore` in the script. The --no-restore flag is correct and intentional — restore was already performed as a separate step with its own error handling. The finding ignores the explicit restore step that precedes the format command.",
+      "severity_justification": "The finding is factually incorrect about the script's behavior; no actual risk exists.",
+      "category_justification": "The finding makes an incorrect claim about script behavior and package restoration state.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

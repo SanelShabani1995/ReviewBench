@@ -1,0 +1,931 @@
+{
+  "pr_key": "edercnj_ia-dev-environment_198-76a99258",
+  "pr": {
+    "repo": "https://github.com/edercnj/ia-dev-environment",
+    "pr_number": 198,
+    "base": "949c62fe2ace8c41d41dd9d7dfd7b51ab268d25f",
+    "head": "76a992582e9e73897987a43bd520bb581f0e7ce7"
+  },
+  "findings": [
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 89,
+      "end_line": 115,
+      "message": "Phase 0.4 (story file existence check) comes after Phase 0.3 (staleness check). Phase 0.3 attempts `mtime(story file)` in its comparison table before Phase 0.4 verifies the story file exists. On a missing story file, the mtime comparison will fail or behave unpredictably before the clean abort message in 0.4 is reached. The existence check must execute before the staleness comparison.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in SKILL.md: Section 0.3 (staleness check) appears before 0.4 (story file existence check). The staleness check table at line ~102 explicitly references `mtime(story file)` for comparison before the file existence is verified in 0.4. A missing story file would cause the mtime comparison to fail before reaching the clean abort in 0.4.",
+      "severity_justification": "The misordering means the skill won't emit its intended clean error message for missing story files — instead it would fail with a confusing error at the mtime comparison step. Not a data-loss issue, but leads to poor error experience and violates the spec's own intent.",
+      "category_justification": "The issue is a logic ordering error — the existence check must precede the staleness comparison that depends on the file existing.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 211,
+      "end_line": 381,
+      "message": "Subagent prompts embed `{{PROJECT_NAME}}` and `{{LANGUAGE}}` placeholders that are never resolved. Phase 1 (Context Gathering) reads story/epic/implementation-map content but extracts no project name or language. These literals will be sent verbatim to all 5 subagents, causing them to read knowledge packs with wrong file paths and produce plans without language-specific context.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "{{PROJECT_NAME}} and {{LANGUAGE}} are deployment-time template placeholders used consistently throughout the entire skills directory. The template files in java/src/main/resources/targets/claude/ are instantiated when deployed to a project, replacing placeholders with actual values (confirmed by comparing the template rule file vs the deployed .claude/rules/01-project-identity.md). This is the same pattern used by x-dev-implement, x-ci-cd-generate, and all other skills.",
+      "severity_justification": "Even if the finding were correct, the impact would be cosmetic — subagents receiving literal {{PROJECT_NAME}} would still produce useful output since the knowledge pack paths don't actually depend on these values.",
+      "category_justification": "The finding claims a runtime resolution bug, which is a correctness concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 715,
+      "end_line": 715,
+      "message": "DoR check #1 (architecture plan file `architecture-story-XXXX-YYYY.md`) is never written by this skill. The Architect agent's output is kept in memory as TASK_PROPOSAL entries and consolidated into the task breakdown; no standalone architecture plan file is generated. Check #1 will fail for any story without a pre-existing file from `x-dev-architecture-plan`, making the verdict systematically NOT_READY.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed in committed code (git show): Phase 4 generates 4 files but no standalone architecture-story-XXXX-YYYY.md. DoR check #1 at line 715 requires a 'file' with layer analysis (architecture plan from Architect agent or existing architecture-story-XXXX-YYYY.md). Check #10 already covers the planning report, so check #1 must be looking for a separate file that this skill never produces, making it fail unless a pre-existing file from x-dev-architecture-plan exists.",
+      "severity_justification": "This causes the DoR verdict to be systematically NOT_READY for stories planned without a prior x-dev-architecture-plan run, undermining the skill's core purpose of producing a readiness verdict. The error is in the spec/instruction document itself.",
+      "category_justification": "Logic mismatch between the artifacts Phase 4 generates and what Phase 5 DoR check #1 expects to find.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 723,
+      "end_line": 723,
+      "message": "DoR check #9 (implementation plan file `plan-story-XXXX-YYYY.md`) is never generated by this skill. Phase 4 writes four artifacts (task breakdown, individual task plans, planning report, DoR checklist) but not an implementation plan at that path. Check #9 will fail for any story without a pre-existing file, consistently blocking a READY verdict.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed in committed code: Phase 4 generates 4 files (task breakdown, individual task plans, planning report, DoR checklist) but no plan-story-XXXX-YYYY.md. Check #9 at line 723 requires a 'File exists with component list' — specifically an implementation plan file. Check #10 already covers the planning report, so check #9 must be checking for a separate file that this skill never produces. Without a pre-existing file from x-dev-implement or similar, check #9 will fail.",
+      "severity_justification": "Same structural issue as check #1: systematically blocks READY verdict for fresh stories. Two mandatory checks failing means READY is impossible without pre-existing plans from other skills.",
+      "category_justification": "Mismatch between Phase 4 artifacts generated and what Phase 5 check #9 expects.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 738,
+      "end_line": 742,
+      "message": "The `total_checks` formula is wrong: `total_checks = mandatory_passed + conditional_applicable`. It uses `mandatory_passed` (a variable that counts only passing checks) instead of the constant 10 (total mandatory checks). If 8 of 10 mandatory checks pass and 1 conditional applies, `total_checks = 9` instead of 11. The `Passed: {total_passed}/{total_checks}` summary in the DoR file will misrepresent the actual completion rate.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed in committed code: the formula `total_checks = mandatory_passed + conditional_applicable` uses mandatory_passed (a count of passing checks, 0-10) rather than 10 (the fixed count of mandatory checks). This means total_checks is wrong whenever any mandatory check fails. E.g., 8 pass + 1 conditional applicable = total_checks of 9 instead of 11, making the Passed ratio in the DoR checklist misleading.",
+      "severity_justification": "The error affects only the reporting metric in the DoR checklist (the Passed: X/Y line). The actual verdict logic is based on 'all mandatory pass' condition so no wrong READY/NOT_READY decision results from this formula error. It is a reporting accuracy issue, not a behavioral bug.",
+      "category_justification": "A concrete arithmetic formula error that causes incorrect values in the generated DoR checklist output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 678,
+      "end_line": 684,
+      "message": "When `--skip-dor` is passed, Phase 5 is skipped entirely, but the DoR checklist file (`dor-story-XXXX-YYYY.md`) is explicitly deferred to Phase 5 ('This file is written in Phase 5 after validation completes'). Phase 4.4 writes nothing. Any downstream consumer (e.g., x-dev-lifecycle) that checks for the DoR checklist file will find it absent after a `--skip-dor` run.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: Phase 4.4 explicitly defers writing the DoR checklist to Phase 5 ('This file is written in Phase 5 after validation completes'). When --skip-dor is passed, Phase 5 is skipped per line 29/60, so the dor-story-XXXX-YYYY.md file is never created. The README lists it unconditionally as an output artifact, creating a gap between documented and actual outputs.",
+      "severity_justification": "Users explicitly passing --skip-dor are opting out of DoR validation, so the absence of the checklist file is somewhat expected behavior. However, the inconsistency in documented outputs vs. actual outputs could confuse downstream tools or users. No behavioral corruption results — just a missing file.",
+      "category_justification": "A behavioral inconsistency: the flag skips Phase 5 but Phase 4.4 defers writing to Phase 5, leaving the artifact list incomplete for --skip-dor runs.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 848,
+      "end_line": 848,
+      "message": "The anti-pattern 'Do NOT reorder RED before GREEN pairs (test-first is mandatory)' is self-contradictory. The intent is to forbid placing GREEN tasks before their RED counterparts, but the statement literally says not to put RED before GREEN — the opposite of the skill's core mandate. An agent following this instruction literally would reverse TDD order.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at line 848: the anti-pattern reads 'Do NOT reorder RED before GREEN pairs (test-first is mandatory)'. This literally forbids placing RED before GREEN, which contradicts TDD order and the parenthetical that follows. The intended meaning is 'Do NOT reorder GREEN before RED' — don't let GREEN tasks precede their RED counterparts. An LLM agent following this instruction literally could misinterpret it.",
+      "severity_justification": "The surrounding context (Phase 2 QA agent instructions, Phase 3 PAIR rule) makes clear that RED must precede GREEN, so an agent with full context would likely apply the correct interpretation. However, the instruction itself as written is inverted and could cause confusion or misapplication.",
+      "category_justification": "This is an error in the spec/instruction text — a self-contradictory statement in the Anti-Patterns section that gives the wrong literal instruction.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 170,
+      "end_line": 331,
+      "message": "All 5 subagents are launched in parallel (single message) but the SEC, TL, and PO agent prompts instruct agents to 'mark dependencies on implementation tasks they augment/verify'. Because agents run concurrently with no access to each other's proposals, they cannot know ARCH-NNN or QA-NNN IDs at launch time. The dependency cross-references will be empty or fabricated, making consolidation in Phase 3 responsible for resolving all cross-agent dependencies — but the spec doesn't provide guidance for this case.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: SEC agent at line 331 is told to 'Mark dependencies on implementation tasks they augment' and TL agent at line 373 to 'Mark dependencies on the tasks they verify' — both reference ARCH-NNN/QA-NNN IDs that don't exist at parallel launch time. Phase 3 Rule 2 (AUGMENT) provides partial heuristic mitigation via keyword detection, and Phase 3.4 adds implicit layer ordering, but there's no spec guidance for handling invalid/empty cross-agent dependency references when preserving 'all explicit dependencies from agent proposals'.",
+      "severity_justification": "Phase 3 implicit dependencies (layer ordering, Rule 2 AUGMENT keyword detection) provide reasonable fallback coverage for most cross-agent dependency relationships. The main practical effect is that cross-agent dependency fields in proposals will be empty or wrong, but the consolidation phase compensates. The output is likely still usable.",
+      "category_justification": "A design inconsistency in the spec: agents are instructed to provide cross-references they cannot compute, and the consolidation spec doesn't address how to handle the resulting incomplete data.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 89,
+      "end_line": 103,
+      "message": "The staleness check only compares `mtime(story file)` against `mtime(tasks file)`. Changes to the epic file or implementation map are ignored. A new business rule added to the epic or a dependency graph change in the implementation map will not trigger regeneration, causing the skill to reuse stale planning artifacts silently.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at lines 89-103: the staleness check only tests mtime(story file) > mtime(tasks file). Neither the epic file nor the implementation map modification time is included in the comparison. Changes to either will not trigger regeneration unless --force is passed, causing the skill to silently reuse planning artifacts that may not reflect updated business rules or dependency graphs.",
+      "severity_justification": "The --force flag provides a manual escape hatch, so this is not a hard failure. In practice, developers can work around it. Epic and implementation map changes are also less frequent than story file changes. The scope is a planning artifact quality issue, not a data corruption or runtime failure.",
+      "category_justification": "The staleness check logic does not consider all input files that influence the output, leading to silently stale artifacts.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/references/planning-guide.md",
+      "start_line": 106,
+      "end_line": 120,
+      "message": "Rule 3 (PAIR) in planning-guide.md says 'Validation: Every GREEN task MUST have exactly one RED predecessor' without restricting to QA-NNN tasks. SKILL.md Phase 3 correctly scopes this to 'For every QA-NNN GREEN task'. The broader wording in planning-guide.md would cause an agent using it as the authoritative reference to synthesize RED tasks for all Architect (ARCH-NNN) implementation tasks, which have tdd_phase=GREEN per their agent instructions.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: planning-guide.md line 117 says 'Every GREEN task MUST have exactly one RED predecessor' without restricting to QA-NNN tasks. SKILL.md line 459 correctly scopes to 'For every QA-NNN GREEN task'. The Architect agent is explicitly told to set tdd_phase=GREEN for implementation tasks. An agent using planning-guide.md as authoritative reference would synthesize spurious RED tasks for all ARCH-NNN implementation tasks.",
+      "severity_justification": "The discrepancy could cause significant bloat in the task list (synthetic RED tasks for every Architect implementation task) and would inflate effort estimates and task counts. It affects the core output of the skill — the task breakdown.",
+      "category_justification": "Contradictory validation rules between the primary spec (SKILL.md) and the reference guide (planning-guide.md) for the same Rule 3 behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 205,
+      "end_line": 210,
+      "message": "Template detection paths are likely incorrect. The skill checks for templates in `.claude/templates/`, but this path seems relative to a project root that isn't guaranteed. Agent skills should use paths relative to their own location or expect absolute paths to avoid ambiguity and execution errors depending on the working directory.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`.claude/templates/` is the standard convention used by all other skills in the project (x-dev-implement, x-review, x-story-create, x-story-epic-full, x-story-map, etc.). These skills are deployed to project roots where `.claude/` is a standard directory. The new x-story-plan skill uses the exact same path pattern as the rest of the codebase — this is not an error but established convention.",
+      "severity_justification": "Even if it were a concern, the skill has RULE-012 fallback (log warning and use inline format), so missing templates don't cause failures.",
+      "category_justification": "The finding makes a factual claim about path correctness.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 260,
+      "end_line": 264,
+      "message": "Subagent prompts reference knowledge packs using root-relative paths (e.g., `skills/architecture/references/architecture-principles.md`). This makes execution dependent on the agent's working directory being the project root, which is a brittle assumption. Paths should be relative to the SKILL.md file or be resolved to absolute paths before being used in prompts.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Root-relative `skills/...` paths are the established convention across the entire skills codebase. x-dev-implement, x-review, and all other skills use identical paths like `skills/architecture/references/architecture-principles.md`. The new x-story-plan skill follows the same pattern. Claude Code skills are designed to run from the project root, making this the correct convention, not a brittleness introduced by this PR.",
+      "severity_justification": "Even if this were an issue, it would affect all existing skills equally — not just this new one. No regression is introduced.",
+      "category_justification": "The finding claims a path resolution issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 543,
+      "end_line": 550,
+      "message": "The 'AUGMENT' consolidation rule creates redundant work. It injects security DoD criteria into an implementation task but also keeps the original security task as a separate verification task. This creates two tasks for the same control. The verification should be part of the Definition of Done for the single, augmented implementation task.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The AUGMENT rule is a deliberate design decision: inject security DoD into the implementation task so the developer knows what to implement, while keeping the SEC task as a separate VERIFY checkpoint so security review is tracked independently. This is analogous to the TDD pattern of having both implementation and verification phases. The finding expresses a design preference (collapse to one task) but the two-task approach has legitimate justification — separate implementation and verification responsibilities.",
+      "severity_justification": "Even if the design were changed, the functional output would be similar. This is a task-count/workflow preference, not a correctness concern.",
+      "category_justification": "The finding critiques a design decision about how the consolidation rules structure tasks.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 604,
+      "end_line": 604,
+      "message": "The error message for circular dependencies is not helpful. The specification says to abort with an error, and the error handling section defines the message as 'ERROR: Circular dependency detected between {tasks}. Manual resolution required.' However, it never specifies how the `{tasks}` placeholder will be populated, making the error message vague and difficult to act on.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `{tasks}` placeholder in an error message template is a self-explanatory convention — it would be populated with the actual task IDs forming the dependency cycle. The finding points out that the spec doesn't formally define what `{tasks}` contains, but no reasonable implementer or LLM agent would misunderstand this. No concrete harm or misinterpretation results from this omission.",
+      "severity_justification": "Even if taken as a valid concern, the impact is only on error message quality in a rare error scenario.",
+      "category_justification": "The finding is about spec documentation completeness for an error message template.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 813,
+      "end_line": 813,
+      "message": "The logic for updating the story file is not idempotent. It appends a new 'Section 8.1' if Section 8 exists. It doesn't handle the case where Section 8.1 was already generated by a previous run, which could lead to duplicate content. The logic should replace the previously generated section rather than blindly appending.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at lines 703 and 851: the spec instructs the agent to 'add Section 8.1 below' existing Section 8 content, with no check for a pre-existing generated Section 8.1. When --force is used or the story file is modified, Phase 4.5 runs again and would append a duplicate Section 8.1. Line 881 claims 'idempotent re-execution' but Phase 4.5 is not idempotent for Section 8.1.",
+      "severity_justification": "Affects story file readability with duplicate generated sections on re-runs with --force or after story edits. The core planning artifacts (tasks file, planning report) are unaffected. Annoying but not a data loss or correctness issue for planning output.",
+      "category_justification": "Non-idempotent update logic that contradicts the skill's stated idempotency guarantee.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 821,
+      "end_line": 821,
+      "message": "DoR check for 'Architecture plan exists' is too vague. It checks for the existence of a file matching a name pattern but doesn't validate that the plan is for the specific story being processed. This could result in a false positive if a plan for a different story exists in the same directory.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The path `architecture-story-XXXX-YYYY.md` uses the story's specific epic ID and sequence number as runtime substitutions, making the filename unique per story. A different story's architecture plan would have different XXXX/YYYY values and would not match. The finding incorrectly claims a false positive is possible from a different story's plan in the same directory.",
+      "severity_justification": "The finding describes a non-existent problem.",
+      "category_justification": "The finding makes a factual claim about check behavior that is incorrect.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 827,
+      "end_line": 827,
+      "message": "The mandatory DoR check requiring at least 4 Gherkin scenarios is arbitrary. A simple story may be fully specified with fewer scenarios. This rigid rule could block valid stories or encourage writing trivial scenarios just to meet the requirement. This should be a guideline or warning, not a blocking check.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a design preference disagreement, not a factual error. The minimum-4-scenarios threshold is a deliberate DoR quality gate. The finding argues it is arbitrary and should be a warning rather than a blocker, but this is an opinion about the design philosophy. The rule could equally be defended as ensuring sufficient acceptance criteria coverage. No code is factually wrong.",
+      "severity_justification": "Even if the threshold were misguided, the only effect is that stories with fewer than 4 scenarios get a NOT_READY verdict — which is the intended behavior of the DoR gate. Users can use --skip-dor to bypass.",
+      "category_justification": "The finding critiques a design decision about DoR threshold policy rather than identifying a bug or correctness issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 841,
+      "end_line": 843,
+      "message": "The verdict logic is too strict. A failure in a conditional DoR check results in a 'NOT_READY' verdict, the same as a mandatory check failure. This gives conditional checks the same weight as mandatory ones, which could unnecessarily block stories. A 'READY_WITH_WARNINGS' state would be more appropriate for conditional failures.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The verdict logic is a deliberate design decision: when conditional checks are applicable (compliance required, contract tests enabled), they are treated as required for readiness. The finding disagrees with this policy — preferring READY_WITH_WARNINGS — but this is a design opinion. The spec is internally consistent and the choice to make applicable conditionals blocking is defensible.",
+      "severity_justification": "Even if the design were changed, the effect would only be a different verdict label in edge cases where a project requires compliance or contract tests but they weren't addressed.",
+      "category_justification": "The finding critiques a design decision about DoR verdict policy rather than identifying a factual error.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/references/planning-guide.md",
+      "start_line": 197,
+      "end_line": 202,
+      "message": "The task ordering algorithm is contradictory. It states that dependency ordering overrides all other criteria (phase, layer, TPP). This would break the TDD workflow if, for example, a 'GREEN' task depends on a later-phase 'VERIFY' task. A topological sort should be the primary ordering mechanism, with other criteria used only as tie-breakers for tasks at the same dependency level.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The ordering algorithm applies dependency constraints as a topological override, which is correct. The hypothetical problematic scenario (GREEN depending on VERIFY) is prevented by the consolidation rules: VERIFY tasks always depend on implementation tasks, not vice versa. Phase ordering and dependency ordering are designed to be consistent, so the 'regardless of other criteria' override never conflicts with TDD workflow in practice.",
+      "severity_justification": "Even if the concern were valid, it only affects ordering of an already-sound task graph in edge cases that the design explicitly prevents.",
+      "category_justification": "The finding makes a claim about algorithm correctness.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 445,
+      "end_line": 447,
+      "message": "The error scenario 'All subagents return no proposals' results in an abort without indicating which agent outputs were empty or potentially why. This omission could hinder debugging and troubleshooting.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The spec already handles individual agent failures separately: 'Subagent returns no proposals -> Log warning for that agent'. These per-agent warnings are emitted before reaching the 'all subagents return no proposals' abort condition. A user debugging the failure would already have per-agent warning messages identifying which agents produced no output. The abort message itself doesn't need to repeat this information.",
+      "severity_justification": "Even if additional detail were added to the final abort message, the impact would be minor — only relevant in a rare total-failure scenario.",
+      "category_justification": "The finding is about error message verbosity and debuggability.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 784,
+      "end_line": 787,
+      "message": "Task Ordering Algorithm does not explicitly mention how tie-breaking is handled when tasks have equivalent phase, layer, TPP, and dependency order. This ambiguity may lead to deterministic yet unintuitive orders in real-world scenarios.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding describes a theoretical gap in tie-breaking specification when all four ordering criteria (phase, layer, TPP, dependencies) are equal. This is an extremely rare edge case in practice — having two tasks with identical phase, layer, TPP level, and no mutual dependencies. The ordering in that case would be arbitrary but deterministic (e.g., insertion order), which is acceptable. The finding cannot point to a concrete scenario where unintuitive output actually harms correctness or usability.",
+      "severity_justification": "The impact is purely cosmetic — task ordering in a tie-break scenario has no effect on correctness of the generated planning artifacts or DoR verdict.",
+      "category_justification": "The finding is about a missing specification detail for an edge case in the ordering algorithm, not a behavioral bug.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 680,
+      "end_line": 683,
+      "message": "The task ID assignment within 'Assign Final Task IDs' lacks a description of logging or explicit failure handling if IDs overlap during sequential assignment due to a merge or consolidation error.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Sequential ID assignment (TASK-001, TASK-002, ...) to an ordered list cannot produce overlapping IDs by construction — each item receives the next number in sequence. The anti-patterns section also explicitly prohibits duplicate IDs at line 848. There is no failure mode to handle here; the finding describes a non-existent problem.",
+      "severity_justification": "The described scenario (ID overlap from sequential assignment) is impossible given the algorithm.",
+      "category_justification": "The finding makes a claim about a potential failure in ID assignment logic.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/references/planning-guide.md",
+      "start_line": 40,
+      "end_line": 54,
+      "message": "The TASK_PROPOSAL format mandates 'dod_criteria' but does not specify any validation for their quality, such as ensuring each criterion is measureable or actionable. Poorly defined DoD criteria might degrade task utility.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic observation that any DoD criteria specification could have vague entries, not a specific factual error in the code. The finding could be copy-pasted onto any task management or planning spec without modification. The TASK_PROPOSAL format requires at least one DoD criterion (DoR check #5) and the agent instructions include specific examples like 'test naming convention, assertion specificity, coverage target'. Enforcing measurability of free-text criteria in a spec document is impractical and not a defect.",
+      "severity_justification": "Quality of DoD criteria is inherently subjective and cannot be mechanically validated in a spec document.",
+      "category_justification": "The finding is about documentation completeness for a format specification.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/README.md",
+      "start_line": 69,
+      "end_line": 81,
+      "message": "The 'Consolidation Rules' section fails to define what happens if a component with merged tasks has conflicting dependencies, which could lead to an inconsistent or invalid dependency graph.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The README consolidation table is a summary — SKILL.md Rule 1 at line 442 explicitly states 'Retain dependencies from both tasks' (union of all dependencies), and Phase 3.4 validates the resulting DAG for circular dependencies. The claim that conflicting dependencies are unhandled is incorrect — the spec handles them via union + cycle detection. The finding is criticizing a summary table for not including detail that is present in the full spec.",
+      "severity_justification": "No actual gap in handling exists; this is a documentation detail concern about a high-level summary.",
+      "category_justification": "The finding is about completeness of a summary table in the README.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/README.md",
+      "start_line": 94,
+      "end_line": 96,
+      "message": "The 'Conflict Resolution' rules prioritize the Tech Lead in decisions involving implementation, but this does not account for cases where architectural concerns trump standards—for instance, when ignoring the architect might breach non-functional requirements.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a design philosophy opinion, not a factual error. The Tech Lead winning over Architect for implementation approach conflicts is a deliberate design choice with stated rationale ('Tech Lead has final authority on implementation standards'). The finding argues a counter-scenario (NFR breaches) but this is speculative and represents a preference for a different authority model, not a bug. Additionally, the Architect's approach is preserved as a 'considered alternative' in task notes, leaving a trace for human review.",
+      "severity_justification": "The conflict resolution policy is a planning artifact design decision with no runtime or correctness impact. Edge cases where it produces suboptimal results can be addressed by humans reviewing the planning artifacts.",
+      "category_justification": "The finding critiques an architectural governance design decision in the spec.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 712,
+      "end_line": 714,
+      "message": "The method for detecting circular dependencies ('no circular dependencies' check) is described but fails to explain how tasks spanning multiple layers or TPP levels are validated, leaving potential for unnoticed cycles across task boundaries.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Circular dependency detection via DAG traversal is a standard graph algorithm (e.g., DFS cycle detection) that inherently validates the entire graph regardless of layer or TPP level boundaries — it operates on nodes and edges, not on task metadata. The finding claims that cross-layer/cross-TPP cycles might go unnoticed, but a correct DAG cycle check catches all cycles regardless of what attributes the nodes have. The spec says 'Validate: no circular dependencies (abort with error if detected)' — this is a complete specification for the required behavior; the implementation detail of how to traverse a graph is not something a spec document needs to explain.",
+      "severity_justification": "The finding describes a non-existent gap — DAG validation covers all edges by definition.",
+      "category_justification": "The finding is about missing implementation detail in a spec document for a standard well-known algorithm.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 549,
+      "end_line": 566,
+      "message": "The example markdown blocks use unescaped nested triple-backtick fences. At line 524 a ```markdown fence is opened, then line 549 (` ```mermaid `) and line 552 (` ``` `) appear inside it; the first nested ``` closes the outer fence, so everything from line 553 onward renders outside the intended code block and the closing fence at line 566 instead opens a new block. The same issue affects the ```markdown blocks at lines 574-614, 622-676, and 690-701 whenever they contain examples that would themselves use code fences. Consider switching the outer fence to use ~~~ (tilde) fences, or indenting the example content, so the nested fences render correctly.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the file: a ```markdown fence opens at ~line 524, and a nested ```mermaid / ``` block appears inside it at ~lines 549-552. The inner closing ``` terminates the outer fence prematurely, causing all subsequent content through the intended closing ``` at line 566 to render outside the code block. The same pattern repeats in subsequent markdown blocks containing nested fences.",
+      "severity_justification": "This is a documentation/instruction file consumed primarily by AI agents reading raw text. Broken markdown rendering affects human readability of SKILL.md but does not affect runtime behavior of the skill workflow.",
+      "category_justification": "The issue is a markdown formatting error in a documentation/specification file — specifically improper nesting of fenced code blocks.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 89,
+      "end_line": 104,
+      "message": "When Phase 0.3 detects fresh artifacts, the workflow reuses them and skips directly to Phase 5 (DoR validation). However, if both `--skip-dor` is set AND artifacts are fresh, the skill effectively performs no work but the CRITICAL EXECUTION RULE at line 29 still implies phases must run. Consider clarifying the interaction between the staleness reuse path and `--skip-dor` (e.g., emit an explicit no-op log message and the final completion message).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: Phase 0.3 says 'skip directly to Phase 5 (DoR validation only)' when reusing, and Phase 5 is skipped when --skip-dor is set. The combination creates an unspecified no-op path with no defined completion message, which contradicts the CRITICAL EXECUTION RULE that says to never stop before the final phase.",
+      "severity_justification": "This is an edge case in a specification document for AI agents. The practical impact is a minor ambiguity — the executing agent might silently complete without emitting a status message, but no data loss or incorrect planning would occur.",
+      "category_justification": "The issue is an underspecified interaction between two control-flow flags in a skill specification document, not a runtime code defect.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 1,
+      "end_line": 5,
+      "message": "Adding this as a core skill changes the assembled output for every profile, but the golden fixtures under `java/src/test/resources/golden/**/.claude/skills/` are not updated. `GoldenFileTest` compares generated files against the golden file set and fails on extra generated files, so this PR cannot pass the existing golden parity tests as-is.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: SkillsAssembler.selectCoreSkills() scans the entire core/ directory and includes every skill it finds. Adding x-story-plan to core/ means it will be generated for all 17 profiles. GoldenFileTest.validateCompleteness() calls fail() on any 'extra files (generated, not in golden)'. No golden files for x-story-plan exist under any of the 17 profile golden dirs. The PR description itself acknowledges this ('Golden files will be updated in story-0028-0007').",
+      "severity_justification": "The existing test suite (5521 tests) will fail due to the extra generated files not matching golden fixtures. The PR description explicitly flags this as a known incomplete item, meaning this PR breaks CI in its current state.",
+      "category_justification": "The finding is about a test suite failure caused by missing golden file updates required by the new skill addition.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 524,
+      "end_line": 524,
+      "message": "This starts a 3-backtick `markdown` example that contains a nested 3-backtick `mermaid` fence below, so the markdown example closes at the nested fence and the rest of the section renders as normal instructions/fences. Existing examples that need nested fences use a longer outer fence (for example `x-fix-epic-pr-comments/SKILL.md:582`), so this should use a longer outer fence or avoid nesting to keep the skill spec parseable.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: x-fix-epic-pr-comments/SKILL.md line 582 uses 4-backtick outer fences (````markdown) when nesting 3-backtick inner fences. The new x-story-plan/SKILL.md line 524 uses a 3-backtick outer fence (```markdown) which is prematurely closed by the nested mermaid fence, breaking rendering. This is both factually correct and a convention violation.",
+      "severity_justification": "Documentation file consumed mainly by AI agents reading raw text. The broken rendering affects human readability but not runtime behavior, though the convention violation means the skill spec is not parseable in the same way as others.",
+      "category_justification": "The issue is a markdown formatting convention violation in a skill specification document — specifically failure to use longer outer fences when nesting code blocks, inconsistent with established project convention.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 191,
+      "end_line": 196,
+      "message": "The proposal schema does not allow `implementation`, but later consolidation expects Architect proposals to include `implementation` tasks and Rule 2 specifically augments implementation tasks from the Architect. With the current enum, Architect agents either cannot label implementation work correctly or the orchestrator cannot reliably identify implementation tasks during consolidation/DoR validation.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: TASK_PROPOSAL type enum at line 195 is `{architecture|test|security|quality-gate|validation}` — no `implementation` value. Yet the Architect expected proposal types table (line 425) lists 'architecture, implementation', Rule 2 explicitly targets 'implementation task (from Architect)' for security augmentation, and planning-guide.md line 16 has the same incomplete enum. The missing `implementation` type creates an ambiguity that breaks the AUGMENT consolidation rule.",
+      "severity_justification": "The missing `implementation` type in the TASK_PROPOSAL schema means the AUGMENT rule (security criteria injection) cannot reliably identify Architect implementation tasks, potentially causing security controls to be missed. This is a specification inconsistency that would cause incorrect AI agent behavior.",
+      "category_justification": "The schema definition is inconsistent with how it's used in the consolidation rules — the type enum is missing a value that the rest of the spec depends on.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/references/planning-guide.md",
+      "start_line": 12,
+      "end_line": 17,
+      "message": "This reference schema omits the `implementation` task type even though the skill's consolidation rules and DoR checks distinguish Architect implementation tasks from architecture tasks. Consumers following this guide will produce proposals that cannot be classified consistently with the orchestrator rules.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: planning-guide.md line 16 defines `type` enum as `architecture`, `test`, `security`, `quality-gate`, `validation` — omitting `implementation`. The same file's consolidation rules reference 'implementation task (from Architect)' at lines 90 and 95. This is the same schema inconsistency as Finding 5 but in the reference document.",
+      "severity_justification": "Same impact as Finding 5 — the reference guide consumers follow to produce proposals will generate tasks without a valid `implementation` type, breaking the AUGMENT consolidation rule for security criteria injection.",
+      "category_justification": "The schema in the reference document is inconsistent with the consolidation rules that depend on the `implementation` type value.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 493,
+      "end_line": 495,
+      "message": "This ordering contradicts the QA prompt and the existing `x-test-plan` TPP sequence (`conditional` before collection/iteration; see `x-test-plan/SKILL.md:131-137`). As written, the orchestrator can reorder QA proposals differently from the order it asked the QA agent to produce, breaking the strict TPP progression.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: QA agent prompt (lines 279-284) assigns TPP Level 4=conditional, Level 5=collection. Consolidation ordering (line 494) sorts `collection` before `conditional`. x-test-plan/SKILL.md also has conditions (levels 3-4) before iterations/collections (level 5). The tpp_level enum at line 200 also encodes collection before conditional. The consolidation step would reorder QA proposals differently from how they were produced, breaking strict TPP progression.",
+      "severity_justification": "Incorrect TPP ordering in consolidation means test tasks are resequenced in a way that contradicts TDD methodology (conditions should be tackled before collection processing). This undermines the core value of the TPP-ordered test planning, though it won't prevent the skill from producing output.",
+      "category_justification": "The consolidation ordering rule directly contradicts the ordering established in the QA agent prompt and the existing x-test-plan convention, causing incorrect task sequencing.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/references/planning-guide.md",
+      "start_line": 192,
+      "end_line": 195,
+      "message": "The TPP ordering here puts `collection` before `conditional`, but the skill's QA instructions and the existing `x-test-plan` skill define complex/conditional cases before collection/iteration. This inconsistency will cause task ordering to diverge depending on whether the orchestrator follows the guide or the agent prompt.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: planning-guide.md line 193 defines TPP ordering as `nil > constant > scalar > collection > conditional > iteration` — placing collection before conditional. This contradicts the QA agent prompt in SKILL.md (lines 279-284) which assigns Level 4=conditional and Level 5=collection, and contradicts x-test-plan's TPP sequence. Same inconsistency as Finding 7, in the reference document.",
+      "severity_justification": "Same impact as Finding 7 — incorrect TPP ordering in the reference guide means AI agents following it will sequence test tasks incorrectly, diverging from both the QA agent's own prompt and the established x-test-plan convention.",
+      "category_justification": "The TPP ordering rule in the reference document contradicts the ordering in the QA agent prompt and the existing x-test-plan skill, causing incorrect task sequencing.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 690,
+      "end_line": 697,
+      "message": "The generated Section 8.1 table does not match the story template introduced for multi-agent planning (`_TEMPLATE-STORY.md:184-191`), which expects Agent, DoD, and Status columns. This update would overwrite/populate Section 8.1 in a different shape and lose the per-task DoD/agent information that downstream consumers and the template describe.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: SKILL.md Section 8.1 template (lines 690-697) defines columns `# | Task ID | Description | Type | TDD Phase | Layer | Depends On | Effort`, while _TEMPLATE-STORY.md lines 184-191 defines `Task ID | Description | Agent | Type | Layer | DoD | Status`. The shapes are incompatible — SKILL.md omits Agent, DoD, and Status columns that the story template expects.",
+      "severity_justification": "The schema mismatch means that when x-story-plan writes Section 8.1 to a story file, it produces a table that doesn't match what the story template and downstream consumers expect, losing per-task Agent, DoD, and Status information.",
+      "category_justification": "The generated output format contradicts the template contract that defines how Section 8.1 should be structured, causing a data shape mismatch.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/references/planning-guide.md",
+      "start_line": 159,
+      "end_line": 170,
+      "message": "These DoR checks require plan files that the new skill does not generate. Unless separate planning skills have already produced those files, following this guide makes a fresh `x-story-plan` run fail readiness despite having agent outputs in the planning report/task breakdown.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is incorrect about the actual execution behavior. SKILL.md Phase 5 (lines 715-723) — the spec the orchestrator actually follows — explicitly allows DoR checks to be satisfied by 'agent output' from the planning report, not just standalone files. A fresh x-story-plan run would NOT fail because the agent outputs in the planning report satisfy checks 1, 2, 3, and 9. The planning-guide.md is more abbreviated but it's a reference doc, not the execution spec.",
+      "severity_justification": "The guide is less precise than the spec but since the orchestrator follows SKILL.md, no actual runtime failures would occur from this discrepancy.",
+      "category_justification": "The inconsistency is between the reference guide and the execution spec's DoR validation criteria descriptions.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 866,
+      "end_line": 873,
+      "message": "This integration note is not implemented: `x-dev-lifecycle` has no reference to `x-story-plan` in the current codebase, so it cannot invoke this skill in Phase 1. Either update the lifecycle skill to call it or remove/soften this relationship to avoid documenting a non-existent integration.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: grep of x-dev-lifecycle/SKILL.md returns no results for 'x-story-plan' or 'story-plan'. The integration note at line 869 claims x-dev-lifecycle 'can invoke x-story-plan in Phase 1' but no such integration exists. The note documents a non-existent relationship.",
+      "severity_justification": "This is a documentation inaccuracy about a planned but unimplemented integration. It doesn't affect runtime behavior of either skill — it could mislead developers or AI agents trying to understand how the skills interconnect, but the impact is minor.",
+      "category_justification": "The finding identifies a stale/aspirational integration note that documents a relationship not present in the codebase.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/README.md",
+      "start_line": 97,
+      "end_line": 100,
+      "message": "This README states that `x-dev-lifecycle` can invoke `x-story-plan`, but there is no `x-story-plan` reference in the existing lifecycle skill. This documents an integration that users cannot actually trigger unless the lifecycle skill is updated in the same change.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: README.md line 99 states x-dev-lifecycle 'can invoke this skill', but x-dev-lifecycle/SKILL.md has no reference to x-story-plan (confirmed in Finding 11 investigation). Same non-existent integration claim, in the README rather than SKILL.md.",
+      "severity_justification": "Same as Finding 11 — documentation inaccuracy about a planned but unimplemented integration with no runtime impact.",
+      "category_justification": "The finding identifies a stale/aspirational cross-skill reference in the README that documents a relationship not present in the codebase.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 474,
+      "end_line": 480,
+      "message": "Rule 5 says PO acceptance-criteria amendments are applied to the story, but Phase 4.5 only updates Section 8 with tasks and never updates the acceptance criteria section. Any PO-proposed Gherkin additions/clarifications will be captured in validation tasks at best, not actually applied to the story as this rule requires.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: Rule 5 (line 478) states 'PO amendments are applied to the story's acceptance criteria section.' Phase 4.5 only writes Section 8 (Sub-Tasks) to the story file with no instruction to update acceptance criteria. planning-guide.md line 143 says PO Gherkin scenarios 'are included in the story file update (Phase 4.5)' but Phase 4.5 contains no such step. The implementation gap means PO-proposed Gherkin additions are never actually written back to the story.",
+      "severity_justification": "PO acceptance criteria amendments are a stated output of the skill but are silently dropped. Downstream skills and DoR check #7 (Gherkin >= 4 scenarios) operate on the story file, so missing PO amendments could affect planning completeness.",
+      "category_justification": "Rule 5 documents behavior (applying PO amendments to acceptance criteria) that Phase 4.5 does not implement, creating an inconsistency between the stated rule and the actual execution steps.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 306,
+      "end_line": 308,
+      "message": "The prompt tells the Security agent to read `application-security` and `cryptography` references, but those files are not present under `skills/security/references/` in this repository (the directory contains files such as `pentest-readiness.md`, `security-scoring.md`, and `supply-chain-hardening.md`). This will send the agent looking for non-existent reference material before planning security tasks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding incorrectly claims application-security.md and cryptography.md don't exist. They are source files at java/src/main/resources/knowledge/security/ and appear in every assembled golden output at .claude/skills/security/references/. The Security agent prompt runs in the context of an assembled project where these files are present at skills/security/references/application-security.md and skills/security/references/cryptography.md.",
+      "severity_justification": "The factual claim is wrong — the files do exist in the assembled target environment where the skill executes.",
+      "category_justification": "The finding misidentifies where assembled skills resolve their file paths, confusing source templates with assembled output.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 213,
+      "end_line": 217,
+      "message": "These referenced knowledge-pack files are not present in the assembled skill tree: `architecture/references/architecture-principles.md` and `coding-standards/references/coding-conventions.md` do not exist under `targets/claude/skills/knowledge-packs/`. The Architect subagent will be instructed to read missing files before it can produce proposals.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Both files exist in the assembled output: golden files confirm architecture-principles.md at .claude/skills/architecture/references/ and coding-conventions.md at .claude/skills/coding-standards/references/. The Architect subagent runs in the context of an assembled project where these files are present at the referenced paths (skills/architecture/references/architecture-principles.md and skills/coding-standards/references/coding-conventions.md).",
+      "severity_justification": "The factual claim is wrong — the files exist in every assembled project output.",
+      "category_justification": "The finding confuses source template locations with assembled output locations, same error pattern as Finding 14.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 260,
+      "end_line": 264,
+      "message": "The testing and architecture reference files named here are not shipped in the current knowledge packs (`testing/references/testing-philosophy.md`, `testing/references/testing-conventions.md`, and `architecture/references/architecture-principles.md` are absent). This makes the QA subagent prompt depend on files it cannot read in generated projects.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "All three files exist in the assembled output: golden files confirm testing-philosophy.md and testing-conventions.md at .claude/skills/testing/references/, and architecture-principles.md at .claude/skills/architecture/references/ (confirmed in Finding 15). The QA subagent runs in an assembled project where these files are present at the referenced paths.",
+      "severity_justification": "The factual claim is wrong — all referenced files exist in assembled project outputs.",
+      "category_justification": "Same error pattern as Findings 14 and 15 — confusing source template locations with assembled output locations.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 341,
+      "end_line": 345,
+      "message": "The coding-standards, architecture, and testing reference files listed here are not present in the assembled knowledge packs, so the Tech Lead subagent will start from missing context. Use existing shipped files (for example the pack `SKILL.md` files/rules summaries) or add the referenced files with this skill.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "All three referenced files exist in assembled project outputs: coding-conventions.md at .claude/skills/coding-standards/references/, architecture-principles.md at .claude/skills/architecture/references/, and testing-philosophy.md at .claude/skills/testing/references/ — all confirmed in golden files for java-quarkus and other profiles. The Tech Lead subagent runs in an assembled project where these files are present.",
+      "severity_justification": "The factual claim is wrong — all referenced files exist in assembled project outputs.",
+      "category_justification": "Same error pattern as Findings 14-16 — confusing source template locations with assembled output locations.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 497,
+      "end_line": 508,
+      "message": "Agent proposals express dependencies using agent-scoped IDs such as `QA-001` or `ARCH-003`, but final IDs are reassigned to `TASK-NNN` before the dependency graph is built. The graph-building steps preserve explicit dependencies without specifying a remapping from proposal IDs to final task IDs, so generated `Depends On` entries can point to IDs that no longer exist.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: Section 3.3 assigns final TASK-NNN IDs sequentially. Section 3.4 step 1 says 'Preserve all explicit dependencies from agent proposals' without any instruction to remap agent-scoped IDs (QA-001, ARCH-003, etc.) to their corresponding TASK-NNN equivalents. The result is that dependency columns in artifacts would contain stale agent-scoped IDs that don't match any TASK-NNN in the final task list.",
+      "severity_justification": "The broken dependency references undermine the entire dependency graph, which is used for parallelism detection, ordering, circular dependency validation, and the Mermaid diagram output. Downstream consumers (x-dev-implement) reading the task breakdown would find invalid dependency data.",
+      "category_justification": "The specification has a missing step — remapping agent-scoped dependency IDs to final TASK-NNN IDs — that causes the generated artifacts to contain invalid cross-references.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 435,
+      "end_line": 453,
+      "message": "Rule 1 merges any proposals from different agents that target the same component and layer, while Rule 2 says matching security proposals must not be removed and should remain as verification tasks. For an ARCH task and SEC task on the same component/layer, these rules conflict and the ordered application of Rule 1 would remove the SEC task before Rule 2 can preserve it.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: Rule 1 merges any ARCH+SEC pair on same component/layer into a single task (consuming the SEC task). Rule 2 says for security-sensitive components 'Do NOT remove the original SEC task'. When both conditions apply (same component, security-sensitive keywords), Rule 1 eliminates the SEC task before Rule 2 can preserve it. No rule precedence is defined for this overlap. Rule 1's own example (UserValidator + input validation) would itself trigger Rule 2's 'input' keyword.",
+      "severity_justification": "This spec ambiguity causes non-deterministic behavior: security verification tasks may be silently lost when an ARCH and SEC task share the same component and that component is security-sensitive, potentially eliminating security controls from the final plan.",
+      "category_justification": "The consolidation rules have an unresolved conflict that produces different outcomes for the same input depending on rule application order, with no tie-breaking specification.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/references/planning-guide.md",
+      "start_line": 72,
+      "end_line": 97,
+      "message": "The MERGE rule applies to any different-agent proposals with the same component/layer, but the AUGMENT rule specifically requires SEC tasks to remain as separate verification tasks. Without excluding SEC proposals from generic merges, the consolidation rules can delete the verification task that the security rule requires.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same conflict as Finding 19, verified in planning-guide.md lines 72-97: Rule 1 MERGE applies to 'any different-agent proposals with the same component AND layer' with no exclusion for SEC proposals, while Rule 2 AUGMENT explicitly says the SEC task 'is NOT removed — it becomes a verification task'. Without an explicit exception in Rule 1 for SEC proposals, Rule 1 can merge and eliminate a SEC task before Rule 2 can preserve it. The planning-guide.md conflict resolution table (lines 149-150) lists both rules as separate rows without addressing their interaction.",
+      "severity_justification": "Same impact as Finding 19 — security verification tasks can be silently eliminated from the consolidated plan when ARCH and SEC proposals share the same component/layer, potentially losing security controls.",
+      "category_justification": "The reference document has the same rule conflict as SKILL.md — MERGE rule lacks an exclusion for SEC proposals that AUGMENT requires to be preserved.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

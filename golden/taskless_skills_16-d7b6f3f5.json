@@ -1,0 +1,291 @@
+{
+  "pr_key": "taskless_skills_16-d7b6f3f5",
+  "pr": {
+    "repo": "https://github.com/taskless/skills",
+    "pr_number": 16,
+    "base": "387a9cbf49ede04c7a6322abc17ef0d26d958c4d",
+    "head": "d7b6f3f5d8ce72d2922533e578585a5ce422bc95"
+  },
+  "findings": [
+    {
+      "file": "packages/cli/src/install/install.ts",
+      "start_line": 300,
+      "end_line": 308,
+      "message": "checkStaleness detects the .agents/ fallback by checking for any directory at that path, not one created by Taskless. Any pre-existing .agents/ directory (GitHub Copilot config, generic agent framework config, user-created) will cause AGENTS_FALLBACK to appear in results with all embedded skills reported as missing/stale. This is a false positive visible in `taskless info` output. A more targeted check would look for the presence of the skills subdirectory (e.g., .agents/skills/) or a known Taskless-owned file within it.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code at lines 301-306 checks `stat(join(cwd, AGENTS_FALLBACK.installDir)).then(s => s.isDirectory())`, which triggers on any `.agents/` directory, not just one created by Taskless. A pre-existing `.agents/` from GitHub Copilot, generic agent frameworks, or user configs would cause false positives in `taskless info` output with all skills reported as stale.",
+      "severity_justification": "Produces incorrect/misleading output in `taskless info` for projects that have a pre-existing `.agents/` directory unrelated to Taskless. This is a user-facing false positive in a status command, which degrades trust in the tool's output.",
+      "category_justification": "The detection logic makes an incorrect assumption — presence of `.agents/` means a prior Taskless install — when a more targeted check (e.g., `.agents/skills/`) would distinguish Taskless-installed content from unrelated directories.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/install/install.ts",
+      "start_line": 298,
+      "end_line": 308,
+      "message": "checkStaleness can include AGENTS_FALLBACK in results alongside real detected tools. If a user ran `taskless init` without any tools detected (creating .agents/), then later added a .claude/ directory, subsequent calls to checkStaleness return both Claude Code and Agent Skills. The `info` command then displays 'Agent Skills' as a separate tool entry even though the user is now using Claude Code. The fallback entry is never cleaned up when a real tool is detected.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in checkStaleness: the fallback check (lines 301-306) is unconditional — it appends AGENTS_FALLBACK regardless of how many real tools were detected. If a user previously ran `taskless init` without tools (creating .agents/), then later added .claude/, the info command displays both 'Claude Code' and 'Agent Skills'. The .agents/ directory is never cleaned up or suppressed when real tools are present.",
+      "severity_justification": "The stale 'Agent Skills' entry in `taskless info` is confusing but not harmful — skills are still installed correctly in the real tool's directory. It's a cosmetic/UX issue in a status command, not a data integrity problem.",
+      "category_justification": "The staleness check logic produces incorrect output (showing a superseded fallback install alongside real tool results) rather than reflecting the user's actual active configuration.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/commands/init.ts",
+      "start_line": 52,
+      "end_line": 55,
+      "message": "The fallback install runs before the 'No tools detected' message is printed. If installForTool throws (e.g., permission denied, disk full), the user sees no output at all — not the attempted fallback path, not the error in context. The console.log for 'No tools detected. Using fallback' should be emitted before calling installForTool so the user has context if the operation fails.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in init.ts: `installForTool` is awaited before the 'No tools detected. Using fallback' message is printed. If installForTool throws (permission denied, disk full, etc.), the user sees no context about what was attempted — the fallback path and intent are only communicated after successful completion.",
+      "severity_justification": "The impact is limited to slightly less informative error output in a failure scenario. The error still propagates and the CLI framework will display it. Moving the log before the await is a trivial fix, but the current behavior is not silently incorrect — it just lacks context on failure.",
+      "category_justification": "This is an error-handling/user feedback issue during a filesystem operation that can fail for environmental reasons (permissions, disk full). The ordering means error context is lost on failure.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/commands/init.ts",
+      "start_line": 36,
+      "end_line": 50,
+      "message": "The tool install loop has no per-tool error handling. If installForTool throws for one detected tool (permission error, disk full, etc.), the exception propagates out of run() and all subsequent tools in the loop are left uninstalled with no diagnostic about which tool failed or how many tools were skipped. With multi-tool detection now live, the probability of hitting this path is higher (more tools = more install targets). Each tool should be wrapped in a try/catch with per-tool error output.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in init.ts lines 36-50: the for loop calls `installForTool` without any try/catch. An exception from any single tool's install aborts the entire loop, leaving subsequent tools uninstalled with no diagnostic. With multi-tool detection now live, this failure mode affects more targets and is more likely to partially succeed/fail silently.",
+      "severity_justification": "A permissions or disk-full error during install is relatively rare in practice, and when it occurs the CLI framework will still surface the thrown error. The user loses context about which tool failed and which were skipped, but the root cause is still visible.",
+      "category_justification": "This is an error isolation / fault tolerance issue in a filesystem write loop — a failure in one tool's install cascades to skipping subsequent tools with no per-tool diagnostic.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/install/install.ts",
+      "start_line": 82,
+      "end_line": 95,
+      "message": "Detecting Cursor via the .cursorrules file signal and then installing to .cursor/skills/ creates a new .cursor/ directory in projects that never had one. .cursorrules is widely used without any .cursor/ directory (e.g., legacy Cursor config, repos using it for other tools). Running `taskless init` in such a repo would create an unexpected .cursor/ directory structure. The same applies to detecting Claude Code via CLAUDE.md and creating .claude/. The design doc acknowledges this but it remains a real risk: a project with .cursorrules that isn't using a Cursor directory layout gets a .cursor/ directory injected.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Factually correct: detecting via `.cursorrules` (or `CLAUDE.md`) and installing to `.cursor/skills/` (or `.claude/skills/`) uses `mkdir recursive: true` which creates new directories in projects that never had them. The design doc acknowledges this as an accepted trade-off, but it remains a real user-surprise risk — particularly for repos with `.cursorrules` that predate the `.cursor/` directory layout.",
+      "severity_justification": "The behavior is intentional per the design doc and `.cursorrules` is genuinely Cursor-specific. The created directories only contain Taskless SKILL.md files and don't corrupt existing content. Users can remove them. The surprise factor is real but the actual harm is minimal.",
+      "category_justification": "The behavior produces a side effect (unexpected directory creation) that may not match user expectations, even if intentional by design.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/commands/init.ts",
+      "start_line": 34,
+      "end_line": 52,
+      "message": "installCount counts loop iterations, not actual successful installs. It is always equal to tools.length when the if (installCount === 0) check is reached — because the only way to exit the loop early is an exception, which also exits the function. The variable name implies it tracks whether any installs succeeded, but it does not (it would still be 0 if tools is empty, just like tools.length). The check should directly use tools.length === 0 to make the intent clear and eliminate the misleading counter.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `installCount` increments only after a successful `await installForTool`. Since there's no try/catch in the loop, any exception exits `run()` before the `if (installCount === 0)` check. At that check point, `installCount` is always equal to `tools.length`. Using `tools.length === 0` would be semantically identical and clearer.",
+      "severity_justification": "Purely a readability/maintainability issue — no behavioral impact. The code functions correctly but the variable name implies tracking of success/failure which it doesn't actually do.",
+      "category_justification": "The variable name `installCount` is misleading — it implies tracking successful installs vs failures, but it's simply a redundant alias for `tools.length` given the current control flow.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/schemas/check.ts",
+      "start_line": 4,
+      "end_line": 4,
+      "message": "checkResultSchema was de-exported (changed from export const to const) while it is embedded in the exported outputSchema and errorSchema via z.array(checkResultSchema). With declaration: true set in tsconfig.base.json, TypeScript's declaration emit traverses all types referenced by exported values. Although Zod infers structural types that TypeScript can sometimes inline, this pattern is exactly the case the newly added STYLEGUIDE-CODE.md section warns about. The change risks 'exported function has or is using private name' errors during declaration checking depending on how TypeScript resolves the Zod inferred types.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The package uses `noEmit: true` in tsconfig.base.json and the typecheck script runs `tsc --noEmit` — no declaration files are ever emitted. This is a CLI package bundled by Vite to a single JS file. Additionally, `checkResultSchema` is a Zod value (not a TypeScript type/interface), so its inferred type is structural and would be inlined by TypeScript even if declaration emit were active. The STYLEGUIDE-CODE.md warning about private-name errors applies to TypeScript type declarations, not Zod schema values.",
+      "severity_justification": "Even if the concern were valid, the practical impact would only be a typecheck error that's immediately visible and easy to fix.",
+      "category_justification": "The finding makes an incorrect claim about how TypeScript declaration emit applies to this package and to Zod schemas.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/install/install.ts",
+      "start_line": 104,
+      "end_line": 113,
+      "message": "The `detectTools` function iterates through `TOOLS` and checks signals for each. If a tool has multiple detection signals (e.g., `.claude` directory and `CLAUDE.md` file), `checkSignal` is called for all of them, even after one has already returned `true`. This is inefficient as only one successful signal is needed to detect the tool. The logic should short-circuit and stop checking signals for a tool as soon as one is found.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Signal checks run concurrently through `Promise.all` with `signals.some(Boolean)`",
+      "severity_justification": "At most ~8 parallel filesystem stat() calls on a CLI invocation. The actual overhead is microseconds with no user-perceptible impact. This is a negligible optimization opportunity.",
+      "category_justification": "The finding is about unnecessary work being done (redundant stat() calls after a signal already matched), which is a performance concern — even if the practical impact is negligible.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/install/install.ts",
+      "start_line": 213,
+      "end_line": 222,
+      "message": "The `installForTool` function does not validate if the command installation directory structure matches the conditions required for Claude Code-specific commands. This absence of validation could lead to commands being silently omitted or mis-installed if `tool.commands` is not defined but commands are provided.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `if (tool.commands)` guard is the intended validation — when a tool has no `commands` descriptor (OpenCode, Cursor, AGENTS_FALLBACK), commands are deliberately skipped. This is the designed behavior, noted in the comment 'Place commands (Claude Code only)'. The finding describes intentional silent omission as if it were a bug, but it is the correct expected outcome.",
+      "severity_justification": "Even if the concern were valid, there is no actual mis-installation — commands either install (Claude Code) or are skipped (everything else). No data corruption or incorrect behavior results.",
+      "category_justification": "The finding is about whether the command installation logic is correct, which falls under correctness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/test/install.test.ts",
+      "start_line": 38,
+      "end_line": 51,
+      "message": "The `detectTools` test incorrectly assumes readiness for a new, temporary `cwd` without considering overlapping conditions where leftover files from previous test runs could affect the outcome or detection environment.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`mkdtemp` guarantees a new, uniquely-named, empty directory for each test via a random suffix — leftover files from previous runs cannot exist in it. The `afterEach` also cleans up after each test. The finding's core premise is factually wrong about how `mkdtemp` works.",
+      "severity_justification": "The finding is incorrect; there is no actual test isolation problem.",
+      "category_justification": "The finding is about test design and test isolation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "openspec/specs/cli-init/spec.md",
+      "start_line": 11,
+      "end_line": 11,
+      "message": "This updated requirement still states that `taskless update` is an alias with identical behavior, but the CLI command registry only registers `init`, `info`, `check`, `auth`, and `rules` in `packages/cli/src/index.ts`; there is no `update` alias. Either implement the alias or remove this requirement so the spec matches the CLI.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `packages/cli/src/index.ts` registers subcommands `init`, `info`, `check`, `auth`, and `rules` — no `update` alias exists. The spec at line 11 states `taskless update` SHALL behave identically to `taskless init`, creating a documented requirement with no implementation.",
+      "severity_justification": "The spec promises a `taskless update` alias to users but the CLI doesn't implement it; any user who tries `taskless update` will get a command-not-found error, which is a user-facing behavioral gap.",
+      "category_justification": "The spec documents behavior (`taskless update` alias) that is not implemented in the code, a factual mismatch between specification and implementation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "openspec/changes/archive/2026-04-07-multi-tool-detection/specs/cli-init/spec.md",
+      "start_line": 171,
+      "end_line": 171,
+      "message": "This archived spec repeats that `taskless update` is an alias for `init`, but the current CLI registry does not expose an `update` command. Please keep the archived change spec consistent with the implemented command surface, or add the alias in `packages/cli/src/index.ts`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The underlying code gap (missing `update` alias) is real and already covered by Finding 1 against the canonical spec. This finding targets an archived change spec (`openspec/changes/archive/`), which is historical documentation and not a living requirements document. Archived specs are records of design intent at a point in time, not maintained as part of the active spec surface. Flagging inconsistency in an archive is not actionable in the same way and the finding essentially duplicates Finding 1.",
+      "severity_justification": "Archived design documents are not user-facing or authoritative; the identical issue in the canonical spec is more relevant.",
+      "category_justification": "The finding is about consistency between an archived spec document and the implementation, a documentation concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "openspec/changes/archive/2026-04-07-multi-tool-detection/tasks.md",
+      "start_line": 47,
+      "end_line": 47,
+      "message": "This task is marked complete, but the added `checkStaleness` tests only cover Claude Code and Cursor. I couldn't find staleness coverage for OpenCode or the `.agents/` fallback in `packages/cli/test/install.test.ts`, so either add those tests or leave this task unchecked.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: task 4.3 in the archived tasks.md explicitly requires testing `checkStaleness` for OpenCode, Cursor, and `.agents/`. The `checkStaleness` describe block in `packages/cli/test/install.test.ts` only contains two tests — one for Claude Code alone and one for Claude Code + Cursor. No `checkStaleness` tests cover OpenCode or the `.agents/` fallback path, making the task incorrectly marked complete and leaving a real test coverage gap.",
+      "severity_justification": "The missing tests cover a code path (`.agents/` fallback detection via `stat` in `checkStaleness`) that has a slightly different logic from tool detection, but the risk is low since the underlying install/stat code is shared and the AGENTS_FALLBACK tests cover installation itself.",
+      "category_justification": "The finding is about missing test cases for specific code paths in `checkStaleness`.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/cli/src/help/init.txt",
+      "start_line": 3,
+      "end_line": 4,
+      "message": "This summary says commands are installed for each detected tool, but the behavior below and the implementation only install commands for Claude Code. Reword this to avoid implying OpenCode and Cursor receive command files.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: lines 3–4 of init.txt read 'installs Taskless skills and commands for each one', implying all detected tools receive commands. The implementation (`installForTool` only writes commands when `tool.commands` is set) and the Behavior section in the same file both confirm commands are Claude Code only. The summary contradicts both the implementation and the file's own Behavior bullet.",
+      "severity_justification": "This is a user-facing help text inconsistency — misleading but not harmful to functionality. Users may be confused why OpenCode/Cursor don't get command files, but no data or behavior is affected.",
+      "category_justification": "The finding is about inaccurate content in user-facing help text.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

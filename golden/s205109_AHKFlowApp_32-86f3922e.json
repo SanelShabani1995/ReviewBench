@@ -1,0 +1,611 @@
+{
+  "pr_key": "s205109_AHKFlowApp_32-86f3922e",
+  "pr": {
+    "repo": "https://github.com/s205109/AHKFlowApp",
+    "pr_number": 32,
+    "base": "bc7d959e12bd1fdc9762d43a3f58050f751064ba",
+    "head": "86f3922e0c488d1c7c00e9e0c6769a0dfc856843"
+  },
+  "findings": [
+    {
+      "file": "tests/AHKFlowApp.API.Tests/Middleware/GlobalExceptionMiddlewareTests.cs",
+      "start_line": 26,
+      "end_line": 51,
+      "message": "The WebApplicationFactory returned by _factory.WithWebHostBuilder(...) is never stored or disposed. Only the HttpClient is covered by the using statement. Each test call starts a new TestServer (which is started lazily when CreateClient() is called) that is never shut down, leaking a test server, DI container, and associated resources per test invocation. Fix: store the derived factory in a using var before calling CreateClient().",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`WithWebHostBuilder` registers derived in parent's `_derivedFactories`; parent disposal handles it",
+      "severity_justification": "Test resource leaks don't affect production correctness, but do cause unreleased TCP ports, DI containers, and test server processes per test run. Observable in CI with many test runs but not merge-blocking.",
+      "category_justification": "Resource leak in test infrastructure — WebApplicationFactory instances are heavyweight objects (TestServer + DI scope) that must be disposed.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.TestUtilities/AHKFlowApp.TestUtilities.csproj",
+      "start_line": 13,
+      "end_line": 14,
+      "message": "TestUtilities has a direct ProjectReference to AHKFlowApp.API solely to support HealthResponseBuilder. This causes every test project that references TestUtilities (Application.Tests, Infrastructure.Tests, Domain.Tests, UI.Blazor.Tests) to transitively depend on the full API/Infrastructure/Application stack and the Microsoft.NET.Sdk.Web asset graph. Domain.Tests in particular should have no knowledge of any layer above Domain. HealthResponseBuilder should either live in API.Tests directly or TestUtilities should be split into a utilities-only library without the API reference.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: TestUtilities.csproj has a ProjectReference to AHKFlowApp.API solely for HealthResponseBuilder. All 5 test projects reference TestUtilities, creating transitive API dependencies in Domain.Tests, Application.Tests, etc. HealthResponseBuilder is not used by any test currently. This violates the project's explicit Clean Architecture layering rules.",
+      "severity_justification": "Domain.Tests and Application.Tests gain an unwanted transitive dependency on the full API/Infrastructure/Web stack, violating the project's stated Clean Architecture constraints. As the codebase grows this will cause increased build coupling and confusion about layer boundaries.",
+      "category_justification": "Architectural boundary violation — lower-layer test projects transitively depend on a higher layer (API) through the shared TestUtilities project, violating the project's explicit Clean Architecture rules.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.TestUtilities/Fixtures/SqlContainerFixture.cs",
+      "start_line": 15,
+      "end_line": 15,
+      "message": "DisposeAsync is declared async Task and immediately awaits _container.DisposeAsync(). MsSqlContainer implements IAsyncDisposable whose DisposeAsync returns ValueTask. Wrapping this in an async state machine is unnecessary overhead. The correct minimal form is: public Task DisposeAsync() => _container.DisposeAsync().AsTask(). AsyncFixer (included in Application.Tests and Infrastructure.Tests) would flag this as AF0001 if it were also applied to TestUtilities, which it currently is not.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: DisposeAsync is `async Task` with a single `await _container.DisposeAsync()`. MsSqlContainer.DisposeAsync() returns ValueTask (IAsyncDisposable), making the async state machine unnecessary. The same class already uses the direct expression-body pattern for InitializeAsync. The fix `.AsTask()` is correct and consistent. AsyncFixer is confirmed absent from TestUtilities.csproj.",
+      "severity_justification": "Unnecessary async state machine allocation in test fixture dispose — negligible runtime impact, but inconsistent with InitializeAsync style in the same class and the project's use of AsyncFixer in other test projects.",
+      "category_justification": "Unnecessary async state machine allocation where a direct ValueTask.AsTask() forwarding would suffice, avoiding the overhead.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.UI.Blazor.Tests/Pages/HealthPageTests.cs",
+      "start_line": 86,
+      "end_line": 100,
+      "message": "Health_WhenRefreshClicked_RefetchesData is declared as public Task rather than public async Task and ends with return _apiClient.Received(2).GetHealthAsync(Arg.Any<CancellationToken>()). The NSubstitute Received(2) assertion is synchronous (throws immediately on mismatch), but the method then returns the Task<HealthResponse?> produced by calling GetHealthAsync on the substitute in verification mode. xUnit awaits this task. This is a non-standard pattern that conflates the assertion call with the returned task value, making it harder to read and potentially confusing when assertion failures are reported. Use async Task with await instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the method is `public Task` and returns `_apiClient.Received(2).GetHealthAsync(...)`. While functionally correct (Received(2) is synchronous, the returned Task is from the setup and completes normally), the pattern conflates the assertion mechanism with the return value. It's non-standard and harder to read than the conventional `async Task` + `await` form.",
+      "severity_justification": "No correctness bug — the assertion fires synchronously and the test will fail/pass correctly. Pure readability/convention concern in test code.",
+      "category_justification": "Non-standard async test pattern in NSubstitute verification that obscures the assertion intent, inconsistent with the project's other async test methods which use async/await.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.API.Tests/Middleware/GlobalExceptionMiddlewareTests.cs",
+      "start_line": 70,
+      "end_line": 95,
+      "message": "Same WithWebHostBuilder resource leak as the first test: the factory returned by _factory.WithWebHostBuilder(...) is not stored or disposed, leaking a second TestServer per class instance. Because xUnit creates one class instance per [Fact], two concurrent or sequential tests in this class each leak a full TestServer.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same — parent factory cleanup handles it",
+      "severity_justification": "Same as Finding 1 — test resource leak with no production impact. Not merge-blocking but does cause unreleased resources per test run.",
+      "category_justification": "Resource leak in test infrastructure — WebApplicationFactory instances created by WithWebHostBuilder are heavyweight and must be disposed.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.API.Tests/Health/HealthControllerTests.cs",
+      "start_line": 12,
+      "end_line": 16,
+      "message": "Each test method in HealthControllerTests creates its own HttpClient via _factory.CreateClient() but the factory itself (_factory) is a field created per class instance. Since xUnit creates a new class instance per [Fact] (3 tests = 3 instances = 3 WebApplicationFactories), and Program.cs runs MigrateAsync() during startup for each factory in Development environment, three separate test server startups and migration runs occur against the same SQL container. The old HealthApiFactory was shared across tests via ICollectionFixture. The new approach creates one factory per test, which is heavier on resource use. A single shared factory (via IClassFixture<CustomWebApplicationFactory>) would be more efficient, but would require the factory to accept SqlContainerFixture differently.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: _factory is a field initialized per class instance, xUnit creates one class instance per [Fact] (3 tests = 3 factories), Program.cs runs MigrateAsync() in Development which CustomWebApplicationFactory doesn't override, and the old HealthApiFactory was shared via ICollectionFixture. The new approach creates 3 TestServer instances and 3 migration runs instead of 1.",
+      "severity_justification": "Each test method spins up a full TestServer with DI composition and runs MigrateAsync() against the SQL container. With 3 tests this is 3x the startup cost of the old shared-factory approach, and this pattern is replicated in ProgramTests and GlobalExceptionMiddlewareTests too, compounding the overhead.",
+      "category_justification": "Unnecessary repeated TestServer startups and migration runs due to per-test-method factory creation, significantly increasing test suite execution time compared to the prior shared-factory approach.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.Application.Tests/Behaviors/ValidationBehaviorTests.cs",
+      "start_line": 12,
+      "end_line": 12,
+      "message": "TestRequest is declared internal at file scope (outside the test class) to enable NSubstitute proxying of IValidator<TestRequest>. This type leaks into the AHKFlowApp.Application.Tests assembly namespace and could conflict with or confuse future TestRequest types in the same project. Scoping it as a private nested record inside the test class is preferred; the comment acknowledges this workaround but the actual driver (strongly-named FluentValidation assembly requiring DynamicProxyGenAssembly2 access) is already handled by AssemblyInfo.cs. Since FluentValidation is strongly named and the InternalsVisibleTo for DynamicProxyGenAssembly2 is in place, a nested private record should work without the file-scope workaround.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding's suggested fix ('nested private record should work') is factually incorrect. InternalsVisibleTo only grants access to 'internal' members, not 'private' ones. A private nested type is inaccessible to DynamicProxyGenAssembly2 regardless of the InternalsVisibleTo attribute. The current code (internal at file scope) is correct for the stated constraint.",
+      "severity_justification": "The suggested fix would break NSubstitute proxying, making this a potentially harmful recommendation. However the current code is fine, so there's no actual issue to fix.",
+      "category_justification": "Misidentified issue with NSubstitute proxy generation constraints and C# type visibility rules in test code.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.Application.Tests/Behaviors/ValidationBehaviorTests.cs",
+      "start_line": 28,
+      "end_line": 119,
+      "message": "In `ValidationBehaviorTests`, several tests replace `RequestHandlerDelegate<string>` with a local function that sets a boolean flag (`nextCalled`). This approach is less robust and idiomatic than using a mock from a library like NSubstitute. The current implementation could be simplified and made more consistent with other tests in the file by using `Substitute.For<RequestHandlerDelegate<string>>()` and asserting on `Received()` or `DidNotReceive()`, which is already being done partially in other tests within the same class.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding mischaracterizes the code: no test in the class uses NSubstitute for RequestHandlerDelegate, so there's no inconsistency with an established pattern. The local function approach with a boolean flag is clean, readable, and correct. The suggestion to use Substitute.For<RequestHandlerDelegate<string>>() would add unnecessary complexity for a simple invocation check. No concrete correctness or robustness problem is identified.",
+      "severity_justification": "Pure style preference with no correctness or reliability impact. The boolean flag pattern is idiomatic and unambiguous.",
+      "category_justification": "Stylistic suggestion about test implementation pattern with no functional impact.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.API.Tests/Middleware/GlobalExceptionMiddlewareTests.cs",
+      "start_line": 31,
+      "end_line": 34,
+      "message": "The integration tests for `GlobalExceptionMiddleware` add logging services but do not provide a test logger implementation or factory. In `Middleware_WhenUnhandledExceptionThrown_Returns500ProblemDetails`, the middleware logs an error, but without a configured logger provider, this log will be discarded. This makes it impossible to assert that the correct error was logged, which is a key responsibility of the exception handling middleware.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The existing tests correctly verify their stated behavior (HTTP status codes and ProblemDetails response shape). services.AddLogging() is needed to satisfy DI for the middleware constructor, not as a testing decision. The finding argues that logging should also be verified — a missing coverage concern — but there's no bug in the existing tests, and the argument is generic enough to apply to any exception middleware test.",
+      "severity_justification": "No correctness issue with existing tests. The finding identifies a missing test scenario (log assertion) that is a minor coverage gap at most.",
+      "category_justification": "Points to a missing test coverage area (logging verification) rather than a concrete bug in the existing tests.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.API/Middleware/GlobalExceptionMiddleware.cs",
+      "start_line": 21,
+      "end_line": 29,
+      "message": "The `WriteAsJsonAsync` method is called with a `ProblemDetails` object, but the `options` parameter is explicitly set to `null`. This prevents the use of any default or configured `JsonSerializerOptions` from the application's dependency injection container, which could lead to inconsistent JSON serialization behavior between this middleware and the rest of the application (e.g., different casing, null handling).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim that options:null prevents DI-configured JsonSerializerOptions from being used is factually incorrect. WriteAsJsonAsync with options=null calls ResolveSerializerOptions which resolves IOptions<JsonOptions> from DI. The app also configures no custom JSON options, so there's no inconsistency between controller serialization and this middleware.",
+      "severity_justification": "Based on an incorrect premise about WriteAsJsonAsync behavior. No actual serialization inconsistency exists in this codebase.",
+      "category_justification": "Finding makes a factually wrong claim about how WriteAsJsonAsync handles null options in relation to DI.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.API.Tests/Collections.cs",
+      "start_line": 7,
+      "end_line": 7,
+      "message": "The file `tests/AHKFlowApp.API.Tests/Collections.cs` defines a `WebApiCollection` which is already defined in `tests/AHKFlowApp.TestUtilities/Fixtures/Collections.cs` (not part of this PR, but used by it). This new, duplicate definition is unnecessary and could lead to confusion. The test files in `AHKFlowApp.API.Tests` should use the shared definition from `TestUtilities` by importing `AHKFlowApp.TestUtilities.Fixtures`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims WebApiCollection is already defined in tests/AHKFlowApp.TestUtilities/Fixtures/Collections.cs, but that file does not exist at this SHA. TestUtilities/Fixtures/ only contains SqlContainerFixture.cs and CustomWebApplicationFactory.cs. WebApiCollection is defined exactly once in tests/AHKFlowApp.API.Tests/Collections.cs.",
+      "severity_justification": "The premise is factually wrong — there is no duplicate definition to resolve.",
+      "category_justification": "Would be a duplication/organization concern if the claim were true, but it isn't.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.Infrastructure.Tests/Collections.cs",
+      "start_line": 7,
+      "end_line": 7,
+      "message": "The file `tests/AHKFlowApp.Infrastructure.Tests/Collections.cs` defines a `SqlServerCollection` which is already defined in `tests/AHKFlowApp.TestUtilities/Fixtures/Collections.cs` (not part of this PR, but used by it). This new, duplicate definition is unnecessary. The test files in `AHKFlowApp.Infrastructure.Tests` should use the shared definition from `TestUtilities` by importing `AHKFlowApp.TestUtilities.Fixtures`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims SqlServerCollection is already defined in tests/AHKFlowApp.TestUtilities/Fixtures/Collections.cs, but that file does not exist at this SHA. SqlServerCollection is defined exactly once in tests/AHKFlowApp.Infrastructure.Tests/Collections.cs. Same false premise as Finding 11.",
+      "severity_justification": "The premise is factually wrong — there is no duplicate definition.",
+      "category_justification": "Would be a duplication concern if true, but the referenced source file does not exist.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.Infrastructure.Tests/Persistence/MigrationTests.cs",
+      "start_line": 15,
+      "end_line": 20,
+      "message": "The `CreateContext` helper method modifies the connection string to use a unique database name, but it does so by replacing \"master\" with the provided `databaseName`. This string replacement is fragile and will fail if the original connection string from `SqlContainerFixture` changes its format or does not contain \"master\". A more robust approach would be to use `SqlConnectionStringBuilder` to parse the connection string, modify the `InitialCatalog` property, and then rebuild the connection string.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding describes fragile string replacement (connectionString.Replace('master', databaseName)) as the issue, but the actual code at this SHA already uses SqlConnectionStringBuilder with InitialCatalog = databaseName — exactly the robust approach the finding recommends. The issue described does not exist in the committed code.",
+      "severity_justification": "The finding is based on a factually incorrect description of the code. No action needed.",
+      "category_justification": "Would be a connection string parsing reliability concern if the string.Replace approach were actually used, but it isn't.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.TestUtilities/Builders/HealthResponseBuilder.cs",
+      "start_line": 42,
+      "end_line": 42,
+      "message": "The `Build` method uses `new Dictionary<string, string>(_checks)` to create a copy of the checks dictionary. While functional, this can be simplified using the more modern and concise collection expression `new(_checks)`, which is also used elsewhere in the project. The `#pragma warning disable IDE0028` suggests awareness of this, but it is better to use the modern syntax for consistency.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims the code uses `new Dictionary<string, string>(_checks)` and should be simplified to `new(_checks)`, but the actual code already uses `new(_checks)`. The pragma disable IDE0028 is intentional to suppress an analyzer suggestion that would change semantics. The issue described does not exist in the committed code.",
+      "severity_justification": "The finding is factually wrong about the current code. No change needed.",
+      "category_justification": "Would be a minor style/modernization suggestion if true, but the code already uses the suggested form.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.Application.Tests/AssemblyInfo.cs",
+      "start_line": 1,
+      "end_line": 4,
+      "message": "A new file `AssemblyInfo.cs` was added with an `InternalsVisibleTo` attribute for `DynamicProxyGenAssembly2`. While this is necessary for NSubstitute to proxy internal types from a signed assembly, FluentValidation is not signed, making this attribute unnecessary. This can be removed, simplifying the project configuration.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding recommends removing the InternalsVisibleTo attribute entirely, but this would break NSubstitute — DynamicProxy needs this attribute to access the internal TestRequest type when proxying IValidator<TestRequest>. Whether FluentValidation is signed or not is irrelevant; the attribute is needed because TestRequest is internal. The public key may be redundant (test assembly isn't strongly named) but the attribute itself cannot be removed.",
+      "severity_justification": "The suggested fix is harmful — removing the attribute would cause NSubstitute proxy creation to fail for all tests mocking IValidator<TestRequest>, breaking the test suite.",
+      "category_justification": "Incorrect advice about test infrastructure (NSubstitute/DynamicProxy interop) that would break existing tests if followed.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.API/Middleware/GlobalExceptionMiddleware.cs",
+      "start_line": 21,
+      "end_line": 33,
+      "message": "The `ValidationException` case explicitly sets `context.Response.StatusCode` to 400 but incorrectly assumes `context.Response.ContentType` is always `application/problem+json`. This could cause inaccurate or missing `Content-Type` headers under certain middleware configurations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims the code assumes ContentType is application/problem+json, but the code explicitly sets it via the contentType parameter of WriteAsJsonAsync in both catch blocks. The PR moved from manual ContentType assignment to the contentType parameter — both are explicit. No assumption is made; the content type is always set.",
+      "severity_justification": "The finding is factually incorrect about the code's behavior. No content-type issue exists.",
+      "category_justification": "Incorrect claim about how the middleware sets the response Content-Type header.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.API/Middleware/GlobalExceptionMiddleware.cs",
+      "start_line": 34,
+      "end_line": 43,
+      "message": "The `Exception` handler does not propagate stack information or a detailed error message in non-production environments, which may hinder debugging.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The exception is fully logged with stack trace via logger.LogError(ex, ...). Not exposing stack traces in HTTP responses is intentional good practice, not a debugging hindrance. The finding is a generic 'maybe add dev-mode detail' suggestion that identifies no concrete bug and could apply to any exception middleware. The logging infrastructure is the correct place for this information.",
+      "severity_justification": "Generic debatable suggestion with no concrete impact on correctness or reliability. Full exception details are available through logs.",
+      "category_justification": "Generic best-practice suggestion about development-mode error verbosity with no concrete code defect identified.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.Application.Tests/Behaviors/ValidationBehaviorTests.cs",
+      "start_line": 99,
+      "end_line": 113,
+      "message": "The `ValidationBehaviorTests.Handle_WhenMultipleValidatorsFail_CombinesAllErrors` test does not guarantee the sequence of combined validation errors, which could lead to flakiness if order is important.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test's only assertion is `HaveCount(2)` — it never checks error order or specific error content, so ordering cannot cause flakiness. Additionally, Task.WhenAll preserves input sequence order, making the result order deterministic anyway. The described flakiness risk does not exist for this test.",
+      "severity_justification": "The finding identifies a non-existent risk — the assertion is order-agnostic and the behavior is deterministic.",
+      "category_justification": "Incorrect claim about test flakiness due to ordering when the assertion is purely about count.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.Infrastructure.Tests/Persistence/MigrationTests.cs",
+      "start_line": 50,
+      "end_line": 55,
+      "message": "The test `Migrate_IsIdempotent_RunsTwiceWithoutError` assumes idempotency for migrations, but does not assert expectations to ensure that no schema-altering operations occur on the second migration pass.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test correctly verifies its stated claim: that MigrateAsync() can be called twice without error. Asserting zero schema operations on the second run would be additional depth but is not required for the test to be correct. The finding is generic 'test more things' advice without identifying a concrete defect.",
+      "severity_justification": "The test is correct and meaningful as written. The suggested enhancement is optional testing depth, not a correctness issue.",
+      "category_justification": "Generic suggestion to add additional assertions to a test that already correctly verifies its stated behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.TestUtilities/Fixtures/CustomWebApplicationFactory.cs",
+      "start_line": 10,
+      "end_line": 27,
+      "message": "The `CustomWebApplicationFactory` directly removes descriptors without verifying the expected number or type of injected `AppDbContext` or `DbContextOptions<AppDbContext>` instances, potentially introducing non-deterministic behavior in the pipeline.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The pattern is the standard canonical approach for WebApplicationFactory DbContext replacement. The code is deterministic: removes all matching descriptors and re-registers with the test connection. The claimed 'non-deterministic behavior' has no concrete scenario — the current AddInfrastructure registration is well-understood and the removal/re-add always produces a correct test setup.",
+      "severity_justification": "Generic suggestion to add defensive checks to test infrastructure following a correct, standard pattern. No concrete failure scenario identified.",
+      "category_justification": "Generic advice about defensive programming in test fixture setup with no demonstrated failure mode.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.TestUtilities/Fixtures/SqlContainerFixture.cs",
+      "start_line": 12,
+      "end_line": 17,
+      "message": "Direct use of the `Testcontainers` SQL Server container lifecycle does not include validation of whether the container is reachable after being started, which might lead to flaky tests in high-latency setups.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Testcontainers.NET's MsSqlContainer.StartAsync() includes built-in wait strategies that block until SQL Server port 1433 is available and the database is ready to accept connections. The claim that reachability validation is absent is factually incorrect — this is core Testcontainers functionality.",
+      "severity_justification": "Based on a false premise about Testcontainers behavior. No real flakiness risk from the described cause.",
+      "category_justification": "Incorrect claim about test infrastructure (Testcontainers readiness handling) that doesn't reflect the actual library behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.UI.Blazor.Tests/Pages/HealthPageTests.cs",
+      "start_line": 96,
+      "end_line": 102,
+      "message": "The `HealthPageTests.Health_WhenRefreshClicked_RefetchesData` test does not explicitly check whether the second API call returns a reliably updated `HealthResponse`. This could mask bugs in fetching logic.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test correctly verifies its stated behavior: that GetHealthAsync is called twice when the refresh button is clicked. The finding asks for additional coverage (asserting UI state after refresh with different data) but identifies no bug in the existing test. Other tests in the class already cover data display. This is a generic 'test more things' suggestion.",
+      "severity_justification": "Pure missing coverage suggestion with no defect identified in the existing test logic.",
+      "category_justification": "Generic suggestion to expand test coverage beyond what the test's stated scope requires.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.API.Tests/Health/HealthControllerTests.cs",
+      "start_line": 50,
+      "end_line": 52,
+      "message": "The assertion in `GetHealth_InfrastructureEndpoint_ReturnsHealthyText` indirectly relies on the `/health` infrastructure route. Any future route changes will likely break the test without clear failure feedback.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Integration tests are designed to fail when the API contract changes — that's their purpose. A route change to /health would cause a clear 404 failure on the status code assertion. The finding mischaracterizes intentional integration test behavior as a weakness, and claims 'no clear failure feedback' when the failure (404 vs 200) is in fact immediately clear.",
+      "severity_justification": "The finding describes intended integration test behavior as a problem. No real issue exists.",
+      "category_justification": "Misidentified concern about integration test design — route dependency is expected and desirable in integration tests.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.Application.Tests/Behaviors/ValidationBehaviorTests.cs",
+      "start_line": 69,
+      "end_line": 96,
+      "message": "None of the validation tests simulate scenarios with multiple validators. This absence could make the test coverage incomplete for behaviors where validations might interact.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. Handle_WhenMultipleValidatorsFail_CombinesAllErrors (lines 96-119) explicitly tests multiple validators by creating validator1 and validator2 and passing both to ValidationBehavior([validator1, validator2]). The claimed absence of multiple-validator test coverage does not exist.",
+      "severity_justification": "The finding is based on an incorrect reading of the test file. No real coverage gap exists for the described scenario.",
+      "category_justification": "Incorrect claim about test coverage that is directly contradicted by an existing test in the same file.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Backend/AHKFlowApp.API/Program.cs",
+      "start_line": 83,
+      "end_line": 85,
+      "message": "Refactoring to make `Program` partial may introduce risks if other partial `Program` classes or merged constructs are introduced, potentially creating ambiguous or conflicting behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "public partial class Program { } is the canonical Microsoft-recommended pattern for WebApplicationFactory<Program> access in integration tests. There is exactly one such definition in the codebase. The finding's risk is entirely hypothetical ('if other partial classes are introduced') and applies generically to any partial class usage anywhere. No concrete problem is identified.",
+      "severity_justification": "Hypothetical future risk with no current concrete issue. The pattern is standard and necessary for the test infrastructure to work.",
+      "category_justification": "Generic concern about potential misuse of the partial keyword with no specific current issue in the codebase.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.API.Tests/Program/ProgramTests.cs",
+      "start_line": 7,
+      "end_line": 7,
+      "message": "The folder/namespace `AHKFlowApp.API.Tests.Program` shadows the `Program` class declared at the assembly root (used by `WebApplicationFactory<Program>` in `CustomWebApplicationFactory`). While this currently compiles because no code inside this namespace references `Program` unqualified, it is a latent footgun: any future code added here that references `Program` will resolve to the namespace and produce confusing compiler errors. Consider renaming the folder to something like `Startup` or `Hosting` (and the namespace accordingly) to avoid the collision.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `Program` is in the global namespace (no namespace declaration in Program.cs), and the test file uses `namespace AHKFlowApp.API.Tests.Program`. Within that namespace, unqualified `Program` would resolve to the namespace segment rather than the global type. Currently safe because no code inside this namespace references `Program` directly, but any future code doing so (e.g. `WebApplicationFactory<Program>`) would get confusing compiler errors.",
+      "severity_justification": "Current code compiles and tests pass. The issue is purely latent — only affects future code added within the namespace. Renaming would be a trivial refactor.",
+      "category_justification": "A naming collision between a namespace segment and a type name — a readability/convention issue that creates a latent footgun for future contributors.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/AHKFlowApp.Infrastructure.Tests/Persistence/AppDbContextTests.cs",
+      "start_line": 13,
+      "end_line": 30,
+      "message": "`AppDbContextTests` and `MigrationTests` both contain an identical `CreateContext(string? databaseName = null)` helper that builds a `DbContextOptions<AppDbContext>` from the fixture's connection string with an overridden `InitialCatalog`. Consider extracting this into a small helper (e.g. a static method on a shared test base, or an extension on `SqlContainerFixture` placed in `AHKFlowApp.TestUtilities`) so the per-database connection-string logic lives in one place and stays consistent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: both `AppDbContextTests.CreateContext` (lines 13–30) and `MigrationTests.CreateContext` are byte-for-byte identical — same signature, same `SqlConnectionStringBuilder`/`InitialCatalog` logic, same `DbContextOptionsBuilder` setup. The finding correctly identifies real duplication that could drift (e.g. if `EnableRetryOnFailure` options change or the connection string manipulation logic needs updating).",
+      "severity_justification": "The duplication is contained within the same test project, involves only two copies, and the logic is simple. Drift risk is real but low given the small scope.",
+      "category_justification": "DRY violation — identical helper method duplicated across two test classes in the same project.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".claude/hooks/pre-bash-guard.sh",
+      "start_line": 6,
+      "end_line": 6,
+      "message": "This hook only reads `CLAUDE_TOOL_INPUT`, while the other Claude hooks in this repo parse the hook payload from stdin and `.claude/settings.json` does not set this environment variable when invoking the command. In that setup `COMMAND` is empty, so the destructive-command checks below never match and the guard silently allows the operations it is meant to block.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `pre-bash-guard.sh` uses `COMMAND=\"${CLAUDE_TOOL_INPUT}\"` (env var), while both `pre-commit-format.ps1` and `post-edit-format.ps1` explicitly state 'Claude Code passes JSON tool input' via stdin and read accordingly. `CLAUDE_TOOL_INPUT` is never set by Claude Code, so `COMMAND` is always empty, all grep checks fail to match, and the guard exits 0 unconditionally — silently allowing every operation it was meant to block.",
+      "severity_justification": "The guard is entirely non-functional, but the `settings.json` deny rules provide overlapping protection for the same destructive operations. The allow-listing nuance (e.g. permitting `rm -rf node_modules`) is lost, but the main safety net is elsewhere.",
+      "category_justification": "The hook reads input from the wrong source, causing the guard logic to never execute — a functional correctness bug in the security hook.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".gitignore",
+      "start_line": 428,
+      "end_line": 430,
+      "message": "The coverage design added in this PR documents running `dotnet test --results-directory ./coverage` and explicitly lists `coverage/` as a gitignore addition, but this change only ignores `coverage-report/` and `**/TestResults/`. Contributors following the documented coverage command will still get an unignored `coverage/` directory that can be accidentally committed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Final committed plan uses `./TestResults`; gitignore correctly covers it",
+      "severity_justification": "Developer tooling inconsistency — no production impact, and the plan/implementation are internally consistent. The risk is accidental commits of coverage data by contributors following the spec rather than the plan.",
+      "category_justification": "The spec document added in this PR is inconsistent with the actual gitignore configuration: it documents a different output directory and a missing gitignore entry.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".claude/hooks/pre-bash-guard.sh",
+      "start_line": 25,
+      "end_line": 27,
+      "message": "This only blocks `git checkout .`, but the common destructive form `git checkout -- .` does not match because `--` appears between `checkout` and `.`. That command will discard unstaged changes while bypassing this guard, so include the optional `--` form (and any other restore variants you intend to block).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the regex `git\\s+checkout\\s+\\.` requires whitespace immediately followed by `.` after `checkout`. For `git checkout -- .`, the `--` separates them, so the regex fails to match. The destructive form `git checkout -- .` would bypass the check. The finding is factually correct.",
+      "severity_justification": "The guard is also entirely non-functional due to the CLAUDE_TOOL_INPUT input issue (Finding 3), making this a secondary gap in an already-broken guard. The settings.json deny list also doesn't cover this command. Low impact in isolation.",
+      "category_justification": "A logic error in the regex pattern — a destructive command variant bypasses the intended guard check.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

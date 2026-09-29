@@ -1,0 +1,471 @@
+{
+  "pr_key": "cjolivier01_hm-cupano_14-03aa0246",
+  "pr": {
+    "repo": "https://github.com/cjolivier01/hm-cupano",
+    "pr_number": 14,
+    "base": "7abef34a645daae09b8b0617c2abb133a491d7f6",
+    "head": "03aa02465ce1ab5aae982ace21812b35cbe04eb3"
+  },
+  "findings": [
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 134,
+      "end_line": 134,
+      "message": "ctx.execute for the FFmpeg build has no timeout parameter. Bazel's default is 600 seconds (10 minutes). Building FFmpeg with CUDA support from source takes 30–60+ minutes on typical machines, so the build will be silently killed with a non-zero return code, triggering the fail() call and making the rule appear broken rather than slow.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at line 134: ctx.execute has no timeout parameter, so it uses Bazel's 600-second default. The build script downloads, configures, compiles, and installs FFmpeg with CUDA/NVENC support — a process that regularly exceeds 10 minutes — making silent timeout-induced failures highly likely.",
+      "severity_justification": "Without a sufficient timeout, nearly every cold-cache FFmpeg CUDA build will silently time out and report a misleading failure. This makes the repository rule effectively broken on the first (uncached) run on any typical machine.",
+      "category_justification": "The issue is about a missing operational parameter (timeout) on a long-running subprocess, causing a fault-tolerance failure in the build system.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 61,
+      "end_line": 64,
+      "message": "_build_env copies ctx.os.environ in its entirety into the execution environment, but the repository_rule's environ attribute only tracks a subset of variables. Environment variables that affect the build outcome (e.g. LD_LIBRARY_PATH, PKG_CONFIG_LIBDIR, CPATH, LIBRARY_PATH) are propagated to configure and make but are not listed in environ, so changes to them do not invalidate Bazel's repository cache. This causes stale cached builds after system library changes.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: _build_env at lines 61-64 copies all of ctx.os.environ to the execution environment. The ffmpeg_linux_repository environ list only tracks 12 variables and omits LD_LIBRARY_PATH, PKG_CONFIG_LIBDIR, CPATH, LIBRARY_PATH, and others that affect configure/make output. These unlisted variables are propagated to the build but don't invalidate the repository cache, causing stale cached builds.",
+      "severity_justification": "Stale repository caches from untracked environment changes are a real operational hazard but typically surfaced only after a system library update, not on every build. Manually running bazel clean works around it, so the impact is intermittent rather than constant.",
+      "category_justification": "The issue is about incorrect cache invalidation in the build system — a Bazel repository rule dependency tracking problem that causes stale builds.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 34,
+      "end_line": 39,
+      "message": "Several configure flags unconditionally require optional system libraries: --enable-libvidstab, --enable-libfontconfig, --enable-libfreetype, --enable-libfribidi, --enable-libharfbuzz, and --enable-vaapi. In FFmpeg 6.x, passing --enable-<lib> when that library is not installed causes configure to abort with an error (unlike the auto-detect default). The rule will hard-fail on any machine that lacks these libraries, which is not a documented prerequisite of the repository rule.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: --enable-libfontconfig, --enable-libfreetype, --enable-libfribidi, --enable-libharfbuzz, --enable-libvidstab, --enable-vaapi are all in _FFMPEG_CONFIGURE_FLAGS. In FFmpeg 6.x these flags cause configure to abort if the library is missing, unlike auto-detection. They are undocumented prerequisites with no corresponding install guidance in the repo.",
+      "severity_justification": "The rule will hard-fail on any machine lacking any of these optional libraries, but this is a build-time (not runtime) issue that a developer can work around by installing the missing packages. The fix is clear once identified.",
+      "category_justification": "Undocumented hard dependencies on optional system libraries cause brittle build failures in the repository rule.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "buildfiles/third_party/opencv_linux_defs.bzl",
+      "start_line": 67,
+      "end_line": 87,
+      "message": "_REQUIRED_OPENCV_LIBS now includes cudacodec, cudaimgproc, and cudawarping, making them mandatory for every caller of opencv_library(). _ensure_required_libs() is called unconditionally from opencv_library(), so any target that depends on @opencv_linux//:opencv will fail at analysis time on systems without a CUDA-enabled OpenCV build. This is a breaking change for non-CUDA configurations and machines with a stock OpenCV package.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: _REQUIRED_OPENCV_LIBS at the HEAD (03aa0246) includes cudacodec, cudaimgproc, and cudawarping. _ensure_required_libs() is called unconditionally from opencv_library(), so any system without CUDA-enabled OpenCV libs will fail at analysis time. Confirmed to be introduced in this PR's commit (03aa024).",
+      "severity_justification": "This breaks Bazel analysis (not just runtime) on any system with a standard OpenCV install, preventing even dry runs or queries. The project is CUDA-focused, so it may be intentional, but it's an undocumented hard requirement that blocks all users without CUDA OpenCV.",
+      "category_justification": "The unconditional CUDA library requirement is a behavior change that makes the library's analysis-time contract stricter than its actual runtime semantics — linkopts only include CPU libs, yet CUDA libs are required to be present.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/ffmpeg_cuda_runtime_test.sh",
+      "start_line": 22,
+      "end_line": 27,
+      "message": "The test is not tagged manual, so it runs in the default test suite. When no GPU is present, require_cmd nvidia-smi exits with code 1 (command not found) or the subsequent nvidia-smi query exits with code 1, making the test fail rather than skip. Bazel has no built-in skip mechanism: exit 1 is a hard test failure. Any CI environment without a GPU will fail the entire test run. The test should either be tagged manual, use target_compatible_with to restrict it to GPU platforms, or exit 0 with a skip message when no GPU is detected.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the test is tagged 'local' and 'requires-gpu' but not 'manual'. No --test_tag_filters=-requires-gpu is in .bazelrc or any CI config. The script exits 1 (not 0) when nvidia-smi is missing, which Bazel treats as a test failure, not a skip. Any CI run of //... without a GPU will fail.",
+      "severity_justification": "Causes hard test failures in any CI environment without a GPU rather than gracefully skipping, but doesn't affect production correctness. The 'requires-gpu' tag signals intent and the fix (adding a filter or exiting 0 on missing GPU) is straightforward.",
+      "category_justification": "A CI/test configuration issue that makes the test suite fail on non-GPU machines instead of skipping hardware-dependent tests gracefully.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 33,
+      "end_line": 33,
+      "message": "--enable-rpath causes the FFmpeg build to embed the Bazel output-base path (e.g. /root/.cache/bazel/_bazel_root/.../ffmpeg_linux/install/lib) into the RPATH of every installed shared library. This path is machine-specific and not stable across users, CI agents, or remote cache consumers. Any artifact produced by a remote cache hit or used on a different machine will have a broken RPATH, causing runtime linker failures.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: --enable-rpath is at line 33 in _FFMPEG_CONFIGURE_FLAGS, and --prefix is set to ctx.path('install'), an absolute Bazel output-base path. The generated BUILD.bazel has no -Wl,-rpath linkopts. The baked-in RPATH is machine-specific and will break if artifacts are shared across machines or remote-cached.",
+      "severity_justification": "Broken RPATH causes runtime linker failures when FFmpeg artifacts are used outside their build machine. Impacts remote cache sharing and multi-agent CI, but single-machine local builds are unaffected.",
+      "category_justification": "A build configuration choice (--enable-rpath with an absolute path) that causes portability failures in distributed build/cache scenarios.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 114,
+      "end_line": 114,
+      "message": "--nvccflags is set to target only the single lowest supported GPU architecture detected by nvcc --list-gpu-arch (e.g. compute_50 on CUDA 12). FFmpeg's own CUDA kernels are compiled exclusively for that one architecture. On CUDA 12, compute_50 is the minimum, so all FFmpeg CUDA kernels are compiled only for Maxwell-era GPUs. The PTX fallback still works at runtime, but PTX JIT compilation on each first invocation adds latency, and newer architecture-specific optimizations are never used. The nvccflags should include the actual runtime GPU arch in addition to a minimum baseline.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: _detect_nvcc_arch uses 'nvcc --list-gpu-arch | head -n1' (the code comment confirms 'lowest nvcc-supported arch'). The --nvccflags at line 114 targets only that single arch. Newer GPUs use PTX JIT fallback. The finding is factually correct.",
+      "severity_justification": "The performance impact is real but limited: NVENC/NVDEC (the primary use) are hardware-accelerated and unaffected by nvccflags; CUDA filter kernels use PTX JIT (cached after first run). The choice is intentional and documented in a comment.",
+      "category_justification": "The issue is about suboptimal GPU code generation: compiling only for the minimum arch rather than the target arch, causing PTX JIT overhead and foregone architecture-specific optimizations.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "toolchain_env.sh",
+      "start_line": 93,
+      "end_line": 96,
+      "message": "GPU architectures above sm_90 (e.g. NVIDIA Blackwell at compute_100/compute_101) are silently clamped to sm_90 with no warning emitted. The caller receives sm_90 in CUDA_BAZEL_ARCHS without any indication that the detected GPU is actually newer. When a Blackwell or future GPU is present and the rule compiles kernels targeting only sm_90, PTX JIT fallback is used but all GPU-specific paths for newer ISA features are skipped. A warning to stderr would at minimum surface the downgrade.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at lines 93-96: arch > 90 silently returns sm_90 with no warning to stderr. The comment documents the intent. The finding is factually correct that no diagnostic is emitted when the GPU arch is clamped.",
+      "severity_justification": "The clamp is intentional and documented (rules_cuda tops out at sm_90). PTX JIT fallback works correctly. The only gap is the absence of a user-facing warning, which is a minor UX issue rather than a functional bug.",
+      "category_justification": "The issue is about missing diagnostic output (a warning to stderr) when a known intentional limitation silently downgrades the detected GPU architecture.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 137,
+      "end_line": 142,
+      "message": "If `nvcc` is not found in the specified paths, the script fails without suggesting how to resolve the missing `nvcc` dependency. This could cause confusion for users and should include remediation steps, such as verifying CUDA environment variables or installation paths.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The fail() message at line 98 already includes the CUDA home path that was searched. The finding is a generic suggestion to 'add remediation steps' that could be applied to any error message in any codebase. The cited line numbers (137-142) don't match the actual nvcc check (lines 96-98). This is sub-threshold boilerplate advice.",
+      "severity_justification": "Even if acted upon, adding remediation text to an error message that already includes the searched path would have negligible impact.",
+      "category_justification": "The suggestion is about error message quality/usability, not a functional defect.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 160,
+      "end_line": 164,
+      "message": "The detected NVCC architecture default falls back to `75` if detection fails, which may not be optimal for certain environments. This hardcoded value might result in suboptimal builds on newer GPUs or devices with different compute capabilities.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The fallback to '75' is a reasonable Turing-era default and only triggers if nvcc --list-gpu-arch fails after nvcc itself was confirmed present. The function is intentionally designed to return the lowest arch for portability (documented in the comment). The 'suboptimal on newer GPUs' concern duplicates Finding 7 and is generic advice without identifying a concrete distinct issue. Line numbers are also wrong (code is at line 87, not 160-164).",
+      "severity_justification": "The fallback only fires in an unusual edge case, and even the normal code path intentionally returns a low arch for portability — making this fallback consistent with the design.",
+      "category_justification": "The concern is about GPU code generation efficiency, same as Finding 7.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 214,
+      "end_line": 218,
+      "message": "The FFmpeg `configure` step applies flags unconditionally, even for hardware features like NVENC, NVDEC, and CUVID. This could result in configuration errors or non-functional binaries if these features are unavailable in the build environment.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "NVENC/NVDEC/CUVID are the stated purpose of the rule, not incidental flags. The rule enforces nvcc presence already. Line numbers (214-218) are wrong for a 243-line file. The concern is a generic duplicate of Finding 3 without identifying a distinct concrete failure path beyond what that finding already covers.",
+      "severity_justification": "Even if applicable, this would manifest identically to Finding 3 — a configure-time build error on systems without the required headers — which is addressable by the environment setup.",
+      "category_justification": "The underlying concern is build failure from unconditional hardware feature flags, a build-time reliability issue.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/ffmpeg_cuda_runtime_test.sh",
+      "start_line": 59,
+      "end_line": 79,
+      "message": "The test generates a temporary `input.mp4` in the system's temporary directory but does not explicitly handle potential race conditions or name collisions in shared environments.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The workdir uses ${TEST_TMPDIR:-/tmp}/ffmpeg_cuda_runtime_${RANDOM}_$$. In Bazel test runs TEST_TMPDIR is always a unique sandbox, making collisions impossible. Even in the /tmp fallback, PID-based naming is a standard and practically collision-free pattern for non-security scripts. This is generic advice applicable to any shell test, not a concrete issue specific to this code.",
+      "severity_justification": "No realistic failure path exists: Bazel provides TEST_TMPDIR, and PID-based naming suffices for a local GPU test script.",
+      "category_justification": "The concern is about test script implementation and temporary file handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "buildfiles/third_party/opencv_linux_defs.bzl",
+      "start_line": 69,
+      "end_line": 75,
+      "message": "The `_ensure_required_libs` function does not include a way to exclude false positives from the `native.glob` search, so missing libraries are not distinguishable from incomplete search patterns or overlapping directory issues.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The glob pattern libopencv_{lib}.so* is unambiguous standard Linux shared library naming. lib_dir is already validated by finding libopencv_core.so* there. The finding does not identify a concrete failure mode — 'incomplete search patterns or overlapping directory issues' are hypothetical abstractions not grounded in this specific code. This is generic advice applicable to any glob-based detection.",
+      "severity_justification": "No concrete failure path is identified. The existing glob approach is standard practice for detecting shared libraries on Linux.",
+      "category_justification": "The concern, if any, is about the clarity of the detection logic, not a functional defect.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "toolchain_env.sh",
+      "start_line": 113,
+      "end_line": 124,
+      "message": "The `detect_cuda_bazel_archs` function uses `nvidia-smi` output, which depends on proper NVIDIA driver setup. If drivers are misconfigured or GPUs are virtualized, the function could fail silently or produce incorrect values.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The function explicitly handles nvidia-smi failure via 2>/dev/null suppression and falls back to a broad hardcoded arch list when detection returns nothing. It also has a CUDA_BAZEL_ARCHS override for edge cases. The 'silent failure' claim is factually incorrect. The 'virtualized GPU produces wrong value' concern is generic to any nvidia-smi usage and not specific to this code.",
+      "severity_justification": "No concrete unhandled failure path exists: the fallback and override mechanisms cover all the claimed failure modes.",
+      "category_justification": "The concern is about hardware detection robustness in edge-case environments.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 117,
+      "end_line": 122,
+      "message": "Detection uses `ctx.which(\"rocm-smi\")` as a proxy for AMD AMF availability, but `rocm-smi` is part of ROCm and is unrelated to the AMF SDK (AMD's hardware-encode SDK headers/libs). On systems that have ROCm installed but no AMF SDK, this branch will add `--enable-amf` and FFmpeg's configure step will fail. Detection should look for the AMF SDK itself (e.g. presence of `AMF/core/Factory.h` or pkg-config for `libamf`) rather than `rocm-smi`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the checked-out bazel/ffmpeg_repo.bzl at lines 117-122: `ctx.which('rocm-smi')` is used as the trigger for adding `--enable-amf`, `--enable-encoder=hevc_amf`, and `--enable-decoder=hevc_amf`. The finding is correct that rocm-smi is a ROCm system tool unrelated to the AMF SDK. A system with ROCm but without the AMF SDK headers/libs would have FFmpeg configure fail with a cryptic AMF-not-found error.",
+      "severity_justification": "Causes FFmpeg configure to fail on ROCm systems without AMF SDK, breaking the build. Not high because the fix is straightforward and it only affects ROCm+AMF path.",
+      "category_justification": "The detection logic uses a wrong proxy (rocm-smi) for a different piece of software (AMF SDK), leading to incorrect behavior.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 126,
+      "end_line": 134,
+      "message": "Running configure/make via `bash -lc` invokes a login shell, which sources the user's profile (`~/.bash_profile`, `/etc/profile`, etc.). This makes the FFmpeg build non-hermetic and dependent on per-user shell configuration (e.g. a profile that mutates `PATH`, `LD_LIBRARY_PATH`, or `CC`). Prefer `bash -c` (or `bash` reading the script via stdin) so the build only sees the environment that `_build_env` deliberately assembled.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 134: `ctx.execute(['bash', '-lc', build_script], environment=env)` — the -l flag sources user login profiles, which can override the env dict assembled by _build_env. The concern about non-hermeticity is factually correct and actionable.",
+      "severity_justification": "Only manifests on machines where user/system profile scripts mutate compiler or PATH variables in ways that conflict with the explicitly-built env. Standard CUDA installations without exotic profiles are unaffected.",
+      "category_justification": "Non-hermetic build behavior makes the FFmpeg repository rule sensitive to per-user shell configuration, which is an operational/build reliability concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/BUILD.bazel",
+      "start_line": 100,
+      "end_line": 103,
+      "message": "The new `ffmpeg_cuda_runtime_test` is not tagged `manual`, so it will be picked up by a plain `bazel test //tests/...` invocation. On any host that does not have an NVIDIA GPU (most CI runners, containerized build farms, contributors on AMD/Apple/Intel hardware), the test will fail at line 22's `require_cmd nvidia-smi` even though nothing about the change being tested is broken. Consider either adding the `manual` tag (so it must be requested explicitly, mirroring the description's intent that it ships as a runtime check) or having the test detect the absence of an NVIDIA GPU and exit successfully (skip) instead of failing.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the test at tests/BUILD.bazel lines 93-104 has only 'local' and 'requires-gpu' tags — no 'manual'. Bazel only excludes 'manual' tests from wildcard expansion; 'requires-gpu' is purely informational. The .bazelrc has no test_tag_filters that would exclude it. The test fails hard via 'require_cmd nvidia-smi' on non-GPU machines.",
+      "severity_justification": "Will break CI on any non-GPU runner or contributor machine when running 'bazel test //...' or 'bazel test //tests/...', causing false failures on every such build. Not high since it doesn't affect production behavior, only developer/CI workflow.",
+      "category_justification": "The issue is about test configuration — a GPU-requiring test being included in the default test suite without proper exclusion tagging.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/BUILD.bazel",
+      "start_line": 92,
+      "end_line": 99,
+      "message": "This test is included in `//...` and unconditionally references `@ffmpeg_linux`, whose repository rule fails if `nvcc` is unavailable. That breaks existing ROCm-only flows such as `make rocm`/`make test-rocm` (the Makefile intentionally allows CUDA detection to fail for those targets), because analysis of this test still tries to create the CUDA FFmpeg repository. Consider gating the target on a CUDA config or excluding it from non-CUDA builds.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the test at tests/BUILD.bazel:92-104 lacks 'manual' tag and unconditionally references @ffmpeg_linux. ffmpeg_repo.bzl lines 97-98 hard-fail when nvcc is absent. Makefile's BAZEL_TARGETS defaults to //... so make rocm / make test-rocm trigger the repository rule on ROCm-only machines, causing a build failure at the repository-fetch phase.",
+      "severity_justification": "Breaks ROCm-only builds whenever running the default target set (//...), which is the Makefile default. A ROCm contributor can't run 'make rocm' or 'make test-rocm' without first having CUDA installed.",
+      "category_justification": "The test configuration introduces an unconditional CUDA dependency (repository rule that hard-fails) into build targets that are supposed to work in CUDA-free ROCm-only environments.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 117,
+      "end_line": 122,
+      "message": "Detecting `rocm-smi` is not sufficient to enable AMF support, and `hevc_amf` is an FFmpeg encoder rather than a decoder. On hosts with ROCm installed, this branch can add an unsupported `--enable-decoder=hevc_amf` configure option and fail repository creation even though the CUDA FFmpeg build would otherwise work.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The factual core is correct: hevc_amf is encoder-only (confirmed via FFmpeg allcodecs.c and configure — only ff_hevc_amf_encoder and hevc_amf_encoder_deps exist). The code incorrectly uses --enable-decoder=hevc_amf. However, the failure claim is overstated: FFmpeg configure only warns ('Option did not match anything') for unknown decoders rather than failing. The actual configure failure would come from --enable-amf without AMF SDK, which is Finding 1's territory. The unique contribution (hevc_amf is encoder-only, wrong option) is real but won't itself cause a hard build failure.",
+      "severity_justification": "The incorrect --enable-decoder=hevc_amf only generates a configure warning, not a failure. The actual failure from this code block comes from --enable-amf without AMF SDK (Finding 1). This is a minor bug in the option specification.",
+      "category_justification": "Using an encoder name in --enable-decoder is a factual error in the FFmpeg configure invocation, even if configure tolerates it with a warning.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 124,
+      "end_line": 131,
+      "message": "The repository rule builds FFmpeg with `make -j$(nproc)`, which ignores Bazel's own job/resource limits. When this target is analyzed as part of `//...`, it can consume all host cores in addition to Bazel's scheduled actions and overload CI or developer machines; prefer a bounded default or a tracked repo environment override for the job count.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at lines 51-57 and 124-131: _detect_jobs calls nproc returning all host cores, and make -j{jobs} uses that value directly. Repository rules run outside Bazel's job scheduler so --jobs doesn't constrain this, making the claim factually correct.",
+      "severity_justification": "Repository rules run and are cached before regular Bazel actions begin executing in earnest, so direct CPU contention is limited. The fallback of 8 cores is reasonable. This is a transient one-time build cost that is cached thereafter.",
+      "category_justification": "Resource exhaustion concern affecting build system stability on CI/developer machines.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "buildfiles/third_party/opencv_linux_defs.bzl",
+      "start_line": 80,
+      "end_line": 87,
+      "message": "This check treats versioned runtime files such as `libopencv_cudacodec.so.4.x` as sufficient, but the build links with `-lopencv_cudacodec`/`-l:libopencv_core.so`, which require the unversioned development symlinks. On systems with only runtime OpenCV packages installed, analysis will pass here and still fail later at link time, so the early validation should check the actual linker-visible filenames.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: _ensure_required_libs uses glob 'libopencv_X.so*' (matches versioned files like .so.4.8.0), but the linkopts use '-l:libopencv_core.so' etc. which require the exact unversioned dev symlink. On runtime-only OpenCV installs, the validation passes but link fails.",
+      "severity_justification": "Causes misleading false-passing analysis with a late link-time failure. The error message at link time would be cryptic with no pointer to the missing dev package.",
+      "category_justification": "The validation logic is inconsistent with the actual link requirement — it checks for a broader condition than what's actually needed, creating a false sense of safety.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 142,
+      "end_line": 149,
+      "message": "The generated repository declares `licenses([\"notice\"])` even though this FFmpeg build enables GPL and nonfree components (`--enable-gpl`, `--enable-nonfree`). That metadata is misleading for downstream users and automated license checks; it should reflect that the produced binary is not notice-licensed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 147 of ffmpeg_repo.bzl uses licenses(['notice']) in the generated BUILD.bazel, while lines 24-25 of _FFMPEG_CONFIGURE_FLAGS use --enable-gpl and --enable-nonfree. Bazel 'notice' means permissive/notice-only licenses; GPL+nonfree FFmpeg should be 'restricted' at minimum.",
+      "severity_justification": "Incorrect license metadata is misleading for automated compliance tools but does not affect build correctness or runtime behavior. It's a maintainability/documentation concern rather than a functional bug.",
+      "category_justification": "Incorrect Bazel license metadata misleads downstream license compliance tooling but has no functional impact on the build.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "bazel/ffmpeg_repo.bzl",
+      "start_line": 94,
+      "end_line": 99,
+      "message": "If CUDA is installed outside `/usr/local/cuda` and only `nvcc` is on `PATH`, the `command -v nvcc` check can pass via the inherited PATH while `cuda_home` remains `/usr/local/cuda`. The subsequent configure arguments then point at `/usr/local/cuda/include`, `/usr/local/cuda/lib64`, and `/usr/local/cuda/bin/nvcc`, so repository creation fails despite a usable CUDA toolkit being available. Derive `cuda_home` from the resolved `nvcc` path or validate the selected root before using it.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: cuda_home defaults to /usr/local/cuda when no CUDA_HOME/CUDA_PATH/CUDA_ROOT env vars are set; nvcc_check uses PATH (augmented with cuda_home/bin but also preserving existing PATH) so it can succeed via an existing PATH entry like /usr/local/cuda-12.4/bin/nvcc; but configure then uses --nvcc=/usr/local/cuda/bin/nvcc and -I/usr/local/cuda/include which may not exist, causing configure to fail.",
+      "severity_justification": "Breaks FFmpeg repository creation on systems with CUDA installed but without /usr/local/cuda symlink or without CUDA_HOME set, even though a usable nvcc exists on PATH. Common on some Linux distros using apt-managed CUDA packages.",
+      "category_justification": "The nvcc presence check and the cuda_home derivation are decoupled, so the check can pass while the derived paths are wrong, causing a build failure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

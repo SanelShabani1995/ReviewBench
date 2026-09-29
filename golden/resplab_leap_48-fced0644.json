@@ -1,0 +1,431 @@
+{
+  "pr_key": "resplab_leap_48-fced0644",
+  "pr": {
+    "repo": "https://github.com/resplab/leap",
+    "pr_number": 48,
+    "base": "e7e2065f7e50e2525683947d6ec6e39d79ad2f4c",
+    "head": "fced06441c1e3969952312e13525ee355d7a9356"
+  },
+  "findings": [
+    {
+      "file": ".github/workflows/tests_workflow.yml",
+      "start_line": 19,
+      "end_line": 26,
+      "message": "Adding a matrix strategy with a single entry (['3.10']) renames the job from 'tests' to 'tests (3.10)' in GitHub Actions. Any branch protection rules or required status checks that reference the job by its original name 'tests' will silently stop being enforced (or fail to match). The parallel LFS workflow (tests_workflow_lfs.yml) still uses the hardcoded 'python-version: 3.10' pattern and is inconsistent with this change. Using a matrix with a single version provides no testing benefit while introducing this naming side-effect.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "All three claims are factually verifiable: GitHub Actions renames matrix jobs (e.g., 'tests' → 'tests (3.10)'), the LFS workflow is confirmed to still use hardcoded python-version, and a single-entry matrix provides no testing benefit. The branch protection concern is a legitimate real-world risk of this change.",
+      "severity_justification": "If branch protection rules reference 'tests' as a required status check, this change silently breaks enforcement. Even without confirmed existing rules, the naming side-effect creates a maintenance hazard.",
+      "category_justification": "This is a CI/CD configuration issue that could break required status checks and introduces inconsistency between workflow files.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "requirements-data-generation.txt",
+      "start_line": 3,
+      "end_line": 3,
+      "message": "rpy2 is pinned to 3.5.17 (released 2023) while CI uses R 4.4.3 (released early 2025). The rpy2 3.6.x series contains compatibility fixes for newer R versions; 3.6.0+ changed the conversion layer in ways that affect R 4.4.x. Pinning to 3.5.17 risks runtime failures in any data generation workflow step that uses rutils.py, including the module-level install_packages() call that runs on every import. The currently available latest version is 3.6.7.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The core claim that rpy2 3.5.17 is incompatible with R 4.4.3 because '3.6.0+ changed the conversion layer in ways that affect R 4.4.x' is an unverifiable assertion about external library compatibility. The pin was explicitly introduced to fix numpy/rpy2 compatibility, implying it was tested. No concrete failure mode is demonstrated from the code.",
+      "severity_justification": "If the compatibility claim were true, it could cause CI failures in data generation steps, but the claim itself is unverified.",
+      "category_justification": "The concern is about version compatibility between pinned dependencies and the CI R runtime.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "leap/utils.py",
+      "start_line": 178,
+      "end_line": 178,
+      "message": "Wrapping each element in float() changes the return type from numpy scalar (numpy.float64) to Python float. While the type annotation says list[float] and the single caller (control.py) is unaffected, any other caller relying on numpy scalar arithmetic or comparison semantics (e.g. numpy.isnan(), numpy broadcasting) will silently get different behavior. More critically, if a non-scalar prob_function is ever passed—or if eta is inadvertently a numpy array—float() will raise TypeError on a multi-element array where the previous code would have returned a list of arrays. The change also removes numpy precision guarantees: numpy.float64 carries 64-bit precision metadata; Python float repr can differ in edge cases.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The concerns are speculative: only one caller exists and it uses scalar list elements safely; the function signature already typed η as float; Python float and numpy.float64 are the same 64-bit precision; the TypeError scenario requires misuse that doesn't exist in the codebase. The float() wrapping correctly aligns behavior with the list[float] return type annotation.",
+      "severity_justification": "Even if the concern were valid, it only affects hypothetical future callers; the current codebase is unaffected.",
+      "category_justification": "The finding claims a behavioral/type change that could cause bugs in callers.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "leap/utils.py",
+      "start_line": 341,
+      "end_line": 342,
+      "message": "The doctest for `poly` uses `+ELLIPSIS` to hide a value that is very close to zero (`-5.55111512e-17`). While this fixes the test, it would be more robust to compare against an expected value of `0.` and use `+FLOAT_CMP` to handle floating point inaccuracies. This makes the test's intent clearer and less fragile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "+FLOAT_CMP is not a standard Python doctest directive — it requires pytest-doctestplus, which is not a dependency of this project (not in requirements.txt, no reference in pytest.ini). The suggestion is not implementable as described. +ELLIPSIS is the correct standard approach for this case.",
+      "severity_justification": "Even if it were valid feedback, it's a doctest style preference with no functional impact.",
+      "category_justification": "The finding is about doctest robustness and the choice of doctest directive.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "requirements-data-generation.txt",
+      "start_line": 4,
+      "end_line": 4,
+      "message": "The file `requirements-data-generation.txt` is missing a newline at the end. Some tools can have issues with files that don't end in a newline. For example, `pip` can sometimes fail to parse the last line if it's not terminated properly.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The file is confirmed to be missing a trailing newline (hex dump shows no 0a after 'openpyxl'). This is a real POSIX convention violation. The pip failure claim is inaccurate but the underlying finding about the missing newline is correct and observable.",
+      "severity_justification": "Missing trailing newline is a minor style/convention issue. Modern pip does not actually fail on this, so practical impact is negligible.",
+      "category_justification": "This is a file formatting convention issue with no functional impact.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "leap/utils.py",
+      "start_line": 302,
+      "end_line": 305,
+      "message": "The `compute_ordinal_regression` function does not validate the input `prob_function`. If an incompatible function is passed, it could cause runtime errors. Consider adding input validation to ensure `prob_function` is callable and has the expected signature.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic 'add input validation for callable parameters' advice that could apply to any Python function accepting a Callable. The function already has a type annotation, has only one caller that uses the default value, and nothing in this PR changes the prob_function parameter. The line references (302-305) are also inaccurate for this function.",
+      "severity_justification": "Even if accepted, the practical risk is negligible given the single caller using only the default argument.",
+      "category_justification": "Defensive input validation is a code quality/robustness suggestion.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "leap/utils.py",
+      "start_line": 365,
+      "end_line": 367,
+      "message": "The `poly` function raises a ValueError if `degree` is greater than the number of unique points. While this behavior is documented, the error message could further clarify why this restriction exists, or pre-validate this condition earlier in the function.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic suggestion to improve an error message or move validation. The existing message is clear and matches the R poly() convention. No code in this PR touches the validation logic at line 354. The advice could be copy-pasted to any ValueError in any codebase without modification.",
+      "severity_justification": "The existing error message is adequate and the validation is already in place. No functional issue exists.",
+      "category_justification": "Error message clarity and validation placement are code quality/readability concerns.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "leap/utils.py",
+      "start_line": 440,
+      "end_line": 475,
+      "message": "The `convert_non_serializable` function falls back to using `str(obj)` for unsupported types, which might lead to unclear JSON output for certain types. This fallback mechanism should be re-evaluated to ensure better handling or clearer warnings for unsupported types.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic 'improve the fallback in your JSON serializer' suggestion on pre-existing, untouched code. The str(obj) fallback is explicitly documented, standard practice for json.dumps default handlers, and could not be triggered by anything in this PR. The advice could be copy-pasted to any JSON serializer.",
+      "severity_justification": "No concrete issue or caller is identified; the behavior is documented and intentional.",
+      "category_justification": "Error handling and fallback design is a code quality concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "requirements-docs.txt",
+      "start_line": 8,
+      "end_line": 8,
+      "message": "Pinned `sphinx-immaterial` version to 0.13.8. While this ensures documentation builds are stable, it may restrict access to future bug fixes or enhancements. Regularly test and consider updating dependencies to newer stable versions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Pure boilerplate advice about dependency pinning that applies to every pinned package in every project. No concrete issue, known incompatibility, or specific version concern is identified. The exact same comment could be posted on any requirements file with a pinned version without changing a word.",
+      "severity_justification": "No concrete issue — just generic advice about keeping dependencies updated.",
+      "category_justification": "Dependency version management is a maintenance concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "leap/utils.py",
+      "start_line": 335,
+      "end_line": 335,
+      "message": "This doctest directive uses a space between options, but Python doctest expects multiple options to be comma-separated. As written, the doctest parser treats `+NORMALIZE_WHITESPACE +ELLIPSIS` as an invalid option directive, so the doctest step added in CI will fail instead of accepting the ellipsis.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Python's doctest `_find_options` does `m.group(1).replace(',', ' ').split()` — it replaces commas with spaces then splits on whitespace, so both comma-separated and space-separated directives are valid. `# doctest: +NORMALIZE_WHITESPACE +ELLIPSIS` is perfectly legal and will be parsed correctly.",
+      "severity_justification": "If this were true it would cause CI doctest failures, but it's factually incorrect — the doctest parser handles space-separated options just fine.",
+      "category_justification": "The finding makes a factual claim about Python doctest directive parsing syntax.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/model/model-birth.rst",
+      "start_line": 123,
+      "end_line": 123,
+      "message": "This describes the source filters inaccurately: the data generation code filters historical rows with `AGE_GROUP == \"0 years\"` and projected rows with `AGE_GROUP == \"Under 1 year\"`, not a literal `AGE_GROUP = 0`. That mismatch can mislead anyone trying to reproduce the processing from the documented source tables.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in birth_data.py: historical data filters `AGE_GROUP == '0 years'` (line 59) and projected data filters `AGE_GROUP == 'Under 1 year'` (line 137). The doc at line 123 says `AGE_GROUP = 0` for both, which is inaccurate and could mislead anyone trying to reproduce the processing.",
+      "severity_justification": "This is a documentation inaccuracy in a newly added section — misleading for developers trying to understand/reproduce the data pipeline, but no runtime behavior is affected.",
+      "category_justification": "The finding is about incorrect documentation of the data processing logic rather than a code bug.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/model/model-birth.rst",
+      "start_line": 147,
+      "end_line": 160,
+      "message": "The processed birth dataset in the repository does not contain any `M6` rows, and the CLI docs added in this PR state that `M6` is not currently implemented. Listing `M6` here as an available processed-data scenario makes the processed-data documentation inaccurate.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `birth_estimate.csv` contains no M6 rows (unique `projection_scenario` values are FA, HG, LG, M1–M5, SA, past). The new doc section at lines 147–160 lists M6 as an available scenario, contradicting both the actual data and the CLI docs added in this same PR.",
+      "severity_justification": "The documentation is inaccurate — M6 is listed as available when it isn't — but no runtime behavior is affected. Still misleading for users/developers.",
+      "category_justification": "The finding is about inaccurate documentation of available projection scenarios in the processed data.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/model/model-birth.rst",
+      "start_line": 137,
+      "end_line": 140,
+      "message": "The checked-in `birth_estimate.csv` only contains `CA` and `BC` province values, while this processed-data column description implies other province/territory IDs such as `AB` are present. This can lead users to choose unsupported values for the packaged processed birth data.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `birth_estimate.csv` only contains `BC` and `CA` province values. The doc at lines 137-140 lists `AB` (Alberta) as an example province ID alongside BC and CA, implying broader coverage that doesn't exist in the packaged data.",
+      "severity_justification": "It's a documentation inaccuracy in a new section — misleading about data coverage but no runtime behavior affected. Users may be confused about what provinces are supported.",
+      "category_justification": "The finding is about inaccurate documentation of the province column's available values in the processed data.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/cli/index.rst",
+      "start_line": 274,
+      "end_line": 282,
+      "message": "This new guidance says to always include `--ignore-pollution`, but the simulation examples immediately above still omit it. Because the note also says omitting the flag causes failure, the documented example commands are now inconsistent and will lead users to copy commands that fail.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the Examples section shows three `leap --run-simulation` commands without `--ignore-pollution`, and the newly added Known Limitations note says omitting this flag will cause the simulation to fail. The examples are now inconsistent with the guidance and will lead users to run commands that fail.",
+      "severity_justification": "Users following the documented examples will copy commands that the same doc says will fail — a significant UX problem that could cause confusion and wasted time.",
+      "category_justification": "The finding is about an inconsistency between example commands and newly added guidance in the documentation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/model/model-simulation.rst",
+      "start_line": 113,
+      "end_line": 115,
+      "message": "The implementation uses `math.ceil` in `Birth.get_num_newborn`, so `100 * 49200 / 42653` produces 116 newborns, not 115. This makes the updated example disagree with the simulation's rounding behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `Birth.get_num_newborn` uses `math.ceil` (birth.py line 303). `100 * 49200 / 42653 ≈ 115.35`, which ceil rounds to 116, not 115 as the updated doc example shows. The documentation disagrees with the actual rounding behavior of the simulation.",
+      "severity_justification": "The math example in the docs is off by one due to incorrect rounding. It's a documentation inaccuracy — confusing for readers — but no runtime behavior is broken.",
+      "category_justification": "The finding is about an incorrect numerical example in the simulation model documentation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/model/model-simulation.rst",
+      "start_line": 129,
+      "end_line": 131,
+      "message": "The immigrant count is based on the rounded-up newborn count and is also rounded up by `Immigration.get_num_new_immigrants`. With the implementation's rounding this example should use 116 newborns and `ceil(116 * 67190 / 49200) = 159` immigrants, not 157.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `get_num_new_immigrants` uses `math.ceil`. With the doc's 115 newborns: ceil(115*67190/49200)=158 (not 157). With the correct 116 newborns (from math.ceil of the birth calc): ceil(116*67190/49200)=159. The documented value of 157 is wrong regardless of which newborn count is used.",
+      "severity_justification": "Documentation inaccuracy cascading from the newborn rounding error — the example math is wrong but no runtime behavior is affected.",
+      "category_justification": "This is an incorrect numerical example in the simulation documentation, compounding the error identified in finding 6.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/model/model-simulation.rst",
+      "start_line": 184,
+      "end_line": 184,
+      "message": "The final agent number follows from the incorrect rounded counts above. With `ceil(100 * 49200 / 42653) = 116` newborns and `ceil(116 * 67190 / 49200) = 159` immigrants, the final agent in this example should be Agent 275, not Agent 272.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified the table structure: Agents 1-115 are newborns, Agents 116-272 are immigrants (272 = 115+157). With the correctly-calculated values — ceil(100*49200/42653)=116 newborns and ceil(116*67190/49200)=159 immigrants — the last agent should be Agent 275 (116+159=275), not Agent 272.",
+      "severity_justification": "Documentation inaccuracy cascading from findings 6 and 7 — the example table is internally consistent with the wrong intermediate values, but disagrees with the actual simulation implementation.",
+      "category_justification": "The finding is about an incorrect agent numbering in a documentation example, cascading from rounding errors in earlier examples.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/model/model-simulation.rst",
+      "start_line": 168,
+      "end_line": 168,
+      "message": "Because the birth count is rounded up in the implementation, this row should represent the 116th newborn rather than Agent 115. The current numbering carries forward the incorrect `115` newborn count from the preceding formula.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Already verified in findings 6-8: math.ceil(100*49200/42653)=116, so the last newborn in the table should be Agent 116, not Agent 115. The doc's Agent 115 row directly reflects the incorrect newborn count from the preceding formula.",
+      "severity_justification": "Documentation inaccuracy in an example table — same cascading error as findings 6-8, no runtime behavior affected.",
+      "category_justification": "Incorrect agent numbering in the documentation example table, stemming from the wrong newborn count formula.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/model/model-simulation.rst",
+      "start_line": 172,
+      "end_line": 172,
+      "message": "This immigrant numbering is off by one because the preceding newborn count should be 116 after applying the code's `ceil` rounding. The first immigrant would therefore be Agent 117, not Agent 116.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Already verified: math.ceil(100*49200/42653)=116 newborns means agents 1-116 are newborns, so the first immigrant is Agent 117, not Agent 116 as the doc states. This is the same cascading rounding error from finding 6.",
+      "severity_justification": "Documentation inaccuracy in an example table — part of the same cascading error chain, no runtime behavior affected.",
+      "category_justification": "Incorrect agent numbering in the documentation example table, cascading from the wrong newborn count.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/model/model-simulation.rst",
+      "start_line": 176,
+      "end_line": 176,
+      "message": "This row also carries forward the off-by-one numbering caused by using 115 newborns. With 116 newborns, the second immigrant row would be Agent 118 rather than Agent 117.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Already verified: with 116 newborns (agents 1-116), the second immigrant is Agent 118, not Agent 117 as documented. This is the same off-by-one cascading from the incorrect newborn count.",
+      "severity_justification": "Documentation inaccuracy in an example table row — same cascading error, no runtime behavior affected.",
+      "category_justification": "Incorrect agent numbering in documentation example, cascading from the wrong newborn count.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/model/model-simulation.rst",
+      "start_line": 124,
+      "end_line": 124,
+      "message": "This sentence repeats the incorrect newborn count. Since `Birth.get_num_newborn` applies `ceil`, the example would create 116 newborn agents for 2022, not 115.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 124: the prose says 'create 115 new agents' but math.ceil(100*49200/42653)=116. This is the same incorrect newborn count from finding 6 repeated in the prose description.",
+      "severity_justification": "Documentation inaccuracy in a prose sentence — same cascading error as findings 6-11, no runtime behavior affected.",
+      "category_justification": "Incorrect newborn count stated in prose documentation, cascading from the wrong ceil calculation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

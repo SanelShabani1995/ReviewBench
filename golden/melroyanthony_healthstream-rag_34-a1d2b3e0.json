@@ -1,0 +1,191 @@
+{
+  "pr_key": "melroyanthony_healthstream-rag_34-a1d2b3e0",
+  "pr": {
+    "repo": "https://github.com/melroyanthony/healthstream-rag",
+    "pr_number": 34,
+    "base": "adfd09b776343d041eaa1109d06282867580084a",
+    "head": "a1d2b3e09cc4cb67477de2abc4ecfb429c37aa13"
+  },
+  "findings": [
+    {
+      "file": "solution/docs/architecture/openapi.yaml",
+      "start_line": 205,
+      "end_line": 221,
+      "message": "The request body schema for POST /api/v1/ingest/source is wrong. In FastAPI, a bare `str` parameter like `source_type: str` is bound as a query parameter, not a body field. Only `raw_data: dict` becomes the body (as the raw JSON object, not wrapped in {\"raw_data\": {...}}). Clients following this spec will send a JSON body of {\"source_type\":\"...\",\"raw_data\":{...}} and receive 422 errors because source_type will not be found in the query string. The spec should show source_type as a query parameter and raw_data as the entire body.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The diff hunk for /api/v1/ingest/source correctly places source_type as an `in: query` parameter and raw_data as the entire request body, matching FastAPI's routing semantics for `source_type: str` (query param) and `raw_data: dict` (body). The finding claims source_type is in the request body, which contradicts the diff hunk that must be trusted. The discrepancy with the checked-out file is an artifact of the classifier repo fixture.",
+      "severity_justification": "If the spec actually had source_type in the body (as the file on disk shows), clients following it would get 422 errors — a meaningful integration problem. But since the diff shows it correctly, the finding is factually wrong.",
+      "category_justification": "The finding concerns the correctness of the OpenAPI spec describing how parameters are bound in a REST API endpoint.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "solution/backend/app/api/routes/ingest.py",
+      "start_line": 99,
+      "end_line": 106,
+      "message": "ingest_from_source accepts source_type and raw_data as separate parameters rather than a Pydantic model, creating a parameter-binding mismatch: source_type becomes a query param while raw_data becomes the entire body. The newly added OpenAPI spec documents both as fields of a single JSON body object, which is incorrect. Additionally, collection_name is documented in the spec but entirely absent from the function signature — the implementation hardcodes \"default\" throughout, silently ignoring any client-supplied collection.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The diff hunk shows the spec correctly places source_type as a query parameter and raw_data as the entire request body — matching FastAPI semantics. The finding's claim that the spec 'documents both as fields of a single JSON body' is factually wrong per the diff. The collection_name claim is also wrong per the diff, which does not include collection_name in the /api/v1/ingest/source spec at all. Both central claims contradict the authoritative diff hunk.",
+      "severity_justification": "If the spec/code mismatch claimed were real, clients would receive 422 errors — meaningful API breakage. But since the claims are incorrect per the diff, the severity is notional.",
+      "category_justification": "The finding concerns the alignment between an OpenAPI spec and the corresponding FastAPI route signature, including parameter binding semantics.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "solution/docs/architecture/openapi.yaml",
+      "start_line": 218,
+      "end_line": 220,
+      "message": "The spec documents collection_name as an optional body field with default \"default\" for POST /api/v1/ingest/source, but the ingest_from_source function signature has no collection_name parameter and hardcodes \"default\" in every call. This feature is fully documented but completely non-functional.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The diff hunk for the PR-added /api/v1/ingest/source endpoint does not include collection_name in the spec. The finding claims collection_name is documented there (lines 218-220), which is true in the checked-out file but contradicts the diff that must be trusted. The discrepancy between the diff and file on disk is a classifier fixture artifact.",
+      "severity_justification": "If collection_name were genuinely documented but non-functional, that would be a meaningful spec/implementation inconsistency that could mislead integrators. But the claim about what the spec contains is incorrect per the diff.",
+      "category_justification": "The finding is about a discrepancy between documented API behavior in the OpenAPI spec and the actual implementation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "solution/docs/architecture/openapi.yaml",
+      "start_line": 231,
+      "end_line": 252,
+      "message": "GET /api/v1/loaders has no security requirement in the spec, which matches the implementation (no get_patient_id dependency). All other non-health endpoints require bearerAuth. This exposes the internal loader registry (ehr, fhir, healthkit) to unauthenticated callers — inconsistent with HIPAA-critical posture and contrary to defence-in-depth. Either auth should be added or the deliberate omission should be explicitly justified.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The PR diff shows the /api/v1/loaders endpoint was added WITH `security: - bearerAuth: []`. The finding claims the spec lacks a security requirement for this endpoint, which is factually wrong per the diff hunk that must be trusted. The file on disk omits the security entry but diverges from the diff.",
+      "severity_justification": "If the endpoint truly lacked auth documentation (and the implementation had no auth), that would be a real inconsistency in a HIPAA-critical system. But since the claim is factually incorrect per the diff, the severity is moot.",
+      "category_justification": "The finding is about missing authentication requirements on an API endpoint in a HIPAA-critical application.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "solution/docs/architecture/openapi.yaml",
+      "start_line": 224,
+      "end_line": 230,
+      "message": "POST /api/v1/ingest/source declares security: [{bearerAuth: []}] but its responses section omits the 401 response. Every other authenticated endpoint in the spec documents 401. Client code generators and API consumers will not know to handle unauthenticated calls to this endpoint. The 400 response also has no content/schema (unlike the 400 on /api/v1/ingest which references ErrorResponse), breaking generated client models.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim that 'every other authenticated endpoint documents 401' is demonstrably false — collections endpoints (GET, POST, DELETE) and the health endpoint have no 401 documented. The claim about missing 400 schema is also wrong per the diff hunk, which adds ErrorResponse to the 400 for /api/v1/ingest/source. Both key factual premises are incorrect.",
+      "severity_justification": "Missing 401 responses in OpenAPI specs is a documentation quality issue; even if the finding's core concern were valid, it wouldn't cause runtime failures — only imperfect generated client code.",
+      "category_justification": "The finding concerns the completeness and consistency of an OpenAPI spec's response documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "solution/backend/tests/test_ingest.py",
+      "start_line": 1,
+      "end_line": 3,
+      "message": "There are zero tests for the two new endpoints: POST /api/v1/ingest/source and GET /api/v1/loaders. These are live routes in a HIPAA-critical API. The PR description's own test plan item \"Verify OpenAPI paths match actual routes\" is explicitly unchecked. The parameter-binding bug in ingest_from_source (source_type as query param vs body) would be caught immediately by a basic integration test.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: test_ingest.py has 3 tests all targeting /api/v1/ingest only. No test file anywhere references /api/v1/ingest/source or /api/v1/loaders. Both routes are live in ingest.py. The PR's own test plan item 'Verify OpenAPI paths match actual routes' is unchecked, confirming the gap is acknowledged but unaddressed.",
+      "severity_justification": "These are live endpoints in a HIPAA-critical API with no test coverage. The ingest/source endpoint has non-obvious parameter binding (source_type as query param, raw_data as body) that only integration tests would catch. Missing tests for production-facing routes with PHI handling is a real gap.",
+      "category_justification": "The finding identifies missing test cases for newly-documented live API endpoints.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "solution/docs/architecture/openapi.yaml",
+      "start_line": 255,
+      "end_line": 272,
+      "message": "The OpenAPI spec adds a `/api/v1/loaders` endpoint, but this route is not implemented in the FastAPI application. The router at `solution/backend/app/api/v1/endpoints/ingest.py` does not define a `/loaders` path.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The /api/v1/loaders route IS implemented: solution/backend/app/api/routes/ingest.py line 180 defines @router.get('/loaders') with a list_loaders() function. The file path cited by the finding (solution/backend/app/api/v1/endpoints/ingest.py) does not exist in the repository. Both factual claims are wrong.",
+      "severity_justification": "If the route were genuinely missing, it would be a significant spec/implementation mismatch. But the claim is factually incorrect.",
+      "category_justification": "The finding makes an incorrect claim about whether a route is implemented in the application.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "solution/docs/architecture/openapi.yaml",
+      "start_line": 217,
+      "end_line": 253,
+      "message": "The OpenAPI spec adds a `/api/v1/ingest/source` endpoint to handle various data sources, but the implementation uses separate endpoints for each source type (`/ingest/file`, `/ingest/text`). The OpenAPI spec should be updated to reflect the actual implementation to avoid confusion.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims the implementation uses separate /ingest/file and /ingest/text endpoints, but these routes do not exist anywhere in the codebase. The actual implementation defines POST /ingest/source (ingest_from_source) which is exactly what the OpenAPI spec documents. The finding's factual premise is entirely wrong.",
+      "severity_justification": "If spec and implementation truly diverged on endpoint paths, clients would be unable to call the API. But the claim is factually incorrect.",
+      "category_justification": "The finding makes a false claim about which routes are implemented in the application versus what the spec documents.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 206,
+      "end_line": 206,
+      "message": "The updated test-count audit is incomplete in this README: this line says 35 tests, but the test suite table immediately below still lists `Unit tests | 34` at README.md:218. That leaves the documented count inconsistent for readers.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in README.md: line ~206 (the bash comment) correctly says '35 tests, ~5s', but the table at line ~218 still reads 'Unit tests | 34'. The PR updated the comment but left the table stale, creating a real inconsistency in the same file.",
+      "severity_justification": "This is a documentation inconsistency within the same file — two places in README.md disagree on the test count. No runtime behavior is affected, but it undermines the credibility of the audit this PR is meant to finalize.",
+      "category_justification": "The issue is a stale count in a documentation table, inconsistent with an updated count in the same README file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

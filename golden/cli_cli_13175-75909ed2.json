@@ -1,0 +1,335 @@
+{
+  "pr_key": "cli_cli_13175-75909ed2",
+  "pr": {
+    "repo": "https://github.com/cli/cli",
+    "pr_number": 13175,
+    "base": "f79cc02bdde49e0d6a20ecec3454e20cc68c4aef",
+    "head": "75909ed2ba1bb034630edf49b18fb58ff5b64c04"
+  },
+  "findings": [
+    {
+      "file": "internal/ghcmd/cmd.go",
+      "start_line": 143,
+      "end_line": 156,
+      "message": "The code scans all of expandedArgs (which includes flag names, flag values, and all positional args) rather than extracting the actual unknown command name from the error message. The cobra error format is always `unknown command \"X\" for \"Y\"`, so X is available directly. Scanning all args produces false positives: `gh unknownCmd aw` triggers an error about 'unknownCmd', but the scan finds 'aw' in expandedArgs and incorrectly suggests installing gh-aw. Similarly, a flag value matching an extension name (e.g. `gh unknownCmd --label aw`) would produce a spurious install suggestion.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code iterates all of expandedArgs (raw os.Args[1:]) against the official extension registry. For `gh unknownCmd aw`, cobra errors on 'unknownCmd' but the scan finds 'aw' and suggests/installs gh-aw — a concrete, demonstrable false-positive install suggestion. The cobra error format `unknown command \"X\" for \"Y\"` would allow extracting the exact unknown token instead.",
+      "severity_justification": "In interactive mode this can prompt users to install an extension they never asked for. Not data-loss or security-impacting, but produces clearly wrong behavior for common multi-arg invocations.",
+      "category_justification": "The matching logic checks the wrong set of values (all args) instead of the actual unknown command token from the cobra error message.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/ghcmd/cmd.go",
+      "start_line": 263,
+      "end_line": 300,
+      "message": "When an official extension match is found, the code returns early before calling printError(), so the usage string (list of available commands) is never shown. For the regular 'unknown command' error path, printError() appends cmd.UsageString() which helps users discover valid commands. The official extension path suppresses this entirely for both TTY and non-TTY cases, leaving the user with only the raw error and an install suggestion but no hint about what commands are actually available.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Suppressing the usage string is intentional design — the feature replaces the generic 'unknown command + all commands list' output with a targeted install suggestion. handleOfficialExtension() still prints the raw error via fmt.Fprintln(stderr, err); omitting cmd.UsageString() is deliberate to reduce noise and keep focus on the install prompt.",
+      "severity_justification": "Even if considered a concern, the user still sees the error message and a targeted, actionable install suggestion — the omitted usage string adds marginal value in this specific scenario.",
+      "category_justification": "This is a UX/design decision about what information to display, not a correctness or reliability issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/ghcmd/cmd.go",
+      "start_line": 284,
+      "end_line": 286,
+      "message": "When the user declines the install prompt (confirmed=false) or the prompt itself fails (promptErr != nil), handleOfficialExtension returns silently with no output. Main() then returns exitError (exit code 1) without printing any error message, usage hint, or acknowledgment of the user's choice. The user is left with just the initial error message and a dangling prompt interaction, with no explanation for the non-zero exit.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The promptErr case is genuinely swallowed — if p.Confirm() returns an error it is silently discarded, Main() returns exitError with no explanation of what went wrong. The declined case is less concerning but the finding is correct that promptErr is silently dropped.",
+      "severity_justification": "Swallowed promptErr is a real but rare edge case; the user still sees the original cobra error message. The decline case is standard CLI behavior. No data is corrupted and the exit code is still non-zero.",
+      "category_justification": "Silent error swallowing in an error-handling path is a reliability/error-handling concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/ghcmd/cmd.go",
+      "start_line": 290,
+      "end_line": 293,
+      "message": "StopProgressIndicator is called twice: once explicitly on line 293 (before reading installErr) and once via the defer on line 291. The defer is redundant because the explicit call covers both the success and early-return-on-error paths. While harmless (StopProgressIndicator is idempotent due to a nil check), the defer gives the misleading impression it is needed for cleanup on the error path, when in fact the explicit call already handles it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "StopProgressIndicator is confirmed idempotent via nil check at iostreams.go:354. Both the defer and the explicit call are present, making the defer redundant — the explicit call already covers all paths. The defer fires again harmlessly but creates misleading code suggesting it is needed for some edge case.",
+      "severity_justification": "Purely a code clarity issue — behavior is correct due to idempotency. No user-visible impact.",
+      "category_justification": "Redundant defer creates misleading code without any behavioral consequence, a readability/maintainability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/ghcmd/cmd.go",
+      "start_line": 144,
+      "end_line": 156,
+      "message": "The official extension check fires on any error whose message starts with 'unknown command', but only after the extError (ExternalCommandExitError) check. If an installed extension exits with a non-zero code and its output coincidentally starts with 'unknown command', the path would not be reached (correctly caught by extError). However, Cobra itself can generate 'unknown command' errors for subcommands of real commands (e.g. `gh pr unknownSub`), and expandedArgs for such a case would include 'pr', 'unknownSub', and any positional args — any of which matching an official extension name would produce a spurious suggestion. The root cause is the same as the all-args scanning issue: the actual unknown token is always the first argument embedded in the error string and should be extracted from there.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed via cobra source (args.go:36,44): `gh pr aw` produces error `unknown command \"aw\" for \"gh pr\"`, expandedArgs=[\"pr\",\"aw\"]. The loop finds \"aw\" matching gh-aw and produces a spurious install suggestion even though the user typed a pr subcommand, not `gh aw`.",
+      "severity_justification": "Concrete false-positive install suggestion for a realistic invocation pattern (using an official extension name as a subcommand of another command). Could prompt interactive users to install an extension they didn't intend to.",
+      "category_justification": "The matching logic produces incorrect results for valid multi-level command invocations, causing wrong extension suggestions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/extensions/official.go",
+      "start_line": 29,
+      "end_line": 34,
+      "message": "In `FindOfficialExtension`, the loop variable `ext` is a value, not a pointer. Returning `&ext` creates a new pointer to a loop-local variable on each iteration. Since `officialExtensions` is a slice of structs, all returned pointers will point to the last element in the slice after the loop finishes. The function should return a pointer to the element in the slice, like `&officialExtensions[i]`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The loop-variable aliasing concern does not apply here. `return &ext` exits the function immediately when a match is found — ext holds the matching element's value at that point and the loop never continues to overwrite it. Additionally, the module uses Go 1.26.1 where loop variables are per-iteration by spec. The finding incorrectly describes the semantics of `return &ext` inside a loop.",
+      "severity_justification": "Even if the concern were valid, this is a 2-element hard-coded slice with no behavioral impact given the immediate return.",
+      "category_justification": "The finding alleges incorrect pointer semantics, which would be a correctness issue if true.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/ghcmd/cmd.go",
+      "start_line": 263,
+      "end_line": 284,
+      "message": "The `handleOfficialExtension` function calls `ExtensionManager.Install` but does not implement retry or detailed error handling for common failure scenarios such as network errors or permission issues. This could result in the user being stuck without clear recovery steps.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The error from em.Install is already printed with its message. The finding's suggestions (retry logic, per-error-type recovery) are generic best practices not tied to a specific concrete deficiency in this code — the same comment could be applied to any CLI operation that calls an install function.",
+      "severity_justification": "No concrete bug is identified; the existing error handling already surfaces the underlying error to the user.",
+      "category_justification": "The finding is about error handling robustness, which is a reliability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/extensions/official.go",
+      "start_line": 31,
+      "end_line": 38,
+      "message": "The hard-coded `officialExtensions` list does not allow for extensions to be dynamically updated or extended without modifying the source code. This reduces the flexibility of managing extensions and increases the maintenance burden since every change requires a new release.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The PR description explicitly states 'Hard-coded registry in pkg/extensions/official.go. Teams add extensions via PR. No API calls, no latency.' This is a documented, intentional design decision. The finding restates a general architectural trade-off without identifying a concrete defect — it could be copy-pasted onto any codebase with a hard-coded list.",
+      "severity_justification": "The design choice is intentional with stated rationale (no latency, no API calls). The maintenance burden is low given the small, slowly-changing list.",
+      "category_justification": "The finding is about maintenance burden and flexibility of a configuration approach.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/extensions/official.go",
+      "start_line": 40,
+      "end_line": 48,
+      "message": "The `FindOfficialExtension` function performs a linear search over `officialExtensions`, which could become a performance bottleneck if the number of extensions grows significantly. Consider using a map for constant-time lookups.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The registry has 2 entries and is called once per CLI invocation on an error path. Linear search over 2 elements is not a bottleneck by any measure. The finding is generic performance advice that could be copy-pasted onto any small linear search without change.",
+      "severity_justification": "No realistic performance impact — 2-element linear scan called once on an error path is negligible.",
+      "category_justification": "The finding is about algorithmic complexity of a lookup function.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/extensions/official_test.go",
+      "start_line": 12,
+      "end_line": 27,
+      "message": "The tests for `FindOfficialExtension` do not include any cases where `officialExtensions` contains entries with overlapping names (e.g., `\"foo\"` and `\"foo-bar\"`). These cases should be tested to ensure no ambiguity in matching.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "FindOfficialExtension uses exact string equality (`==`). Names like \"foo\" and \"foo-bar\" are distinct strings and can never cause a match ambiguity. The finding incorrectly presupposes prefix or substring matching behavior that does not exist in the code.",
+      "severity_justification": "No ambiguity is possible with strict equality matching, making the suggested test cases meaningless.",
+      "category_justification": "The finding is about missing test cases for the FindOfficialExtension function.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/ghcmd/cmd.go",
+      "start_line": 146,
+      "end_line": 156,
+      "message": "I'm not sure about this. Maybe we should register those commands in our tree (if there's no extension already installed for them). Doing it here and checking the error message like that feels hacky.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The concern is specific: string-matching on cobra's internal error message format is fragile coupling to an undocumented API. The PR diff shows a previous stub-command approach that used cobra's proper routing. The finding identifies a concrete fragility risk with a known alternative, not just a vague style preference.",
+      "severity_justification": "The current code works correctly; the risk is future breakage if cobra changes its error message format, which is unlikely but not impossible. No current bug.",
+      "category_justification": "Coupling to an internal error message format creates fragile code that could silently break on a cobra version update.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "babakks",
+        "url": "https://github.com/cli/cli/pull/13175#discussion_r3092536643",
+        "created_at": "2026-04-16T10:34:23Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "75909ed2ba1bb034630edf49b18fb58ff5b64c04"
+      }
+    },
+    {
+      "file": "internal/ghcmd/cmd.go",
+      "start_line": 146,
+      "end_line": 156,
+      "message": "The PR description states that \"Hidden stub commands are registered for each official extension in the registry\" via `pkg/cmd/root/official_extension_stub.go`, with stubs registered after real extensions/aliases so installed extensions always take priority. However, the actual implementation in this diff uses an entirely different approach: it intercepts cobra's \"unknown command\" error from `rootCmd.ExecuteContextC` and scans `expandedArgs` for a matching name. No `official_extension_stub.go` file exists in this PR. Either the PR description is out of date, or part of the intended implementation is missing. Please reconcile.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the PR description states 'Hidden stub commands are registered for each official extension in the registry' via `pkg/cmd/root/official_extension_stub.go`, but that file does not exist at SHA 75909ed2. The actual implementation intercepts cobra's 'unknown command' error in `internal/ghcmd/cmd.go:149-156`. The PR description is materially out of date relative to the actual committed code.",
+      "severity_justification": "The code itself is functional; this is a PR description vs. implementation mismatch. It doesn't cause a runtime bug, but misleads reviewers about the actual architecture.",
+      "category_justification": "The finding identifies a discrepancy between the PR description/documentation and the actual implementation, not a code logic error.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/ghcmd/cmd.go",
+      "start_line": 149,
+      "end_line": 149,
+      "message": "Detecting the \"unknown command\" condition by string-prefix matching on `err.Error()` is fragile. Cobra's error message text can change between versions, and it is also localizable in some setups. Prefer matching the cobra-defined sentinel/type if one is available, or at minimum centralize this check. The same brittle approach is then used again in `strings.Contains(err.Error(), \"Incorrect function\")` below, but that one is pre-existing; this newly added check should ideally not add to that pattern.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: Cobra v1.10.2 returns plain fmt.Errorf for 'unknown command' with no typed sentinel. The new code at line 149 adds a second brittle string-prefix check identical to the pre-existing one at line 224. The suggestion to centralize it (e.g. into an isUnknownCommandError helper) is concrete and actionable, reducing drift risk if Cobra ever changes the wording.",
+      "severity_justification": "Cobra's 'unknown command' error message has been stable for many versions and is not localized, so breakage risk is low. The concern is real but primarily a maintainability/fragility issue rather than an active bug.",
+      "category_justification": "The finding is about code fragility and the pattern of string-matching error messages rather than using typed/structured errors — a maintainability concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/ghcmd/cmd.go",
+      "start_line": 266,
+      "end_line": 300,
+      "message": "The new `handleOfficialExtension` function has no test coverage, even though `internal/ghcmd/cmd_test.go` exists and the prompt/install branching logic (TTY vs non-TTY, prompt rejection, install error) is the most interesting behavior added by this PR. Consider adding tests that exercise the non-interactive print path, the prompt-rejected path, and the install-failure path using the existing iostreams/prompter test doubles.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: cmd_test.go exists but contains no tests for handleOfficialExtension. The function has multiple non-trivial branches (non-TTY print path, prompt rejection, install error, install success) and is the core new behavior of this PR. The earlier draft had tests for equivalent logic in official_extension_stub_test.go but they were not carried over to the final implementation.",
+      "severity_justification": "The untested function contains meaningful branching logic including prompt interaction, progress indicator management, and install error handling. A regression in any branch would be silent. Medium rather than high because the feature is suggestive/optional and failures are non-destructive.",
+      "category_justification": "The finding is specifically about missing test coverage for new behavioral logic.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/ghcmd/cmd.go",
+      "start_line": 149,
+      "end_line": 152,
+      "message": "The new official-extension handling in `Main` is not covered by tests, even though this package already has `cmd_test.go` coverage for error handling. Please add tests for at least the interactive/non-interactive paths and for avoiding suggestions when the matching extension name appears only as a later positional argument or flag value.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: cmd_test.go has no tests for lines 149-152. Additionally, the finding correctly identifies a concrete false-positive bug: `gh nonexistent-cmd stack` would trigger gh-stack install suggestion instead of a normal 'unknown command' error, because the code scans all expandedArgs rather than extracting the actual unknown command name from the Cobra error string.",
+      "severity_justification": "Beyond the test coverage gap, there is a real correctness issue: any 'unknown command' error where 'stack' or 'aw' appears anywhere in the args (as a positional arg or subcommand) will incorrectly trigger the extension suggestion instead of the normal error path. This could confuse users who typo a command that happens to include an official extension name as an argument.",
+      "category_justification": "The primary framing is about missing test coverage, though it embeds a correctness concern. The correctness concern is specifically raised as motivation for testing those paths, so 'testing' is the most accurate category.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/extensions/official_test.go",
+      "start_line": 17,
+      "end_line": 18,
+      "message": "The lookup tests only exercise the `stack` registry entry, so the newly registered `aw` command could regress (name/owner/repo mismatch) without any failing test. Please include a case for each current official extension entry, or table-drive expectations from the registry itself.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: TestFindOfficialExtension tests the 'stack' lookup but has no case for 'aw'. The registry has both entries. A regression in the 'aw' entry (wrong name, owner, or repo) would pass all tests undetected.",
+      "severity_justification": "The registry entries are simple hardcoded data and unlikely to drift accidentally. A missing test case for 'aw' is a real gap but poses minimal actual risk given the entry's simplicity.",
+      "category_justification": "The finding is specifically about incomplete test coverage of the official extension registry — only one of two entries is exercised in the lookup test.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

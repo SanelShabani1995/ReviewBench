@@ -1,0 +1,535 @@
+{
+  "pr_key": "calkit_calkit_757-872db6c9",
+  "pr": {
+    "repo": "https://github.com/calkit/calkit",
+    "pr_number": 757,
+    "base": "86f34f29bb2f49dc46e39bc281c9565cd1935802",
+    "head": "872db6c9f0ed141364b329b7865c6966a61d9770"
+  },
+  "findings": [
+    {
+      "file": "calkit/docker.py",
+      "start_line": 229,
+      "end_line": 234,
+      "message": "Any unrecognized Docker flag causes `_parse_docker_run_command` to return `None`, silently breaking all downstream callers. Common real-world flags like `--env`/`-e`, `--network`, `-d`/`--detach`, `--memory`, `--cpus`, `--label`, etc. are not in the known-flags lists, so any Docker command using them will fall through to non-Docker behavior rather than producing an error. This makes the feature fragile for the majority of practical Docker commands.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_parse_docker_run_command` returns `None` on any unrecognized flag starting with `-`. Common flags like `-e`/`--env`, `--network`, `-d`/`--detach` are absent from both `no_arg_opts` and `one_arg_opts`. This causes silent fall-through to shell-command behavior with no Docker environment inference for most real-world `docker run` invocations.",
+      "severity_justification": "Real-world Docker commands routinely include flags like `--env`, `--network`, or `--detach`. When any such flag appears, the entire Docker-specific handling silently degrades: no environment is inferred, no path normalization occurs, and the whole `docker run` command is stored as a shell command — unexpected behavior with no error surfaced to the user.",
+      "category_justification": "The function is supposed to parse `docker run` commands but silently returns `None` (fails to parse) for a large class of valid inputs, producing incorrect downstream behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/cli/main/xr.py",
+      "start_line": 463,
+      "end_line": 552,
+      "message": "Partial calkit.yaml corruption when `cls.model_validate(stage)` fails after a new environment has already been written. The block at line 463–468 writes the new environment to calkit.yaml unconditionally (when `not env_result.exists and not dry_run`). If `model_validate` at line 550 subsequently raises, `raise_error` calls `typer.Exit(1)` without reverting the file. The rollback at lines 659–664 only guards the `run()` call, not this earlier mutation. The user is left with a new environment in calkit.yaml but no corresponding stage.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the environment is unconditionally written to calkit.yaml (lines ~463-468) before `cls.model_validate(stage)` is called (~line 550). When validation fails, `raise_error` calls `raise typer.Exit(1)` immediately with no cleanup. The only rollback block wraps `run()` and never executes in this failure path. The user ends up with a new environment in calkit.yaml but no corresponding stage.",
+      "severity_justification": "Requires an uncommon path: environment detection succeeds but stage model validation then fails. In practice, the code carefully constructs the stage dict to match the model, so this failure is rare. The result (orphaned environment entry) is confusing but not data-destroying.",
+      "category_justification": "A specific code path leaves calkit.yaml in an inconsistent state (environment added, no stage) with no rollback, violating the function's implied atomicity guarantee.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/cli/main/xr.py",
+      "start_line": 639,
+      "end_line": 648,
+      "message": "`contextlib.redirect_stdout`/`redirect_stderr` only redirects Python-level `sys.stdout`/`sys.stderr` writes. The `run()` function ultimately calls `dvc_cli_main([\"repro\", ...])` which spawns stage commands as OS subprocesses. Those subprocess writes go directly to file descriptors 1 and 2, bypassing the redirect. The `run_stdout`/`run_stderr` fields captured in the JSON response will therefore be empty or contain only calkit's own `typer.echo` output, not the actual stage command output that the caller would expect.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `contextlib.redirect_stdout(run_stdout)` only captures Python-level `sys.stdout.write()` calls. The `run()` function calls `dvc_cli_main(['repro'] + args)` which spawns stage commands via `subprocess.check_call(...)` (lines ~1559, 1585, etc.). Those subprocess writes go to FD 1/2 directly, bypassing the Python redirect. The `run_stdout`/`run_stderr` captured for the JSON response will be empty, not containing actual stage execution output.",
+      "severity_justification": "The `--json` flag is specifically designed for machine-readable output to callers who need stage results. Having `run_stdout`/`run_stderr` always empty while the stage actually produced output is a misleading contract that will confuse integrations relying on this API.",
+      "category_justification": "The stdout/stderr capture mechanism is fundamentally broken for subprocess-based stage execution, producing incorrect (empty) data in the JSON output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/cli/main/xr.py",
+      "start_line": 473,
+      "end_line": 475,
+      "message": "`--no-detect-io` does not suppress Docker-inferred I/O. `docker_override_detected_inputs` and `docker_override_detected_outputs` (populated from Mermaid CLI path arguments) are unconditionally copied into `detected_inputs`/`detected_outputs` at lines 473–474 before the `no_detect_io` check at line 475. Passing `--no-detect-io` has no effect on these paths. Users who want full manual control over I/O cannot suppress them.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `docker_override_detected_inputs` and `docker_override_detected_outputs` are unconditionally copied into `detected_inputs`/`detected_outputs` before the `no_detect_io` guard. The condition `if not no_detect_io and not (detected_inputs or detected_outputs)` only prevents calling `detect_io()` — it never clears the already-copied Docker-inferred paths. `--no-detect-io` has no effect on Docker-detected I/O.",
+      "severity_justification": "This is a minor behavioral inconsistency: the flag's documented purpose ('Don't attempt to detect inputs and outputs') is partially violated for Docker commands. However, Docker-inferred I/O (e.g., Mermaid `-i`/`-o` paths) is highly accurate and intentional, so users rarely need to suppress it. The impact on real workflows is minimal.",
+      "category_justification": "The `--no-detect-io` flag does not behave as documented for Docker commands — it fails to suppress Docker-inferred I/O paths, contradicting the flag's stated intent.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/docker.py",
+      "start_line": 198,
+      "end_line": 222,
+      "message": "The `--entrypoint` flag value is consumed by the parser (idx advances by 2) but never stored in the returned dict. If a user runs `docker run --entrypoint /custom/cmd minlag/mermaid-cli -i in.mmd -o out.svg`, the custom entrypoint is silently ignored: `normalize_xr_docker_command` sees the image is allowlisted and normalizes with `command_mode=\"entrypoint\"` as if the default mermaid entrypoint is used. The recorded stage will mismatch the actual runtime behaviour.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `--entrypoint` is in `one_arg_opts` but the value is consumed (idx advances by 2) without being stored anywhere in the returned dict. `normalize_xr_docker_command` proceeds with `command_mode='entrypoint'` regardless, silently ignoring the custom entrypoint. The recorded stage mismatches the actual runtime behavior.",
+      "severity_justification": "Overriding the entrypoint of an allowlisted image (mermaid-cli) is an uncommon edge case. In typical usage, users run the default entrypoint of mermaid-cli, making this a real but rarely triggered bug.",
+      "category_justification": "The custom entrypoint is silently discarded, causing the recorded pipeline stage to not match the actual Docker command that would be executed.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/detect.py",
+      "start_line": 472,
+      "end_line": 476,
+      "message": "The POSIX end-of-options separator `--` is not handled correctly in the `cp`/`mv` operand loop. The code does `continue` on `--` and then keeps skipping words that start with `-`. After `--`, all subsequent arguments must be treated as file operands even if they start with `-` (e.g., `cp -- -src.txt dest.txt`). A boolean flag should be set when `--` is encountered to disable the `-`-prefix check for remaining words.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `--` is handled with `continue`, which just skips it without setting any flag. The subsequent `if word.startswith('-'): continue` check still applies to all words after `--`, so files named starting with `-` (e.g., `-src.txt`) are incorrectly skipped as if they were flags.",
+      "severity_justification": "Files starting with `-` in `cp`/`mv` commands are rare in practice. The incorrectly detected I/O would miss those inputs/outputs, but this is a newly added detection feature and the broken path is an edge case that rarely appears in real pipelines.",
+      "category_justification": "The POSIX `--` end-of-options convention is not implemented correctly, causing files with names starting with `-` to be wrongly skipped as if they were flags.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/docker.py",
+      "start_line": 310,
+      "end_line": 313,
+      "message": "`_to_project_relative_path` calls only `os.path.expanduser`, not `os.path.expandvars`. Shell-expanded volume sources like `$PWD` or `$(pwd)` (common in Docker commands) are not expanded. `_to_project_relative_path` returns `None` for `$PWD`, so `source_prefix` falls back to the literal string `\"$PWD\"`. Paths mapped via `_map_container_path_to_project` then contain literal `$PWD` components (e.g., `$PWD/file.svg`), producing incorrect I/O paths in the recorded stage.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_to_project_relative_path` calls only `os.path.expanduser`, not `os.path.expandvars`. When `$PWD` is passed as a literal string in a volume spec (common for programmatic/quoted invocations), it remains unexpanded. `source_prefix` ends up as the literal `\"$PWD\"` string, and `_map_container_path_to_project` produces incorrect I/O paths like `\"$PWD/file.mmd\"` in the recorded stage.",
+      "severity_justification": "`$PWD` in Docker volume mounts is extremely common (the test itself uses `-v $PWD:/work`). When the command is passed as a quoted string (e.g., from a VS Code extension or script) rather than through a shell that expands variables, the I/O paths recorded in the pipeline are wrong, silently corrupting the stage definition.",
+      "category_justification": "Shell variable expansion is missing, causing incorrect I/O paths to be recorded when volume mounts use `$PWD` or other environment variables.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/environments.py",
+      "start_line": 1362,
+      "end_line": 1372,
+      "message": "The new `shell-command` shortcut that returns `_system` is evaluated before checking whether an existing environment is already associated with the stage in calkit.yaml. However, in `xr.py` the reuse-from-existing-stage logic (which sets `environment` from `existing_stage[\"environment\"]`) runs before `detect_env_for_stage` is called, so `environment` will already be non-None if the stage exists. But if the user re-invokes `xr` for a stage whose environment is `_system`, `environment` is set to `\"_system\"` before the call, and `detect_env_for_stage` then takes the `environment is not None` path, calling `env_from_name_or_path(\"_system\", ...)`. Since `_system` is never written to calkit.yaml (exists=True shortcut), this lookup will likely fail or return unexpected results on the second run.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`env_from_name_or_path` has an explicit special-case handler for `\"_system\"` (lines 643-648) that returns `EnvDetectResult(name='_system', env={'kind': 'system'}, exists=True)` without requiring `_system` to be present in calkit.yaml. The second-run lookup succeeds correctly, contradicting the finding's claim of likely failure.",
+      "severity_justification": "The described failure path does not exist in the code.",
+      "category_justification": "The finding makes a claim about incorrect runtime behavior on repeated invocations.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/docker.py",
+      "start_line": 204,
+      "end_line": 204,
+      "message": "When a container working directory is not specified in a `docker run` command and no volumes are mounted, `container_wdir` is determined by checking `is_mermaid_image`. This logic doesn't scale well to other image types that might be supported in the future. A more extensible approach, such as using a mapping from image names to default working directories, would be better.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim is factually correct: `container_wdir` falls back to `\"/data\" if is_mermaid_image else \"/work\"` — a hardcoded per-image special case — while `XR_DOCKER_ENTRYPOINT_IMAGES` is designed as an extensible set. Adding a new allowlisted image would require a new `is_<image>` flag and another hardcoded branch, which is inconsistent design.",
+      "severity_justification": "The code is functionally correct for the single currently supported allowlisted image. This is a future-proofing/maintainability concern with no present behavioral impact.",
+      "category_justification": "The finding identifies a hardcoded special-case pattern that contradicts the extensible design of `XR_DOCKER_ENTRYPOINT_IMAGES`, making future additions harder to maintain.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/cli/main/xr.py",
+      "start_line": 288,
+      "end_line": 288,
+      "message": "The code checks for an existing environment with `if isinstance(existing_env, dict):` but this check is probably not necessary. The value from `envs.get(inferred_name)` will either be a dictionary (if the key exists) or `None`, which is already falsy. This makes the `isinstance` check redundant.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`isinstance(existing_env, dict)` is not redundant: an empty dict `{}` is falsy but isinstance returns True, so a truthy check is not equivalent. The `isinstance` pattern is also more defensive against malformed YAML. The finding's premise that the check is 'redundant' because `None` is already falsy overlooks the dict/None distinction that isinstance provides, and the suggestion offers no concrete improvement.",
+      "severity_justification": "This is a minor style observation with no behavioral impact.",
+      "category_justification": "The finding is a code style suggestion about type checking.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/detect.py",
+      "start_line": 458,
+      "end_line": 460,
+      "message": "The fallback logic for `shlex.split` failure is to use `analyzed_command.split()`. This can lead to incorrect parsing for commands with quoted arguments. If `shlex.split` fails, it might be safer to log a warning and proceed with an empty list of words or raise an error, rather than risk misinterpreting the command.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The fallback is intentional best-effort: `shlex.split` only fails on genuinely malformed commands, and `detect_shell_command_io` is heuristic throughout. The suggested alternative (empty list or error) offers no concrete improvement — it would silently suppress all I/O detection for malformed commands without fixing any real harm. The finding is a generic error-handling preference, not a concrete bug.",
+      "severity_justification": "Incorrect I/O detection for malformed shell commands has negligible real-world impact; the function is advisory and best-effort throughout.",
+      "category_justification": "This is a generic code style/error-handling suggestion about fallback behavior in a best-effort heuristic function.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/cli/main/xr.py",
+      "start_line": 569,
+      "end_line": 570,
+      "message": "The `quiet` parameter is passed to `run`, but `run` does not define a `quiet` parameter. This will cause a `TypeError` at runtime. The likely intent was for the `quiet` behavior to be handled by redirecting stdout/stderr, which is already being done.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`run` in `core.py` explicitly defines `quiet: Annotated[bool, typer.Option('-q', '--quiet', ...)] = False` at lines 920-921. The call `run(..., quiet=True)` is valid and will not raise a TypeError. The finding's central factual claim is incorrect.",
+      "severity_justification": "If the claim were true, it would be a runtime crash on every `--json` mode execution. Assigning high severity to the hypothetical since it would be a hard failure.",
+      "category_justification": "The finding claims a runtime TypeError, which would be a correctness/reliability issue if true.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/docker.py",
+      "start_line": 151,
+      "end_line": 157,
+      "message": "The function `_parse_volume_spec` incorrectly assumes that colon-separated volume specifications always follow a fixed format. Certain edge cases, like multiple colons in the source path (e.g., `C:/path:to:/data`), may not be correctly parsed, potentially leading to incorrect or incomplete mappings.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The cited example `C:/path:to:/data` is not a valid Docker volume specification. Docker's `source:dest[:mode]` format does not allow multiple colons in the source path beyond Windows drive letters, which the function explicitly handles. No real-world Docker volume spec would reach the broken parsing path described.",
+      "severity_justification": "Even if the concern were valid, it would only affect exotic/invalid Docker volume specs that don't appear in practice.",
+      "category_justification": "The finding claims incorrect parsing behavior for specific input.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/cli/main/xr.py",
+      "start_line": 621,
+      "end_line": 625,
+      "message": "The use of `_xr_json_result` for JSON output formatting does not sanitize error messages. If the exceptions (`e`) propagate sensitive information, this might expose unintended details in logs. Ensure sensitive data is filtered prior to inclusion in error responses.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic security boilerplate claim. The finding does not demonstrate any concrete sensitive data flow — no specific exception type, no actual secret or credential that could appear in an exception message, and no demonstrated path from untrusted input to a dangerous sink. The error messages come from Python exceptions raised during local pipeline execution (file I/O, DVC, model validation), none of which handle credentials or PII. The output goes to the user's own terminal/stdout, not to a remote log aggregator. The finding could be copy-pasted onto any codebase that includes exception messages in output.",
+      "severity_justification": "No concrete sensitive data exposure path is demonstrated. The errors are local execution failures reported back to the invoking user.",
+      "category_justification": "The finding frames the concern as potential exposure of sensitive information in error responses.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/cli/main/xr.py",
+      "start_line": 440,
+      "end_line": 452,
+      "message": "The command normalization for Docker `entrypoint`-mode does not validate that the `inputs` and `outputs` paths are unique after mapping, which could result in unintended duplicates if paths resolve identically (e.g., symlinks or normalization mismatches).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The deduplication logic in xr.py's merge phase already prevents string-identical duplicates from appearing in all_inputs/all_outputs. The only remaining theoretical issue would be two different path strings resolving to the same file (symlinks/normalization), which is a contrived edge case for Mermaid CLI usage. The finding provides no concrete example of this occurring and doesn't demonstrate actual harm.",
+      "severity_justification": "Even if duplicate entries appeared in the stage's inputs/outputs arrays, the impact would be cosmetic redundancy in calkit.yaml, not a crash or data loss.",
+      "category_justification": "The finding is about potential duplicate entries in recorded I/O paths.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/docker.py",
+      "start_line": 284,
+      "end_line": 293,
+      "message": "The `_to_project_relative_path` function does not enforce that the resolved path exists, potentially returning misleading results for non-existent paths or directories, which might affect volume mapping logic.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`resolve(strict=False)` is intentionally correct here. Volume mount sources in Docker commands are pipeline stage metadata — they need not exist at recording time. Using `strict=True` would raise `FileNotFoundError` for non-existent paths, breaking valid recording scenarios. The finding misunderstands the function's purpose.",
+      "severity_justification": "The suggestion would actively degrade functionality by rejecting valid non-existent paths.",
+      "category_justification": "The finding makes a claim about path resolution behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/tests/test_docker.py",
+      "start_line": 23,
+      "end_line": 24,
+      "message": "Test coverage lacks additional edge cases like `docker` volume specifications with multiple colons or absolute paths combined with file systems that reject resolution semantics (e.g., network shares or virtual environments).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic test coverage suggestion that could be applied to any codebase with Docker volume parsing. It does not identify a specific failing test case or a concrete bug in the code — it just notes that unusual edge cases (network shares, virtual environments) are untested. The cited edge case of 'multiple colons' was already assessed as invalid Docker volume syntax (finding 13). The suggestion about network shares and virtual environments is speculative and not grounded in actual code behavior.",
+      "severity_justification": "No concrete failing behavior is identified; this is a theoretical coverage gap for edge cases that rarely appear in practice.",
+      "category_justification": "The finding is about missing test coverage for edge cases in volume spec parsing.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/cli/main/core.py",
+      "start_line": 1894,
+      "end_line": 1896,
+      "message": "Updating `pipeline['stages']` directly without first validating mutual exclusivity across environments and I/O could inadvertently introduce overlapping or conflicting stages, especially in incremental updates.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at `core.py` lines 1894-1896 is a `wait` helper function inside `run_procedure` — completely unrelated to pipeline stage updates. The `pipeline['stages']` mutation logic is in `xr.py`. The finding's factual claim does not match the code at the referenced location.",
+      "severity_justification": "The finding references the wrong code entirely, so the concern as stated is unfounded.",
+      "category_justification": "The finding claims incorrect mutation logic at a specific location.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/docker.py",
+      "start_line": 190,
+      "end_line": 192,
+      "message": "The `_normalize_docker_image` function appends `:latest` indiscriminately to image references lacking a tag, potentially masking configuration errors where the absence of a tag signals an outdated or incorrect image reference.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Appending `:latest` to untagged image references is the correct Docker convention — Docker itself resolves untagged images to `:latest` by default. The function makes the implicit behavior explicit in the recorded stage definition, which is a deliberate design choice for reproducibility. 'Absence of a tag signals an incorrect reference' is not a Docker convention; untagged references are valid and common. The finding is a generic preference against `:latest` tags dressed up as a correctness concern, with no specific exploit or concrete misconfiguration demonstrated.",
+      "severity_justification": "No concrete harm is demonstrated. Making `:latest` explicit in the pipeline record is at worst a reproducibility concern (same as using untagged images directly), not a configuration error.",
+      "category_justification": "The finding is a design preference about how image tags are handled, not a concrete bug.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/models/pipeline.py",
+      "start_line": 152,
+      "end_line": 153,
+      "message": "Addition of the `command` kind in stages lacks validation for command-specific constraints (e.g., proper environment setup or acceptable commands), which could cause inconsistent results if not properly verified during pipeline execution.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`CommandStage` mirrors the structure of `ShellCommandStage` — both have `command: str` with no command-specific field validation beyond the base `Stage` class. The finding does not identify any specific constraint that is missing, nor explain what concrete inconsistency would result. It is a generic 'should have more validation' suggestion that applies equally to all existing command-type stage classes.",
+      "severity_justification": "No concrete harmful scenario is identified. The concern is speculative.",
+      "category_justification": "The finding is about missing validation in a model class, framed as a design concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/tests/cli/main/test_xr.py",
+      "start_line": 464,
+      "end_line": 470,
+      "message": "The test `test_xr_stage_name_conflict` assumes deterministic stage name incrementation without explicitly verifying the comparison function used (`stages_are_similar`), which might cause test flakiness if configurations evolve.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a generic concern about test design ('might cause flakiness if configurations evolve') without demonstrating a concrete current or near-term failure path. `stages_are_similar` is a deterministic comparison function and its behavior would need to change for this test to become flaky. The test validates observable behavior (stage name auto-incrementation) which is the correct level to test at. Not testing `stages_are_similar` directly is a test design choice, not a flaw.",
+      "severity_justification": "No concrete flakiness scenario is demonstrated. The test exercises deterministic logic.",
+      "category_justification": "The finding is about test design and potential flakiness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/tests/cli/main/test_xr.py",
+      "start_line": 135,
+      "end_line": 140,
+      "message": "[python.lang.correctness.common-mistakes.string-concat-in-list.string-concat-in-list] Detected strings that are implicitly concatenated inside a list. Python will implicitly concatenate strings when not explicitly delimited. Was this supposed to be individual elements of the list?",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The parentheses `(...)` explicitly group the string literals into a single list element — this is intentional multi-line string construction, not an accidental omission of a comma. The single-string docker command is passed as one CLI argument so `split_xr_command` can parse it. Splitting into separate list elements would break the test's intent.",
+      "severity_justification": "No bug exists; the lint rule fires on intentional idiomatic Python.",
+      "category_justification": "The tool flags this as a potential list construction mistake.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.correctness.common-mistakes.string-concat-in-list.string-concat-in-list"
+      }
+    },
+    {
+      "file": "calkit/tests/cli/main/test_xr.py",
+      "start_line": 210,
+      "end_line": 213,
+      "message": "[python.lang.correctness.common-mistakes.string-concat-in-list.string-concat-in-list] Detected strings that are implicitly concatenated inside a list. Python will implicitly concatenate strings when not explicitly delimited. Was this supposed to be individual elements of the list?",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical pattern to finding 22: parentheses `(...)` explicitly group the string literals into a single list element — an intentional multi-line string for the full docker command. Splitting into separate list elements would break the test's intent of passing one quoted docker command string as a single CLI argument to `split_xr_command`.",
+      "severity_justification": "No bug exists; the lint rule fires on intentional idiomatic Python.",
+      "category_justification": "The tool flags this as a potential list construction mistake.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.correctness.common-mistakes.string-concat-in-list.string-concat-in-list"
+      }
+    },
+    {
+      "file": "calkit/cli/main/core.py",
+      "start_line": 1911,
+      "end_line": 1911,
+      "message": "This change appears unrelated to the PR's purpose (making `xr` compatible with `docker run` commands). The original `typer.echo()` printed an empty line to terminate the in-place countdown line written with `\\r`. Replacing it with `typer.echo(\"Done\")` will be written on the same line as the last `Time left: ...` countdown output (since the prior write used `nl=False`), producing output like `Time left: 00:00\\rDone`. If this change is intentional, consider prepending a newline or clearing the line; otherwise revert it as it isn't related to this PR.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The countdown loop writes with `\\r` and `nl=False`, leaving the cursor at line start. `typer.echo('Done')` writes only 4 chars starting there, partially overwriting the 16-char countdown string — a terminal would show 'Done left: 00:00' instead of just 'Done'. The original `typer.echo()` (newline-only) avoided this by simply advancing the cursor. The finding is factually correct.",
+      "severity_justification": "Purely a cosmetic display artifact in a countdown timer; no functional impact on the CLI's core purpose.",
+      "category_justification": "The output rendered in the terminal is incorrect/garbled — a rendering bug rather than a style issue.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/docker.py",
+      "start_line": 100,
+      "end_line": 102,
+      "message": "Splitting on the first colon misparses valid image references that include a registry port, such as `localhost:5000/minlag/mermaid-cli:latest` (this returns `localhost`). That breaks allowlist matching and environment-name inference for images hosted on registries with explicit ports; the tag should be stripped only from the final path component.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "At SHA 872db6c9, `_image_name_without_tag_or_digest` uses `.split(':', 1)[0]`, which returns 'localhost' for 'localhost:5000/minlag/mermaid-cli:latest'. This breaks allowlist matching and environment-name inference for port-qualified registries. The rfind-based fix appears only in the final merged commit, not at this SHA.",
+      "severity_justification": "Only affects users running images from private/local registries with explicit port numbers; the primary use case (public Docker Hub images) is unaffected.",
+      "category_justification": "Logic error in string parsing that produces incorrect results for a valid class of Docker image references.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "calkit/cli/main/xr.py",
+      "start_line": 235,
+      "end_line": 250,
+      "message": "When the inferred/provided Docker environment already exists, this branch skips creating an override and later reuses the existing environment as-is. If that environment lacks `command_mode: entrypoint` (or has `shell`), `xr` still creates a plain `command` stage for the entrypoint image, but replay runs it through the Docker shell mode and the Mermaid-style arguments fail. The existing environment should be validated/updated or the stage should not be converted to `command` unless entrypoint mode is actually configured.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "When the inferred Docker environment name already exists in calkit.yaml, `docker_override_env_result` is never set, so `detect_env_for_stage` returns the existing environment as-is. If it lacks `command_mode: entrypoint`, execution wraps the normalized entrypoint args (e.g., `-i file.mmd -o file.pdf`) as `sh -c \"-i file.mmd -o file.pdf\"` which fails. The code provides no validation or update of the existing environment's `command_mode` before creating the `command` stage.",
+      "severity_justification": "When triggered, the stage silently fails at execution time with confusing errors, and the pipeline is rolled back. Requires an environment pre-existing without the correct command_mode, which is a realistic scenario when environments are set up manually or via other calkit commands.",
+      "category_justification": "Logic error: the code assumes the existing environment has the correct command_mode without validating it, causing runtime failure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,271 @@
+{
+  "pr_key": "FreeRTOS_FreeRTOS-Kernel_1379-c926adcf",
+  "pr": {
+    "repo": "https://github.com/FreeRTOS/FreeRTOS-Kernel",
+    "pr_number": 1379,
+    "base": "f1043c49d59944353291654c175852bd17b34f99",
+    "head": "c926adcf6e0be826e3313fc503a92b53a78f8ef8"
+  },
+  "findings": [
+    {
+      "file": "tasks.c",
+      "start_line": 5233,
+      "end_line": 5244,
+      "message": "The vTaskSwitchContext safety net fires on ALL context-switch requests for a core running a preemption-disabled task, including voluntary yields triggered by the task itself. When a preemption-disabled task calls a blocking API (vTaskDelay, xQueueReceive with timeout, xSemaphoreTake, etc.), it removes itself from the ready list and then calls portYIELD() -> vTaskSwitchContext. The safety net intercepts this, sets xYieldPendings[xCoreID] = pdTRUE, and returns without calling taskSELECT_HIGHEST_PRIORITY_TASK. pxCurrentTCBs[xCoreID] remains pointing to the blocking task; the port restores its context and the task continues past the blocking call without having blocked. This leaves the task simultaneously 'running' on its core and in the delayed/event list, corrupting scheduler state. vTaskExitCritical also calls portYIELD() when xYieldPendings is set, which again hits the safety net. The fix for preventing external preemption must not apply when the current task is no longer in the ready list (i.e., it voluntarily removed itself via a blocking call).",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified the safety net at lines 5234-5239 fires unconditionally for any vTaskSwitchContext call on a core with xPreemptionDisable set. When a preemption-disabled task calls vTaskDelay(), prvAddCurrentTaskToDelayedList removes it from the ready list, then taskYIELD_WITHIN_API triggers vTaskSwitchContext. The safety net sets xYieldPendings=pdTRUE and returns without calling taskSELECT_HIGHEST_PRIORITY_TASK, leaving pxCurrentTCBs pointing to the now-blocked task, so the port restores that task's context and it continues running past the blocking call.",
+      "severity_justification": "Any blocking API call (vTaskDelay, semaphore/queue/event waits) from a preemption-disabled task will silently fail to block, corrupting scheduler state and potentially deadlocking the system or causing data integrity issues.",
+      "category_justification": "Logic error in the safety net: it prevents all context switches for a preemption-disabled task, including voluntary ones, rather than only preventing involuntary preemption.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 5233,
+      "end_line": 5244,
+      "message": "When vTaskSwitchContext is called for a preemption-disabled core from portYIELD_CORE (IPI path, triggered from non-prvYieldForTask callers such as xTaskPriorityDisinherit at line 6828 or vTaskCoreAffinitySet at line 3046, which call prvYieldCore without checking xPreemptionDisable), the safety net sets xYieldPendings[xCoreID] = pdTRUE and defers. When vTaskPreemptionEnable later calls prvYieldCore(xCoreID), this triggers yet another IPI/portYIELD, which calls vTaskSwitchContext. If the original yield requirement is already resolved (e.g. the higher-priority task ran elsewhere), this fires a spurious context switch. The switch itself is harmless (taskSELECT_HIGHEST_PRIORITY_TASK picks the right task), but it is an unnecessary overhead every time preemption is re-enabled after any deferred-yield scenario.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding incorrectly claims vTaskPreemptionEnable triggers a second IPI. After the safety net intercepts the first IPI, xTaskRunState remains taskTASK_SCHEDULED_TO_YIELD (-2). vTaskPreemptionEnable checks taskTASK_IS_RUNNING() first, which evaluates to pdFALSE for taskTASK_SCHEDULED_TO_YIELD, so it skips prvYieldCore entirely. The prvYieldCore macro also has an explicit xTaskRunState != taskTASK_SCHEDULED_TO_YIELD guard against sending duplicate IPIs. The described mechanism is not correct. Additionally the finding explicitly calls the effect 'harmless overhead', which is sub-threshold.",
+      "severity_justification": "The finding explicitly characterizes the described behavior as harmless unnecessary overhead, and the mechanism itself is likely not triggered in practice.",
+      "category_justification": "The finding is about unnecessary context switch overhead, not a correctness issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 5497,
+      "end_line": 5509,
+      "message": "The xYieldPendingBefore defense-in-depth is NOT guarded by #if configUSE_TASK_PREEMPTION_DISABLE and therefore changes the behavior of xTaskRemoveFromEventList (and the three other patched functions at lines 3525-3535, 8211-8221, 8348-8358) for ALL SMP builds with configUSE_PREEMPTION == 1, regardless of whether configUSE_TASK_PREEMPTION_DISABLE is enabled. In a standard SMP build (no preemption disable), if xYieldPendings[portGET_CORE_ID()] happens to be pdTRUE when these functions run (e.g. from a time-slicing event that fired just before), the function now returns pdFALSE instead of pdTRUE. Callers (e.g. queue/semaphore ISR wrappers) that check *pxHigherPriorityTaskWoken will skip portYIELD_FROM_ISR, potentially delaying a high-priority task by up to one tick period. This behavioral change is broader than the stated fix scope (the PR says it targets configUSE_TASK_PREEMPTION_DISABLE == 1 builds).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed by comparing pre-PR code (f1043c49d) with the PR. The defense-in-depth change (xYieldPendingBefore pattern) is not guarded by configUSE_TASK_PREEMPTION_DISABLE, meaning it applies to all SMP+preemption builds. When xYieldPendings[portGET_CORE_ID()] is already pdTRUE when the function runs, prvYieldForTask leaves it pdTRUE but the new condition (xYieldPendingBefore==pdFALSE) fails, returning pdFALSE where the original returned pdTRUE, causing ISR callers to skip portYIELD_FROM_ISR and delay a high-priority task.",
+      "severity_justification": "The false negative delays execution of a higher-priority task unblocked from an ISR. The delay is bounded (until the existing pending switch runs), but this is a real-time latency regression in standard SMP builds that have nothing to do with configUSE_TASK_PREEMPTION_DISABLE, which violates the stated scope of the fix.",
+      "category_justification": "The code change produces incorrect return values (false negative) in a class of SMP builds, potentially causing missed portYIELD_FROM_ISR calls and delayed task scheduling.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 4118,
+      "end_line": 4123,
+      "message": "In xTaskResumeAll (SMP path), when xTaskIncrementTick() returns pdTRUE, xYieldPendings[xCoreID] = pdTRUE is set without any configUSE_TASK_PREEMPTION_DISABLE guard. The PR relies on xTaskIncrementTick() never returning pdTRUE for a preemption-disabled calling core (because the yield-processing loop inside xTaskIncrementTick already has the preemption-disable guard). This is an implicit dependency: if the yield-processing logic in xTaskIncrementTick is changed in the future, this path could silently set a stale xYieldPendings flag for a preemption-disabled core, re-introducing the original bug without any compile-time indication that a guard is needed here.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: xTaskIncrementTick for SMP can only set xSwitchRequired=pdTRUE at line 4957, which is inside the configUSE_TASK_PREEMPTION_DISABLE guard added by this PR. The xTaskResumeAll assignment xYieldPendings[xCoreID]=pdTRUE at line 4122 has no guard and silently relies on this invariant. The implicit dependency is real and undocumented.",
+      "severity_justification": "No current bug exists — the implicit dependency holds with the current code. The risk is a future maintainability regression if xTaskIncrementTick is modified. In a safety-critical scheduler codebase like FreeRTOS, undocumented cross-function invariants are a real (though low-immediate-impact) concern.",
+      "category_justification": "The finding is about an implicit, undocumented coupling between two functions that creates fragility for future changes, not a current behavioral bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 4893,
+      "end_line": 4905,
+      "message": "The root-cause fix in the SMP time-slicing loop uses a #if configUSE_TASK_PREEMPTION_DISABLE == 1 / #endif / { } pattern where, when configUSE_TASK_PREEMPTION_DISABLE == 1 and xPreemptionDisable != pdFALSE, the inner if-body is skipped silently. The existing else { mtCOVERAGE_TEST_MARKER() } belongs only to the outer listCURRENT_LIST_LENGTH check and does NOT cover the new skipped-preemption-disable branch. There is no coverage marker for the case where list length > 1 AND preemption is disabled, so this code path is invisible to code-coverage analysis and may go untested.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The exact same pattern (outer if with #if xPreemptionDisable guard followed by else { mtCOVERAGE_TEST_MARKER() } covering only the outer condition) is used consistently at lines 940-956, 1251, and other locations in the file. The convention in this codebase is to not add coverage markers for the xPreemptionDisable false branch. The new code is consistent with this pre-existing pattern, making the finding sub-threshold.",
+      "severity_justification": "A missing coverage marker has no behavioral impact and is only relevant to test completeness reporting.",
+      "category_justification": "The concern is about code coverage analysis gaps rather than correctness or behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 3525,
+      "end_line": 3535,
+      "message": "In xTaskResumeFromISR (SMP path), prvYieldForTask(pxTCB) is called unconditionally regardless of whether uxSchedulerSuspended != 0. When the scheduler is suspended, pxTCB was just added to xPendingReadyList (not pxReadyTasksLists). prvYieldForTask may signal cores to yield for pxTCB, but when vTaskSwitchContext runs on those cores, taskSELECT_HIGHEST_PRIORITY_TASK looks only at pxReadyTasksLists and will not find pxTCB there yet. The new xYieldPendingBefore snapshot does not fix this pre-existing issue; it can still set xYieldRequired = pdTRUE (if xYieldPendings transitions pdFALSE->pdTRUE) causing the ISR to call portYIELD_FROM_ISR for a task not yet in the ready list.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The prvYieldForTask unconditional call outside uxSchedulerSuspended was already present pre-PR (confirmed via git diff against f1043c49d). The PR only added the xYieldPendingBefore snapshot. The claimed harm (portYIELD_FROM_ISR for task not in ready lists) is benign: if scheduler is still suspended, vTaskSwitchContext defers the switch; if scheduler was already resumed, xTaskResumeAll has already moved the task to pxReadyTasksLists. No actual scheduling corruption occurs.",
+      "severity_justification": "Even if this concern were valid, the consequence would be a spurious deferred context switch that resolves correctly, not a missed or corrupted schedule. The issue is pre-existing and has not caused known problems.",
+      "category_justification": "The concern is about scheduler state correctness — whether prvYieldForTask being called before the task is in the ready list causes incorrect scheduling decisions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 5233,
+      "end_line": 5236,
+      "message": "In `xTaskIncrementTick`, the logic to defer a context switch when preemption is disabled (`pxCurrentTCBs[ xCoreID ]->xPreemptionDisable != pdFALSE`) is applied to all cores during the tick processing loop. However, this check should only apply to the *current* core that is executing the tick ISR, as a core cannot inspect another core's preemption-disabled state. The correct logic would be to check `if( ( xCoreID == portGET_CORE_ID() ) && ( pxCurrentTCBs[ xCoreID ]->xPreemptionDisable != pdFALSE ) )`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Lines 5233-5236 are in vTaskSwitchContext(BaseType_t xCoreID), not xTaskIncrementTick. There is no loop there - it processes a single core. xCoreID in vTaskSwitchContext always equals portGET_CORE_ID() at the time of execution (the function is only called by a core for itself, either via direct yield or via IPI handler on the receiving core). The suggested fix adding xCoreID==portGET_CORE_ID() is tautological. The claim that 'a core cannot inspect another core's preemption-disabled state' is both factually incorrect for shared-memory SMP and inapplicable here since no cross-core inspection is occurring.",
+      "severity_justification": "The finding is based on multiple factual errors about the code structure and does not identify a real issue.",
+      "category_justification": "The finding makes incorrect claims about the correctness of the preemption-disable check in vTaskSwitchContext.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 8196,
+      "end_line": 8197,
+      "message": "The check `if( xYieldPendings[ portGET_CORE_ID() ] == pdTRUE )` is inconsistent with the other defensive changes in this PR. Other locations were changed to `if( ( xYieldPendingBefore == pdFALSE ) && ( xYieldPendings[ portGET_CORE_ID() ] != pdFALSE ) )` to prevent issues from stale yield flags. This location should use the same pattern for consistency and to guard against the same class of bug.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Lines 8196-8197 are in the single-core (#if configNUMBER_OF_CORES==1) block and contain a priority comparison, not a xYieldPendings check. The SMP path (the #else block at lines 8210-8228) already uses the xYieldPendingBefore pattern added by this PR. The finding's claim that this location lacks the xYieldPendingBefore guard is factually incorrect against the current code.",
+      "severity_justification": "No real issue exists at the cited lines — the SMP path correctly uses the new xYieldPendingBefore pattern.",
+      "category_justification": "The concern if it were valid would be about consistency of the defensive pattern applied in this PR.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 8330,
+      "end_line": 8331,
+      "message": "The check `if( xYieldPendings[ portGET_CORE_ID() ] == pdTRUE )` is inconsistent with the other defensive changes in this PR. Other locations were changed to `if( ( xYieldPendingBefore == pdFALSE ) && ( xYieldPendings[ portGET_CORE_ID() ] != pdFALSE ) )` to prevent issues from stale yield flags. This location should use the same pattern for consistency and to guard against the same class of bug.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Lines 8330-8331 are inside the #if (configNUMBER_OF_CORES==1) block and contain *pxHigherPriorityTaskWoken = pdTRUE in a priority comparison block, not a xYieldPendings check. The SMP path (#else block at lines 8347-8364) already uses the xYieldPendingBefore pattern added by this PR. The specific claim about a missing xYieldPendingBefore guard at the cited lines is factually incorrect.",
+      "severity_justification": "No real issue at the cited lines — the SMP path has the correct pattern.",
+      "category_justification": "If valid, the concern would be about consistency of defensive patterns in the PR.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 4893,
+      "end_line": 4896,
+      "message": "In xTaskIncrementTick, the guard condition does not account for possible uninitialized or invalid values of xPreemptionDisable in pxCurrentTCBs[xCoreID]. If xPreemptionDisable is not strictly validated, it could lead to unintended skips or setting of xYieldPendings incorrectly.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Every TCB is zero-initialized via memset(pxNewTCB, 0x00, sizeof(TCB_t)) at creation, setting xPreemptionDisable to 0 (pdFALSE). It is subsequently only written to pdTRUE or pdFALSE by vTaskPreemptionDisable/Enable. There is no path to an uninitialized or invalid value. The finding is a generic boilerplate concern not backed by any specific code analysis.",
+      "severity_justification": "The theoretical concern has no basis in the actual code — xPreemptionDisable is always properly initialized and only written with well-defined values.",
+      "category_justification": "The claim is about potential incorrect behavior from invalid field values, which is a correctness concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 5218,
+      "end_line": 5232,
+      "message": "In vTaskSwitchContext's SMP path, the preemption check assumes xPreemptionDisable's validity without ensuring it is not modified concurrently. This creates a possible race condition on preemption status in multithreaded scenarios.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "vTaskSwitchContext holds portGET_TASK_LOCK before reading xPreemptionDisable. vTaskPreemptionDisable and vTaskPreemptionEnable write xPreemptionDisable inside taskENTER_CRITICAL() which acquires the same task lock. The mutual exclusion is correctly established by the existing locking protocol. The finding doesn't verify the actual synchronization in place and is a generic race-condition assertion.",
+      "severity_justification": "No actual race condition exists due to the task lock protecting all accesses to xPreemptionDisable.",
+      "category_justification": "The concern is about concurrency/thread safety in a multithreaded SMP context.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 3525,
+      "end_line": 3529,
+      "message": "In xTaskResumeFromISR, the comparison of xYieldPendings before and after calling prvYieldForTask assumes the flag will only transition due to internal context changes, ignoring potential side effects caused by unrelated ISRs modifying xYieldPendings concurrently.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The xYieldPendingBefore snapshot and subsequent check both execute inside taskENTER_CRITICAL_FROM_ISR(), which in SMP disables local interrupts and acquires the global ISR lock. This prevents both local ISR preemption and cross-core ISR critical sections from modifying xYieldPendings concurrently. The finding does not verify the actual locking and is a generic unsubstantiated race-condition assertion.",
+      "severity_justification": "No actual race condition exists — the critical section with ISR lock provides the necessary mutual exclusion.",
+      "category_justification": "The concern is about concurrent modification of shared state in an SMP context.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tasks.c",
+      "start_line": 5479,
+      "end_line": 5484,
+      "message": "In xTaskRemoveFromEventList, saving and comparing xYieldPendingBefore does not account for proper memory barriers or synchronization for xYieldPendings access. Without barriers, there could be inaccurate yield detections under system load.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "xTaskRemoveFromEventList is documented to always be called from a critical section. xYieldPendings is declared volatile (line 508) preventing compiler reordering. The critical section holds a spinlock (portGET_ISR_LOCK or task lock) which provides hardware memory barriers on SMP architectures. The finding does not verify any of these synchronization mechanisms and is a generic boilerplate memory-barrier concern.",
+      "severity_justification": "No actual barrier issue exists — volatile declaration plus critical section spinlocks provide the necessary ordering guarantees.",
+      "category_justification": "The concern is about memory ordering and synchronization of shared state accesses.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

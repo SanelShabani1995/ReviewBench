@@ -1,0 +1,237 @@
+{
+  "pr_key": "pnpm_pnpm_11268-e4127110",
+  "pr": {
+    "repo": "https://github.com/pnpm/pnpm",
+    "pr_number": 11268,
+    "base": "b738043ab1ebac66277790083d595366527dcdc6",
+    "head": "e4127110f2d9dcf4d8ca9bb24d6f92ce10ac1013"
+  },
+  "findings": [
+    {
+      "file": "deps/compliance/commands/src/audit/fix.ts",
+      "start_line": 39,
+      "end_line": 44,
+      "message": "createOverrides uses Object.fromEntries on an array that can contain duplicate keys. If two fixable advisories for the same package happen to have an identical vulnerable_versions string (e.g., the registry returns two CVEs with the same affected range), the second entry silently overwrites the first. If the second advisory requires a lower patched_versions (e.g., >=1.0.0 vs >=1.2.0), the generated override is insufficient to fix the higher-severity advisory, giving users false confidence the vulnerability was resolved.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: Object.fromEntries silently discards earlier entries with duplicate keys. The key is module_name@vulnerable_versions, so two advisories for the same package with identical vulnerable_versions strings but different patched_versions would produce an insufficient override. The scenario is real, if rare.",
+      "severity_justification": "Requires an unusual registry response (two advisories for the same package with identical vulnerable_versions strings), and the resulting failure mode is a missed override rather than data loss or security exposure.",
+      "category_justification": "The generated override record can silently drop an advisory's patched_versions, potentially leaving a vulnerability unfixed after audit --fix.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "deps/compliance/audit/src/index.ts",
+      "start_line": 113,
+      "end_line": 116,
+      "message": "In bulkResponseToAuditReport, advisories[String(adv.id)] is overwritten if the same advisory id appears under two different package names in the bulk response, but vulnerabilities[adv.severity] += 1 still runs for every occurrence. This causes metadata.vulnerabilities counts to be higher than the actual number of unique advisory entries returned, producing an inaccurate summary (e.g., 'N vulnerabilities found' where N is inflated). The npm registry currently assigns distinct IDs per package-advisory pair, but this invariant is not enforced in code.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the code: advisories[String(adv.id)] is assigned unconditionally and vulnerabilities[adv.severity] += 1 runs for every occurrence with no dedup check. If the same advisory ID appears under two package keys in the bulk response, the count is inflated while the advisories map only retains the last entry.",
+      "severity_justification": "Produces an inaccurate vulnerability count in the summary output and inflates reported severity totals, which could mislead users about the actual number of vulnerabilities. Not a security bypass but a correctness issue in the core audit reporting output.",
+      "category_justification": "The vulnerability count in metadata diverges from the number of unique advisory entries actually returned, producing an inaccurate summary.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "deps/compliance/commands/src/audit/ignore.ts",
+      "start_line": 27,
+      "end_line": 38,
+      "message": "When --ignore-unfixable is used and any advisory in advisoriesWithNoResolutions has an empty github_advisory_id (which occurs whenever the advisory URL is absent or doesn't contain a GHSA fragment), the function throws PnpmError before reaching writeSettings. Because the throw happens inside the loop that accumulates GHSAs into currentUniqueGhsas, none of the advisories processed up to that point (which did have GHSA IDs) are persisted either. The user is left with a hard error and no partial progress, forcing them to identify and manually handle the offending advisory before they can ignore any of the others.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the throw inside the ignoreUnfixable loop aborts before writeSettings is called, discarding all previously accumulated GHSAs. github_advisory_id is '' when deriveGithubAdvisoryId cannot parse a GHSA from the advisory URL, which is a realistic occurrence.",
+      "severity_justification": "The failure mode is a hard error with no partial progress when --ignore-unfixable is used and one advisory lacks a GHSA ID. Disruptive but not a security or data-loss issue; the user can work around it by ignoring advisories individually.",
+      "category_justification": "The function fails entirely without persisting any partial state when encountering an advisory with a missing GHSA ID, making the --ignore-unfixable workflow unreliable in edge cases.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "deps/compliance/commands/src/audit/ignore.ts",
+      "start_line": 36,
+      "end_line": 40,
+      "message": "The --ignore flag accepts any string and passes it through normalizeGhsaId without validating that it actually looks like a GHSA identifier. If a user supplies a CVE ID (e.g., CVE-2021-12345) — the previous format expected before this migration — normalizeGhsaId returns 'CVE-2021-12345', which is stored in ignoreGhsas and compared against derived GHSA IDs (e.g., 'GHSA-cph5-m8f7-6c5x'). The comparison will never match, so the advisory is silently not ignored. No error or warning is produced, giving the user false confidence that the vulnerability was suppressed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: normalizeGhsaId does not validate that input resembles a GHSA ID; a CVE ID passes through, gets stored in ignoreGhsas, but never matches any github_advisory_id derived from advisory URLs (which are GHSA-prefixed). writeSettings succeeds silently, giving false confidence.",
+      "severity_justification": "The failure mode is silent non-suppression of an advisory — the vulnerability keeps appearing in audit output. No security bypass or data loss, and the PR description explicitly documents the CVE→GHSA migration. Impact is limited to users who haven't migrated and pass CVE IDs to --ignore.",
+      "category_justification": "The --ignore flag silently accepts and stores an invalid identifier format that will never match, making the ignore workflow unreliable without any diagnostic feedback to the user.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "deps/compliance/audit/src/lockfileToAuditIndex.ts",
+      "start_line": 311,
+      "end_line": 322,
+      "message": "walkReachable is a straightforwardly recursive function with no depth limit and no iterative fallback. It is called from collectOptionalOnlyDepPaths, which runs on both the main lockfile and the env lockfile. In large monorepos or projects with deeply nested transitive dependencies, the call stack grows proportionally to the longest dependency chain. Node.js default stack sizes allow roughly 10,000–15,000 frames; a sufficiently deep dep graph will cause an uncaught RangeError: Maximum call stack size exceeded, crashing the audit command.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "walkReachable is a recursive function with no depth limit; verified in the code. The seen set prevents cycles but not deep paths. The concern is technically valid, though practical dep-graph depths rarely approach stack limits.",
+      "severity_justification": "Real-world npm dependency chains are typically 5-30 levels deep, far below Node.js stack limits. The seen set also constrains revisitation. Stack overflow would require an unusually pathological dependency graph and was a pre-existing risk with the old recursive lockfileToAuditNode.",
+      "category_justification": "A sufficiently deep dependency graph would cause an uncaught RangeError crashing the audit command, though this is a very unlikely scenario in practice.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "deps/compliance/audit/src/index.ts",
+      "start_line": 131,
+      "end_line": 146,
+      "message": "buildFindings pushes info.paths (the exact same array object stored inside AuditPathIndex) into each AuditFinding. Because buildAuditPathIndex is a public export and callers may hold both the returned AuditPathIndex and the AuditReport built from it, any mutation of advisory.findings[i].paths (sort, push, splice, etc.) will silently corrupt the corresponding PathInfo entry in the AuditPathIndex. This is a shared-mutable-state hazard in the public API surface. A defensive copy (e.g., [...info.paths]) would eliminate the aliasing.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The premise is wrong: callers cannot hold both the AuditPathIndex and the AuditReport built from it via the current public API. audit() creates auditPathIndex as a local variable, does not return it, and bulkResponseToAuditReport is unexported. After audit() returns, the path arrays are only reachable through the AuditReport itself, so no aliasing hazard to an external AuditPathIndex exists.",
+      "severity_justification": "Even if considered a code quality concern, the shared reference is inconsequential in practice since the AuditPathIndex used internally by audit() is not accessible from outside the function.",
+      "category_justification": "The finding concerns shared mutable state across a public API boundary, which is an API design concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "deps/compliance/audit/src/index.ts",
+      "start_line": 191,
+      "end_line": 204,
+      "message": "inferPatchedVersions handles the <=X.Y.Z case by calling semver.inc(version, 'patch'). For a prerelease upper bound such as '<=2.0.0-rc.1', semver.inc returns '2.0.0' (strips the prerelease suffix). This is only correct if the vulnerability was fixed in the GA release '2.0.0'. If the actual fix shipped in '2.0.1' (the prerelease was abandoned and the release was skipped), the inferred patched_versions '>=2.0.0' is insufficient: an override generated by audit --fix would permit installing '2.0.0', leaving the package still vulnerable.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: semver.inc('2.0.0-rc.1', 'patch') = '2.0.0', so inferPatchedVersions returns '>=2.0.0' for a <=prerelease range. If 2.0.0-GA is also vulnerable, the inferred override is insufficient. The registry advisory would need to be inaccurate for this to occur, but the inference logic doesn't guard against it.",
+      "severity_justification": "Requires an unusual prerelease upper-bound advisory range AND inaccurate registry data (if 2.0.0 is also vulnerable the range should not have been <=2.0.0-rc.1). The function is explicitly best-effort and the failure mode is an insufficient override rather than a silent skip.",
+      "category_justification": "The inferred patched_versions range could be incorrect for prerelease upper bounds, leading audit --fix to generate an override that doesn't fully remediate the vulnerability.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "deps/compliance/audit/src/index.ts",
+      "start_line": 30,
+      "end_line": 30,
+      "message": "The changes are less trivial than just changing the endpoint. The expected body of the POST request is [completely different](https://api-docs.npmjs.com/#tag/Audit/operation/bulkAudit) to what is generated by `lockfileToAuditTree` and sent as body.\r\n\r\nExpected:\r\n\r\n```json\r\n{\r\n  \"@npmcli/arborist\": [\r\n    \"1.0.0\",\r\n    \"2.0.1\"\r\n  ],\r\n  \"@npmcli/config\": [\r\n    \"10.4.2\"\r\n  ]\r\n}\r\n```\r\n\r\nThe type of `auditTree` is:\r\n\r\n```ts\r\nexport interface AuditNode {\r\n  version?: string\r\n  integrity?: string\r\n  requires?: Record<string, string>\r\n  dependencies?: { [name: string]: AuditNode }\r\n  dev: boolean\r\n}\r\n```",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding describes an issue that the PR has already resolved. At this SHA, lockfileToAuditTree and AuditNode are deleted, and the POST body is JSON.stringify(auditRequest.request) — the correct flat {pkgName: [versions]} format from lockfileToAuditRequest. The finding appears to describe the motivation for the PR, not a remaining deficiency in it.",
+      "severity_justification": "If the claim were true (sending the wrong request body format to the new endpoint) it would be a critical bug causing all audit calls to fail or return incorrect results. But it is factually incorrect at this SHA.",
+      "category_justification": "The finding concerns whether the correct request body format is sent to the new endpoint.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "carlos-menezes",
+        "url": "https://github.com/pnpm/pnpm/pull/11268#discussion_r3086460048",
+        "created_at": "2026-04-15T12:36:41Z",
+        "alignment": "code_changed",
+        "original_commit": "0f89ad76a990328f472d8924618d585f21a7f870",
+        "original_start_line": 30,
+        "original_end_line": 30
+      }
+    },
+    {
+      "file": "deps/compliance/commands/test/audit/ignore.ts",
+      "start_line": 83,
+      "end_line": 83,
+      "message": "This test claims to verify casing normalization, but the input GHSA is already in canonical casing, so a regression that stopped normalizing mixed/lowercase user input would still pass. Use a deliberately non-canonical value here if the goal is to cover the normalization behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The test at line 83 uses `ignore: ['GHSA-cph5-m8f7-6c5x']`, which is already in canonical form (uppercase `GHSA-` prefix, lowercase suffix). `normalizeGhsaId` would return it unchanged, so the assertion `expect(manifest.auditConfig?.ignoreGhsas).toStrictEqual(['GHSA-cph5-m8f7-6c5x'])` passes even if normalization were broken. The test comment explicitly claims it covers 'regardless of the user-supplied casing', but the input never exercises that path.",
+      "severity_justification": "The normalization logic is tested elsewhere (unit tests on `normalizeGhsaId`), and the missing coverage is in an integration-level test. The risk is a future regression in normalization going undetected in this specific test, but it's not a production bug.",
+      "category_justification": "The finding is about a test using canonical input when it claims to cover normalization behavior, which is a test design gap.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "deps/compliance/audit/src/index.ts",
+      "start_line": 107,
+      "end_line": 108,
+      "message": "Invalid advisory IDs or severities are silently skipped here, which can turn a malformed or hostile registry response into a false \"no vulnerabilities\" result. Since these fields are required to safely interpret the advisory, fail the audit with a bad-response error instead of dropping the advisory.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The skip behavior is intentional and documented in the code ('Guard against registry-supplied values that could corrupt the report'). A hostile registry can trivially suppress advisories by simply not returning them — no malformed fields needed — so the security argument doesn't hold. Throwing instead would break the entire audit on any single malformed advisory entry, which is strictly worse for reliability. The PR description explicitly calls this out as hardening.",
+      "severity_justification": "Even if one considered this a real concern, the attack is trivially achievable through other means (registry omitting the advisory entirely), making the practical risk negligible.",
+      "category_justification": "The finding frames this as a security/correctness concern about hostile registry responses producing a false 'no vulnerabilities' result.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "deps/compliance/audit/src/index.ts",
+      "start_line": 167,
+      "end_line": 172,
+      "message": "Returning false for an unparsable `vulnerable_versions` range silently suppresses the advisory and can report a clean audit for a malformed registry response. Treat invalid ranges as a bad audit response instead so the command fails closed rather than hiding potential vulnerabilities.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `satisfiesSafe` design is intentional — the function name signals this is a deliberate robustness choice. The threat of 'suppressed advisory via malformed range' is trivially achievable by a hostile registry simply not returning the advisory at all. The `loose: true` semver option is highly permissive, making exception-triggering ranges extremely rare for any legitimate registry. Throwing on a single bad range would abort the entire audit, which is a worse outcome for real-world broken-but-not-hostile registries.",
+      "severity_justification": "The scenario requires a malformed range from a registry that could more easily suppress the advisory entirely; practical exploitability is negligible and the failure mode is clear from the code.",
+      "category_justification": "The finding frames this as a fail-open security issue where a malformed range suppresses an advisory, potentially hiding real vulnerabilities.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

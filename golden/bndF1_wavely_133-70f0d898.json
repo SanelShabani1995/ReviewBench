@@ -1,0 +1,911 @@
+{
+  "pr_key": "bndF1_wavely_133-70f0d898",
+  "pr": {
+    "repo": "https://github.com/bndF1/wavely",
+    "pr_number": 133,
+    "base": "506621184cd1c5373931f24116276ed488ba1b12",
+    "head": "70f0d898e58d036aa80c47ab43a6e6866b5d12af"
+  },
+  "findings": [
+    {
+      "file": "src/app/app.routes.ts",
+      "start_line": 62,
+      "end_line": 68,
+      "message": "The `browse/category/:genreId` route is defined at the top level of the route tree, outside the `tabs` route that has `canActivate: [authGuard]`. Unauthenticated users who navigate directly to `/browse/category/1303` will not be redirected to login, bypassing the authentication gate that protects all other tab pages.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in app.routes.ts: the `browse/category/:genreId` route is indeed defined at the top level without `canActivate: [authGuard]`, outside the `tabs` route that carries the auth guard. Unauthenticated users can navigate directly to this route. The same gap exists for `podcast/:id` and `episode/:id` (pre-existing), but this new route introduced by the PR repeats that pattern.",
+      "severity_justification": "Unauthenticated access to a page that conceptually requires login is a real auth bypass, but the page's data likely depends on Firebase (which enforces its own security rules), so functional damage is limited. It does break the consistent auth boundary.",
+      "category_justification": "The finding identifies a missing authentication gate that allows unauthenticated users to access a protected feature page.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/search-history.service.ts",
+      "start_line": 9,
+      "end_line": 50,
+      "message": "`SearchHistoryService` directly accesses `localStorage` in `getHistory()`, `addQuery()`, `removeQuery()`, and `clearAll()` with no SSR platform guard. The service is `providedIn: 'root'` so it is instantiated on the server during SSR. `localStorage` does not exist in the Node.js environment and will throw `ReferenceError: localStorage is not defined` at runtime.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The service directly accesses `localStorage` in all four methods with no SSR platform guard, violating the established codebase pattern (AudioService, NetworkService, PodcastApiService all use `isPlatformBrowser`). While it won't crash currently because SearchHistoryService is only injected in the client-rendered `/tabs/search` route, the claim about the missing guard is factually correct and the risk is real if usage expands.",
+      "severity_justification": "No actual crash occurs today because the service is only consumed in a `RenderMode.Client` route. The risk is latent — if used in a server-rendered context it would throw. Low severity given the constrained current usage.",
+      "category_justification": "Accessing browser-only APIs without platform guards is an SSR safety/reliability concern, not a correctness or security bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/audio.service.ts",
+      "start_line": 306,
+      "end_line": 320,
+      "message": "`recordPlay` is called inside the `play` event listener, which fires on every playback start — including every user-initiated resume after a pause. This triggers an unthrottled `setDoc` Firestore write and a store `addOrUpdate` on every unpause. Unlike `ProgressSyncService.scheduleWrite()` which throttles to one write per 5 seconds, `HistorySyncService.recordPlay` has no rate limiting, resulting in excessive Firestore writes during normal use.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in audio.service.ts lines 303-320: the `play` event listener calls `historySync.recordPlay()` unconditionally on every audio play/resume. The HTML `play` event fires on every unpause, not just initial play. HistorySyncService.recordPlay() has no throttling or deduplication — it calls `setDoc` on every invocation. This produces an unthrottled Firestore write on every user-initiated resume.",
+      "severity_justification": "Excessive unthrottled Firestore writes on every unpause will inflate Firestore usage costs and counts against quota. It won't break functionality but is wasteful during normal usage (pause/resume is a very common user action in a podcast player).",
+      "category_justification": "The issue is unnecessary/excessive Firestore writes due to lack of rate limiting, not a correctness bug or security issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/library/library.page.ts",
+      "start_line": 117,
+      "end_line": 131,
+      "message": "`LibraryPage` constructor unconditionally calls `this.loadHistory()` which fires `historySyncService.loadHistory(uid)` and overwrites `historyStore` entries. `AuthStore.init()` already loads history on sign-in (see `auth.store.ts` lines 58–73). Every time the user navigates to the Library tab a new `LibraryPage` instance is created, causing a redundant Firestore read, a `setLoading(true)` flicker while existing correct data is in the store, and then the same data being set again.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The core premise is wrong: Ionic's `<ion-tabs>` caches tab components in its internal router outlet — LibraryPage is NOT recreated on every tab navigation, only on first activation per session. The finding's severity relies entirely on the 'every navigation' claim. A single per-session redundant Firestore read does occur, but that's a much smaller concern than framed.",
+      "severity_justification": "Even accepting the real (minor) concern — a one-time redundant Firestore read per session — the impact is negligible, not the per-navigation performance hit the finding implies.",
+      "category_justification": "The finding concerns redundant Firestore reads and a loading flicker.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/library/library.page.ts",
+      "start_line": 141,
+      "end_line": 154,
+      "message": "`markPlayed` and `markUnplayed` apply an optimistic store update (lines 142, 150) before the async `historySyncService.updateEntry` call, but provide no rollback if the Firestore write fails. In `updateEntry`, if both `updateDoc` and `setDoc` throw, the function returns silently and the store is left in an incorrect state (e.g., episode shown as 'completed' in UI but unmodified in Firestore). Unlike `SubscriptionSyncService.addSubscription` which explicitly rolls back on error, this path has no recovery.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: markPlayed/markUnplayed apply optimistic store updates before the async Firestore call, and updateEntry silently returns (no throw) when both updateDoc and setDoc fail. LibraryPage has no rollback path. SubscriptionSyncService explicitly rolls back on failure, confirming this is an inconsistency, not intentional design.",
+      "severity_justification": "When Firestore writes fail (network error, permission denied), the UI shows incorrect state (episode as completed/unplayed) that won't self-correct until the next full history reload. This is a data integrity issue that can mislead users about their listening history.",
+      "category_justification": "The issue is a missing rollback causing UI state to diverge from persisted state on error — a correctness/data integrity bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/browse/category-detail/category-detail.page.ts",
+      "start_line": 128,
+      "end_line": 150,
+      "message": "`retry()` creates a new subscription to `getTrendingPodcasts` on every invocation without canceling any previously in-flight request. Multiple rapid retries result in multiple concurrent HTTP requests; whichever completes last wins and overwrites `this.podcasts`. The main constructor pipeline uses `switchMap` (which cancels prior requests) but `retry()` bypasses it entirely. A `switchMap`-based subject (the same `category$` pattern already used) would prevent concurrent in-flight requests.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in category-detail.page.ts: retry() directly subscribes to getTrendingPodcasts() without any unsubscribe/cancel mechanism for prior calls. Each invocation creates a new live subscription. The constructor pipeline correctly uses switchMap, but retry() bypasses it. Multiple rapid retries produce concurrent in-flight requests with last-wins behavior.",
+      "severity_justification": "The retry button only appears on error states, making rapid successive taps unlikely in normal usage. The worst case is stale/slower response overwriting a correct newer one — a brief incorrect state that self-resolves. No data loss or security impact.",
+      "category_justification": "The issue is a race condition in the retry path causing non-deterministic state updates — a correctness concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".releaserc.json",
+      "start_line": 1,
+      "end_line": 12,
+      "message": "`@semantic-release/git` has been removed from the plugins list. This plugin was responsible for committing the `package.json` version bump and `CHANGELOG.md` back to the repo after a release. Without it, `@semantic-release/npm` still updates `package.json` in the CI workspace but the change is never committed. The next release cycle will compute the semver bump starting from the stale version in git, and `appVersion` (read from `package.json` via `generate-env.mjs` at build time) will always reflect the last manually committed version (currently `0.5.0`) rather than the actual released version.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: @semantic-release/git was removed. generate-env.mjs reads package.json (currently 0.5.0) before the semantic-release step runs, so appVersion in every build reflects the committed version, not the released one. Without @semantic-release/git, the npm plugin's version bump is never committed, so package.json in git stays stale permanently. The claim about semver computation being broken is incorrect (semantic-release uses git tags), but the stale appVersion impact is real and verified.",
+      "severity_justification": "The deployed app will always display appVersion '0.5.0' regardless of actual releases, making version tracking useless. This affects observability (Sentry, support diagnostics) and user-facing version display, but doesn't break core functionality.",
+      "category_justification": "The issue is a CI/CD pipeline configuration that causes incorrect version tracking across releases — a build/deployment reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "SDD.md",
+      "start_line": 3,
+      "end_line": 3,
+      "message": "The document header states `Version: 1.1.0` but the Executive Summary table on line 39 shows `Current version: v1.2.0` and section 19 (line 823) is titled \"Shipped — Discovery & Library (v1.2.0)\". This PR's stated purpose is to mark v1.2.0 as shipped, yet the version field at the top of the document was not updated.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: SDD.md line 3 reads 'Version: 1.1.0' while the Executive Summary on line 39 shows 'Current version: v1.2.0' and section 19 is titled 'Shipped — Discovery & Library (v1.2.0)'. This is a clear internal inconsistency in the document introduced by this PR.",
+      "severity_justification": "A version field inconsistency in a documentation file has no functional impact. It's a cosmetic error in an internal living document, but it does create confusion about which version the SDD describes.",
+      "category_justification": "The finding is about an inconsistency in the document version header versus the document body — purely a documentation issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "SDD.md",
+      "start_line": 847,
+      "end_line": 860,
+      "message": "There are two sections both numbered `## 20.` — \"Next Milestone — Native Platform (v1.3.0)\" at line 847 and \"Known Limitations & Tech Debt\" at line 860. The duplicate heading number breaks the table of contents anchor links and makes it ambiguous which section `#20` refers to.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: SDD.md has two consecutive sections both headed '## 20.' — 'Next Milestone — Native Platform (v1.3.0)' and 'Known Limitations & Tech Debt'. The table of contents also only lists one entry for #20. This is a genuine duplicate section number.",
+      "severity_justification": "A duplicate heading number in an internal design document has no functional impact. It breaks ToC anchor navigation and creates ambiguity, but the document is still readable.",
+      "category_justification": "The finding is about a structural numbering error in a documentation file.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 242,
+      "end_line": 245,
+      "message": "The roadmap still lists issues #38 (search history), #39 (episode filtering), and #40 (browse improvements) as unchecked `[ ]` items under `v1.1.0 — Discovery & Library`. The SDD (section 19) and the PR description both state these are shipped as v1.2.0. The README contradicts the SDD on both the shipped status (unchecked vs completed) and the milestone version (v1.1.0 vs v1.2.0).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: README.md lines 242-244 list issues #38, #39, #40 as unchecked under 'v1.1.0 — Discovery & Library', while SDD section 19 marks these as shipped in v1.2.0. The milestone version label also differs (v1.1.0 in README vs v1.2.0 in SDD). The PR title says these are shipped, making the README directly contradictory.",
+      "severity_justification": "Inconsistent roadmap state in a README is a documentation-only issue with no functional impact. It misleads contributors about what's shipped, but causes no runtime or behavioral problem.",
+      "category_justification": "The finding is purely about inconsistency between two documentation files (README.md roadmap vs SDD) regarding shipped status and milestone version.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/firebase-channel-refresh.yml",
+      "start_line": 28,
+      "end_line": 28,
+      "message": "The workflow checks out `dev` branch but the environment name is `dev`. The job name is `refresh-dev`. This is correct. However, the build configuration used is `production`, and the environment generation script is run with `ENV_TARGET=prod`. This likely means the application will be built using production environment variables (like API endpoints) but deployed to a dev environment. This could lead to dev environment data being sent to production services, or vice-versa if there's a misconfiguration. It's safer to use a dedicated `dev` or `staging` configuration if they exist, or ensure the `prod` configuration is appropriate for all preview environments.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The firebase-hosting-dev.yml workflow — which this refresh workflow mirrors — already uses ENV_TARGET=prod for dev deployments. The project has a single Firebase project (wavely-f659c) across all environments; ENV_TARGET=prod simply generates config pointing to that project. The concern about 'production services vs dev environment' does not apply in a single-project setup. The refresh workflow correctly follows the established pattern.",
+      "severity_justification": "Even if the concern were valid, it would apply identically to the pre-existing dev deploy workflow and is not a new risk.",
+      "category_justification": "The finding is about environment configuration potentially mixing dev/prod contexts.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/firebase-hosting-dev.yml",
+      "start_line": 42,
+      "end_line": 42,
+      "message": "The workflow builds the application with `bunx nx build --configuration=production`. This hardcodes the production build configuration for the dev deployment. If there are any differences between development and production configurations (e.g., API endpoints, feature flags), this will cause the dev deployment to behave like production, which is likely not the intent.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The build command 'bunx nx build --configuration=production' is pre-existing and unchanged by this PR. The finding is a generic suggestion that using production config for dev deployments is wrong, but doesn't account for the project's single-Firebase-project architecture where this is intentional. The same pattern exists in firebase-hosting-staging.yml. No new issue introduced.",
+      "severity_justification": "Even if the concern were valid, the impact is limited to the dev preview channel behaving identically to production, which is the project's intentional design.",
+      "category_justification": "The finding is about build/deployment configuration potentially causing behavioral differences between environments.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/firebase-hosting-staging.yml",
+      "start_line": 42,
+      "end_line": 42,
+      "message": "The workflow builds the application with `bunx nx build --configuration=production`. This hardcodes the production build configuration for the staging deployment. This means the staging environment will use production settings, which can lead to staging data polluting production services or incorrect behavior if staging-specific settings are required.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The build command and ENV_TARGET=prod are pre-existing in firebase-hosting-staging.yml and were not changed by this PR. The project has a single Firebase project (wavely-f659c) for all environments by design — 'staging data polluting production services' is not applicable. This is the same generic concern as Findings 11 and 12 and does not account for the project's architecture.",
+      "severity_justification": "No new risk introduced; the pattern is pre-existing and intentional given the single-project Firebase setup.",
+      "category_justification": "The finding concerns environment configuration for deployments.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/lighthouse.yml",
+      "start_line": 52,
+      "end_line": 52,
+      "message": "The `curl` command to fetch job information from the GitHub API does not include the `-f` or `--fail` flag. If the API call fails (e.g., due to permissions issues, network problems, or an invalid URL), `curl` will exit with code 0, but `JOBS` will contain an error message instead of JSON. The subsequent `node` script will likely fail or produce an empty output, causing the workflow to proceed with a potentially incorrect or empty URL. Using `curl -f` would cause the step to fail, correctly stopping the workflow.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: curl uses -s but not -f, so API failures return exit code 0 with error body. The node script catches JSON.parse failures and falls back to the hardcoded 'https://wavely-f659c--staging.web.app'. While not empty/uncontrolled, this hardcoded fallback URL is for the old fixed-URL format that this very PR's own documentation says is no longer valid (URLs now include a random hash), making the silent fallback worse than the finding implies.",
+      "severity_justification": "The failure mode is a silent fallback to a potentially stale/invalid URL, not a hard workflow failure. Lighthouse would audit a wrong URL or fail to connect — not a critical reliability issue, but the silent failure makes it hard to diagnose.",
+      "category_justification": "The finding is about CI workflow error handling — missing fail-fast flag on a curl command leading to silent fallback behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/lighthouse.yml",
+      "start_line": 58,
+      "end_line": 58,
+      "message": "A fallback URL `https://wavely-f659c--staging.web.app` is used if the script fails to parse the deployment URL. However, the documentation and other workflows in this PR establish that preview channel URLs now contain a random hash (e.g., `wavely-f659c--staging-<hash>.web.app`). This hardcoded fallback URL is now incorrect and will likely always fail the Lighthouse audit if the URL extraction logic ever breaks.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: lighthouse.yml line 58 hardcodes 'https://wavely-f659c--staging.web.app' as fallback. This same PR's documentation changes (SKILL.md, firebase-hosting-staging.yml header comment, README.md) explicitly state that staging channel URLs now include a random hash and the fixed-URL format is obsolete. The fallback URL is inconsistent with the new URL scheme introduced by the same PR.",
+      "severity_justification": "The fallback only activates when URL extraction fails (a rare failure path). When it does activate, Lighthouse audits an invalid URL and likely fails or skips — not blocking production deployments, just making the Lighthouse CI step unreliable in the error path.",
+      "category_justification": "The issue is a stale hardcoded fallback URL in a CI workflow that will produce incorrect behavior when the primary URL extraction fails.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/browse/browse.page.ts",
+      "start_line": 105,
+      "end_line": 113,
+      "message": "When a category other than 'All' is selected, the component navigates to `/browse/category/:id`. This is correct. However, it does not update the `selectedCategory` signal to reflect the category that was clicked to trigger the navigation. When the user navigates back from the category detail page, the `BrowsePage` will still show the previously selected category ('All' by default) as active, which is not what the user last clicked.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in browse.page.ts: selectCategory() calls this.selectedCategory.set(category) before navigating, for all categories including non-'All' ones. The signal IS updated when the user clicks a category chip. The finding's premise that the signal is not updated is factually wrong.",
+      "severity_justification": "The finding is incorrect; even if it were true, a stale chip highlight on back-navigation would be a minor cosmetic issue.",
+      "category_justification": "The finding claims incorrect UI state due to a missing signal update.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/audio.service.ts",
+      "start_line": 104,
+      "end_line": 113,
+      "message": "When an episode is closed, `updateMediaSession(null)` is called, which correctly clears the media session metadata. However, the `positionState` is not cleared. If `setPositionState` was previously called, the operating system may retain and display the last known playback position (e.g., on a lock screen) even though no media is active in the app.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: updateMediaSession(null) sets metadata=null and playbackState='none' but never calls setPositionState() to reset. The Media Session spec recommends calling setPositionState() with no args to clear position state on session end. The code omits this cleanup step.",
+      "severity_justification": "In practice, setting metadata=null and playbackState='none' causes most browsers/OS implementations to remove lock screen controls entirely, making stale position state invisible. This is a spec compliance gap with minimal real-world impact.",
+      "category_justification": "The finding identifies incomplete Media Session API cleanup that leaves position state unreset, contrary to the Media Session spec's recommended teardown.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/search-history.service.ts",
+      "start_line": 34,
+      "end_line": 34,
+      "message": "The `addQuery` method adds a search term to local storage. It correctly deduplicates based on a case-insensitive comparison, but it stores the new term as-is. This can lead to visually similar but case-different entries in the history over time (e.g., user searches `angular`, then `Angular`; history becomes `['Angular', ...]`). It would be more consistent to store a normalized (e.g., lowercase) version of the term.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The deduplication in addQuery uses case-insensitive comparison before prepending the new term, so case-different duplicates of the same term cannot coexist in history. Searching 'angular' then 'Angular' replaces the old entry with the new casing — the scenario described ('visually similar but case-different entries') cannot occur. The finding's premise is factually incorrect.",
+      "severity_justification": "The described problem cannot occur given the deduplication logic, making this a non-issue.",
+      "category_justification": "The suggestion is a style/normalization preference with no actual behavioral bug.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/login/login.page.ts",
+      "start_line": 73,
+      "end_line": 79,
+      "message": "The component uses an `effect` to react to authentication changes and navigate. While this works, `effect` is primarily for side effects like logging or DOM manipulation that don't synchronize with other state. For navigation, which is a key part of application flow, a more explicit approach like subscribing to a filtered stream of `isAuthenticated` in the constructor is generally preferred and easier to test, as effects have timing characteristics that can be subtle.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is a generic style preference ('use observable subscription instead of effect for navigation') without identifying a concrete bug. The code has an explicit comment explaining why effect is used here. Angular docs consider navigation a valid effect use case. The login.page.ts is pre-existing code, not changed by this PR. The suggestion adds complexity without fixing a real problem.",
+      "severity_justification": "No functional issue — the effect works correctly for navigation and the comment documents the rationale.",
+      "category_justification": "The finding is a code style/pattern preference about using effects vs observables for navigation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/search/search.page.html",
+      "start_line": 62,
+      "end_line": 68,
+      "message": "`EmptyStateComponent`'s template does not have an `<ng-content>` slot, so the projected `<p class=\"global-search-hint\">` (with the \"Search all regions\" link) will be silently dropped from the DOM. Either add `<ng-content>` to the component template or move this hint outside `<wavely-empty-state>` so users in regions with no results can still discover the global-search toggle.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: EmptyStateComponent template has no <ng-content> slot (confirmed in empty-state.component.html), while search.page.html projects a <p class=\"global-search-hint\"> with the 'Search all regions' button into <wavely-empty-state>. Angular silently discards projected content when no <ng-content> is present, so users who get zero results in their region will never see the global-search toggle hint.",
+      "severity_justification": "The 'Search all regions' button inside the empty state is a UX discoverability feature for a real scenario (no regional results). The global search toggle still exists at the top of the search bar, so the functionality isn't completely broken — but the contextual hint that directly prompts users to try global search is silently missing.",
+      "category_justification": "The component is used in a way that produces silent DOM dropping — projected content is never rendered, which is a concrete functional bug.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/library/library.page.html",
+      "start_line": 77,
+      "end_line": 78,
+      "message": "This `<ion-button slot=\"end\">` is a direct child of `<ion-list>` (not inside an `<ion-item>`), so the `slot=\"end\"` attribute has no effect and the \"Clear history\" button will render as a free-floating button above the list, before the \"Swipe left to mark played or unplayed\" hint. Consider moving it into a dedicated header row (e.g. an `ion-list-header` or a flex container) alongside the section title so the layout matches the intent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: library.page.html has `<ion-button slot=\"end\" ... class=\"clear-history-btn\">` as a direct child of `<ion-list>`. Since `<ion-list>` does not expose a named slot called 'end', the `slot` attribute has no effect and the button renders in normal document flow above the hint text, misaligned from its intended position.",
+      "severity_justification": "The button still renders and is functional (clicking it clears history). The only issue is cosmetic: `slot=\"end\"` has no effect and the layout does not match the apparent intent of right-aligning the button in a header row.",
+      "category_justification": "The slot attribute is used incorrectly — it has no semantic or visual effect in this context, which is a concrete misuse of the Ionic component API.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "SDD.md",
+      "start_line": 869,
+      "end_line": 869,
+      "message": "This row says \"No push notifications | Planned | v1.2.0 milestone\", but section 19 (and the PR title) declare v1.2.0 as already shipped, with v1.3.0 being the next (native-platform) milestone that includes push notifications. Update the milestone reference to v1.3.0 to stay consistent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: SDD.md line 873 reads '| No push notifications | Planned | v1.2.0 milestone |', but section 19 declares v1.2.0 as shipped and section 20 explicitly places push notifications (#41) in v1.3.0. The milestone reference is wrong and inconsistent within the same document.",
+      "severity_justification": "This is a documentation inconsistency with no runtime impact. It could mislead readers about the release plan, but the surrounding sections make the correct milestone clear.",
+      "category_justification": "The issue is a stale/incorrect milestone reference in the SDD's Known Limitations table — a documentation accuracy problem.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "SDD.md",
+      "start_line": 823,
+      "end_line": 845,
+      "message": "The PR title and description are \"docs(sdd): mark Discovery & Library v1.2.0 as shipped\" / \"Update SDD to reflect the v1.2.0 release\", but the diff contains substantial new code beyond documentation: a new `HistoryStore`, `HistorySyncService`, `SearchHistoryService`, `NetworkService`, `OfflineBannerComponent`, `EmptyStateComponent`, `ErrorStateComponent`, a new `CategoryDetailPage` route, changes to `AuthStore`/`AudioService`/`SearchPage`/`LibraryPage`/`BrowsePage`/`PodcastDetailPage`/`FullPlayerComponent`/`LoginPage`, a new Lighthouse CI workflow, and changes to release configuration. Either split the implementation work out of this \"docs\" PR or expand the title/description so reviewers know to vet the actual feature code shipping here.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The commit at SHA 70f0d898 changes only SDD.md (1 file, 29 insertions/40 deletions). The large code diff shown in the PR context is the cumulative branch diff including commits from PR #132 (already merged). The PR title and description accurately describe the actual change. The finding incorrectly claims the PR contains new feature code.",
+      "severity_justification": "Even if the finding were correct, it would be a process/hygiene concern about PR scope, not a correctness or security issue.",
+      "category_justification": "The finding is about PR hygiene and commit scope — a process/maintainability concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/search/search.page.ts",
+      "start_line": 67,
+      "end_line": 70,
+      "message": "`recentSearches` is initialised once in the constructor and refreshed only inside `onSearchFocus` and after a successful search. Because `ChangeDetectionStrategy.OnPush` is enabled and `recentSearches`/`displayQuery`/`globalSearch`/`isSearchFocused` are plain class fields (not signals), template expressions that depend on them (e.g. `shouldShowSuggestions()` and `@if (!globalSearch)`) won't reliably re-render when these fields mutate from event handlers — change detection will only run if the triggering event happens to be a zone-tracked Ionic/DOM event. Convert these to `signal(...)` (and `shouldShowSuggestions` to a `computed`) to make the OnPush component update predictably.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: (1) zone.js is absent from package.json, (2) src/test-setup.ts uses setupZonelessTestEnv from jest-preset-angular, confirming the project runs zoneless Angular. In this context, mutations to plain class fields like recentSearches inside an RxJS subscribe callback (whose debounceTime uses setTimeout, which is not patched without zone.js) will NOT trigger change detection for the OnPush SearchPage. The finding's claim is factually correct.",
+      "severity_justification": "In a zoneless app, the search results count updating (triggering the 'no results' empty state) or the recent-searches chips rendering after a successful search could fail to re-render. These are user-visible state inconsistencies in the primary search flow.",
+      "category_justification": "Plain class fields mutated in async RxJS callbacks won't trigger re-rendering in a zoneless OnPush component, causing the template to display stale state.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/search-history.service.ts",
+      "start_line": 6,
+      "end_line": 6,
+      "message": "The `SearchHistoryService` is documented as \"Max 10 items stored (FIFO eviction)\" in issue #38's acceptance criteria, but the implementation caps history at `MAX_ITEMS = 8` (and the SDD section 19 also says \"last 8 queries\"). Either bump `MAX_ITEMS` to 10 to match the acceptance criteria or update issue #38 / the SDD; please pick one source of truth.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The implementation (MAX_ITEMS = 8), SDD section 19, and SDD executive summary all consistently say 'last 8 queries'. The finding's claimed discrepancy rests solely on GitHub issue #38's acceptance criteria allegedly saying 'Max 10 items', which cannot be verified from the repository. No internal inconsistency exists.",
+      "severity_justification": "Even if correct, the difference between 8 and 10 stored queries is a minor product spec detail with negligible user impact.",
+      "category_justification": "The finding is about a potential mismatch between implementation and acceptance criteria — a specification consistency concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "SDD.md",
+      "start_line": 833,
+      "end_line": 838,
+      "message": "Issue #39's acceptance lists filter chips \"All | Unplayed | Downloaded | In Progress\" plus a \"Bulk mark-all-as-played per podcast\" action and an \"unplayed count badge on podcast cards\". The shipped Library page only exposes All / Unplayed / In Progress / Completed (no Downloaded, no bulk action, no per-podcast unplayed badge), and the SDD section 19 truthfully lists only the smaller subset. If \"Downloaded\" / bulk / badge are intentionally deferred, please update issue #39's acceptance criteria so the SDD's \"shipped\" claim is accurate; otherwise these still need to ship before marking #39 done.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The implementation facts are correct (4 filter chips, no Downloaded filter, no bulk action, no badge), but the finding's substance — that this constitutes a discrepancy from issue #39's acceptance criteria — rests entirely on GitHub issue #39's content, which cannot be verified from the repository. Without confirming that those specific criteria appear in issue #39, the claim is unverifiable.",
+      "severity_justification": "Even if true, this is a documentation/acceptance-criteria alignment concern with no runtime impact.",
+      "category_justification": "The finding is about whether the SDD's 'shipped' claim accurately reflects the issue acceptance criteria — a documentation accuracy concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/browse/browse.page.ts",
+      "start_line": 114,
+      "end_line": 118,
+      "message": "Issue #40's acceptance criteria require the Featured section to \"load from Podcast Index `/recent/feeds` endpoint\" and a \"New & Noteworthy\" section using the Podcast Index API. The shipped implementation does not call Podcast Index at all — `Featured`, `New & Noteworthy`, and `Top Podcasts` are all served by three separate calls to the iTunes `getTrendingPodcasts(...)` with different `limit` values (5, 10, 25), so the three carousels actually contain overlapping prefixes of the same list. Either integrate the Podcast Index API as specified, or update the acceptance criteria and adjust the queries so the three sections show different content.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: browse.page.ts calls getTrendingPodcasts(25), getTrendingPodcasts(5), getTrendingPodcasts(10) in forkJoin. podcast-api.service.ts maps all three to the same iTunes RSS top-chart URL (/us/rss/toppodcasts/limit=N/json) with only the limit differing. The 'Featured' section shows #1–5, 'New & Noteworthy' shows #1–10, and 'Top Podcasts' shows #1–25 — identical overlapping prefixes. The Podcast Index claim is unverifiable but the overlapping-content bug is independently confirmed.",
+      "severity_justification": "All three browse carousels display the same leading podcasts, making the 'New & Noteworthy' and 'Featured' sections meaningless from a content-discovery standpoint. Users see the same podcasts repeated in every carousel on the main browse screen.",
+      "category_justification": "The three sections are intended to surface distinct content but use the same query producing overlapping results — a concrete logic error in the browse page.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/search/search.page.ts",
+      "start_line": 171,
+      "end_line": 175,
+      "message": "Toggling between local and global search does not actually rerun the current query because the search stream applies `distinctUntilChanged()` to the term only. Emitting the same `displayQuery` after changing `globalSearch` is filtered out, so the country parameter never changes until the user edits the text.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: toggleGlobalSearch() emits this.displayQuery (unchanged string) into search$. The pipe applies distinctUntilChanged() after debounceTime — consecutive identical strings are filtered. The switchMap that reads this.globalSearch to pick the country parameter never re-executes. The toggle has no effect on current results until the user types a new character.",
+      "severity_justification": "The global/local search toggle is a core feature of the search page (it appears in the UI and in the SDD). Users who tap it expecting to see worldwide results will get no update — a silent, confusing no-op on the primary search action.",
+      "category_justification": "The toggleGlobalSearch method is supposed to re-run the search with a different country scope but the distinctUntilChanged() guard prevents re-execution, causing incorrect behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/search/search.page.html",
+      "start_line": 63,
+      "end_line": 67,
+      "message": "This projected \"Search all regions\" link is never rendered because `wavely-empty-state` does not include an `<ng-content>` slot in its template. As a result, users who get no regional results cannot access the intended global-search fallback from this empty state.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Duplicate of Finding 1 — already verified: EmptyStateComponent template has no <ng-content> slot, and search.page.html projects a <p class=\"global-search-hint\"> with the 'Search all regions' button into <wavely-empty-state>. The projected content is silently dropped by Angular.",
+      "severity_justification": "Users who search in their region and get zero results will not see the 'Search all regions' button that is the intended contextual fallback for this exact scenario, reducing discoverability of global search.",
+      "category_justification": "Missing <ng-content> causes projected DOM content to be silently discarded, breaking the intended UI feature.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/search-history.service.ts",
+      "start_line": 5,
+      "end_line": 6,
+      "message": "The new search history store caps persisted entries at 8, but the linked issue's acceptance criteria require storing up to 10 items while showing the last 8 suggestions. This will evict two valid recent searches earlier than specified.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Duplicate of Finding 6. MAX_ITEMS = 8 is consistent with the SDD ('last 8 queries'). The claim that the linked issue requires storing 10 items while showing 8 cannot be verified from the repository — GitHub issue #38 is not accessible.",
+      "severity_justification": "Even if the issue criteria differ, the difference between 8 and 10 stored searches is trivial in user impact.",
+      "category_justification": "The finding is about a potential spec mismatch between implementation and issue acceptance criteria.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/library/library.page.ts",
+      "start_line": 93,
+      "end_line": 98,
+      "message": "The implemented Library filters omit the required \"Downloaded\" filter from the linked issue and instead add \"Completed\". There is also no downloaded state in `HistoryEntry`, so downloaded episodes cannot be filtered as described.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Duplicate of Finding 7. The implementation facts are confirmed (no 'Downloaded' filter, no downloaded state in HistoryEntry), but the claim that the linked issue required a 'Downloaded' filter cannot be verified without accessing GitHub issue #39. Without the issue content being verifiable, this is an unverifiable claim.",
+      "severity_justification": "No runtime bug — the filters that are implemented (All/Unplayed/In Progress/Completed) work correctly. The concern is about spec conformance with an unverifiable issue requirement.",
+      "category_justification": "The finding is about a mismatch between implementation and alleged acceptance criteria in a GitHub issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/browse/browse.page.ts",
+      "start_line": 114,
+      "end_line": 118,
+      "message": "Featured and New & Noteworthy are both populated from the same iTunes top-podcasts API as Top Podcasts. The linked browse requirement calls for Featured from Podcast Index `/recent/feeds` and a distinct New & Noteworthy source, so these sections will duplicate top-chart content rather than showing the intended data.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Duplicate of Finding 8. Already verified: browse.page.ts calls getTrendingPodcasts(25/5/10) in forkJoin, all hitting the same iTunes RSS top-chart URL. The three carousels show overlapping prefixes of the same list. The Podcast Index claim is unverifiable but the duplicate-content issue is independently confirmed.",
+      "severity_justification": "All three browse carousels display the same leading podcasts from the iTunes top chart, making Featured and New & Noteworthy sections redundant with Top Podcasts and providing no additional content discovery value.",
+      "category_justification": "The three sections are intended to surface distinct content but use identical queries producing overlapping results.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/search/search.page.ts",
+      "start_line": 67,
+      "end_line": 70,
+      "message": "`displayQuery` always starts empty even though `PodcastsStore` is root-scoped and can still contain a previous `searchQuery` and results when the user returns to the Search tab. Since the template no longer binds the searchbar to `store.searchQuery()`, the page can show stale results for an invisible query with an empty input.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: displayQuery is hardcoded to '' on construction with no sync from store.searchQuery(). The searchbar has no [value] binding. PodcastsStore is providedIn: 'root' and persists results. While Ionic tabs normally keep components alive (preventing the issue in typical tab switching), the finding correctly identifies a structural inconsistency: if SearchPage is ever re-created (browser navigation, deep link, SSR), the template will render stale results against an empty searchbar.",
+      "severity_justification": "In normal Ionic tab navigation the component is kept alive so the issue doesn't manifest. The risk is limited to edge-case navigation patterns (browser back/forward, direct URL entry). Low user impact in practice.",
+      "category_justification": "A real state-synchronization inconsistency between component-local state (displayQuery) and root-scoped store state that can produce a misleading UI.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/search/search.page.ts",
+      "start_line": 115,
+      "end_line": 118,
+      "message": "Recent searches are only persisted when the API returns at least one result. A query that returns no matches is still a recent search from the user's perspective and should be available for suggestions after restart per the linked search-history requirement.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The implementation fact is confirmed: zero-result queries are not saved to history. But the claim that this contradicts 'the linked search-history requirement' cannot be verified without accessing the GitHub issue. Not persisting zero-result searches is a deliberate, common UX choice and is not inherently wrong.",
+      "severity_justification": "Even if the requirement said to save zero-result queries, the practical impact is minor — the user simply won't see those terms in suggestions.",
+      "category_justification": "The finding is about a behavioral choice in persistence logic that the reviewer considers incorrect per spec.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/history-sync.service.ts",
+      "start_line": 36,
+      "end_line": 39,
+      "message": "When `updateDoc` fails because the history document does not exist, this fallback creates a new Firestore document containing only the partial fields (for example just `completed`). That loses the episode title, podcast title, image, duration, and timestamp even though the existing entry is available in the store, so a later load will show an \"Untitled episode\" history item.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: updateEntry's setDoc fallback writes only the partial object (e.g., {completed: true}) to Firestore. When the document doesn't exist, this creates a sparse document. loadHistory() then maps the missing fields using ?? fallbacks, producing 'Untitled episode'/'Unknown podcast'. The full entry is available in historyStore.entries() but not consulted before the setDoc write.",
+      "severity_justification": "Users who mark an episode as played/unplayed when the Firestore document is missing (possible after history clear, new device, or write failure) will see 'Untitled episode'/'Unknown podcast' on next app load — a data corruption scenario for a user-visible feature.",
+      "category_justification": "The fallback write logic produces incomplete Firestore documents due to not merging the available store entry, causing data loss on reload.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/index.html",
+      "start_line": 1277,
+      "end_line": 1278,
+      "message": "This marketing copy claims the queue can be reordered and persists across sessions, but the implemented `PlayerStore` only keeps the queue in memory and exposes add/remove/clear/advance operations. There is no persistence or reorder support, so the landing page overstates the shipped feature.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: docs/index.html lines 1277-1278 claim the queue can be 'reordered on the fly' and 'persists across sessions'. PlayerStore has only addToQueue/removeFromQueue/clearQueue/playNext — no reorder method exists in the entire codebase. No queue persistence to localStorage or Firestore exists anywhere. Both marketing claims are factually incorrect about the shipped implementation.",
+      "severity_justification": "The landing page is a public-facing marketing page. Overstating features (reorder, persistence) that don't exist misleads potential users and can damage trust when they discover the queue resets on app restart.",
+      "category_justification": "The finding is about marketing copy in docs/index.html that inaccurately describes the shipped feature's capabilities.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/lighthouse.yml",
+      "start_line": 15,
+      "end_line": 19,
+      "message": "This workflow never runs on `pull_request` events, so it cannot provide the advertised Lighthouse status check that blocks PRs to `main`; it only runs after a staging deploy or manually. If Lighthouse is intended as a main-PR gate, add the relevant PR trigger (or another workflow that reports a required check on those PRs).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: lighthouse.yml triggers only on workflow_run (after staging deploy) and workflow_dispatch. README and SDD both document 'PR to main: Unit tests + E2E + Lighthouse CI' as a required gate. workflow_run events generate separate check runs unassociated with open PRs, so they cannot serve as blocking PR status checks. The advertised gate is non-functional.",
+      "severity_justification": "The Lighthouse CI gate is documented as a required check for PRs to main (protecting production). Without it actually running on PRs, accessibility regressions (asserting error-level at ≥0.9) could slip into production undetected.",
+      "category_justification": "A CI/CD gate that is documented as required but structurally cannot enforce the check on PRs is a reliability/pipeline configuration issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/search/search.page.ts",
+      "start_line": 140,
+      "end_line": 142,
+      "message": "Hiding suggestions immediately on `ionBlur` makes the recent-search chips difficult to activate: clicking a chip first blurs the searchbar, which flips `isSearchFocused` to false and removes the suggestion list before the chip's click handler can run. Defer the blur handling or keep the list open while interacting with it.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: onSearchBlur() synchronously sets isSearchFocused=false, which makes shouldShowSuggestions() return false, collapsing the @if block and removing chips from the DOM. Browser fires blur before click (mousedown triggers blur first), so in a zoneless Angular app where event bindings trigger CD, the chip is removed before its click event fires — useSuggestion() never runs.",
+      "severity_justification": "The recent searches feature is entirely non-functional via click in this interaction pattern — tapping a suggestion chip to repeat a search silently does nothing. This is the primary use case for recent searches.",
+      "category_justification": "A well-known browser event ordering issue (blur fires before click) causes the suggestion list to be torn down before the click handler fires, breaking the feature.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 34,
+      "end_line": 36,
+      "message": "The README now advertises email/password authentication, but the app code only exposes Google sign-in (`signInWithGoogle`) and there is no email/password auth flow. This overstates the available authentication methods.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: README line 35 lists 'Google Sign-In + email/password' as a shipped (✅) feature. AuthService only has signInWithGoogle() using GoogleAuthProvider/signInWithPopup — no email/password methods exist. No EmailAuthProvider, signInWithEmailAndPassword, or createUserWithEmailAndPassword appears anywhere in the source code. The README overstates available authentication methods.",
+      "severity_justification": "This is a documentation inaccuracy in the README. No functional code is broken; users just won't find the advertised email/password option. Low impact since the app is pre-MVP alpha.",
+      "category_justification": "The finding is about README marketing copy incorrectly claiming a feature (email/password auth) that doesn't exist in the codebase.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "SDD.md",
+      "start_line": 869,
+      "end_line": 872,
+      "message": "This limitation entry says push notifications are planned for v1.2.0, but the same document now marks v1.2.0 as shipped and lists push notifications under the v1.3.0 Native Platform milestone. The planned version should be updated for consistency.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Duplicate of Finding 3. Already verified: SDD.md Known Limitations table says 'v1.2.0 milestone' for push notifications, but section 19 marks v1.2.0 as shipped and section 20 explicitly lists push notifications (#41) under v1.3.0 Native Platform. The inconsistency is confirmed.",
+      "severity_justification": "Documentation-only inconsistency within the SDD with no runtime impact.",
+      "category_justification": "Stale milestone reference in the Known Limitations table contradicts the same document's milestone sections.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "SDD.md",
+      "start_line": 427,
+      "end_line": 432,
+      "message": "The shared component API table does not match the new component inputs: `EmptyStateComponent` requires `title` and `subtitle` (not `message`), and `ErrorStateComponent` also has a `title` input. Consumers following this SDD would use the wrong bindings.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: EmptyStateComponent has inputs icon/title/subtitle/actionLabel — no 'message' input exists. ErrorStateComponent has title/message/icon/retryLabel — 'title' is absent from the SDD table. The SDD documents 'message' for EmptyStateComponent which is the wrong binding name; consumers following it would silently bind to a non-existent input.",
+      "severity_justification": "Documentation-only error in the SDD. No runtime impact, but a developer following the SDD would use wrong binding names and get silent failures.",
+      "category_justification": "The SDD's shared component API table documents incorrect/missing input names compared to the actual component implementations.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/library/library.page.ts",
+      "start_line": 141,
+      "end_line": 147,
+      "message": "Marking an episode as played only updates the history document. The existing playback-progress document under `users/{uid}/progress/{episodeId}` is not marked completed, so `ProgressSyncService.loadProgress()` can still restore the old position and other devices will not see the played state via progress records.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: markPlayed() in library.page.ts only calls historySyncService.updateEntry({completed:true}) — it never calls progressSync.markCompleted(). loadProgress() returns 0 only when data.completedAt is set in the progress document. Since markCompleted() is not called, the progress document retains its old position, and re-opening the episode restores the old playback position despite being marked played.",
+      "severity_justification": "Users who manually mark episodes as played from the Library and then re-open them will have the episode resume from mid-position instead of starting fresh — contrary to the clear intent of 'mark as played'. The inconsistency also affects cross-device behavior.",
+      "category_justification": "The markPlayed action only partially updates state — it updates the history collection but not the progress collection — causing inconsistent behavior when the episode is reopened.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/library/library.page.ts",
+      "start_line": 149,
+      "end_line": 154,
+      "message": "Marking an episode as unplayed updates history only and does not clear/update the corresponding Firestore progress record. A stale progress document can cause the episode to resume from the previous position instead of starting at 0 after the user marks it unplayed.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: markUnplayed() only calls historySyncService.updateEntry({completed:false, position:0}) — the progress document is untouched. loadProgress() reads from the progress collection and returns data.position. The history document's position:0 is irrelevant to playback restoration, so re-opening a marked-unplayed episode resumes from the old position instead of 0.",
+      "severity_justification": "Users who mark an episode as unplayed expecting it to restart from the beginning will instead have it resume from the old position — directly contradicting the action they took.",
+      "category_justification": "markUnplayed only partially resets state — it resets position in the history collection but not in the progress collection that actually controls playback restoration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/audio.service.ts",
+      "start_line": 321,
+      "end_line": 335,
+      "message": "The pause handler flushes progress but does not update the history entry. Because history is only recorded on `play` and `ended`, the Library's Recently Played position can stay at the start/restored position for partially listened episodes instead of reflecting where the user stopped.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the pause handler only calls progressSync.scheduleWrite/flush — no historySync call. historySync.recordPlay is called on 'play' (with currentTime at resume, not at pause) and on 'ended'. The history position field is therefore always the value at the START of the last listening session, not where the user stopped. Library progress bars will show stale/incorrect positions for in-progress episodes.",
+      "severity_justification": "The progress bar in Library's Recently Played is cosmetically wrong between resume events, showing the position from the start of the session rather than where the user paused. The progress document is correctly updated, so actual playback restoration works. This is a display inaccuracy, not data loss.",
+      "category_justification": "The history entry's position field is not updated on pause, causing the Library UI to display incorrect playback progress for partially-listened episodes.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "SDD.md",
+      "start_line": 28,
+      "end_line": 29,
+      "message": "The table of contents still labels section 19 as the next Discovery & Library milestone, but the section is now \"Shipped — Discovery & Library\" and the next milestone moved to Native Platform. The TOC link text should be updated with the release status.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: SDD.md TOC line 28 reads '19. [Next Milestone — Discovery & Library](#19-next-milestone--discovery--library)' but the actual section heading at line 823 is '## 19. Shipped — Discovery & Library (v1.2.0) ✅'. The anchor hash is stale (heading text changed), and the new Native Platform milestone section (## 20. Next Milestone) has no TOC entry.",
+      "severity_justification": "Documentation-only issue in the SDD's table of contents. The broken anchor link reduces navigability but has no runtime impact.",
+      "category_justification": "Stale TOC entry with wrong label and non-matching anchor in the SDD, introduced by the PR that updated the section headings without updating the TOC.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

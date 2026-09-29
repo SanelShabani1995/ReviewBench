@@ -1,0 +1,151 @@
+{
+  "pr_key": "UniverseCitiz3n_msgraph-kb-mcp_2-3e0bfe72",
+  "pr": {
+    "repo": "https://github.com/UniverseCitiz3n/msgraph-kb-mcp",
+    "pr_number": 2,
+    "base": "fe5c686da4a817ca861f284f49f7820d7ea9dac9",
+    "head": "3e0bfe7268cfd621c2030d7259ea83a67b043767"
+  },
+  "findings": [
+    {
+      "file": "README.md",
+      "start_line": 10,
+      "end_line": 10,
+      "message": "The quick-start `npx` command is missing the `-y` flag (`npx -y github:...`). Every client configuration snippet in this same PR (lines 29, 47, 62, 78) uses `npx -y`, which auto-confirms installation. Without `-y`, npx pauses and prompts the user to confirm installing the package, which directly contradicts the 'No local installation required' framing immediately above. A user who copies the quick-start line will get an interactive prompt where the client config snippets would not.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in README.md: line 10 uses `npx github:UniverseCitiz3n/msgraph-kb-mcp` without `-y`, while all four client config snippets added in the same PR use `npx -y github:...`. The inconsistency is real and causes a behavioral difference (interactive prompt vs auto-confirm).",
+      "severity_justification": "A user copying the quick-start command gets an interactive prompt rather than a seamless experience, but the command still works and `-y` is a one-word fix with no functional side effects.",
+      "category_justification": "The issue is an inconsistency in a README code snippet — documentation correctness rather than a code logic error.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 111,
+      "end_line": 122,
+      "message": "The local-development snippet is labeled 'Point any MCP client at the built binary' and uses the `mcpServers` / Claude format, but VS Code's `.vscode/mcp.json` (demonstrated earlier in this same README at lines 23-33) requires the `servers` top-level key and `\"type\": \"stdio\"`. Copying this snippet into VS Code will fail silently because VS Code looks for `servers`, not `mcpServers`, and because `type` is mandatory in that schema. The claim of universality is incorrect.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in README.md: the local dev snippet at lines 111-122 uses `mcpServers` without `type`, which matches Claude/Claude Code format but not VS Code's required `servers` + `type: stdio` schema shown earlier in the same file. The 'any MCP client' framing is inaccurate.",
+      "severity_justification": "A developer doing local development will likely know which client they're targeting and adapt accordingly; the snippet is a starting-point hint, not a copy-paste guarantee. The inconsistency is real but the practical impact is small.",
+      "category_justification": "The issue is a misleading label and format mismatch in a README configuration snippet — purely a documentation accuracy concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 7,
+      "end_line": 11,
+      "message": "`npx github:UniverseCitiz3n/msgraph-kb-mcp` relies on npm running the `prepare` lifecycle script (`tsc`) at install time to compile TypeScript, because `dist/` is in `.gitignore` and is not committed to the repo. `typescript` is in `devDependencies`. If npm runs in production mode (`NODE_ENV=production` or `npm install --omit=dev`), devDependencies are skipped, `tsc` is unavailable, `prepare` fails, and the command produces an error. The Copilot Coding Agent environment in particular may set `NODE_ENV=production`, making the new snippet in that section unreliable. The fix is either to commit `dist/`, publish to the npm registry, or move `typescript` to `dependencies`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: dist/ is gitignored and absent, `prepare` runs `tsc`, and `typescript` is in devDependencies. If npm skips devDependencies (e.g. NODE_ENV=production), the prepare script fails and `npx github:...` errors. This is a real reliability risk, especially for the Copilot Coding Agent snippet added by this PR.",
+      "severity_justification": "The quick-start and Copilot Coding Agent snippets could silently fail in production-mode environments, making the server unusable. It's not guaranteed to affect all users but is a realistic failure mode in automated/CI environments.",
+      "category_justification": "This is a build/packaging reliability issue — the server may fail to start in certain environment configurations due to missing devDependencies at install time.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 34,
+      "end_line": 42,
+      "message": "The MCP configuration for VS Code (GitHub Copilot) specifies `\"type\": \"stdio\"`. However, according to official VS Code documentation for MCP, only `\"type\": \"local\"` is a valid option for servers running on the local machine via a command. Using `\"stdio\"` may cause the server to fail to connect in VS Code.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "VS Code's MCP configuration format uses `\"type\": \"stdio\"` for local stdio servers in `.vscode/mcp.json`, which is exactly what the README shows. The `\"type\": \"local\"` format applies to GitHub Copilot Coding Agent, which is correctly handled separately in the README. The finding conflates two distinct host formats.",
+      "severity_justification": "If the claim were true it would break VS Code connectivity, but the claim is factually wrong — the README is correct.",
+      "category_justification": "The finding concerns the correctness of a configuration snippet in documentation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 5,
+      "end_line": 5,
+      "message": "The PR description says this only updates the Copilot Coding Agent snippet, but the README is substantially reorganized and multiple sections/snippets are changed. Please update the PR description to reflect the broader documentation rewrite or narrow the diff to the intended Copilot MCP config change.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The diff confirms the README underwent a broad structural rewrite — new sections, renamed sections, updated snippets throughout — while the PR description only describes the two-field Copilot Coding Agent change. The mismatch is real and verifiable from the diff alone.",
+      "severity_justification": "Inaccurate PR descriptions reduce reviewer confidence and make git history harder to search, but no code or behavior is affected — this is purely a documentation hygiene issue.",
+      "category_justification": "The finding is about the accuracy of the PR description relative to the actual changes made, which is a documentation concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 134,
+      "end_line": 134,
+      "message": "This recovery wording is misleading: the server only calls `loadIndex()` once at startup, so after a clone failure the data will not become available later unless the process is restarted. Also, `get_server_info` reports the empty index as a degraded state with a \"Clone succeeded but no API endpoints were indexed\" error, not a clone-failure-specific message.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The 'until data is available' phrasing in the README implies self-healing retry, but loadIndex() is only called once at startup with no retry mechanism — verified in index.ts and loader.ts. The secondary claim about get_server_info's error message is incorrect (null index correctly returns a clone-failure-specific message), but the primary concern about misleading README wording is factually correct.",
+      "severity_justification": "This is a documentation inaccuracy in the README. Users relying on 'data will become available' may wait for recovery that never comes, but the impact is limited to confusion rather than data loss or functional breakage.",
+      "category_justification": "The finding is about misleading wording in the README that misrepresents the server's actual recovery behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 91,
+      "end_line": 91,
+      "message": "The documented input for `search_graph_apis` omits the optional `limit` parameter exposed by the server, so users will not know they can control the result count.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The README table at line 91 only documents `query (string)` for `search_graph_apis`, but index.ts exposes a `limit` parameter in the tool's inputSchema with description 'Maximum number of results to return (default: 20, max: 100)'. The omission is factually verifiable against the source code.",
+      "severity_justification": "The missing `limit` parameter is optional with a sensible default, so functionality is unaffected. Users simply won't know they can control result count from the README, though the MCP schema itself does expose it.",
+      "category_justification": "The finding is about an omission in the README's tool reference table that fails to document an available input parameter.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

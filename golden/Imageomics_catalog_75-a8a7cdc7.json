@@ -1,0 +1,463 @@
+{
+  "pr_key": "Imageomics_catalog_75-a8a7cdc7",
+  "pr": {
+    "repo": "https://github.com/Imageomics/catalog",
+    "pr_number": 75,
+    "base": "5f10688a0afd8b2891d6cec32f0c3bfca9a7aaed",
+    "head": "a8a7cdc7b0cbac54485dbcf53cf6ae6ddbecfe92"
+  },
+  "findings": [
+    {
+      "file": "scripts/export-tags.js",
+      "start_line": 48,
+      "end_line": 52,
+      "message": "Throws if ADDITIONAL_HF_REPOS is absent from config (Array.isArray(undefined) === false). This is a breaking change for any existing config.yaml that doesn't include the new field. The PR description says the parameter is optional and defaults to [], but the script enforces its presence. The fix is to treat a missing key as an empty array before the validation check (e.g. rawConfig.ADDITIONAL_HF_REPOS ??= []) rather than throwing.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: export-tags.js throws when ADDITIONAL_HF_REPOS is absent from config.yaml (Array.isArray(undefined) === false). ADDITIONAL_HF_REPOS is not in requiredKeys, so it passes the earlier check, then hits the throw. This contradicts the PR description saying the parameter is 'optional — defaults to []'. The fix would be to default-assign it before validation, e.g. rawConfig.ADDITIONAL_HF_REPOS ??= [].",
+      "severity_justification": "Breaks the export-tags.js script for any existing config.yaml that doesn't include the new field. Anyone who forked the catalog before this PR would have their tag-export workflow fail after updating the script.",
+      "category_justification": "The script behavior (throw on missing key) contradicts the documented/described intent (optional, defaults to []). This is a logic error in the implementation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "main.js",
+      "start_line": 765,
+      "end_line": 767,
+      "message": "Validation treats a missing ADDITIONAL_HF_REPOS as a fatal config error, appending it to the missing list and throwing. For any existing deployment whose config.yaml predates this PR, the page will render the configuration error banner and fall back to the hardcoded defaults instead of simply treating the absent key as []. The PR advertises this as an optional field; the implementation should default it to [] rather than reject its absence.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: if ADDITIONAL_HF_REPOS is absent from config.yaml, validation adds it to `missing`, throws, the catch block falls back to hardcoded defaults (ORGANIZATION_NAME: ''), the error banner is shown, and then `if (!ORGANIZATION_NAME) return` short-circuits the rest of initialization — no repos load. This completely breaks any existing deployment whose config.yaml doesn't include the new field, contradicting the PR's claim that it's optional.",
+      "severity_justification": "Any existing deployment with a config.yaml that predates this PR would have: (1) a visible error banner shown for 10 seconds, and (2) zero repos loaded because ORGANIZATION_NAME falls back to '' causing an early return. The site becomes non-functional.",
+      "category_justification": "The implementation contradicts the documented behavior (optional field) and introduces a breaking change for existing configurations.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "main.js",
+      "start_line": 299,
+      "end_line": 346,
+      "message": "Additional model repos are fetched twice. The new additional-fetch block (lines 299-328) fetches each extra repo via the single-repo endpoint, which already returns full metadata. Those items are then included in hfItems and unconditionally re-fetched in the existing Step 2 model-details loop (lines 330-345). Every additional model repo gets one redundant API call. The org's own model repos are also re-fetched in Step 2 (pre-existing behaviour), but extending hfItems means the additional repos inherit the same inefficiency.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: additional model repos are fetched by the new block via the single-repo endpoint (full details), merged into hfItems, then re-fetched unconditionally by the Step 2 detailPromises loop. Every additional model repo produces two identical API calls.",
+      "severity_justification": "This is purely a performance inefficiency — extra API calls per additional model, no functional impact. The number of additional repos is expected to be small, and the pre-existing org-model double-fetch is already accepted in the codebase.",
+      "category_justification": "The issue is redundant API calls, not incorrect behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/export-tags.js",
+      "start_line": 133,
+      "end_line": 150,
+      "message": "Same double-fetch for additional model repos as in main.js. Additional models are fetched in the new block (lines 133-140) and merged into items, then all items — including the additional ones — are re-fetched in the models details block (lines 142-150). Each additional model causes one wasted network request.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: additional model repos are fetched via `get(${API_BASE_URL}${repoType}/${entry.repo})` and merged into items, then the models details block maps over all items and re-fetches each via `fetch(${API_BASE_URL}models/${item.id})`. Additional model repos are hit twice.",
+      "severity_justification": "Pure performance inefficiency — one redundant API call per additional model. No impact on correctness or output. The same pre-existing inefficiency applies to org models, and the number of additional repos is expected to be small.",
+      "category_justification": "The issue is redundant network requests with no effect on correctness.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/export-tags.js",
+      "start_line": 134,
+      "end_line": 136,
+      "message": "Fetch errors for additional HF repos are silently swallowed with .catch(() => null), producing no log output. Unlike main.js which emits console.warn for both HTTP errors and network failures, the export script gives no indication that an entry was skipped. A misconfigured repo silently produces an incomplete tag export, making the omission invisible in CI logs.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: export-tags.js uses `.catch(() => null)` with no logging, and the `get()` helper throws on non-ok HTTP responses, so both network and HTTP errors are silently swallowed. main.js by contrast emits console.warn for both failure modes. A misconfigured entry would be silently skipped with no trace in CI logs.",
+      "severity_justification": "The omission only affects the tag export script (a dev/CI utility), not the main application. The impact is an incomplete tag export with no visible warning, which could lead to missed tags but is not a data-loss or user-facing issue.",
+      "category_justification": "Silent failure in error handling makes the script unreliable in CI — failures are invisible, making diagnosis of incomplete outputs difficult.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "main.js",
+      "start_line": 769,
+      "end_line": 774,
+      "message": "Config validation checks that entry.repo is a non-empty string but does not verify it is in owner/repo format. A bare repo-name (without a slash) would pass validation and produce the URL ${API_BASE_URL}${repoType}/repo-name, which the HF API would either 404 or misinterpret. The same gap exists in export-tags.js (line 54-56).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the validation filter in both main.js and export-tags.js only checks for a non-empty string — no slash or owner/repo format check. A value like 'my-dataset' passes validation, gets used in the URL as `${API_BASE_URL}datasets/my-dataset`, and results in a runtime 404 rather than a clear config error at startup.",
+      "severity_justification": "This is a validation gap that would produce a runtime HTTP 404 with a warning (main.js) or silent skip (export-tags.js) rather than a clear config-time error. It's a developer-facing misconfiguration issue, not a user-data or security concern, and would only affect explicitly misconfigured entries.",
+      "category_justification": "The validation claims to verify repo entries but fails to enforce the required owner/repo format, allowing invalid values to pass silently into API calls.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/export-tags.js",
+      "start_line": 54,
+      "end_line": 56,
+      "message": "Same missing owner/repo format validation as in main.js: entry.repo is accepted as any non-empty string. A value without a slash (e.g. just dataset-name) passes validation but generates an invalid API URL.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: export-tags.js line 54-56 uses the same filter `!e.repo.trim()` with no slash/owner/repo format check, identical to main.js. A bare repo name passes validation and produces an invalid API URL at runtime.",
+      "severity_justification": "Same developer-facing misconfiguration issue as in main.js — results in a silent runtime skip rather than a clear config error, but only affects explicitly misconfigured entries.",
+      "category_justification": "Validation fails to enforce the required owner/repo format, allowing invalid values through to API calls.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "main.js",
+      "start_line": 310,
+      "end_line": 310,
+      "message": "The network error handling for additional Hugging Face repos in `main.js` is less specific than in `scripts/export-tags.js`. While `export-tags.js` logs which repo failed, `main.js` only logs a generic message, making it harder to debug config issues.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim is factually incorrect. main.js logs the specific repo name in both the HTTP error path and the network error path via console.warn. It is export-tags.js that uses `.catch(() => null)` with no logging at all. The finding has the comparison reversed.",
+      "severity_justification": "The finding is incorrect, so severity is assessed on the false claim itself — low impact.",
+      "category_justification": "The finding was about debug logging quality, a maintainability concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "main.js",
+      "start_line": 302,
+      "end_line": 302,
+      "message": "The `existingIds` set is built from `hfItems.map(item => item.id)`, but `item.id` for Hugging Face repos is the same as the repo name (e.g., 'org/repo'). The subsequent check `existingIds.has(entry.repo)` is correct, but it's slightly confusing. Renaming `existingIds` to `existingRepoIds` would improve clarity.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a pure naming preference with no concrete inconsistency with local conventions — `existingIds` is a clear, standard name used consistently in both main.js and export-tags.js. The finding itself acknowledges the logic is correct. Renaming to `existingRepoIds` is a matter of personal preference, not a convention violation or ambiguity issue.",
+      "severity_justification": "Purely cosmetic suggestion with no behavioral impact and no local convention being violated.",
+      "category_justification": "A variable naming suggestion with no functional consequence.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "main.js",
+      "start_line": 322,
+      "end_line": 322,
+      "message": "When merging fetched additional repos, the code filters out nulls and then checks `!existingIds.has(item.id)`. However, `existingIds` contains repo names (e.g., `user/repo`), not just the items already fetched from the organization API. If an additional repo from outside the organization is listed twice in the config, it will be fetched twice, and the second successful fetch will be merged, resulting in a duplicate item in the catalog. The deduplication logic only prevents fetching items that were already part of the main organization fetch.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding incorrectly claims that a repo listed twice in config would be fetched twice and merged as a duplicate. The `seenRepos` set on lines 303-308 explicitly prevents any `entry.repo` value from appearing in `toFetch` more than once — the second occurrence is filtered out before any fetch. The deduplication covers both org-overlap and config-level duplicates.",
+      "severity_justification": "The finding is incorrect; no actual bug exists.",
+      "category_justification": "The finding is about duplicate item logic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "main.js",
+      "start_line": 303,
+      "end_line": 307,
+      "message": "In `fetchHubItems`, `seenRepos` is used to deduplicate `ADDITIONAL_HF_REPOS` entries before fetching. However, `existingIds` (which contains repo names like 'user/repo') is also used for a similar check. The check against `seenRepos` is redundant because `existingIds.has(entry.repo)` already prevents duplicate fetching if a repo ID appears multiple times in the config for the same type.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`existingIds` only contains IDs from the org's initial HF fetch, not IDs of externally-configured repos. If the same external repo appears twice in ADDITIONAL_HF_REPOS, `existingIds.has(entry.repo)` is false for both occurrences. `seenRepos` is what prevents the second occurrence from being fetched — it is not redundant.",
+      "severity_justification": "The finding is factually incorrect; no real issue exists.",
+      "category_justification": "The finding was about code redundancy/clarity.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/export-tags.js",
+      "start_line": 128,
+      "end_line": 128,
+      "message": "When merging fetched additional repos, the code filters out nulls and then checks `!existingIds.has(item.id)`. However, `existingIds` only contains repo IDs from the initial organization fetch. If a repo is listed twice in the `ADDITIONAL_HF_REPOS` config, it will be fetched twice, and both successful responses will be merged, creating a duplicate. This differs from `main.js`, which uses a `seenRepos` set to prevent re-fetching items from the additional list.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims export-tags.js lacks a `seenRepos` set unlike main.js, but the code at lines 126-131 clearly shows `const seenRepos = new Set()` with the same deduplication filter as main.js. Both files have identical deduplication logic.",
+      "severity_justification": "The finding is factually incorrect; no real bug exists.",
+      "category_justification": "The finding was about a deduplication correctness issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "main.js",
+      "start_line": 312,
+      "end_line": 330,
+      "message": "In fetchHubItems(), fetching additional HF repos does not handle cases where the API_BASE_URL configuration is missing or invalid. This could lead to runtime errors if API_BASE_URL is unexpected or undefined.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "API_BASE_URL is validated as required at startup (line 762: `if (!CONFIG.API_BASE_URL) missing.push(...)`) and the fallback defaults include a valid API_BASE_URL. The new additional-repos fetch uses the same module-scope variable as all other pre-existing HF fetches. This is a generic concern not specific to the new code, and the existing validation already handles it.",
+      "severity_justification": "Not a real issue given the existing validation and the fact that this concern applies identically to all pre-existing HF fetch calls.",
+      "category_justification": "The finding was about missing defensive checks around API URL usage.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "main.js",
+      "start_line": 323,
+      "end_line": 330,
+      "message": "In fetchHubItems(), there is no timeout or retry logic when fetching additional HF repos. Network issues or API rate limits could leave these calls unresolved, impacting application responsiveness.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "This is a generic best-practice observation that applies equally to every other fetch call in the codebase — the pre-existing org fetches, model detail fetches, GitHub API calls, and catalog stats fetches all lack timeout/retry logic too. The finding does not identify anything specific or new about the additional HF repos code, and could be copy-pasted verbatim onto any fetch call in the project.",
+      "severity_justification": "No specific vulnerability or regression introduced; the concern applies uniformly to the entire codebase's fetch strategy.",
+      "category_justification": "The finding is about missing timeout/retry logic for network calls.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/export-tags.js",
+      "start_line": 144,
+      "end_line": 155,
+      "message": "In collectHFTags(), fetching additional HF repos does not handle network timeouts or implement retries. Failed HTTP calls can silently cause missing data without informing the user.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Generic best-practice observation that applies equally to all fetch calls throughout the codebase. No timeout or retry logic exists anywhere in the project for any API call. The finding could be copy-pasted verbatim onto any fetch in the codebase without modification, making it non-specific and boilerplate.",
+      "severity_justification": "No specific regression introduced; applies uniformly to the entire codebase's fetch strategy.",
+      "category_justification": "The finding is about missing timeout/retry logic for network calls.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/export-tags.js",
+      "start_line": 152,
+      "end_line": 153,
+      "message": "In collectHFTags(), there is no strict validation of the response when fetching additional HF repos. Unexpected response formats (e.g., incomplete or malformed JSON) are not handled, potentially leading to runtime errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Generic boilerplate concern about response validation that applies to every API call in the codebase. The same pattern (no schema validation of JSON responses) is used throughout all existing fetch calls in both main.js and export-tags.js. The finding names no specific field access that would fail, no concrete malformed response scenario, and could be copy-pasted onto any fetch call in the project unchanged.",
+      "severity_justification": "No concrete exploitable scenario identified; applies uniformly to the entire codebase.",
+      "category_justification": "The finding concerns missing response validation for API calls.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/export-tags.js",
+      "start_line": 71,
+      "end_line": 76,
+      "message": "In collectGitHubTags(), pagination logic for GitHub repos does not enforce a maximum. A large number of repositories could lead to prolonged requests, potentially hitting rate limits or degrading performance.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "This is a pre-existing concern unrelated to the PR changes, and it is a generic best-practice observation about pagination without a page limit. The same unbounded pagination pattern exists in main.js for the same GitHub org fetch. The finding does not demonstrate a concrete problem for the target org (Imageomics has a small number of repos) and could be copy-pasted onto any paginated fetch in any project.",
+      "severity_justification": "No concrete impact for the target use case; the org is small, and this is pre-existing code untouched by this PR.",
+      "category_justification": "The finding is about potential performance degradation from unbounded pagination.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "main.js",
+      "start_line": 321,
+      "end_line": 321,
+      "message": "[javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring] Detected string concatenation with a non-literal variable in a util.format / console.log function. If an attacker injects a format specifier in the string, it will forge the log message. Try to use constant values for the format string.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic static analysis false positive. `entry.repo` comes from developer-controlled config.yaml, not attacker-controlled input. browser console.warn does not process printf-style format specifiers like util.format. No concrete injection path exists.",
+      "severity_justification": "No exploitable vulnerability — data source is developer-controlled config, not user input.",
+      "category_justification": "The finding is a security alert about format string injection.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring"
+      }
+    },
+    {
+      "file": "public/config.yaml",
+      "start_line": 46,
+      "end_line": 46,
+      "message": "@EmersonFras, I tested with the following at this line and it seemed to work without errors or warnings.\n\n```yml\nADDITIONAL_HF_REPOS:\n  - repo: \"mridulk/phylo-diffusion\"\n    type: \"spaces\"\n  - repo: \"egrace479/Butterfly-Sample\"\n    type: \"datasets\"\n  - repo: \"egrace479/test-model\"\n    type: \"models\"\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "other",
+      "scope": "unrelated",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a human reviewer's test confirmation comment, not a finding identifying a code issue. It contains no bug report, no correctness concern, and no actionable suggestion — it simply reports that the feature works as expected. It fails all three TP criteria: it identifies no issue, raises no concern, and has no substance beyond a test result note.",
+      "severity_justification": "No issue identified; purely informational.",
+      "category_justification": "This is a review comment confirming functionality, not a code quality finding.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "egrace479",
+        "url": "https://github.com/Imageomics/catalog/pull/75#discussion_r3111333520",
+        "created_at": "2026-04-20T14:19:12Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "a8a7cdc7b0cbac54485dbcf53cf6ae6ddbecfe92"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 85,
+      "end_line": 85,
+      "message": "```suggestion\n  * `ADDITIONAL_HF_REPOS`: Array of Hugging Face repos from outside the org to include. Each entry specifies `repo` (`<owner>/<repo-name>`) and `type` (`datasets`, `models`, or `spaces`). Use `[]` if there are none you wish to include\n```\nShould match direction for additional GitHub repos since we're matching behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggestion block contains identical text to the current README line — it proposes no actual change. The comment is either a reviewer affirmation or an accidentally empty suggestion. There is nothing actionable to address.",
+      "severity_justification": "No issue identified; the suggestion is a no-op.",
+      "category_justification": "The finding references a README documentation line.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "egrace479",
+        "url": "https://github.com/Imageomics/catalog/pull/75#discussion_r3111348233",
+        "created_at": "2026-04-20T14:21:27Z",
+        "alignment": "code_changed",
+        "original_commit": "f5e8fd9a116b8bcff303e56cf9580840b87b0f46",
+        "original_start_line": 85,
+        "original_end_line": 85
+      }
+    },
+    {
+      "file": "scripts/export-tags.js",
+      "start_line": 48,
+      "end_line": 62,
+      "message": "The header comment lists the config keys read from `public/config.yaml` but does not mention the newly added `ADDITIONAL_HF_REPOS`. Consider updating this comment to keep documentation in sync with the actual behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The header comment on line 11-12 explicitly lists config keys read from config.yaml ('ORGANIZATION_NAME, API_BASE_URL, and ADDITIONAL_REPOS') but omits ADDITIONAL_HF_REPOS, which is now read and validated in lines 48-62 added by this PR. The claim is factually correct.",
+      "severity_justification": "This is a documentation comment in a developer utility script. The omission has no runtime impact but leaves the header inaccurate after the PR's changes.",
+      "category_justification": "The issue is a stale inline comment that no longer accurately describes which config keys the script reads.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "main.js",
+      "start_line": 326,
+      "end_line": 326,
+      "message": "Merging outside-org Hugging Face items here means repository metadata controlled by external owners flows into the existing card renderer, where descriptions and tag labels are interpolated into `innerHTML` without escaping. An included third-party HF repo can later change its card metadata to inject markup/script into the catalog; sanitize these fields before rendering or only render them via text content.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: displayDescription and tagsHtml tag values are interpolated directly into innerHTML without escapeHTML (which does exist and is used for prettyName/escapedTitle). This PR introduces external third-party HF repos whose owners control description and tag fields that flow unescaped into innerHTML at line 570, creating a concrete stored XSS path.",
+      "severity_justification": "The XSS vector is real but exploitability depends on the catalog admin explicitly adding a malicious repo to ADDITIONAL_HF_REPOS, or on a repo owner turning malicious after being added. The attack surface is limited to the catalog admin's config choices, but the unescaped innerHTML pattern is a concrete vulnerability.",
+      "category_justification": "Unescaped external data interpolated into innerHTML is a classic stored XSS vulnerability — a concrete, demonstrable security issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

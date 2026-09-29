@@ -1,0 +1,411 @@
+{
+  "pr_key": "whispr-messenger_mobile-app_64-9e7742e5",
+  "pr": {
+    "repo": "https://github.com/whispr-messenger/mobile-app",
+    "pr_number": 64,
+    "base": "100ea317d71af37b848d438b20a69c9100865c54",
+    "head": "9e7742e57cff9c9a2cf5110f66ad59348c5c7979"
+  },
+  "findings": [
+    {
+      "file": "src/screens/Security/TwoFactorAuthScreen.tsx",
+      "start_line": 149,
+      "end_line": 153,
+      "message": "getBackupCodes is called with an empty string: `TwoFactorService.getBackupCodes(\"\")`. The service sends `{ token: \"\" }` to POST /v1/2fa/backup-codes. The regenerate flow never prompts the user for their current TOTP code before calling this endpoint, so the API will reject the request (400/401). The Alert dialog should collect a valid TOTP token from the user before invoking regeneration.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: line 151 of TwoFactorAuthScreen.tsx calls `TwoFactorService.getBackupCodes(\"\")` with a hardcoded empty string. The service method sends `{ token }` as the POST body to `/v1/2fa/backup-codes`. No TOTP input is collected from the user before this call. The regenerate-backup-codes flow will fail at the API level since an empty token would be rejected for a security-sensitive operation.",
+      "severity_justification": "The regenerate backup codes flow is completely broken at runtime — the API call will be rejected because no valid TOTP token is sent. Users cannot regenerate their backup codes, which is a critical recovery mechanism for 2FA accounts.",
+      "category_justification": "This is a functional bug: the wrong value (empty string) is passed to the API call, making the regenerate-codes feature non-functional rather than a security vulnerability per se.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorBackupCodesScreen.tsx",
+      "start_line": 112,
+      "end_line": 115,
+      "message": "handleComplete calls navigation.popToTop(), which pops all screens to the root (ConversationsList). This is correct for the initial setup flow (TwoFactorAuth → Setup → Verify → BackupCodes), but for the regenerate flow (TwoFactorAuth → BackupCodes) it sends the user to ConversationsList, bypassing TwoFactorAuth. The user is then forced to navigate all the way back through Settings to reach 2FA management again. The regenerate path should navigate back to TwoFactorAuth instead.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `navigation.popToTop()` at line 114 of TwoFactorBackupCodesScreen always navigates to the initial route (ConversationsList for authenticated users). The regenerate flow enters BackupCodesScreen from TwoFactorAuth, so popToTop() skips TwoFactorAuth and lands in ConversationsList. The user must re-navigate through the full Settings → SecurityKeys → TwoFactorAuth path to return to 2FA management.",
+      "severity_justification": "A degraded UX that breaks expected navigation after a management action (regenerate codes), but 2FA functionality itself is not impaired. The user can still return to the 2FA screen, just with extra navigation steps.",
+      "category_justification": "The navigation behaviour is wrong for the regenerate-codes use case — the screen takes the user to the wrong destination, contrary to expected behaviour for a management-screen action.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorSetupScreen.tsx",
+      "start_line": 100,
+      "end_line": 126,
+      "message": "loadSetup is a useCallback with [getLocalizedText] as its dependency. The useEffect depends on loadSetup, so if getLocalizedText's reference changes (e.g. on a theme/context re-render), loadSetup is replaced, the useEffect re-fires, and POST /v1/2fa/setup is called again — generating a brand new secret and QR code while the user is looking at the current one. The old secret is silently invalidated. The entrance animation also replays unnecessarily. loadSetup should not be a dependency of the mount effect; call it directly inside the effect or stabilise the dependency.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `getLocalizedText` in ThemeProvider is a plain function recreated on every render (not memoized). `loadSetup = useCallback(..., [getLocalizedText])` gets a new reference whenever ThemeProvider re-renders. `useEffect([loadSetup])` then re-runs, firing another `POST /v1/2fa/setup` and silently invalidating the current secret. The dependency chain is real and the described consequence is accurate.",
+      "severity_justification": "Calls POST /v1/2fa/setup again and invalidates the in-flight secret if ThemeProvider re-renders (e.g., language/theme change). Unlikely during normal quick 2FA setup but the bug is real and could disorient users who switch language mid-flow, or on any future context re-render trigger.",
+      "category_justification": "Incorrect React effect dependency causes an API mutation (POST /v1/2fa/setup) to be repeated unintentionally, silently invalidating the user's current QR secret.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorBackupCodesScreen.tsx",
+      "start_line": 104,
+      "end_line": 110,
+      "message": "The beforeRemove listener prevents leaving the screen whenever confirmed is false. There is no back button rendered in the header of this screen, and no other way to dismiss it without checking the confirmation box. On Android, pressing the hardware back button triggers beforeRemove, which is blocked. A user who wants to cancel the entire 2FA setup flow is completely stuck — the only exit is to falsely claim they saved their codes. At minimum there should be an explicit cancel path that the user can use to abort without the confirmed guard.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the header contains only a title Text with no back button, the navigator sets `gestureEnabled: false`, and the `beforeRemove` listener calls `e.preventDefault()` when `confirmed` is false. On Android, hardware back is also blocked. The only exit is to check the confirmation box. There is no cancel/abort path.",
+      "severity_justification": "Users who reach the backup codes screen and want to cancel (e.g., made an error, changed their mind) are completely stuck with no escape. While they can falsely check the box, the absence of any abort path creates a poor and potentially confusing UX — especially on Android where the hardware back button is expected to always work.",
+      "category_justification": "The screen's navigation guard completely removes user agency to exit without completing the flow, which contradicts the expected behavior of a mobile navigation system and violates the principle that users should always be able to abandon a flow.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorAuthScreen.tsx",
+      "start_line": 106,
+      "end_line": 112,
+      "message": "In handleToggle2FA, when value is true, setActionLoading(true) is set and then navigation.navigate('TwoFactorSetup') is called. If navigate fails or is delayed for any reason, actionLoading stays true indefinitely (blocking the toggle), until useFocusEffect fires on next focus. Even in the happy path, during the navigation transition the switch visually shows OFF with no spinner or disabled affordance, giving the user no feedback that the tap was registered.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: handleToggle2FA sets actionLoading(true) then calls navigate() with no reset path in this branch. The Switch has no disabled prop reflecting actionLoading, so no visual affordance is shown. useFocusEffect does reset it on return, but the 'stuck indefinitely' framing is overstated — navigate() is effectively synchronous and doesn't fail. The real issue is the missing visual feedback.",
+      "severity_justification": "The missing visual feedback is a minor UX issue — the navigation transition happens immediately so the gap is imperceptible in practice. The stuck-indefinitely scenario requires navigation to fail, which doesn't happen in normal React Navigation use. useFocusEffect handles the reset correctly.",
+      "category_justification": "The actionLoading state in the toggle-on path is set but never cleared in that same branch, which could leave the toggle guard active until the focus effect fires on screen return.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorVerifyScreen.tsx",
+      "start_line": 168,
+      "end_line": 178,
+      "message": "The full TOTP secret (the shared cryptographic key) is displayed in plain text on the verify screen as a 'reminder'. The secret was already shown on the setup screen where the user scanned/copied it. Displaying it again on a subsequent screen unnecessarily extends the window during which this sensitive key material is visible in the UI, increasing the risk of shoulder-surfing. The secret should not be re-displayed at this step.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The secret is shown on the verify screen by intentional design as a reminder for users who manually enter it. The marginal security risk over step 1 (which already displayed the QR code and secret prominently) is not demonstrated as a concrete exploit. The finding restates a general 'minimize secret exposure' principle without showing an attack path that does not equally apply to the setup screen.",
+      "severity_justification": "Even if valid, the incremental shoulder-surfing risk of displaying the secret on step 2 versus step 1 is negligible, as both screens are visited consecutively in the same session.",
+      "category_justification": "The concern is about exposing sensitive TOTP key material in the UI, which is a security category concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorAuthScreen.tsx",
+      "start_line": 93,
+      "end_line": 103,
+      "message": "The useFocusEffect callback resets actionLoading and refetches status on every focus, but does not reset showDisableCard or disableCode. If the user opens the disable card and then navigates away from the screen (returning later), the disable card will still be visible with whatever code they were typing, creating confusing stale UI. Both showDisableCard and disableCode should be reset in the useFocusEffect callback.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: useFocusEffect resets only actionLoading and refetches status — showDisableCard and disableCode are not reset. The user can navigate away from TwoFactorAuthScreen while the disable card is open and return to find it still showing with the partially-typed code, creating confusing stale UI.",
+      "severity_justification": "Minor UX issue — the stale card shows a slightly confusing state but doesn't corrupt data, break functionality, or affect security. The user can simply close the card manually.",
+      "category_justification": "The focus-restore logic is incomplete — local UI state is not properly cleaned up on re-focus, leading to stale UI that misrepresents the current interaction state.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorBackupCodesScreen.tsx",
+      "start_line": 167,
+      "end_line": 173,
+      "message": "Backup codes are rendered using the array index as the React key (`key={index}`). If codes can ever change order or if this list is re-rendered dynamically (e.g. after regeneration while staying on the same screen instance), React will incorrectly reuse DOM nodes. Since codes are passed as route params this is unlikely to cause an immediate bug, but using the code value itself as the key would be safer and is trivial here.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The codes array comes from immutable route params and is never mutated, reordered, or regenerated on the same screen instance. Using index as key on a static list with no editable per-item state is harmless. The finding itself acknowledges there is no actual bug and the concern is hypothetical.",
+      "severity_justification": "No real-world impact — the list is purely static for the lifetime of the screen.",
+      "category_justification": "Purely a React best-practice style suggestion with no functional consequence in this specific context.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/Toast/Toast.tsx",
+      "start_line": 68,
+      "end_line": 68,
+      "message": "When a new toast is triggered while another is already visible, the component does not re-render because `if (!visible) return null` prevents it. This means the new toast message and type are not displayed. The component should be structured to always render so that the `useEffect` can handle showing and animating the new toast content.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. When a new toast triggers while one is visible, `visible` stays `true` so `if (!visible) return null` is never reached — the component re-renders with the new message. The useEffect has `[visible, message]` as deps (message was explicitly added in this PR), so it re-runs on message change and correctly restarts the animation for the new toast. The scenario described does not occur.",
+      "severity_justification": "The claim is incorrect so there is no actual bug to assess.",
+      "category_justification": "The finding alleges a rendering/display bug in the Toast component.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorVerifyScreen.tsx",
+      "start_line": 158,
+      "end_line": 164,
+      "message": "When enabling 2FA fails with a 400 or 401 error, the user is shown an \"Invalid Code\" toast. If it fails for another reason (e.g., server error 500), they see a generic \"Unable to start setup\" message, which is confusing in the verification step. The error message for non-40x errors should be more specific, like \"An unexpected error occurred. Please try again.\"",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at lines 97-101: non-400/401 errors in the verify step use twoFactor.setupError ('Unable to start setup') which is semantically incorrect — the user is at step 2 verifying a TOTP code, not starting setup. The wrong error message is used for server/network errors during verification.",
+      "severity_justification": "The wrong error message is shown for non-40x failures but the user is still informed of the error and can retry. No data is lost or functionality broken — it is a confusing but non-critical UX issue.",
+      "category_justification": "Reuse of a setup-phase error key in the wrong context — a naming/localization mismatch that creates misleading user-facing messaging.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorBackupCodesScreen.tsx",
+      "start_line": 113,
+      "end_line": 117,
+      "message": "The `beforeRemove` listener is intended to prevent the user from accidentally leaving the backup codes screen without confirming they have saved the codes. However, `navigation.popToTop()` in `handleComplete` will bypass this check, allowing the user to finish the setup flow without ticking the confirmation checkbox. The listener should check for `e.data.action.type === 'POP_TO_TOP'` and only allow it if `confirmed` is true.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The Complete Setup button has disabled={!confirmed} so handleComplete is only reachable when confirmed is true. The beforeRemove listener correctly allows navigation when confirmed is true via 'if (confirmed) return'. There is no bypass — the confirmation guard works as intended.",
+      "severity_justification": "The claimed bypass does not exist, so there is no impact.",
+      "category_justification": "The finding alleges a logic flaw in the navigation guard which does not exist in the code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/navigation/AuthNavigator.tsx",
+      "start_line": 95,
+      "end_line": 107,
+      "message": "The new 2FA setup screens (`TwoFactorSetup`, `TwoFactorVerify`, `TwoFactorBackupCodes`) have `gestureEnabled: false` to prevent accidental dismissal. However, if the user leaves the app and returns, the gesture might be re-enabled on Android, allowing them to swipe back and get into an inconsistent state. This can be prevented by adding `headerLeft: () => null` to the `options` for these screens to fully disable the back action.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim that gestureEnabled:false 'might be re-enabled on Android' when the app is backgrounded is not a documented React Navigation behavior and is unverifiable speculation. The suggested fix (headerLeft: null) is also irrelevant since headerShown:false is set globally on the navigator, meaning no headers are rendered at all.",
+      "severity_justification": "The described scenario is speculative with no evidence it occurs, and the fix suggested would have no effect.",
+      "category_justification": "The finding concerns navigation state consistency across app lifecycle events.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorVerifyScreen.tsx",
+      "start_line": 194,
+      "end_line": 194,
+      "message": "The `onPress` handler for the 'close' button in `TwoFactorVerifyScreen` executes `navigation.pop(2)`. This is fragile as it assumes a fixed navigation history. If the navigation path to this screen changes, `pop(2)` might lead to an unexpected screen. It would be more robust to navigate to a specific route like `navigation.navigate('Security')` or `navigation.popToTop()` and then navigate to the intended screen.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "pop(2) is confirmed at line 139 and does assume a fixed stack depth. TwoFactorVerify is currently only navigated to from TwoFactorSetup, so pop(2) correctly lands on TwoFactorAuth today. The fragility concern is real — if a second entry point is ever added, pop(2) would navigate to the wrong screen. Using navigate('TwoFactorAuth') directly would be more robust.",
+      "severity_justification": "The code works correctly today with the single existing entry point. The risk is a future-regression concern rather than a current bug.",
+      "category_justification": "Hard-coded pop count assumes a fixed navigation stack depth, making the code brittle to future navigation path changes.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/services/TwoFactorService.ts",
+      "start_line": 64,
+      "end_line": 67,
+      "message": "The `getBackupCodes` function was changed to accept a `token` parameter, which is a breaking change. The previous implementation, which is still used in `TwoFactorAuthScreen.test.tsx`, did not require a token. This indicates that regenerating backup codes may require re-authentication, but the function signature doesn't make it clear if it's a TOTP token or a backup code. The function should be documented to clarify the expected token type.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The 'breaking change' framing is incorrect for a same-PR service modification. The test claim is misleading — the test mocks the function and doesn't care about parameters. The documentation suggestion is generic: the token parameter is consistent with disable(token) in the same file and clearly TOTP in this 2FA context. The real underlying bug (passing empty string) was already identified in Finding 1.",
+      "severity_justification": "No concrete bug is identified beyond the empty-string issue covered by Finding 1; the rest is a minor documentation suggestion.",
+      "category_justification": "The core suggestion is to add documentation clarifying the token parameter type.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorAuthScreen.tsx",
+      "start_line": 2,
+      "end_line": 2,
+      "message": "PR title references `WHISPR-623` while the description states \"Closes WHISPR-653\". One of them is incorrect — please reconcile so the linked Jira ticket is unambiguous.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually confirmed: the PR title says WHISPR-623, the PR description body says 'Closes WHISPR-653', and the updated file header (line 2 of TwoFactorAuthScreen.tsx) also references WHISPR-653. There is a genuine mismatch between the PR title ticket number and all other references in the change.",
+      "severity_justification": "This is a tracking/documentation inconsistency with no impact on runtime behavior; however, it could cause the wrong Jira ticket to be auto-linked or remain open.",
+      "category_justification": "The issue is purely about PR metadata and file-header comment accuracy, with no effect on code logic or behavior.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorSetupScreen.tsx",
+      "start_line": 104,
+      "end_line": 106,
+      "message": "This destructures `otpauthUri`, but the existing `TwoFactorSetupResponse` contract in this repo used `qrCodeUri` and there is no fallback here. If the deployed `/v1/2fa/setup` response still returns `qrCodeUri`, `uri` becomes `undefined`, the QR section renders with invalid data, and users cannot scan the setup QR code.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims the existing contract used `qrCodeUri` but the `TwoFactorSetupResponse` interface at this SHA already defines the field as `otpauthUri` (with `qrCodeUrl` deprecated). The code correctly destructures `otpauthUri` matching the current type. The finding also conflates `qrCodeUri` (which never existed) with `qrCodeUrl` (the deprecated field). There is no mismatch.",
+      "severity_justification": "If the claim were true (field name mismatch causing undefined QR data), it would block users from completing 2FA setup entirely. Assigning high severity to the hypothetical impact.",
+      "category_justification": "The concern is about a field name mismatch producing undefined data and breaking the QR code setup flow.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorVerifyScreen.tsx",
+      "start_line": 92,
+      "end_line": 94,
+      "message": "The new verification step is not covered by the existing Jest suite, even though the prior single-screen 2FA tests covered enabling 2FA and retrieving backup codes. Add coverage for a valid 6-digit code calling `enable`, navigating with returned backup codes, and invalid/error responses staying on this screen.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: only two test files exist in the repo and neither contains any tests for TwoFactorVerifyScreen. The old tests that covered `enable()` and `getBackupCodes()` were removed in this PR and replaced with a test that only asserts navigation to 'TwoFactorSetup'. The verify screen's core logic (calling enable, navigating with backupCodes, handling errors) is completely untested.",
+      "severity_justification": "The verify step is a critical part of the 2FA wizard flow (calling enable(), passing backup codes forward), and regressions in it would silently pass CI. Missing tests for this path are a real quality gap, though not a runtime bug.",
+      "category_justification": "The finding is specifically about absent test coverage for a newly introduced screen.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorBackupCodesScreen.tsx",
+      "start_line": 104,
+      "end_line": 109,
+      "message": "The new backup-codes guard has no test coverage. Since this listener blocks navigation until the confirmation checkbox is checked, add tests that `beforeRemove` is prevented before confirmation and allowed after confirmation so regressions do not trap users or allow accidental dismissal.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: no test file exists for TwoFactorBackupCodesScreen, and no existing test exercises the beforeRemove listener. The only reference to 'TwoFactorBackupCodes' in test files is an assertion that navigation was called with that route name, not a test of the screen itself.",
+      "severity_justification": "The beforeRemove guard is a deliberate safety mechanism to prevent accidental loss of backup codes. A regression (e.g., listener not re-registering when confirmed changes) would either permanently trap users or silently drop the protection. The impact is real but not as severe as a data-integrity or payment bug.",
+      "category_justification": "The finding is specifically about missing test coverage for a newly introduced navigation guard in a new screen.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorSetupScreen.tsx",
+      "start_line": 103,
+      "end_line": 107,
+      "message": "The new setup step is not covered by tests, including the API response mapping and QR rendering path. The previous tests covered setup on toggle; add a test for successful `setup()` loading `secret`/QR data and the retry/error path so response-contract changes are caught.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: no test file for TwoFactorSetupScreen exists. The only test references to 'TwoFactorSetup' assert that the auth screen navigates there — they do not test the setup screen's own logic. The `loadSetup()` function (API call, secret/otpauthUri extraction, error/retry path) is completely untested.",
+      "severity_justification": "TwoFactorSetupScreen's loadSetup() is where the API response contract is consumed; without tests, a field-name change or unexpected response shape silently breaks QR rendering. Medium rather than high because there's no data integrity or security bypass involved, just a broken UI flow.",
+      "category_justification": "The finding identifies missing test coverage for a newly introduced screen and its API response mapping logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/screens/Security/TwoFactorAuthScreen.tsx",
+      "start_line": 155,
+      "end_line": 156,
+      "message": "The regenerate-codes failure path shows `twoFactor.setupError` (“Unable to start setup”), which is misleading for users who are regenerating backup codes from the management screen. Use a regenerate-specific localized message so the error matches the action that failed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: line 156 of TwoFactorAuthScreen.tsx shows `showToast(getLocalizedText('twoFactor.setupError'), 'error')` inside the regenerate-codes catch block. `twoFactor.setupError` resolves to 'Unable to start setup. Please try again.' — which is semantically wrong for a regenerate-codes failure. No regenerate-specific error key exists in ThemeContext.tsx, while a success key (`twoFactor.codesRegenerated`) does exist, indicating the error counterpart was omitted.",
+      "severity_justification": "The error message is misleading but does not cause incorrect behavior — the failure is still surfaced to the user. It's a UX/clarity issue rather than a functional bug.",
+      "category_justification": "The issue is a user-facing string that is contextually incorrect, creating confusion for the user about what action failed. This falls under inclusive/professional UX concerns.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

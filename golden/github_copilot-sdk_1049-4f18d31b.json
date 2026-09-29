@@ -1,0 +1,511 @@
+{
+  "pr_key": "github_copilot-sdk_1049-4f18d31b",
+  "pr": {
+    "repo": "https://github.com/github/copilot-sdk",
+    "pr_number": 1049,
+    "base": "6029b37401e8a9f85f4c1afab128ef55cc128773",
+    "head": "4f18d31b70f5c23aa4a23701ca4cfd85c7eeae25"
+  },
+  "findings": [
+    {
+      "file": "go/definetool.go",
+      "start_line": 112,
+      "end_line": 130,
+      "message": "convertCallToolResult JSON-marshals and unmarshals arbitrary user-defined structs to check for the CallToolResult shape. Any Go struct with a `Content []T` field where T has a `Type string` field (e.g. a SearchResult with document/image items, an HTTP response wrapper, etc.) will match the heuristic. Unknown block types are silently dropped, so the struct's entire payload is lost and replaced with an empty-text ToolResult. Before this PR, such structs would have been correctly JSON-serialized verbatim. This is a silent data-loss regression for any user struct that happens to share the CallToolResult shape.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in code: convertCallToolResult JSON-marshal/unmarshals non-map structs, then accepts any value with a 'content' array where each element has a 'type' string field. Unknown block types (e.g. 'document', 'article') are silently dropped, producing an empty-text ToolResult instead of the full JSON serialization that would have occurred before this PR. This is a genuine silent data-loss regression for any user struct that happens to share the shape.",
+      "severity_justification": "Silent data loss for tool handlers that return structs with a content/type array shape — the LLM receives an empty string instead of the actual payload. Medium rather than high because it requires an accidental shape collision with a relatively specific structure.",
+      "category_justification": "The heuristic causes incorrect behavior (silent data loss) for user-defined structs that happen to match the CallToolResult shape, which is a logic/correctness issue in the normalization path.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "python/copilot/tools.py",
+      "start_line": 302,
+      "end_line": 302,
+      "message": "`text_parts.append(block.get(\"text\", \"\"))` appends an empty string when the `text` field is absent from a `text`-typed content block. When joined with `\"\\n\"`, a missing text field produces a spurious newline (e.g. `\"real line\\n\"` instead of `\"real line\"`). Node.js and Go both guard with `typeof block.text === \"string\"` / type assertion and skip the block entirely if the field is absent. The behaviour is inconsistent across SDKs.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Python _convert_call_tool_result at line 302 does `text_parts.append(block.get('text', ''))` which unconditionally appends '' when the text field is absent, while Node.js guards with `typeof block.text === 'string'` and Go guards with a type assertion, both skipping absent fields. The spurious newline claim is correct: '\n'.join(['real line', '']) == 'real line\\n'.",
+      "severity_justification": "Only affects malformed MCP content blocks where a 'text'-typed block is missing its 'text' field — an edge case. Impact is a spurious trailing newline in the output, not a crash or data loss.",
+      "category_justification": "Inconsistent behavior between Python and the other SDK implementations, producing incorrect output (spurious newlines) for malformed input.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "go/definetool.go",
+      "start_line": 136,
+      "end_line": 155,
+      "message": "An empty `content: []` array vacuously passes the validation loop (the loop body never executes), so `convertCallToolResult` returns `(ToolResult{TextResultForLLM:\"\", ResultType:\"success\"}, true)` for any value that serialises to `{\"content\":[]}`. A user-defined struct with an empty slice field named `Content` would silently match, discarding all other fields. The same issue exists in the Node.js and Python implementations (empty array passes `every`/`all` checks).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in all three SDKs: Go's range loop, Python's all(), and Node.js's every() all vacuously pass for empty arrays, so any value with a 'content: []' field matches the CallToolResult heuristic. The discarded-other-fields claim is correct for user structs with an empty non-nil Content slice.",
+      "severity_justification": "Requires very specific conditions (non-nil empty Content slice in Go, dict with 'content: []' in Python/Node.js plus other fields). Even when triggered, impact is returning empty string instead of JSON — minor compared to finding 1's non-empty false-positive case.",
+      "category_justification": "The heuristic produces incorrect results (data loss) for the edge case of user types with empty content arrays, which is a logic correctness issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "nodejs/src/client.ts",
+      "start_line": 1933,
+      "end_line": 1935,
+      "message": "`convertCallToolResult` returns a `ToolResultObject` without a `toolTelemetry` field, but every other branch of `normalizeToolResultV2` — including the string/JSON fallback and all hardcoded error returns — sets `toolTelemetry: {}`. Downstream code that relies on `toolTelemetry` always being present will see `undefined` for CallToolResult-shaped results. If the field is required by the RPC layer, this is a protocol violation for this code path.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: convertCallToolResult returns a ToolResultObject without toolTelemetry, while all SDK-constructed branches in normalizeToolResultV2 include toolTelemetry: {}. The inconsistency is real. However, toolTelemetry is typed as optional (?) in both types.ts and generated RPC types, so the protocol-violation claim is speculative.",
+      "severity_justification": "toolTelemetry is explicitly typed as optional in the TS type definitions and generated RPC types, so no protocol violation occurs. Downstream code that null-checks would be fine. The inconsistency is cosmetic and a potential future risk rather than a known bug.",
+      "category_justification": "Inconsistent behavior — the CallToolResult branch omits a field that all other SDK-constructed branches include, creating an inconsistent output shape.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "dotnet/src/Types.cs",
+      "start_line": 476,
+      "end_line": 476,
+      "message": "`dataContent.Base64Data.ToString()` is almost certainly wrong. In Microsoft.Extensions.AI.Abstractions, `DataContent.Base64Data` returns `ReadOnlyMemory<byte>`, not `string`. Calling `.ToString()` on `ReadOnlyMemory<byte>` returns the struct's default string representation (e.g. `\"System.ReadOnlyMemory<Byte>[N]\"`), not the actual base64 string. The correct approach is to use `dataContent.Uri` (which contains the full `data:` URI) or extract the base64 portion from the URI, or call `Convert.ToBase64String(dataContent.Data.Value.Span)` from the raw bytes.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding incorrectly claims Base64Data returns ReadOnlyMemory<byte>. The actual Microsoft.Extensions.AI.Abstractions source confirms Base64Data returns ReadOnlyMemory<char>. The .NET runtime's ReadOnlyMemory<T>.ToString() has a special case for char: when T==char it returns the actual string content, not the struct type description. Therefore dataContent.Base64Data.ToString() correctly returns the base64 string.",
+      "severity_justification": "If the finding were correct it would be a critical bug (corrupted binary data). Since it is wrong the code is actually correct, but the severity assigned reflects the claimed impact.",
+      "category_justification": "The finding claims incorrect behavior in data conversion, which would be a correctness bug if true.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "go/definetool.go",
+      "start_line": 155,
+      "end_line": 202,
+      "message": "Content blocks with unknown `type` values (anything other than `\"text\"`, `\"image\"`, `\"resource\"`) are silently dropped after the struct has already been committed as a CallToolResult. If a user struct has a `content` array with custom types like `\"document\"` or `\"audio\"`, those items are discarded entirely and the function returns `(ToolResult{TextResultForLLM:\"\", ResultType:\"success\"}, true)` with no warning. The same silent discard happens in Python and Node.js, but in those SDKs only plain dicts / plain JS objects trigger the path, making accidental matches far less likely than in Go where arbitrary structs are JSON-round-tripped.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the switch statement has no default case so unknown block types ('document', 'audio', etc.) are silently dropped. The function still returns ok=true after validation commits, so a struct with content items of unknown types produces empty success. The comparative claim is also correct: Python's isinstance(value, dict) guard and Node.js's similar plain-object check make accidental matches far less likely than Go's JSON round-trip approach.",
+      "severity_justification": "Silent data loss for tool handlers returning custom Go structs that happen to have content arrays with non-MCP type values. Same root issue as finding 1 but from the switch-statement angle; real-world impact requires the specific struct shape to match.",
+      "category_justification": "Unknown content block types are silently discarded with no error/fallback, producing incorrect (empty) tool results instead of proper JSON serialization of the original struct.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "nodejs/src/types.ts",
+      "start_line": 259,
+      "end_line": 259,
+      "message": "`isCallToolResult` is now exported from `index.ts` as part of the public API surface. This is a new public export that carries a commitment to stability. The function uses a structural heuristic (`content` array with string `type` fields) that is intentionally broad and will produce false positives for many non-MCP objects. Exposing it publicly encourages callers to use it as a general-purpose type guard, which it is not.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: isCallToolResult and convertCallToolResult are both publicly exported from index.ts at this SHA. The heuristic only checks for 'content' array with string 'type' fields, which is broad enough to produce false positives on non-MCP objects. The finding correctly identifies that this commits to a public API surface for an intentionally-broad internal heuristic without documenting its limitations.",
+      "severity_justification": "No runtime bug introduced — the concern is about API design and maintenance commitment. The function works correctly for its intended use, and false positives from public callers would only affect code written by those callers, not the SDK itself.",
+      "category_justification": "The finding is about API surface design — exposing an internal structural heuristic as public API without documenting its limitations or false-positive characteristics.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "python/copilot/tools.py",
+      "start_line": 283,
+      "end_line": 290,
+      "message": "`_is_call_tool_result` only accepts plain `dict` values. If the MCP Python SDK returns a Pydantic model (`CallToolResult` from `mcp` package), `isinstance(value, dict)` is `False` and the detection fails. The fix then falls through to JSON serialisation and re-encodes the Pydantic model as a JSON string — the original bug. The Go SDK handles this via JSON round-trip; Python does not. There are no tests covering Pydantic-based CallToolResult inputs.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: _is_call_tool_result requires isinstance(value, dict), which is False for Pydantic model instances. MCP Python SDK uses Pydantic models for CallToolResult. A user returning mcp.types.CallToolResult(...) would fail detection and fall back to JSON serialization of the raw Pydantic object — exactly the bug this PR claims to fix. No tests cover this path.",
+      "severity_justification": "Affects users who combine this SDK with the MCP Python SDK and return typed CallToolResult objects. The original bug persists for this code path. mcp is not a declared dependency so the affected population is limited, but the PR claims to fix exactly this scenario.",
+      "category_justification": "The Python fix has a coverage gap: it handles plain dicts but not Pydantic model instances of the same shape, leaving the original serialization bug in place for that input type.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "go/definetool.go",
+      "start_line": 158,
+      "end_line": 160,
+      "message": "When `m[\"isError\"]` exists but is not a boolean `true` (e.g., it is the string `\"true\"` or an integer `1`), `ok` will be `false`, and `isErr` will be `false`. This results in the `resultType` defaulting to `\"success\"`, which is incorrect for an error condition. The check should be more robust to handle non-boolean trueish values that can occur with loose typing in `map[string]any`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct that non-bool values cause ok=false, but the MCP spec defines isError as a strict boolean. Go's JSON unmarshaling (the source of the map via round-trip) always produces proper bool for JSON true/false. Non-boolean truthy isError values (string 'true', int 1) are malformed per spec. Python's truthy check is actually less spec-compliant. The suggested fix would diverge from the MCP spec for no practical gain.",
+      "severity_justification": "Only affects hand-crafted maps with incorrectly-typed isError values. JSON-deserialized structs and well-formed MCP results always have boolean isError, so no real-world scenario is impacted.",
+      "category_justification": "The claim is about incorrect result type mapping for non-boolean isError values, which is a correctness concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "dotnet/src/Types.cs",
+      "start_line": 401,
+      "end_line": 401,
+      "message": "The method `SerializeAIContent` uses `AIJsonUtilities.DefaultOptions`, which may differ from the `JsonSerializerOptions` specified for a particular tool. The `CopilotClient` and `CopilotSession` have access to `tool.JsonSerializerOptions`. If a tool handler returns an unrecognized `AIContent` type, it should be serialized using the tool-specific options to respect any custom converters or settings defined by the user.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: SerializeAIContent is a private static method using AIJsonUtilities.DefaultOptions, while the else-fallback path in Session.cs/Client.cs uses tool.JsonSerializerOptions. The inconsistency is real. The concern is narrow — only custom AIContent subclasses hit the default case — but a user with custom JSON converters for their AIContent types would see them ignored.",
+      "severity_justification": "Only affects custom AIContent subclasses (the default case in the switch). The use of AIJsonUtilities.DefaultOptions is intentional per the PR description and appropriate for AI content polymorphic serialization. Real-world impact is limited to advanced scenarios with custom AIContent types and custom converters.",
+      "category_justification": "Inconsistency between serialization options used for different code paths — tool-specific JsonSerializerOptions are respected in the else-fallback but not in the TryConvertFromAIContent path.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "dotnet/src/Client.cs",
+      "start_line": 1549,
+      "end_line": 1560,
+      "message": "The call to ToolResultObject.TryConvertFromCallToolResult does not log or propagate the reason for a conversion failure. While this might be deliberate, it risks masking errors in input assimilation that could be crucial for debugging.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding applies a generic 'add logging to Try* pattern' suggestion. TryConvertFromCallToolResult returning null is expected behavior (value doesn't match CallToolResult shape), not an error — the fallback correctly JSON-serializes it. The same unlogged pattern is used for TryConvertFromAIContent on the previous line. The finding could be copy-pasted onto any C# Try* pattern anywhere and names no specific debug scenario that would be impaired.",
+      "severity_justification": "Even if logging were added here, it would be noise — null return means 'not a CallToolResult shape' which is normal, and the fallback handles it correctly.",
+      "category_justification": "The suggestion is about adding logging/diagnostics, which is a maintainability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "dotnet/src/Session.cs",
+      "start_line": 568,
+      "end_line": 579,
+      "message": "The fallback serialization logic for the result risks omitting important fields for non-JsonElement inputs. This could lead to unintentional loss of tool handler context in the final result.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is too vague to be actionable — it doesn't specify what fields would be omitted or in what scenario. JsonSerializer.Serialize serializes the entire object. The fallback behavior is pre-existing (unchanged by the PR, which only added detection branches before it). The concern amounts to a generic 'JSON serialization might not capture everything' claim with no specific code path or data loss demonstrated.",
+      "severity_justification": "Even taken at face value, the claim is speculative with no concrete scenario where data would be lost that wouldn't have been lost before this PR.",
+      "category_justification": "The claim relates to potential data loss in the serialization path.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "dotnet/src/Types.cs",
+      "start_line": 324,
+      "end_line": 394,
+      "message": "The TryConvertFromCallToolResult method assumes that all properties within a content item are correctly typed. Missing runtime checks for optional properties such as 'text', 'data', and 'resource' could result in NullReferenceExceptions during property access.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. Every property access in TryConvertFromCallToolResult uses TryGetProperty with ValueKind checks before calling any accessor, which is the standard null-safe JsonElement API pattern. 'text' uses TryGetProperty+String check, 'data'/'mimeType' use TryGetProperty+String check with ?? fallbacks, 'resource' checks for Object kind before entering the block. No NullReferenceException paths exist in this code.",
+      "severity_justification": "The claim is wrong — the code is properly guarded. No actual NullReferenceException risk exists.",
+      "category_justification": "The finding makes an incorrect correctness claim about null safety in the code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "dotnet/src/Types.cs",
+      "start_line": 395,
+      "end_line": 477,
+      "message": "The TryConvertFromAIContent method currently defaults to a conversion of unknown content types via serialization, which might produce overly verbose or unexpected results, particularly in environments where JSON size limits apply.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is generic — 'serializing unknown types might produce verbose JSON' could be copy-pasted onto any serialization fallback in any codebase. It names no specific AIContent subtype, no concrete size limit that would be violated, and no actual scenario where this causes a problem. The default-case serialization of unknown AIContent subtypes is explicitly intentional per the PR description ('unknown AIContent subtypes via AIJsonUtilities serialization'). The finding offers no actionable alternative.",
+      "severity_justification": "Even if taken at face value, the concern is speculative — no concrete size limit or specific verbose type is identified. The behavior is intentional and the same fallback pattern is used throughout the SDK.",
+      "category_justification": "The concern is about output size and verbosity of JSON serialization, which is a performance/efficiency concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "go/definetool.go",
+      "start_line": 65,
+      "end_line": 66,
+      "message": "The normalizeResult function fails to provide an error message if JSON serialization of fallback results fails. This could make understanding the root cause of failures more challenging.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. The fallback JSON serialization failure at lines 99-101 explicitly returns fmt.Errorf('failed to serialize result: %w', err), which provides a descriptive error message and wraps the underlying error with %w for error chain inspection. The error is both described and propagated.",
+      "severity_justification": "The finding is wrong — the code already does what the finding says it doesn't do.",
+      "category_justification": "The finding makes a factually incorrect claim about error handling behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "nodejs/src/types.ts",
+      "start_line": 207,
+      "end_line": 230,
+      "message": "The isCallToolResult function does not verify that content elements contain required properties beyond 'type'. This loose validation approach could cause downstream errors if malformed elements pass through.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "isCallToolResult only checks for string 'type' fields without validating type-specific required properties. The concrete consequence: convertCallToolResult's image case accesses block.data and block.mimeType without guards (unlike text which has typeof check and resource which uses optional chaining), so a malformed {type:'image'} block without data/mimeType produces {data: undefined, mimeType: undefined} in the binary result.",
+      "severity_justification": "Only affects malformed input missing required fields on correctly-typed blocks, an unusual edge case. TypeScript prevents this at compile time; only runtime-cast unknown values can reach this path.",
+      "category_justification": "Missing runtime guards for required fields in the image content block path could produce undefined values in the output.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "nodejs/src/types.ts",
+      "start_line": 231,
+      "end_line": 307,
+      "message": "The convertCallToolResult function does not account for the possibility of deeply malformed data (e.g., non-string 'type' values) passing initial validation in isCallToolResult. Proper handling may require a more stringent approach to pre-validation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's premise is factually incorrect. isCallToolResult explicitly checks typeof type === 'string' for every content element, so non-string type values are rejected and cannot reach convertCallToolResult. The specific example given ('non-string type values passing initial validation') is wrong about the code.",
+      "severity_justification": "The claimed vulnerability does not exist — the validation explicitly prevents the described scenario.",
+      "category_justification": "The finding makes an incorrect factual claim about what values can pass the validation guard.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "python/copilot/tools.py",
+      "start_line": 274,
+      "end_line": 303,
+      "message": "In _convert_call_tool_result, the accessing of resource values like text and blob assumes well-formed keys on the dictionary. This could lead to KeyErrors in scenarios with incomplete input data.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. The pattern 'if resource.get(key): use resource[key]' is safe against KeyError because resource.get(key) returning truthy guarantees the key exists in the dict. All other dict accesses use .get() with defaults. There is no KeyError risk in this code.",
+      "severity_justification": "The claimed vulnerability does not exist — the access pattern is safe against KeyError.",
+      "category_justification": "The finding makes an incorrect claim about KeyError risk in dictionary access patterns.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "python/e2e/test_tools_unit.py",
+      "start_line": 289,
+      "end_line": 333,
+      "message": "The test cases do not directly check the case where CallToolResult content entries are malformed. For instance, elements with incorrect or missing properties like 'text' should explicitly validate error handling.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified gap: the Python test suite has no tests for malformed content entries (missing 'text' on text blocks, missing 'data'/'mimeType' on image blocks, missing 'resource' on resource blocks). The Node.js tests in the same PR explicitly cover these cases. The code is defensively written so no crashes occur, but the specific output behavior for malformed inputs is untested.",
+      "severity_justification": "The code handles malformed input defensively so no crashes occur. The gap means behavior for edge cases is unverified, but practical impact is limited since well-formed MCP results won't hit these paths.",
+      "category_justification": "The finding is about missing test coverage for malformed input cases, an inconsistency between the Node.js and Python test suites in the same PR.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "go/definetool.go",
+      "start_line": 203,
+      "end_line": 203,
+      "message": "The function comment is missing a space between the function name and the verb: \"generateSchemaForTypegenerates\" should be \"generateSchemaForType generates\".",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 203 of go/definetool.go clearly shows '// generateSchemaForTypegenerates' missing the space between the function name and the verb 'generates'. This is a verifiable typo in the code comment.",
+      "severity_justification": "This is a cosmetic typo in a code comment with no runtime impact.",
+      "category_justification": "Typo in a Go doc comment — a code style/readability issue.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "dotnet/src/Types.cs",
+      "start_line": 334,
+      "end_line": 495,
+      "message": "The Node.js, Go, and Python SDKs all received dedicated unit tests for the new CallToolResult conversion logic, but no tests were added for `TryConvertFromCallToolResult` or `TryConvertFromAIContent` in the .NET SDK. Given that this directory contains comprehensive test files (e.g., `ToolResultsTests.cs`, `ToolsTests.cs`), consider adding equivalent coverage for the new conversion paths (text-only, isError → failure, image, resource text/blob, AIContent variants, malformed input rejection).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the .NET test directory has no tests for `TryConvertFromCallToolResult`, `TryConvertFromAIContent`, or `ConvertFromInvocationResult` (grep finds zero matches). The other three SDKs all got dedicated unit test suites for equivalent logic. The .NET test directory already has `ToolResultsTests.cs` and `ToolsTests.cs` which test related functionality, making the omission inconsistent.",
+      "severity_justification": "The new .NET conversion paths handle multiple branches (text, image, resource, AIContent, JSON fallback, isError) that could each have subtle bugs. Without unit tests, regressions or edge-case mishandlings won't be caught.",
+      "category_justification": "The finding is specifically about missing test coverage for newly introduced conversion logic.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "dotnet/src/Types.cs",
+      "start_line": 334,
+      "end_line": 344,
+      "message": "`TryConvertFromCallToolResult` only accepts `JsonElement` input — any other shape (including a strongly-typed CallToolResult POCO returned by an `AIFunction` implementation) silently falls through to the default JSON-serialize fallback and the bug described in #937 will recur. The Node.js, Python, and Go counterparts accept either typed objects or maps/dicts. Consider also detecting a plain CLR object/dictionary with the CallToolResult shape (e.g., by serializing to JSON and re-parsing, similar to the Go implementation), so the conversion is consistent across SDKs.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`TryConvertFromCallToolResult` immediately returns null for any non-JsonElement at line 334-337. A user returning a strongly-typed CallToolResult POCO from their tool handler would bypass this check and fall through to JSON serialization, reproducing #937. The other SDKs handle typed objects via JSON round-tripping. The finding is factually correct and identifies a real inconsistency.",
+      "severity_justification": "The PR intends to fix #937 but leaves the .NET path incomplete for typed POCOs. While the MCP C# SDK path may use AIContent, user-authored handlers returning CallToolResult POCOs would silently re-introduce the bug.",
+      "category_justification": "The conversion logic has a logic gap where certain valid inputs yield wrong behavior (JSON-serialized wrapper instead of extracted content), contrary to the PR's stated intent.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "go/definetool.go",
+      "start_line": 203,
+      "end_line": 203,
+      "message": "The updated comment lost the space between the function name and the description, which makes the generated documentation read incorrectly.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is the same factually verified issue as Finding 1 — line 203 of go/definetool.go reads '// generateSchemaForTypegenerates' missing a space. The finding is correct. Evaluated independently on its own merit.",
+      "severity_justification": "Cosmetic typo in a doc comment with no runtime impact.",
+      "category_justification": "Typo in a Go doc comment affecting code readability/documentation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "go/definetool.go",
+      "start_line": 130,
+      "end_line": 133,
+      "message": "This only accepts `content` when its dynamic type is `[]any`. A common Go literal such as `map[string]any{\"content\": []map[string]any{...}}` has a different slice type, so it falls through to JSON serialization and the CallToolResult is still sent as raw JSON. Consider normalizing non-`[]any` slices (or always using the JSON round-trip) before rejecting the shape.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified with a Go program: `map[string]any{\"content\": []map[string]any{{\"type\":\"text\",\"text\":\"hello\"}}}` passes the `map[string]any` assertion so the JSON round-trip is skipped, then `contentRaw.([]any)` fails because the type is `[]map[string]interface{}`, causing the function to return false and fall through to JSON serialization. The bug is real and reproducible.",
+      "severity_justification": "A Go developer constructing a CallToolResult-shaped map with a typed slice (a natural Go idiom) would silently get the original #937 bug (raw JSON string sent to the LLM) instead of proper conversion.",
+      "category_justification": "The type assertion logic has a gap that causes incorrect behavior for a realistic input shape.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "dotnet/src/Types.cs",
+      "start_line": 334,
+      "end_line": 339,
+      "message": "The .NET conversion paths for CallToolResult and AIContent are new behavior but there are no matching tests in `dotnet/test` (searches for `CallToolResult`, `TextContent`, and `DataContent` return no coverage, while `ToolResultsTests.cs` already covers related tool-result normalization). Please add tests for the new text/error/binary/resource conversion cases so regressions are caught.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same factually verified issue as Finding 2: grep confirms zero test coverage for CallToolResult, TryConvertFromCallToolResult, TryConvertFromAIContent, TextContent, or DataContent conversion in dotnet/test/. The finding is factually correct and independently valid.",
+      "severity_justification": "Multiple new conversion branches (text, image, resource, AIContent, isError) have no unit test coverage, making regressions undetectable without running full E2E tests.",
+      "category_justification": "The finding specifically identifies missing unit test coverage for newly introduced conversion logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,417 @@
+{
+  "pr_key": "zircote_nsip-example_27-b6e16d4e",
+  "pr": {
+    "repo": "https://github.com/zircote/nsip-example",
+    "pr_number": 27,
+    "base": "c765b47b60b3d289f92ea4e49b4fe873af22024e",
+    "head": "b6e16d4e6d0553bc5b1d9634248cb11ad27bdd7b"
+  },
+  "findings": [
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 76,
+      "end_line": 82,
+      "message": "Sire BWT EBV is stated inconsistently within the same report: the EBV table on line 76 shows '-0.23 lbs', but the body text on line 82 uses '-0.225 lbs'. These must agree; one is wrong.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The table at line 76 shows '-0.23 lbs' while the narrative at line 82 (and again in the Analysis section) states '-0.225 lbs' for the same sire BWT EBV. The inconsistency is directly verifiable in the file.",
+      "severity_justification": "This is a rounding inconsistency within a documentation report — not code logic. The values differ only in precision (-0.23 vs -0.225), so a reader can infer the intent, but it is still a factual inconsistency that should be made consistent.",
+      "category_justification": "The finding is about conflicting data values within a Markdown report document, not executable code.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 112,
+      "end_line": 112,
+      "message": "Factual error: 'with a predicted BWT near breed average' contradicts the data in the report itself. The predicted BWT is +0.06 lbs against a breed midpoint of +0.18 lbs — well below average, not near it. The Predicted Offspring table on line 106 even labels this 'Below midpoint — easy lambing expected', directly contradicting the prose.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The prose at line 112 says 'with a predicted BWT near breed average' but the table on line 106 labels the same value 'Below midpoint — easy lambing expected', and the first sentence of the same paragraph says 'below breed midpoint'. The predicted BWT is +0.06 vs. midpoint +0.18 — the word 'near' misrepresents the data and contradicts the report's own table.",
+      "severity_justification": "This is a factual inconsistency within a documentation report. It doesn't affect any code or operational decision, but it does introduce a misleading statement that conflicts with the report's own data.",
+      "category_justification": "The finding is about contradictory prose in a Markdown report, not executable code.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 180,
+      "end_line": 180,
+      "message": "Factual error in the Recommended Next Steps: 'a predicted WWT of +1.98 lbs above breed average' confuses the EBV value with the amount above the breed midpoint. The predicted WWT EBV is +1.98 lbs; the breed midpoint is +1.59 lbs, so the excess above average is only +0.39 lbs. The same misrepresentation appears on line 114 ('WWT +1.98, YWT +2.63 above breed midpoint') where EBV values are again presented as if they are the margin over the midpoint.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 114's parenthetical '(WWT +1.98, YWT +2.63 above breed midpoint)' presents the EBV values as if they are the margins above the midpoint, which is incorrect. WWT is only +0.39 lbs above the midpoint (+1.98 - +1.59), not +1.98. Line 180 is more ambiguous but similarly misleading. The finding is factually verifiable against the report's own data tables.",
+      "severity_justification": "This is a documentation-only report with no executable code impact. The error could mislead a reader about how far above breed average the predicted lamb performance is, but it doesn't affect any system or operational decision.",
+      "category_justification": "The finding is about misleading prose in a Markdown report that contradicts or misrepresents the data in the report's own tables.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 53,
+      "end_line": 53,
+      "message": "Internal inconsistency: the body text states the breed NLB midpoint is '+0.165 lambs', but the Breed Context table on line 156 lists the same midpoint as '+0.17 lambs'. Both figures appear in the same report citing the same database snapshot (March 22, 2026). The precise value should be used consistently.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 53 uses '+0.165 lambs' for the NLB breed midpoint while the Breed Context table at line 156 uses '+0.17 lambs' for the same figure. Both are derived from the same range (-0.36 to +0.69), whose exact midpoint is 0.165. The inconsistency is directly verifiable within the file.",
+      "severity_justification": "A minor rounding inconsistency within a documentation report with no code or operational impact. Cosmetic but real.",
+      "category_justification": "The finding is about internally inconsistent data presentation in a Markdown report.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 70,
+      "end_line": 70,
+      "message": "Misleading claim: 'He already has 25 recorded progeny, many from the 2025 lambing season at Beyond Blessed Farm.' The mating recommendations report (2026-02-09) identifies only three ewes at Beyond Blessed Farm as NCS310 daughters (FLE011, FLE029, FLE008). The bulk of his 25 progeny are from NC State University's own research flock, not Beyond Blessed Farm. Attributing most of his progeny to Beyond Blessed Farm is factually unsupported by the records in this repository.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The mating recommendations report (2026-02-09) is in the repository and identifies only three Beyond Blessed Farm ewes (FLE011, FLE029, FLE008) as NCS310 daughters out of his 25 total progeny. The lambing report's claim that 'many' of his 25 progeny came from Beyond Blessed Farm is directly contradicted by that document.",
+      "severity_justification": "Factual inaccuracy in a documentation report with no code or operational impact. It overstates Beyond Blessed Farm's contribution to the sire's progeny record, but this does not affect any breeding decision or system behavior.",
+      "category_justification": "The finding is about a factual misstatement in a Markdown report that contradicts another document in the same repository.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 1,
+      "end_line": 206,
+      "message": "No accompanying data.csv file. Every other report in this repository (2026-04-14-lambing-event, 2026-02-07-rank-animals, 2026-02-09-mating-recommendations, 2026-02-16-rank-animals) includes a machine-readable data.csv alongside report.md. This omission breaks the established pattern and makes it impossible to audit EBV values, replay midparent calculations, or feed the data into downstream tooling.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Every other report directory in the repository (2026-02-07-rank-animals, 2026-02-09-mating-recommendations, 2026-02-16-rank-animals, 2026-04-14-lambing-event) contains a data.csv alongside report.md. The new 2026-04-15-lambing-event directory introduced by this PR contains only report.md — the data.csv is absent, breaking the established pattern.",
+      "severity_justification": "This is a structural omission that breaks a consistent repository convention and removes auditability of the EBV values and calculations in the report. It's not a cosmetic issue — downstream tooling or audits that rely on data.csv being present will fail or be silently incomplete.",
+      "category_justification": "The finding is about deviating from an established repository structure pattern, reducing auditability and consistency across report artifacts.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 108,
+      "end_line": 108,
+      "message": "PWWT breed midpoint is listed as +1.17 lbs in this report (line 108 Predicted Offspring table and line 154 Breed Context table), but the contemporaneous 2026-04-14-lambing-event/report.md — which also cites the March 22, 2026 database — lists the PWWT midpoint as +1.16 lbs. Both reports cannot be correct; one contains a data entry error for the breed midpoint derived from the same database update.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The 2026-04-14-lambing-event report uses PWWT midpoint +1.16 lbs; this PR's report uses +1.17 lbs. Both cite the same March 22, 2026 database and the same breed range (-7.11 to +9.43). The arithmetic midpoint of that range is exactly +1.16, confirming +1.17 is a rounding/data entry error in the new report.",
+      "severity_justification": "A minor data entry rounding error in a documentation report. The difference is 0.01 lbs and doesn't affect any operational decision, but it is a factual error against a verifiable value.",
+      "category_justification": "The finding is about an incorrect numeric value in a Markdown report, verifiable by comparison with a sibling report and arithmetic from the stated breed range.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 70,
+      "end_line": 70,
+      "message": "The Dam's NLB EBV is listed as +0.11 in the EBV table but is referenced as +0.109 in the 'Lambing Performance vs. NLB Prediction' section. These values should be consistent throughout the report.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The dam's NLB EBV is stated as +0.11 in the EBV table (line 47) and +0.109 in the 'Lambing Performance vs. NLB Prediction' prose (line 53). The inconsistency is directly verifiable. The cited line 70 is inaccurate but the underlying claim is correct.",
+      "severity_justification": "A minor rounding inconsistency within a documentation report with no operational or code impact.",
+      "category_justification": "The finding is about inconsistent numeric representation of the same data value within a Markdown report.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 128,
+      "end_line": 128,
+      "message": "There is a calculation error in the predicted offspring PWWT. The midparent value for PWWT should be (+4.82 + +1.79) / 2 = +3.305, which should be rounded to +3.31, not +3.30 as listed in the table.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The midparent PWWT is exactly 3.305 — on the rounding boundary. Under banker's rounding (round-half-to-even, IEEE 754), this correctly rounds to 3.30. The finding asserts a definitive calculation error but 3.30 is a valid result under a recognized rounding standard. The claim that it 'should' be 3.31 is a convention preference, not a factual error.",
+      "severity_justification": "Even if the rounding were considered wrong, the difference is 0.005 lbs in a documentation-only report with no operational impact.",
+      "category_justification": "The finding concerns numeric precision in a Markdown report.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 133,
+      "end_line": 133,
+      "message": "The predicted offspring NLB value in the 'Offspring outlook' text is +0.10, but the 'Predicted Offspring Profile' table lists a calculated value of +0.10. Using the unrounded dam EBV of +0.109 and sire EBV of +0.09, the midparent value is (+0.109 + 0.09) / 2 = 0.0995. This rounds to +0.10, which matches the table. This is an advisory note; while not strictly an error, using the more precise numbers could be beneficial.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding explicitly acknowledges there is no error: the table value of +0.10 is correct under both the rounded (+0.11) and unrounded (+0.109) dam EBV inputs. The suggestion to use more precise numbers is generic preference — no concrete problem is identified.",
+      "severity_justification": "The finding identifies no actual error, discrepancy, or risk — the computed value is correct.",
+      "category_justification": "The finding concerns numeric precision in a Markdown report, even though it identifies no actual issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 135,
+      "end_line": 136,
+      "message": "In the 'Offspring outlook' section, the text refers to the lamb as EPC26005. This identifier is not defined or mentioned anywhere else in the report. It should be introduced earlier, for example in the 'Event Summary', to provide context.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "EPC26005 first appears at line 114 without prior definition anywhere in the report. The Event Summary table defines identifiers for the dam and sire but not the lamb. The identifier is used three times (lines 114, 179, 182) as if it were established context, but it is never introduced.",
+      "severity_justification": "A readability/structure issue in a documentation report. No code or operational impact, but a reader cannot know what EPC26005 refers to without external lookup.",
+      "category_justification": "The finding is about a missing identifier definition in a Markdown report, affecting readability and traceability.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 156,
+      "end_line": 156,
+      "message": "The Sire's grandsire on the dam's side (maternal grandsire) is listed as 6401502021001063 (Meinders Stock Farm-Katahdins), but the maternal great-grandsire on the dam's side in the dam's pedigree is 6401492015155023 (Beyond Blessed Farm). This seems to indicate a transcription error in one of the LPNs as the flock prefix seems to be part of the number.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The two LPNs (6401492015155023 and 6401502021001063) are in separate pedigree branches, from different flocks (640149 Beyond Blessed Farm vs 640150 Meinders Stock Farm), different years (2015 vs 2021), and have completely different animal numbers. There is no plausible transcription error connecting them. The finding's reasoning is incoherent and the claim is unverifiable from the repository.",
+      "severity_justification": "Even if the finding were correct, it would be a data entry error in a documentation report with no operational impact.",
+      "category_justification": "The finding concerns alleged LPN transcription errors in a pedigree section of a Markdown report.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 178,
+      "end_line": 178,
+      "message": "Male ",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "other",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding text is 'Male ' — truncated to a single incomplete word with no claim, no described issue, and nothing to verify. It is unverifiable as stated and does not identify any concrete problem in the code or document.",
+      "severity_justification": "No claim is made, so no impact can be assessed.",
+      "category_justification": "The finding is malformed — it contains no substantive content and does not fit any review category.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "zircote",
+        "url": "https://github.com/zircote/nsip-example/pull/27#discussion_r3089982392",
+        "created_at": "2026-04-15T23:30:43Z",
+        "alignment": "code_changed",
+        "original_commit": "8b591a1444f6fcadf8a46545b7ab087aad9b134b",
+        "original_start_line": 178,
+        "original_end_line": 178
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 178,
+      "end_line": 178,
+      "message": "Birth weight submission is relevant to BWT records, but it is not what updates the dam's NLB accuracy; NLB is defined as number of lambs born per lambing (`.github/instructions/nsip-mcp.instructions.md:798`), so the lambing/litter record updates NLB. This recommendation misstates which data affects which EBV.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Line 178 claims recording birth weight updates 'the dam's NLB accuracy,' but NLB (Number of Lambs Born) accuracy is driven by lambing/litter size records, not by birth weight measurements. The instruction file at line 798 confirms NLB tracks lambs born per lambing. Submitting a birth weight is a BWT record; the litter count record (already known: 1) is what updates NLB. The report conflates two distinct data submissions.",
+      "severity_justification": "This is a documentation/factual error in a report recommendation. The broader intent (submit data to NSIP) is sound, and the misstatement doesn't affect animal health or any system behavior — but it could mislead the producer about which submission updates NLB accuracy.",
+      "category_justification": "The recommendation makes a factually incorrect claim about which data submission affects which EBV accuracy — a logic/factual error in the report's content.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 96,
+      "end_line": 96,
+      "message": "The report's own pedigree section lists Hound River Farm animals in both parents' backgrounds (dam line at line 128 and sire line at lines 137-138), so saying they come from \"completely separate genetic backgrounds\" is inaccurate. The COI may still be 0% for the known pedigree, but this wording overstates the separation.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The report's own pedigree section shows Hound River Farm animals in both the dam's line (NWT063, line 128) and the sire's line (NWT012, NWT082, lines 137–138). While these are different individual animals so a 0% COI is plausible, the claim at line 96 that they come from 'completely separate genetic backgrounds' is directly contradicted by the shared Hound River Farm ancestry visible elsewhere in the same document.",
+      "severity_justification": "The 0% COI figure is likely still accurate since the shared-farm animals are different individuals. The error is an overstatement in prose that could mislead about the degree of separation, but it doesn't affect any numerical calculations or animal management decisions.",
+      "category_justification": "The report makes a factually inaccurate claim about pedigree separation that is contradicted by data shown elsewhere in the same document.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 170,
+      "end_line": 170,
+      "message": "This repeats the overstatement that the 0% COI confirms no shared ancestry between the farm lines, but the pedigree shown in this same report includes Hound River Farm ancestry on both sides. It would be more accurate to state that no shared individual ancestors were identified in the available pedigree data.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 170 repeats the same inaccuracy as line 96: claiming 0% COI 'confirms no shared ancestry between Beyond Blessed Farm genetics and the NC State University line.' The pedigree section of the same document shows Hound River Farm animals in both lineages (NWT063 in dam line, NWT012/NWT082 in sire line). The COI reflects no shared individual ancestors, not 'no shared ancestry' between the farm lines broadly.",
+      "severity_justification": "Same as Finding 2 — the 0% COI figure is likely correct (different individual animals), making this a prose overstatement rather than a numerical error. Low impact on actual breeding decisions.",
+      "category_justification": "Factually incorrect claim about pedigree separation, contradicted by data within the same document.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 144,
+      "end_line": 144,
+      "message": "This identifies USD318 as the dam's maternal grandsire, but the displayed pedigree shows USD318 under the dam's sire FLE382, making USD318 the paternal grandsire; the maternal grandsire is NWT063 on line 128. This lineage description should be corrected.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The pedigree tree clearly shows USD318 (line 125) as a child of FLE382, the dam's sire — making USD318 the paternal grandsire. Line 144 incorrectly labels it 'maternal grandsire.' The actual maternal grandsire is NWT063 (line 128), listed under the dam's dam FLE061.",
+      "severity_justification": "This is a factual labeling error in a prose note — paternal vs. maternal grandsire are swapped. It doesn't affect any EBV calculations or breeding recommendations, but it is an incorrect statement in a report meant as a reference document.",
+      "category_justification": "The pedigree note makes a factually incorrect claim about the relationship (paternal vs. maternal grandsire) that is directly contradicted by the pedigree diagram in the same section.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 168,
+      "end_line": 168,
+      "message": "The table shows predicted BWT at +0.06 lbs versus a +0.18 lbs breed midpoint, a difference of only 0.12 lbs. Calling that \"well below breed average\" overstates the magnitude and conflicts with the earlier \"near breed average\" wording.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 168 says predicted offspring BWT is 'well below breed average,' but the predicted value (+0.06 lbs) is only 0.12 lbs below the breed midpoint (+0.18 lbs) on a range spanning ~2.24 lbs. This directly contradicts line 112 ('near breed average') and the table's own 'Below midpoint' label at line 106. The inconsistency is verifiable within the document itself.",
+      "severity_justification": "This is an inconsistency in descriptive language within a report — no calculations are wrong and no breeding decisions are affected. The overstatement could mildly mislead about the degree of BWT genetic advantage, but the actual numbers are available in the table.",
+      "category_justification": "The prose makes a factually inconsistent claim ('well below breed average') that contradicts other statements in the same document for the same data point.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 84,
+      "end_line": 84,
+      "message": "This says NCS310's EBVs are 68–81% accurate, but the table immediately above lists NLB accuracy at 55%. Either exclude NLB from this summary or use the actual full range so the report does not overstate reliability.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The sire EBV table directly above line 84 lists NLB accuracy at 55%, but line 84 states the accuracy range is '68–81%'. The actual range is 55–81%. Line 84 omits the lowest value, overstating the reliability floor for NCS310's EBVs.",
+      "severity_justification": "The misstatement is minor — it affects one trait's accuracy (NLB at 55%) and the table above shows the correct values. No breeding calculations are wrong, but the summary note is factually incorrect.",
+      "category_justification": "The accuracy note states a range (68–81%) that is contradicted by data in the table immediately above it in the same section.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "reports/2026-04-15-lambing-event/report.md",
+      "start_line": 174,
+      "end_line": 174,
+      "message": "The stated 68–81% accuracy range omits the sire's NLB accuracy, which the EBV table lists as 55%. This overstates the reliability of the full genetic contribution unless the statement is limited to the growth/BWT traits.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 174 repeats the same inaccurate 68–81% accuracy range as line 84. The sire EBV table lists NLB accuracy at 55%, so the correct range is 55–81%. This is a second instance of the same factual error in the same document.",
+      "severity_justification": "Same as Finding 6 — the table shows the correct value, no calculations are affected, but the summary claim overstates the accuracy floor for the sire's full genetic contribution.",
+      "category_justification": "Repeats a factually incorrect accuracy range that omits the sire's lowest-accuracy trait (NLB at 55%), contradicting the EBV table elsewhere in the document.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

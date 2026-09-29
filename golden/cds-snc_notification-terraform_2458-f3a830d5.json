@@ -1,0 +1,131 @@
+{
+  "pr_key": "cds-snc_notification-terraform_2458-f3a830d5",
+  "pr": {
+    "repo": "https://github.com/cds-snc/notification-terraform",
+    "pr_number": 2458,
+    "base": "96a2f52be60841c7088a47de8b60ded32b464aeb",
+    "head": "f3a830d5a5c0bec275c342d29f65e8afdec8c6d1"
+  },
+  "findings": [
+    {
+      "file": "aws/lambda-api/secrets_manager.tf",
+      "start_line": 69,
+      "end_line": 71,
+      "message": "The ENVIRONMENT_VARIABLES SSM parameter (used by the API Lambda) is missing POSTGRES_SQL, REDIS_URL, CACHE_OPS_URL, and REPORTS_BUCKET_NAME. These were accidentally removed alongside the New Relic lines but are not New Relic-related. The second template ENVIRONMENT_VARIABLES_ADMIN (for the admin Lambda) still has POSTGRES_SQL, REDIS_URL, and REPORTS_BUCKET_NAME at lines 183-187. The API Lambda will be deployed without a database connection string or Redis URL, causing runtime failures.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the `environment_variables` SSM parameter (lines 1-111) is missing POSTGRES_SQL, REDIS_URL, CACHE_OPS_URL, and REPORTS_BUCKET_NAME. The `environment_variables_admin` parameter (lines 114+) retains POSTGRES_SQL at line 183, REDIS_URL at 185, and REPORTS_BUCKET_NAME at 187. These were non-New-Relic vars accidentally removed alongside the New Relic cleanup.",
+      "severity_justification": "The API Lambda will start without a database connection string (POSTGRES_SQL) or Redis URL (REDIS_URL), causing immediate runtime failures for all API requests that touch the database or cache.",
+      "category_justification": "Variables required for correct runtime behaviour were accidentally deleted from the Lambda environment configuration, causing functional breakage.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/deleteEnvironment.sh",
+      "start_line": 59,
+      "end_line": 62,
+      "message": "The script does 'pushd ../env/$ENVIRONMENT/common' at line 59 but the matching 'popd' was removed together with the New Relic block. All subsequent code (pip install, S3 bucket deletion loops, aws-nuke, aws CLI calls) now runs from inside env/$ENVIRONMENT/common instead of the original script directory.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified via `git diff main...HEAD -- scripts/deleteEnvironment.sh`: the PR removed the New Relic destroy block including its `popd` (line 63 of the old file) but left the `pushd ../env/$ENVIRONMENT/common` at line 59. The current file has `pushd` with no matching `popd`, so all commands after the CBS bucket deletion run from the wrong directory.",
+      "severity_justification": "This is a maintenance/cleanup script (not the production hot path), but the broken working directory will cause `python deleteS3.py` to fail (script not found) and all subsequent aws-nuke and AWS CLI calls to run from the wrong directory, making environment deletion fail. It's a real operational breakage, though limited to sandbox teardown workflows.",
+      "category_justification": "A pushd/popd imbalance causes the script to run subsequent commands from the wrong working directory, a concrete correctness bug in the shell script.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "aws/common/newrelic.tf",
+      "start_line": 1,
+      "end_line": 4,
+      "message": "The aws_config_configuration_recorder_status resource (count = var.env != 'production' ? 1 : 0) was removed from this file. This resource was previously managed by Terraform for non-production environments. On the next terraform apply, Terraform will plan to destroy it, which calls StopConfigurationRecorder. The original code comment stated 'We have an explicit deny on deleting this' — meaning there is an IAM/SCP policy preventing this action. The apply will fail for sandbox, dev, and staging environments unless this resource is first removed from state with 'terraform state rm'.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the resource `aws_config_configuration_recorder_status.newrelic_recorder_status` had `count = var.env != 'production' ? 1 : 0` (not gated on enable_new_relic), so it exists in state for dev/staging. The inline comment explicitly states 'We have an explicit deny on deleting this'. The PR removes the resource with no `terraform state rm`, `removed` block, or migration step, so the next apply will try to destroy it and fail.",
+      "severity_justification": "The next `terragrunt apply` for the `common` module in any non-production environment will fail mid-run when Terraform attempts to destroy the recorder status and hits the IAM/SCP deny, blocking all infrastructure changes in dev and staging until the state is manually cleaned up.",
+      "category_justification": "Removing a Terraform-managed resource without handling its state creates an operational failure (apply will error) — an infrastructure reliability/deployment concern rather than a pure logic bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/deleteEnvironment.sh",
+      "start_line": 58,
+      "end_line": 58,
+      "message": "The comment \"Delete Cloud Based Sensor Bucket and New Relic resources\" on line 57 is now stale since the New Relic destroys were removed. Consider updating it to only reference the Cloud Based Sensor bucket.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The comment on line 57 references 'New Relic resources' but the PR removed all New Relic destroy operations from the script, leaving only the CBS bucket deletion. The comment is now factually stale and should be updated.",
+      "severity_justification": "Stale comment with no behavioral impact — purely a documentation/readability concern.",
+      "category_justification": "The finding identifies a stale inline comment that no longer matches the code's actual behavior.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "env/.terraform.lock.hcl",
+      "start_line": 46,
+      "end_line": 46,
+      "message": "The New Relic provider is still generated for every Terragrunt module in `env/terragrunt.hcl:35-38`, and the workflows run `terragrunt init --upgrade`, so this lock entry will be recreated on the next init. Removing the lock file entries before removing the generated provider makes the checked-in locks drift from the actual Terraform configuration.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The New Relic provider is still declared in env/terragrunt.hcl (lines 35-38, generated for every module) and aws/common/newrelic.tf, but its lock file entries were removed by this PR. On next terraform init, the provider will be re-downloaded and lock entries recreated, making the committed lock files immediately out of sync with what init produces.",
+      "severity_justification": "The inconsistency is self-healing (init will repair it), but it means the committed lock files don't reflect the actual provider requirements and any init run will produce uncommitted changes. Low impact but a real ordering mistake.",
+      "category_justification": "The premature lock file removal causes a mismatch between the committed infrastructure configuration state and what Terraform actually uses, an operational correctness concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/deleteEnvironment.sh",
+      "start_line": 58,
+      "end_line": 60,
+      "message": "The deleted targets were the only cleanup path in this script for New Relic resources, and the rest of the script uses `aws-nuke`, which cannot remove resources in New Relic. For environments that still have these Terraform-managed New Relic links/keys in state, deleting the environment will now leave those external resources behind.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The PR did remove three targeted `terragrunt destroy` calls from deleteEnvironment.sh (confirmed via git diff of commit 75431686). These targeted `newrelic_cloud_aws_link_account` and `newrelic_api_access_key` resources — New Relic API-side resources that aws-nuke cannot remove. With the resource definitions also removed from the Terraform config, there is no remaining cleanup path for these resources in environments where they were previously applied.",
+      "severity_justification": "Any environment with `enable_new_relic = true` previously applied will have orphaned New Relic linked account and API key entries that can't be cleaned up automatically. This leaks external SaaS resources and API permissions and requires manual cleanup.",
+      "category_justification": "The deleteEnvironment.sh script now fails to accomplish its stated goal (full environment teardown) for environments with New Relic resources in state, because the only cleanup path for those external resources was removed.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

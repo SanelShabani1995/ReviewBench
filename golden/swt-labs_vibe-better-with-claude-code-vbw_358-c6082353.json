@@ -1,0 +1,531 @@
+{
+  "pr_key": "swt-labs_vibe-better-with-claude-code-vbw_358-c6082353",
+  "pr": {
+    "repo": "https://github.com/swt-labs/vibe-better-with-claude-code-vbw",
+    "pr_number": 358,
+    "base": "d27d102b5687ecbc29f5db3d6f287cdaf6e5369a",
+    "head": "c60823535d6086eb09f11a009f289e908ebf4758"
+  },
+  "findings": [
+    {
+      "file": "scripts/qa-remediation-state.sh",
+      "start_line": 201,
+      "end_line": 240,
+      "message": "The `get` command now has an unintended write side effect: `emit_metadata` calls `materialize_round_known_issues_snapshot`, which creates `R{RR}-KNOWN-ISSUES.json` on disk (including `mkdir -p` on the round directory) if the snapshot doesn't yet exist. The gate script calls `qa-remediation-state.sh get` (line 1346 of qa-result-gate.sh) as a read-only state query. This means every gate invocation can create files and directories, conflating the initialization and read phases. If the gate runs before `get-or-init` (possible in CI or test harnesses), the snapshot is materialized with whatever state the registry happens to be in at that moment rather than at the canonical round-start time.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: `emit_metadata` in the `get` command now calls `materialize_round_known_issues_snapshot`, which can create directories and write files if the snapshot doesn't exist. `qa-result-gate.sh` at line 1346 calls `qa-remediation-state.sh get`, making the gate a mutating observer. The write is idempotent (early-return guard if snapshot exists) and normal flow pre-creates the snapshot, so practical impact is limited, but the design violation is real.",
+      "severity_justification": "The idempotence guard prevents duplicate writes, and in normal flow the snapshot is materialized before the gate's `get` call. The 'wrong state at gate time' concern is theoretical in practice because the snapshot sources (live registry, verification files) are stable during gate evaluation.",
+      "category_justification": "Violates the expected read-only contract of the `get` command — a state query that silently creates files/directories breaks assumed invariants about command semantics in this script-based pipeline.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-result-gate.sh",
+      "start_line": 1562,
+      "end_line": 1563,
+      "message": "The `unresolved` validity check uses `KNOWN_ISSUES_COUNT` (count from the live `known-issues.json` via `track-known-issues.sh status`) rather than `ROUND_CARRIED_KNOWN_ISSUE_COUNT` (count from the round-local snapshot). When the live registry hasn't been populated yet (e.g., `sync-verification`/`sync-summaries` was never called) but the round snapshot was materialized from the phase verification fallback, `KNOWN_ISSUES_COUNT` is 0 while `ROUND_CARRIED_KNOWN_ISSUE_COUNT` is >0. Any round that correctly declares an issue as `unresolved` in this state is falsely rejected with `ROUND_KNOWN_ISSUES_VALID=false`, forcing an infinite remediation loop — the exact bug this PR claims to fix.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: line 1562 uses `KNOWN_ISSUES_COUNT` (from live registry via `track-known-issues.sh status`) while the correct variable is `ROUND_CARRIED_KNOWN_ISSUE_COUNT` (from the round-local snapshot). When the snapshot is materialized from the phase verification fallback (no live registry), KNOWN_ISSUES_COUNT=0 while ROUND_CARRIED_KNOWN_ISSUE_COUNT>0. Any legitimate 'unresolved' declaration in this state is falsely rejected, causing a remediation loop — the class of bug this PR targets.",
+      "severity_justification": "Can produce a false REMEDIATION_REQUIRED loop in the specific scenario where the live registry is absent but the round snapshot was materialized from phase verification — a realistic first-round scenario. The fix is clear (use ROUND_CARRIED_KNOWN_ISSUE_COUNT) but the bug is subtle and could be missed under standard test coverage.",
+      "category_justification": "Logic error: wrong variable used in a validity gate check, leading to incorrect rejection of valid round states.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-result-gate.sh",
+      "start_line": 1106,
+      "end_line": 1111,
+      "message": "`load_known_issue_registry_json` returns empty string instead of `'[]'` when the file exists but doesn't match the `select(type == \"object\" and (.issues | type == \"array\"))` filter. When `select` produces no output, `jq` exits 0, so the `|| echo '[]'` guard doesn't fire. Callers at lines 1673 and 1700 assign the result to `_live_registry_json` and immediately pass it to `json_object_array_covers_full_issue_objects`, which runs `jq` on the empty string and silently returns 0 (all-covered). This means a structurally invalid live registry (e.g., `{\"schema_version\":1}` without `issues`) would cause the coverage check to pass unconditionally, allowing a gate bypass.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The gate bypass scenario requires KNOWN_ISSUES_STATUS='present', which is only set when registry_is_valid() returns true. registry_is_valid() requires .issues to be an array — the same condition in load_known_issue_registry_json's select filter. Any registry that makes KNOWN_ISSUES_STATUS='present' will also produce valid output from load_known_issue_registry_json. A registry without .issues gets KNOWN_ISSUES_STATUS='malformed', handled earlier as REMEDIATION_REQUIRED before lines 1673/1700 are reached.",
+      "severity_justification": "The isolated function deficiency (returning empty string vs '[]') is real but inconsequential given the caller guards. No practical bypass path exists.",
+      "category_justification": "The finding is about incorrect output handling in a validation function that could theoretically allow a gate bypass, but the guard conditions prevent the described scenario.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-remediation-state.sh",
+      "start_line": 406,
+      "end_line": 407,
+      "message": "`awk -F= '/^snapshot_path=/{print $2; exit}'` splits on ALL `=` characters, so it only returns the text between the first and second `=`. A snapshot path containing `=` (e.g. paths in user directories like `/home/user=1/...`) would be truncated, causing `known_issues_path` to be set to a non-existent partial path. The gate's extraction of `known_issues_path` at `qa-result-gate.sh:1350` has the same bug. The correct pattern is `sub(/^snapshot_path=/, \"\")` or `awk -F= '{$1=\"\"; print substr($0,2)}'` to handle multi-`=` values.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The truncation is confirmed: awk -F= splits on all '=' so print $2 returns only text between first and second '='. Lines 406-407 (snapshot_path extraction) and 1350 (known_issues_path in qa-result-gate.sh) are new in this PR and apply this pattern to file paths. The truncation behavior is verified.",
+      "severity_justification": "Project-internal paths under .vbw-planning/phases/ virtually never contain '=', and this is a consistent codebase-wide convention. The scenario (user dir with '=' in name) has negligible real-world impact for this tool's usage pattern.",
+      "category_justification": "Logic error that would cause path truncation and file-not-found failures when paths contain '=' characters.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-result-gate.sh",
+      "start_line": 1551,
+      "end_line": 1565,
+      "message": "The known-issue contract validation only checks that every carried issue appears in `known_issues_input` (line 1554: `carried ⊆ inputs`), but does not check the reverse (`inputs ⊆ carried`). A round can therefore pad `known_issues_input` with extra issues not present in the carried backlog, and the gate will accept them — then require resolutions and outcomes for those uninstructed extras too (lines 1556–1559). This creates an asymmetric contract: padding inputs with fabricated entries passes the carried-backlog check, inflates the outcome requirements, and could be used to satisfy the contract with manufactured coverage instead of real backlog resolution.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The asymmetry (no inputs⊆carried check) is real, but the claimed exploitation path is incorrect. carried⊆inputs (line 1554) requires ALL carried issues to appear in inputs — you cannot omit real issues by padding with fabricated ones. The live_registry⊆outcomes check (lines 1682/1708) independently requires outcomes for all real registry entries regardless of inputs. Padding adds extra requirements, it doesn't remove existing ones.",
+      "severity_justification": "The asymmetry allows extra noise in inputs but doesn't enable any bypass. Real backlog issues still require proper coverage.",
+      "category_justification": "The finding is about a logic gap in the contract validation checks.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/track-known-issues.sh",
+      "start_line": 749,
+      "end_line": 751,
+      "message": "The `disposition_updates` record format uses `\\x1f` as field separator and `\\n` as record separator, but `new_line` is built from `error_msg` which comes from `jq -r` and is not sanitized. If an issue's `error` field in the registry contains an embedded newline (which `jq -r` preserves), `new_line` will span multiple lines, corrupting the `disposition_updates` variable. When parsed with `while IFS=$'\\x1f' read -r old_line new_line`, the embedded newline causes the remainder to be read as a second (empty) record, so the disposition update is silently dropped and the STATE.md line is not rewritten.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed experimentally: when error_msg contains embedded newlines, the disposition_updates record format is corrupted. The while IFS=$'\\x1f' read loop reads partial lines, causing the first iteration to write a truncated new_line (losing the 'accepted as process-exception' text) and the second iteration to run awk with OLD_LINE set to the remainder and NEW_LINE empty, potentially corrupting unrelated STATE.md lines.",
+      "severity_justification": "Triggering this bug requires an embedded newline in the error field of a registry entry. Registry entries are built from markdown table cells which are inherently single-line, making this an extreme edge case in practice.",
+      "category_justification": "Logic error in the disposition update record parsing when error messages contain newlines.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/track-known-issues.sh",
+      "start_line": 402,
+      "end_line": 432,
+      "message": "`extract_summary_known_issue_outcomes_json` sets `test`, `file`, `error`, and `disposition` without `local` declarations inside a `while < <(...)` loop that runs in the current shell (not a subshell). Currently the function is always invoked from within `$()` contexts so leakage is harmless, but a future direct call would silently overwrite any caller variables named `test`, `file`, `error`, or `disposition`. The `parse_frontmatter_issue_json` function (line 269–271) has the same pattern with `test`, `file`, `error`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: extract_summary_known_issue_outcomes_json (new in this PR) assigns test/file/error/disposition without local declarations in a while-loop that runs in the current shell. Currently harmless because all call chains reach this function inside $() subshell contexts, but the missing locals are a real deficiency in the new code.",
+      "severity_justification": "Currently harmless due to $() call contexts. Only risks variable clobbering if a future direct call is added, and the variables involved (test, file, error, disposition) are generic names that could conflict.",
+      "category_justification": "Missing local declarations create a latent variable leakage risk, a code quality/maintenance issue rather than a current runtime bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-result-gate.sh",
+      "start_line": 538,
+      "end_line": 557,
+      "message": "`resolve_corroborated_recorded_paths` is called with `$ROUND_WORKTREE_PATHS_CANONICAL` computed from `git_current_worktree_paths` (line 1372), which runs `git diff --name-only HEAD` and `git ls-files --others --exclude-standard`. These two git commands execute at different instants. If files are staged or committed between the two calls, the worktree path set is inconsistent: a file that moved from untracked to staged between the two git commands would appear in neither output, causing `ROUND_CHANGE_EVIDENCE_UNAVAILABLE` even though the artifact exists. Using a single `git status --porcelain` call would atomically capture both modified and untracked files.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The race window requires a file to transition from untracked to staged between two sequential shell commands (microseconds apart). git diff --name-only HEAD already captures staged files (confirmed experimentally), so the only gap is files staged in that tiny interval. VBW gate runs as a one-shot evaluator after rounds complete — no concurrent git staging occurs during evaluation. The suggested fix (git status --porcelain) also doesn't provide true atomicity.",
+      "severity_justification": "The scenario requires concurrent external git operations during gate evaluation, which don't occur in this tool's usage pattern.",
+      "category_justification": "The finding is about a theoretical race condition between two sequential git commands.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/track-known-issues.sh",
+      "start_line": 643,
+      "end_line": 645,
+      "message": "The `awk` command used to update `state_content` for disposition changes may corrupt the file if the `old_line` contains characters that are special in `awk`'s `index()` function or on the command line. A safer approach would be to use a tool like `sed` with proper escaping or a temporary file-based line-by-line rewrite that does exact string matching.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "awk's index() function is a plain literal string search with no special characters — confirmed experimentally with brackets, dots, stars, backslashes, and parens all matching literally. The code also correctly passes values via ENVIRON[] rather than interpolating into awk program text, which is the safe approach. The finding's premise ('characters special in awk's index()') is factually wrong. The suggested sed alternative would require regex escaping and be less safe.",
+      "severity_justification": "The concern is based on a false premise about awk's index() function behavior.",
+      "category_justification": "The finding makes an incorrect factual claim about awk index() treating characters as special.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-result-gate.sh",
+      "start_line": 1383,
+      "end_line": 1385,
+      "message": "When `_gate_stage` is 'done', `ROUND_SOURCE_VERIFICATION_MISSING` is unconditionally set to `false`. This might mask a legitimate missing verification file if the round input mode was `verification` or `both`, potentially allowing the gate to pass when it should fail. The condition should be more specific, perhaps checking if `input_mode` is `none`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at lines 1383-1385 already includes the condition [ \"${ROUND_INPUT_MODE:-none}\" = \"none\" ] as the finding suggests. The assignment is not unconditional — it requires all three conditions: stage=done AND input_mode=none AND no source_verification_path. The finding misreads the logic and its suggested fix is already present in the code.",
+      "severity_justification": "The finding is based on a misreading of the code; the described issue does not exist.",
+      "category_justification": "The finding makes an incorrect factual claim about the conditionality of an assignment.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-remediation-state.sh",
+      "start_line": 284,
+      "end_line": 285,
+      "message": "The logic for determining `input_mode` has a small gap. It sets the mode to `known-issues` based on `known_issues_count` but omits `phase_pre_existing_issue_count`, which was present in the original logic. The new logic correctly materializes a round-specific snapshot of known issues, but the check for `phase_pre_existing_issue_count` was a fallback for cases where the main `known-issues.json` registry might be cleared during a remediation round. Removing it might cause `input_mode` to be `none` when it should be `known-issues`, causing the system to miss carried-over issues that only exist in the phase's original `VERIFICATION.md`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The removal is intentional and tested. The PR adds a test 'needs-round does not re-seed known-issues mode from stale phase verification after round 01 cleared the backlog' that explicitly validates input_mode=none even when phase_pre_existing_issue_count=1. The snapshot mechanism covers round 01 via the phase-verification fallback, and the PR's preserve-on-sync ensures live registry persists for round 02+. The old phase_pre_existing_issue_count fallback was causing false known-issues detection — the exact bug being fixed.",
+      "severity_justification": "The concern is based on a misunderstanding of the intentional design change; the removed fallback was the source of false loops that the PR targets.",
+      "category_justification": "The finding claims a logic gap where input_mode would be incorrectly set to none.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/track-known-issues.sh",
+      "start_line": 579,
+      "end_line": 585,
+      "message": "In `sync_verification`, when a round verification file has no 'Pre-existing Issues' section, it's interpreted as \"no data about pre-existing issues\", and the existing registry is preserved. This is a reasonable default, but it could lead to the known-issues registry becoming stale if a QA run intentionally clears all pre-existing issues but the `pre_existing_issues` array is omitted from the `VERIFICATION.md` instead of being present but empty. This could cause a closed loop where old known issues are never cleared from the registry.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the preserve-on-empty guard means the registry cannot be cleared by a round verification with no pre-existing issues section. Both missing and empty sections produce incoming_count=0, triggering preservation. If QA doesn't write known_issue_outcomes, the gate blocks indefinitely even when issues are actually resolved.",
+      "severity_justification": "The PR mitigates this by updating QA prompts and templates to require known_issue_outcomes, providing the correct clearing path. The loop only occurs if QA doesn't follow the new protocol, and the gate's outcome mechanism gives the correct route to PROCEED_TO_UAT.",
+      "category_justification": "The behavior change creates a scenario where the registry can become permanently stale unless the new known_issue_outcomes mechanism is used, which is a logic concern about the clearing contract.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-remediation-state.sh",
+      "start_line": 221,
+      "end_line": 236,
+      "message": "The `materialize_round_known_issues_snapshot` function relies on presence of a `source_verification_path` for initializing issues, but lacks fallback for a case where `source_verification_path` and `phase_verification_path` are unavailable — this can leave a round without a proper known-issues snapshot and lead to inconsistent gating results.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The function correctly handles the all-sources-missing case: issues_json stays '[]', write_known_issue_snapshot deletes the snapshot and returns count=0, and emit_metadata sets known_issues_status='missing'. The gate then correctly skips the known-issues contract. The finding claims 'inconsistent gating results' but doesn't demonstrate a concrete failure scenario — the behavior is deterministic and correct when no sources are available.",
+      "severity_justification": "The concern is based on a mischaracterization of correct graceful handling as a missing fallback bug.",
+      "category_justification": "The finding makes a claim about incorrect behavior in a function's fallback logic.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-result-gate.sh",
+      "start_line": 1380,
+      "end_line": 1394,
+      "message": "The handling of `qa_gate_known_issues_override` assumes a deterministic known-issues resolution contract, but does not anticipate the scenario where disposition mismatch arises with identical `test`/`file` pairs but different `error` fields. This could result in invalid REMEDIATION_REQUIRED scenarios being triggered.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The referenced lines (1380-1394) contain metadata-only round detection, not the disposition-matching logic. The actual function json_object_array_dispositions_match uses (test, file, error, disposition) identity intentionally per the PR description. The scenario described (different error strings for same test/file causing false REMEDIATION_REQUIRED) requires QA to write inconsistent documents between plan and summary, which is correctly flagged as invalid. No concrete false-positive path is demonstrated.",
+      "severity_justification": "The concern is theoretical and vaguely stated with incorrect line references; no concrete incorrect behavior is demonstrated.",
+      "category_justification": "The finding makes a claim about false gate rejections in the disposition-matching logic.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-result-gate.sh",
+      "start_line": 620,
+      "end_line": 646,
+      "message": "The `resolve_corroborated_recorded_paths` function concatenates current worktree paths without distinguishing between allowable evidence paths and extraneous modifications. This may inadvertently validate unrelated changes, weakening deterministic gating checks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The function explicitly calls path_is_allowed_worktree_evidence_artifact before accepting any worktree path as evidence. This restricts worktree corroboration to only remediation round artifacts (R{NN}-PLAN.md, R{NN}-SUMMARY.md) and original plan files. Arbitrary worktree modifications fail this check and are not corroborated. The finding's claim that the function does not distinguish allowable from extraneous paths is factually incorrect.",
+      "severity_justification": "The finding is based on a misreading of the code; the described vulnerability does not exist.",
+      "category_justification": "The finding makes a factually incorrect claim about the function's path-filtering behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/REMEDIATION-SUMMARY.md",
+      "start_line": 26,
+      "end_line": 31,
+      "message": "The template mandates alignment between `known_issue_outcomes` and the `known_issues_input` structure from plans but does not provide explicit enforcement mechanisms for this, which invites inconsistencies between remediation summary documentation and deterministic gating evaluations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The deterministic enforcement mechanisms exist in qa-result-gate.sh lines 1558-1560: inputs⊆outcomes is checked by json_object_array_covers_full_issue_objects, and disposition alignment is checked by json_object_array_dispositions_match. Failures route to REMEDIATION_REQUIRED. The finding's claim that enforcement is absent is factually incorrect — it just isn't in the template file itself, which is the expected architecture.",
+      "severity_justification": "The finding is based on a misunderstanding of the architecture; the enforcement exists in the gate script.",
+      "category_justification": "The finding is about a template file and its relationship to enforcement, which is a documentation/architecture concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "testing/verify-commands-contract.sh",
+      "start_line": 301,
+      "end_line": 310,
+      "message": "Integration-level test for known-issues recovery does not validate transition scenarios involving registry replacement versus augmentation after `promote-todos` operations. This omission could hide regression risks in registry update workflows.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The contract tests at lines 301-310 are explicitly pattern-match tests against command markdown files — testing behavior is not their purpose. The behavioral coverage (registry replacement vs augmentation, dispose-todos transitions) exists in tests/track-known-issues.bats (lines 361-530+). The finding is a generic 'contract tests don't test behavior' observation that could apply to any contract test file in any project.",
+      "severity_justification": "The concern is a generic testing philosophy complaint with no specific identified regression scenario; behavioral coverage exists elsewhere.",
+      "category_justification": "The finding is about test coverage gaps.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/discovered-issues-surfacing.bats",
+      "start_line": 502,
+      "end_line": 503,
+      "message": "The test case ensures that unresolved known issues block progress but does not cover multi-round verification cases where disposition inconsistencies across rounds could lead to invalid resolutions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The test at lines 502-503 is a pure string-match test checking that verify.md contains certain warning text — testing multi-round behavioral scenarios is categorically outside its purpose. Multi-round disposition consistency IS covered in tests/qa-result-gate.bats at line 5138 ('disposition match distinguishes issues with same test+file but different errors'). The finding is a generic complaint that a textual contract test doesn't do behavioral testing.",
+      "severity_justification": "The concern is a generic testing philosophy observation about a deliberately limited textual test with no identified specific regression gap.",
+      "category_justification": "The finding is about test coverage scope.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/qa-result-gate.bats",
+      "start_line": 3474,
+      "end_line": 3486,
+      "message": "The test expects that metadata-only rounds with valid deviations fail gating but conflates evidence-empty evaluation signals (`qa_gate_metadata_only_override`) with plan/coverage checks. This weakens the differentiation of failure logic in metadata-only scenarios.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The test correctly validates REMEDIATION_REQUIRED for the docs-only process-exception scenario. The gate routes via the !paths_include_process_exception_evidence branch (no qa_gate_metadata_only_override emitted). The test doesn't assert any specific diagnostic flag — there's no conflation. The finding makes a vague 'test should be more specific' complaint without identifying a concrete regression path or incorrect behavior.",
+      "severity_justification": "No specific regression scenario is identified; the test correctly validates the routing outcome.",
+      "category_justification": "The finding is about test specificity/design quality.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/track-known-issues.bats",
+      "start_line": 490,
+      "end_line": 500,
+      "message": "The `promote-todos` functionality does not validate edge cases of missing referenced remediation summaries during insertion, causing potential orphaned entries in `STATE.md`. The test does not verify such cases, risking unaddressed inconsistencies.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The source_artifact field is purely informational text in STATE.md entries — no automated code dereferences the path after insertion. If a referenced summary doesn't exist, the STATE.md entry is still functionally correct with a dangling human-readable reference. The 'orphaned entries' terminology overstates a cosmetic display issue as a functional regression risk. The test gap is real but for a scenario with negligible functional impact.",
+      "severity_justification": "Missing summary reference is purely cosmetic — it only affects the human-readable '(see path)' annotation in STATE.md, with no gate, script, or contract depending on the referenced file existing.",
+      "category_justification": "The finding is primarily about a test coverage gap for an edge case in promote-todos behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/phase-detect.sh",
+      "start_line": 81,
+      "end_line": 89,
+      "message": "`restore_known_issues_from_verification_if_needed` unconditionally promotes todos after syncing verification, which could obscure regressions where unnecessary todos are added despite a clean verification output.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The promote-todos call is not unconditional — it's inside a case block gated on known_status=missing|malformed. Furthermore, if verification is clean, sync-verification creates an empty registry, and promote-todos hits the total==0 early-return guard with no STATE.md modifications. The finding's premise that unnecessary todos could be added for clean verification is factually incorrect.",
+      "severity_justification": "The described scenario cannot occur: empty registry causes promote-todos to no-op without writing to STATE.md.",
+      "category_justification": "The finding makes an incorrect factual claim about the conditionality and side effects of the promote-todos call.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/REMEDIATION-PLAN.md",
+      "start_line": 15,
+      "end_line": 18,
+      "message": "Inconsistent pluralization across the new known-issues frontmatter keys: `known_issues_input` uses plural `issues`, while the related `known_issue_resolutions` (in the plan) and `known_issue_outcomes` (in the summary) use singular `issue`. All three are part of the same new schema and would read more consistently if they all used the same form (e.g., all singular: `known_issue_input` / `known_issue_resolutions` / `known_issue_outcomes`). Since this is a new schema being introduced here, it would be easier to align the names now (across the templates, the prompt docs in `commands/vibe.md` and `references/execute-protocol.md`, the script keys in `scripts/qa-result-gate.sh`, and the tests) than after consumers start producing files in the wild.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The inconsistency is factually verified: `known_issues_input` uses plural 'issues' while `known_issue_resolutions` and `known_issue_outcomes` both use singular 'issue'. This pattern is present across templates/REMEDIATION-PLAN.md, templates/REMEDIATION-SUMMARY.md, commands/vibe.md, references/execute-protocol.md, and scripts/qa-result-gate.sh — all introduced by this PR.",
+      "severity_justification": "Purely cosmetic naming inconsistency with no runtime impact. The scripts correctly parse the keys as-is. The only consequence is reduced schema readability and minor friction for future maintainers.",
+      "category_justification": "This is a naming/consistency issue in a new schema definition — no behavior is affected, but the inconsistent naming makes the schema harder to reason about.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/track-known-issues.sh",
+      "start_line": 726,
+      "end_line": 729,
+      "message": "The dedup key was broadened from `${test_name} (${file_path}):` to `${test_name} (${file_path}): ${error_msg}` to match the new `(test, file, error)` identity tuple, but the comment on line 726 still says \"Dedup by test+file pair\", which is now stale and misleading. Please update the comment to describe the actual (test, file, error) dedup behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: line 725 comment still says 'Dedup by test+file pair' but the dedup_key on line 728 was extended to include ${error_msg} in this PR, making the comment factually incorrect about the current behavior.",
+      "severity_justification": "Stale comment with no runtime impact. A developer reading this code would be misled about the dedup key identity, but it wouldn't cause incorrect behavior.",
+      "category_justification": "The finding is about a stale inline comment that no longer matches the code it describes.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/track-known-issues.sh",
+      "start_line": 444,
+      "end_line": 444,
+      "message": "`promote-todos` now calls this helper even for phases that have a registry but no `remediation/qa` directory. With `set -euo pipefail`, `find \"$PHASE_DIR/remediation/qa\" ...` returns non-zero for a missing directory and the assignment can abort the script before existing registry issues are promoted; this regresses the non-remediation promote path covered by the existing promote-todos tests.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is incorrect. Bash clears set -e inside command substitutions (non-posix mode default). extract_latest_summary_known_issue_outcomes_json is called from accepted_outcomes_json=$(...), so set -e is cleared in that subshell. When find fails on the missing directory, summary_file gets set to empty string without aborting, then the guard fires with echo '[]'; return 0. Empirically verified: promotion still works correctly for phases with no remediation/qa directory.",
+      "severity_justification": "If the claim were true it would regress a core promote path, but the issue does not actually occur.",
+      "category_justification": "The finding claims a runtime abort/regression bug in the promote-todos path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-result-gate.sh",
+      "start_line": 1674,
+      "end_line": 1678,
+      "message": "This override can pass a remediation round even when the current round verification still reported the issue as unresolved. After `sync-verification`, the live registry contains the current `R{RR}-VERIFICATION.md` `pre_existing_issues`; this condition only checks that the summary outcomes cover those entries, so a summary that marks an issue accepted/resolved can override QA returning the same issue as still-blocking. The gate should distinguish stale carried registry entries from issues last seen in the current verification before allowing `PROCEED_TO_UAT`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Factually confirmed: sync-verification is called before the gate and replaces the live registry with current round verification pre_existing_issues. The gate's PROCEED_TO_UAT condition only checks that summary outcomes cover live registry entries by (test,file,error) identity — it never consults last_seen_in or last_seen_round to distinguish stale registry entries from issues QA just returned as still-present. A summary outcome of accepted-process-exception can override QA's current-round finding that the issue is still blocking.",
+      "severity_justification": "Undermines the deterministic gate's fail-safety property by allowing a summary to override QA's current-round verdict. However, requires QA to return PASS while also returning the issue as still-present, and then the summary to disagree — a contradictory state that the protocol discourages through QA instructions.",
+      "category_justification": "The gate logic has a concrete scenario where it routes to PROCEED_TO_UAT despite QA's current verification indicating the issue is still present.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/qa-result-gate.sh",
+      "start_line": 1701,
+      "end_line": 1705,
+      "message": "This allows `known_issue_outcomes` to override known issues that QA just returned as unresolved in the current round verification. Because `sync-verification` writes current `pre_existing_issues` into `known-issues.json`, a still-blocking issue can be present in the live registry and still satisfy this coverage check if the summary claims it was resolved/accepted, causing the gate to proceed despite QA reporting it unresolved.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Factually confirmed: the non-metadata-only PASS branch at lines 1701-1705 has the same gap as Finding 4's metadata-only branch. sync-verification is called before the gate and replaces the live registry with current-round pre_existing_issues. The gate's coverage check uses only (test,file,error) identity without consulting last_seen_round, so a summary outcome of resolved/accepted-process-exception satisfies the coverage condition even when QA just returned the issue as still-present in R{RR}-VERIFICATION.md. This finding identifies the same logical gap in a distinct code location (the non-metadata PASS branch vs. the metadata-only branch addressed in Finding 4).",
+      "severity_justification": "Allows PROCEED_TO_UAT when QA's current round verification explicitly returned the issue as still-present. Requires the summary's disposition to conflict with QA's current-round output — a state the protocol discourages but does not prevent.",
+      "category_justification": "The gate logic has a concrete scenario where it routes to PROCEED_TO_UAT despite QA's current verification indicating the issue is still blocking.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

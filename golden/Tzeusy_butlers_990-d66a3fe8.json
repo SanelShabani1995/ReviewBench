@@ -1,0 +1,551 @@
+{
+  "pr_key": "Tzeusy_butlers_990-d66a3fe8",
+  "pr": {
+    "repo": "https://github.com/Tzeusy/butlers",
+    "pr_number": 990,
+    "base": "bb491643b06ff6474b7f3f36094bed5ad5d353da",
+    "head": "d66a3fe89cb5806944235ab540f233c79433d615"
+  },
+  "findings": [
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 214,
+      "end_line": 247,
+      "message": "dismissingFp is a single string state shared between dismiss and undismiss mutations. If a user clicks 'Dismiss' on issue A and then 'Dismiss' on issue B before A's request completes, setDismissingFp(B) overwrites A's tracking. When A's onSettled fires and calls setDismissingFp(null), B's button is re-enabled even though B's mutation is still in flight — allowing a second click to submit a duplicate mutation. Fix: use a Set<string> to track all in-flight fingerprints independently.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim is factually correct. `dismissingFp` is a single `string | null` tracking only one in-flight fingerprint at a time. When issue A's `onSettled` fires and calls `setDismissingFp(null)`, it re-enables issue B's button even if B's mutation is still in flight. The `disabled={dismissingFp === issue.fingerprint}` check confirms the mechanism. The bug allows a second click to fire a duplicate mutation.",
+      "severity_justification": "This is a minor UX race condition requiring rapid sequential clicks on different issue buttons. Server-side dismiss operations are likely idempotent, and cache invalidation on success corrects state regardless. No data loss or security impact.",
+      "category_justification": "The in-flight tracking state is logically incorrect — a single string cannot represent multiple concurrent in-flight operations, leading to buttons being incorrectly re-enabled.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/DashboardPage.tsx",
+      "start_line": 51,
+      "end_line": 121,
+      "message": "QaWidget always renders unconditionally on the main dashboard and fires useQaSummary() regardless of whether a QA butler is in the roster. The nav item correctly uses butler: 'qa' to hide itself on non-QA deployments, and the badge hook guards its query with enabled: hasQa, but the dashboard widget has no equivalent check. On deployments without a QA staffer, every dashboard load produces a failed API request and permanently renders 'Failed to load QA status.' The widget should check if butlersResponse.data contains a 'qa' butler before rendering (or at minimum before firing the query).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "QaWidget unconditionally fires useQaSummary() and renders regardless of whether a 'qa' butler exists. The nav item uses `butler: 'qa'` to hide itself on non-QA deployments and the badge hook guards with `enabled: hasQa`, but the dashboard widget has no equivalent guard. On non-QA deployments every dashboard load fires a failing API request and permanently renders 'Failed to load QA status.' DashboardPage already has `butlersResponse` in scope so the check is trivially available.",
+      "severity_justification": "Every dashboard load on a non-QA deployment produces a failed API request and a persistent error card, degrading the UX for all non-QA users. It's inconsistent with how other butler-specific features are guarded elsewhere in the codebase.",
+      "category_justification": "The widget renders and queries unconditionally when it should be conditional on the 'qa' butler being present, contradicting the pattern established by the nav item and badge hook.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaPatrolDetailPage.tsx",
+      "start_line": 365,
+      "end_line": 369,
+      "message": "The CardDescription computes the novel count as novelFindings.length (filtered from the embedded patrol.findings array) and the deduplicated count as patrol.findings_count - novelFindings.length. However, patrol.findings is an embedded array that could be truncated server-side for large patrols. The authoritative novel count is already available as patrol.novel_count. If findings are ever paginated, novelFindings.length will be less than patrol.novel_count and the displayed 'N novel · M deduplicated' figures will be wrong. Use patrol.novel_count and patrol.findings_count - patrol.novel_count instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code derives novel count from `novelFindings.length` (filtering the embedded `patrol.findings` array) and deduplicated count as `patrol.findings_count - novelFindings.length`. The authoritative `patrol.novel_count` field already exists on the same object and is correctly used in the metadata card above. If the server truncates the embedded findings array for large patrols, the displayed counts will be wrong.",
+      "severity_justification": "Bug only manifests if the server truncates the embedded findings array — currently not demonstrated. Impact is display-only in a subtitle, not a data mutation or security issue.",
+      "category_justification": "The displayed statistics will be incorrect when findings are truncated, because the code uses a derived count from a potentially incomplete array instead of the already-available authoritative server-provided count.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 207,
+      "end_line": 211,
+      "message": "When showDismissed is true, the query sends dismissed: undefined (no query parameter). In getQaKnownIssues, undefined values are skipped: if (params?.dismissed !== undefined) query.set(...). If the server's default for a missing dismissed parameter is to return only non-dismissed issues (a common API convention), toggling 'Show dismissed' silently has no effect. The intent should be dismissed: true to explicitly request dismissed issues, or if 'all issues' is wanted, the API contract needs to document that the absent parameter means all — but that is not captured anywhere in this code.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding assumes the server defaults to returning only non-dismissed issues when the `dismissed` parameter is absent, but the actual server code in `qa.py::_build_dismissed_condition` returns an empty string (no filter) when `dismissed=None`, meaning the server returns ALL issues. When `showDismissed=true`, omitting the parameter correctly fetches all issues including dismissed ones. The toggle does have an effect — the claim that it 'silently has no effect' is factually wrong.",
+      "severity_justification": "The finding is incorrect; the feature works as intended based on the actual server implementation.",
+      "category_justification": "The finding is about whether a UI toggle has the expected effect, which requires checking the API behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaInvestigationDetailPage.tsx",
+      "start_line": 156,
+      "end_line": 163,
+      "message": "In buildTimeline, the 'PR opened' step assigns time: attempt.updated_at when status is pr_open or pr_merged. When the status has advanced to pr_merged, attempt.updated_at reflects the time the record was last written (i.e. the merge event), not when the PR was opened. The timeline therefore shows the merge timestamp under the 'PR opened' label, which is incorrect and potentially confusing. There is no dedicated pr_opened_at field in HealingAttempt; if the backend does not expose one, the time should be omitted for this step rather than showing a misleading value.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code assigns `attempt.updated_at` to the 'PR opened' step when status is `pr_open` OR `pr_merged`. When status has advanced to `pr_merged`, `updated_at` reflects the merge event timestamp, not the PR opening. The backend `HealingAttempt` model confirms there is no `pr_opened_at` field — only `created_at`, `updated_at`, and `closed_at`. Showing a misleading timestamp under 'PR opened' is a UI correctness bug.",
+      "severity_justification": "This is a display-only issue on a detail page showing a historical timeline. It can mislead users about when a PR was opened vs merged, but has no impact on data integrity, security, or primary workflows.",
+      "category_justification": "The timeline shows incorrect data — the merge timestamp is displayed under the 'PR opened' label when the status is pr_merged.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/hooks/use-qa.ts",
+      "start_line": 69,
+      "end_line": 84,
+      "message": "useQaPatrolFindings is defined, exported from use-qa.ts and re-exported from api/index.ts, but is never called anywhere in the codebase. QaPatrolDetailPage uses useQaPatrol which embeds the full findings array instead. This means: (1) there is no pagination support for findings on the detail page — if the server ever truncates embedded findings, the table will be silently incomplete; (2) the hook is dead code that misleads developers into thinking paginated findings loading is wired up. Similarly, useHealingAttempts is exported but unused.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `useQaPatrolFindings` and `useHealingAttempts` are only defined in `use-qa.ts` and never called anywhere else in the frontend. `QaPatrolDetailPage` uses `useQaPatrol` which embeds findings. Both hooks are dead code. The detail page has no paginated findings fallback if the server ever truncates the embedded array.",
+      "severity_justification": "Dead code is a maintainability concern but has no runtime impact. The missing pagination concern is speculative — the server currently returns embedded findings without known truncation. The confusion risk for future developers is real but minor.",
+      "category_justification": "The core issue is dead/unused code that misleads developers about what's wired up. The paginated findings concern is secondary and hypothetical.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 236,
+      "end_line": 242,
+      "message": "The dismiss handler hardcodes dismissed_by: 'dashboard_user' for every dismissal. In any multi-user deployment, all dismissals are attributed to the same generic actor, making the dismissal audit log in QaDismissal.dismissed_by meaningless. The actual authenticated user identity should be passed here (or the field omitted and resolved server-side from the session/token), otherwise any audit or accountability use of the dismissed_by field is permanently broken.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The server's own DismissRequest model defaults `dismissed_by` to `'dashboard_user'` and the server-side handler falls back to the same value if omitted. The client is just passing the server's own default explicitly. There is no authentication system in this API from which to derive a real user identity — the project is a single-user personal butler system with no `current_user` dependency anywhere in the QA router. The finding overstates the issue by assuming a multi-user deployment that this system is not designed for.",
+      "severity_justification": "Even if the claim were valid, the impact is limited to a non-useful audit field in a single-user system. No security or data integrity concern.",
+      "category_justification": "If anything, this is a design quality concern about an audit field with a static value, not a functional bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/hooks/use-qa.ts",
+      "start_line": 94,
+      "end_line": 94,
+      "message": "The `dismissQaKnownIssue` mutation function is missing an argument when called. It's defined to receive `{ fingerprint, body }`, but is called with `dismissQaKnownIssue(fingerprint, body)`. The correct invocation is `dismissQaKnownIssue(fingerprint, body)` as a function that returns a promise, but the mutation function expects a single object argument. The function signature for `mutationFn` should be `(vars) => dismissQaKnownIssue(vars.fingerprint, vars.body)`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `mutationFn` correctly uses destructured parameter syntax `({ fingerprint, body }) => dismissQaKnownIssue(fingerprint, body)`. The single object argument is destructured inline, and `dismissQaKnownIssue` is called with two separate arguments matching its two-parameter signature. The suggested fix `(vars) => dismissQaKnownIssue(vars.fingerprint, vars.body)` is semantically identical to what's already written. There is no bug.",
+      "severity_justification": "The finding is incorrect — no bug exists in the code.",
+      "category_justification": "The finding claims a function call argument mismatch which would be a correctness bug, but verification shows the code is correct.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/hooks/use-qa-badge.ts",
+      "start_line": 18,
+      "end_line": 18,
+      "message": "The `useQaKnownIssues` hook is called with `{ enabled: hasQa }` to prevent API calls when the 'qa' butler is not present. However, the `useQaActiveBadge` hook, which uses this, can re-render when `butlersResponse` changes. If the 'qa' butler is removed from the roster, `hasQa` becomes `false`, disabling the query. TanStack Query will then mark the query data as stale and it will eventually be garbage collected, but it might briefly return the old (now stale) count. The hook should return `0` if `hasQa` is false to ensure the badge count is immediately accurate.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "When `hasQa` is false, `useFilteredNavSections` filters out the QA nav item entirely (it has `butler: 'qa'`), so the badge is never rendered in the sidebar regardless of the stale count. The finding describes a theoretical TanStack Query caching behavior that has no visible impact because the badge's host element disappears when the guard condition triggers.",
+      "severity_justification": "Even if technically accurate about TanStack Query behavior, the stale count appears on a non-rendered nav item — zero user-visible impact.",
+      "category_justification": "The finding is about potentially stale state being returned, which is a correctness concern, but the practical impact is nil.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaInvestigationDetailPage.tsx",
+      "start_line": 285,
+      "end_line": 285,
+      "message": "The page uses `useParams<{ attemptId: string }>()` to get the `attemptId`. However, if the `attemptId` is not present in the URL, `useParams` will return an empty object and `attemptId` will be `undefined`. The code then defaults it to `\"\"`. While there's a check for `!attemptId`, the `useHealingAttempt` hook is still called with an empty string, which is then passed to `getHealingAttempt`. The API call to `/api/healing/attempts/` will likely fail. The `useHealingAttempt` hook should only be enabled when `attemptId` is a non-empty string.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code uses `useHealingAttempt(attemptId || undefined)` — when `attemptId` is `''`, the `|| undefined` converts it to `undefined`. `useHealingAttempt` then sets `enabled: !!attemptId` which is `false` for `undefined`, preventing any API call. The finding incorrectly claims the hook is called with an empty string and fires a failing request; the code already correctly handles this case.",
+      "severity_justification": "The finding is incorrect; no erroneous API call occurs.",
+      "category_justification": "The finding is about whether an API call fires incorrectly, which is a correctness concern, but the code is actually correct.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/api/client.ts",
+      "start_line": 3120,
+      "end_line": 3125,
+      "message": "The function `undismissQaKnownIssue` is defined to return a `Promise<ApiResponse<Record<string, unknown>>>`. This provides very little type safety for the component that uses this response. It would be better to define a more specific type for the success response, even if it's just an empty object with a success flag, like `{ success: boolean }`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The undismiss response data is never read by any component — `useUndismissQaIssue`'s onSuccess only calls cache invalidation and ignores the return value. The type imprecision has zero practical impact. The suggestion is generic best-practice advice that could be copy-pasted onto any `Record<string, unknown>` in any codebase, with no concrete harm or inconsistency identified in this specific code.",
+      "severity_justification": "No runtime impact since the response value is unused; purely cosmetic type precision concern.",
+      "category_justification": "This is a typing/type-safety style suggestion with no functional impact.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaInvestigationDetailPage.tsx",
+      "start_line": 156,
+      "end_line": 161,
+      "message": "The `Timeline` component's `done` logic for the 'Investigating' step is `![\"dispatch_pending\", \"investigating\"].includes(attempt.status)`. This incorrectly marks the step as 'done' for terminal failure states like 'failed', 'timeout', etc., even though the investigation did not complete successfully. The timeline-building logic should differentiate between successful completion and failure.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "For terminal failure states, `done: !['dispatch_pending', 'investigating'].includes(status)` evaluates to `true`, causing the 'Investigating' step to render with `bg-emerald-500` (green circle). The terminal failure handler uses `steps.slice(0, 2)` which includes this already-set step with `done: true`. The result is a green 'Investigating' step followed by a 'failed'/'timeout' terminal step — visually implying the investigation completed successfully before failing, which is misleading.",
+      "severity_justification": "This is a UI display inconsistency on a detail page. The terminal failure label is still shown, so users can understand the outcome, but the green dot on 'Investigating' is misleading. No data integrity or functional impact.",
+      "category_justification": "The timeline misrepresents the investigation lifecycle by showing a success indicator (green) on a step that did not complete successfully.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaInvestigationDetailPage.tsx",
+      "start_line": 78,
+      "end_line": 80,
+      "message": "The `StatusBadge` component has a specific list of statuses that are considered failures and should get a destructive badge. However, if a new failure status is added to the API, it will fall through to the default outline badge, failing to visually indicate an error. The check should be more robust, for instance, by checking if the status is in a list of known success/in-progress states and treating all others as failures, or using a more explicit mapping.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic extensibility/defensive-coding suggestion that could be copy-pasted onto any status badge component in any codebase. It doesn't identify a concrete bug — no new failure status is being added in this PR, and the current status set matches what the backend defines. The suggestion to 'treat unknowns as failures' would itself be wrong (an unknown status might be a new in-progress or neutral state). This is boilerplate advice about hypothetical future API changes, not a verifiable issue in the code at this SHA.",
+      "severity_justification": "No current bug exists; the concern is purely speculative about future API additions.",
+      "category_justification": "The finding is about code robustness/extensibility for hypothetical future changes, which is a maintainability concern, but too generic to be actionable.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 266,
+      "end_line": 272,
+      "message": "In the `KnownIssuesPanel`, the `handleDismiss` function updates component state (`setDismissingFp`) and then calls `dismissMutation.mutate`. The mutation's `onSettled` callback is used to reset the state. If the component unmounts before the mutation settles (e.g., due to navigation), `setDismissingFp` will be called on an unmounted component, causing a React warning. This logic should be made safe for unmounting, for example by using a cleanup effect in `useEffect`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The project uses React 18 (`^18.3.1`), which deliberately removed the 'Can't perform a state update on an unmounted component' warning. State updates on unmounted components are silent no-ops in React 18, not warnings. The finding is based on outdated React 16/17 behavior that no longer applies. There is no actual warning or error to fix.",
+      "severity_justification": "The described warning doesn't occur in React 18; there is no actual runtime problem.",
+      "category_justification": "The finding is about component lifecycle safety and potential warnings, which is a reliability concern — but the concern is moot in React 18.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/DashboardPage.tsx",
+      "start_line": 69,
+      "end_line": 71,
+      "message": "The `QaWidget` component renders `p.className=\"text-muted-foreground text-sm\">QA Staffer not active.</p>` if `!summary?.last_patrol`. This doesn't distinguish between a genuinely inactive QA staffer and a transient API error where `summary` is null. A more precise check would be `isError` first, then `!summary`, and only then `!summary.last_patrol`, to provide more accurate feedback to the user.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code already checks `isError` before `!summary?.last_patrol` in the conditional chain. API errors are handled by the `isError` branch which renders 'Failed to load QA status.' The `!summary?.last_patrol` branch is only reached on a successful response with no patrol data, which genuinely means the staffer is not active. The finding's suggested fix describes exactly what the code already does.",
+      "severity_justification": "The finding is incorrect; the code already handles the described scenario correctly.",
+      "category_justification": "The finding claims incorrect state display logic but the code is actually correct.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/DashboardPage.tsx",
+      "start_line": 60,
+      "end_line": 62,
+      "message": "The badge label \"{N} active\" is derived from `summary.stats_24h.dispatched_investigations`, but this value is the count of investigations dispatched in the past 24 hours, not the count of currently-active investigations (some may have already merged or failed). Consider either renaming the label (e.g. \"{N} dispatched (24h)\") or computing an actual active count from another field, to avoid misleading users on the dashboard.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 61 of DashboardPage.tsx renders `{summary.stats_24h.dispatched_investigations} active` where `dispatched_investigations` is a 24h dispatch count, not a count of currently-active investigations. The QaSummary type has no field for currently-open/active attempts, so the label 'active' is factually misleading.",
+      "severity_justification": "This is a labeling issue on a badge in a dashboard widget — it could confuse users about the number of currently-active investigations, but it doesn't cause data loss or functional breakage.",
+      "category_justification": "Incorrect label on a UI element — a readability/accuracy issue rather than a logic bug or security concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 59,
+      "end_line": 114,
+      "message": "The `SeverityBadge`, `SourceTypeBadge`, and `PatrolStatusBadge` components (along with the `formatTs` / `formatDuration` helpers) are duplicated verbatim across `QaOverviewPage.tsx`, `QaPatrolDetailPage.tsx`, and partially in `QaInvestigationDetailPage.tsx`. Future changes (new severity levels, status values, color tweaks) will need to be repeated in every copy and easily fall out of sync. Consider extracting these into a shared module (e.g. `frontend/src/components/qa/badges.tsx` and a small `qa-format` helper) and importing them from each page.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: SeverityBadge, SourceTypeBadge, PatrolStatusBadge, formatTs, and formatDuration are defined independently in all three QA page files. The implementations are identical copies, creating a real drift risk for future changes.",
+      "severity_justification": "The duplication is contained to three new files in the same feature area. While it creates maintenance overhead, it doesn't currently cause incorrect behavior and the files were just introduced in this PR.",
+      "category_justification": "Classic DRY violation — identical components/helpers copied across multiple files in the same feature, creating future drift risk.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/hooks/use-qa.ts",
+      "start_line": 86,
+      "end_line": 97,
+      "message": "`useQaKnownIssues` sets both `staleTime: 30_000` and `refetchInterval: 30_000`. Since this hook is invoked unconditionally by `useBadgeCounts` in `Sidebar` on every page (as long as the `qa` butler is present), a background refetch will fire every 30 seconds for the entire lifetime of the dashboard, even on pages that have nothing to do with QA. Consider removing `refetchInterval` for the badge use case (the 30s `staleTime` is enough to keep the count fresh on navigation) or making the polling opt-in per consumer.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: useQaKnownIssues has refetchInterval: STALE_TIME (30s), and useBadgeCounts calls it unconditionally in Sidebar which renders on every page. Any dashboard user with a qa butler will generate a background poll every 30s to /api/qa/known-issues regardless of current page.",
+      "severity_justification": "The poll is a single lightweight paginated query with limit=1 every 30 seconds. This is not harmful in most deployments but is unnecessarily broad — it fires on pages completely unrelated to QA. The impact is minor API load increase, not a functional bug.",
+      "category_justification": "Unnecessary background polling on every page for the full session lifetime is a performance/efficiency concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/DashboardPage.tsx",
+      "start_line": 60,
+      "end_line": 61,
+      "message": "This badge labels `stats_24h.dispatched_investigations` as \"active\", but the QA summary endpoint computes this as the number of investigations dispatched in the last 24 hours, not currently active investigations. This will overstate active work after those investigations have completed; either relabel it as a 24h/dispatched count or source an actual active-attempt count.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a duplicate of Finding 1, which already identified the same issue at the same lines (60-62 of DashboardPage.tsx) with the same substance: stats_24h.dispatched_investigations being labeled 'active' when it's a 24h dispatch count. The finding is factually correct but is a duplicate — deduplication note in instructions says to evaluate independently, but this is the exact same finding restated.",
+      "severity_justification": "Same as Finding 1 — a misleading badge label with no functional breakage.",
+      "category_justification": "UI label accuracy issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaPatrolDetailPage.tsx",
+      "start_line": 47,
+      "end_line": 51,
+      "message": "The severity badge mapping is duplicated across the new QA pages. Since these pages use the same severity labels and colors, keeping separate copies makes future severity changes easy to apply inconsistently; consider extracting a shared QA badge component/helper.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a duplicate of Finding 2, which already identified the same DRY violation — SeverityBadge, SourceTypeBadge, PatrolStatusBadge, formatTs, and formatDuration are all duplicated across QaOverviewPage.tsx, QaPatrolDetailPage.tsx, and QaInvestigationDetailPage.tsx. This finding restates the same issue with narrower scope (just SeverityBadge), but the substance is identical to Finding 2.",
+      "severity_justification": "Same as Finding 2 — contained duplication in new files with no current behavioral impact.",
+      "category_justification": "DRY violation across new QA page files.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 59,
+      "end_line": 63,
+      "message": "The severity badge mapping is duplicated across the new QA pages. Since these pages use the same severity labels and colors, keeping separate copies makes future severity changes easy to apply inconsistently; consider extracting a shared QA badge component/helper.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a duplicate of Finding 2, which already identified the same DRY violation across the QA pages. The finding is factually correct but restates the same issue already covered by Finding 2.",
+      "severity_justification": "Contained duplication in new files with no current behavioral impact.",
+      "category_justification": "DRY violation across new QA page files.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaInvestigationDetailPage.tsx",
+      "start_line": 42,
+      "end_line": 46,
+      "message": "The severity badge mapping is duplicated across the new QA pages. Since these pages use the same severity labels and colors, keeping separate copies makes future severity changes easy to apply inconsistently; consider extracting a shared QA badge component/helper.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a duplicate of Finding 2, which already identified the same DRY violation across all three QA page files. The finding is factually correct but restates the same issue already covered by Finding 2.",
+      "severity_justification": "Contained duplication in new files with no current behavioral impact.",
+      "category_justification": "DRY violation across new QA page files.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 237,
+      "end_line": 240,
+      "message": "This user-triggered dismiss mutation has no error feedback, so a failed API call just re-enables the button without telling the user the issue was not dismissed. Other user-triggered mutations consistently surface toast errors (for example, frontend/src/pages/ApprovalsPage.tsx:143-147 and frontend/src/pages/ContactsPage.tsx:74-100); add an error path here as well.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: handleDismiss and handleUndismiss in QaOverviewPage.tsx only use onSettled to clear dismissingFp state — no onError handler exists. A failed API call silently re-enables the button with no user feedback. ApprovalsPage.tsx and ContactsPage.tsx both use toast.error() on mutation failure, confirming this is a codebase convention violation.",
+      "severity_justification": "Silent failures on user-triggered mutations degrade UX — the user dismisses an issue, sees the button re-enable, and has no idea whether it succeeded or failed. This is a meaningful UX regression compared to established patterns in the same codebase.",
+      "category_justification": "Missing error handling path on a user-triggered mutation — the absence of error feedback means the UI behaves incorrectly on failure (silent no-op instead of informing the user).",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 243,
+      "end_line": 245,
+      "message": "This restore mutation also lacks user-visible error feedback. If the API fails, the UI silently re-enables the button and leaves the issue dismissed, unlike existing mutation flows that show toast errors (for example, frontend/src/pages/ApprovalsPage.tsx:143-147 and frontend/src/pages/ContactsPage.tsx:74-100).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: handleUndismiss in QaOverviewPage.tsx only uses onSettled to clear dismissingFp — no onError handler. A failed undismiss silently re-enables the button leaving the issue still dismissed with no feedback. This is the same pattern issue as Finding 8 but for the restore/undismiss path, which is a distinct code path deserving its own fix.",
+      "severity_justification": "Silent failure on a user-triggered mutation is a meaningful UX issue — the user clicks Restore, nothing visibly happens, and the issue remains dismissed with no explanation.",
+      "category_justification": "Missing error handling path on a user-triggered mutation, violating the codebase's established toast error convention.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 237,
+      "end_line": 239,
+      "message": "This dismiss action omits `dismissed_until`, and the backend defaults that to an indefinite dismissal (year 9999). A single click in the dashboard will permanently suppress future investigations for the fingerprint with no duration choice or confirmation, which can hide recurring production issues unintentionally.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the backend qa.py router (lines 670-678) explicitly defaults missing dismissed_until to datetime(9999, 12, 31, 23, 59, 59) — a permanent dismissal. The frontend handleDismiss sends only {dismissed_by: 'dashboard_user'} with no dismissed_until, so a single click permanently suppresses future investigations for that fingerprint with no confirmation or duration selector.",
+      "severity_justification": "A single accidental click permanently hides a recurring production issue fingerprint. The UI offers a Restore button but users may not realize the action was indefinite. This could mask real problems that silently recur.",
+      "category_justification": "The UI behavior (one-click permanent suppression) doesn't match reasonable user expectations for a dismiss action and lacks a safeguard against accidental permanent suppression of production issue tracking.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "frontend/src/pages/QaOverviewPage.tsx",
+      "start_line": 208,
+      "end_line": 211,
+      "message": "The known-issues panel hard-limits results to 50 without rendering pagination or a \"show more\" path, even though the endpoint returns paginated metadata. When there are more than 50 active/dismissed issues, the dashboard silently hides the rest, so users cannot review or restore/dismiss them from this page.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: KnownIssuesPanel calls useQaKnownIssues with limit: 50 and no offset, renders response?.data but never checks response?.meta for total/has_more, and has no pagination controls. Issues 51+ are silently hidden. Contrast with the patrols table in the same file which correctly implements pagination using patrolsResponse?.meta.",
+      "severity_justification": "In practice, most deployments are unlikely to accumulate >50 active known issues simultaneously, making this a realistic but rare edge case. Users can still access all issues via the API; this is a UI completeness gap rather than data loss.",
+      "category_justification": "The UI silently truncates results beyond 50 with no indication to the user that more exist — a functional incompleteness in the new feature.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "AGENTS.md",
+      "start_line": 997,
+      "end_line": 1001,
+      "message": "This adds personal operational \"Notes to self\" to the repository-wide agent instruction file. AGENTS.md is shared project guidance, so these ad hoc local workflow notes are unrelated to the QA dashboard feature and risk confusing future contributors; they should be moved to a private/local note instead of being committed here.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The 'Notes to self' pattern is pre-existing in AGENTS.md — the same section header appears at line 143 with similar operational notes about beads CLI drift, N+1 patterns, etc. This file is used as persistent agent memory/instructions, and 'Notes to self' is an established, intentional section for AI agent operational knowledge. The new notes follow the exact same pattern and belong here by the project's own convention.",
+      "severity_justification": "Even if this were a valid concern, it's a documentation/style issue with no functional impact.",
+      "category_justification": "Concerns placement of notes in a documentation/instruction file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

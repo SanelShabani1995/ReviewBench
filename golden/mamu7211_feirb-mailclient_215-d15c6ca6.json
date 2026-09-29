@@ -1,0 +1,919 @@
+{
+  "pr_key": "mamu7211_feirb-mailclient_215-d15c6ca6",
+  "pr": {
+    "repo": "https://github.com/mamu7211/feirb-mailclient",
+    "pr_number": 215,
+    "base": "76d9db59beaf6a0942c84522b9d33058f721ee86",
+    "head": "d15c6ca689e20a95a1c5468d0e87f71f8b5e7496"
+  },
+  "findings": [
+    {
+      "file": "src/Feirb.Api/Services/OutgoingHtmlSanitizer.cs",
+      "start_line": 7,
+      "end_line": 7,
+      "message": "HtmlSanitizer from Ganss.Xss is not thread-safe. The static readonly field shares one instance across all concurrent requests on the server. Under concurrent load, calls to Sanitize() can produce corrupted output or throw exceptions. A new HtmlSanitizer instance should be created per call, or access to the shared instance should be synchronized.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim that HtmlSanitizer.Sanitize() on a static, configure-once instance is not thread-safe cannot be verified from available files. The identical static singleton pattern already exists in the pre-existing Feirb.Web/Services/HtmlSanitizer.cs. The Sanitize() method creates a fresh document per call and only reads (never mutates) the instance configuration after initialization, which is the standard safe usage pattern for Ganss.Xss v9.",
+      "severity_justification": "If the library were truly not thread-safe, concurrent requests could produce corrupted sanitized output — a real reliability issue. But the claim appears to be incorrect for this usage pattern.",
+      "category_justification": "Concurrency and thread-safety concern on a shared server-side instance.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Services/OutgoingHtmlSanitizer.cs",
+      "start_line": 20,
+      "end_line": 21,
+      "message": "The data: URI scheme is explicitly whitelisted in the outgoing mail sanitizer. data:text/html URIs can contain embedded HTML with scripts (e.g. <a href=\"data:text/html,<script>alert(1)</script>\">link</a>) that some email clients will execute when the recipient clicks the link. data: images are rarely needed in composed email; the scheme should be removed from AllowedSchemes.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code at lines 20-21 explicitly adds 'data' to AllowedSchemes with no per-tag restriction. data:text/html URIs with embedded scripts pass through unchanged and are sent to recipients. Unlike the pre-existing Web HtmlSanitizer which restricts data: to img tags only via a FilterUrl handler, the new OutgoingHtmlSanitizer has no such restriction, allowing data: on anchor hrefs and other elements.",
+      "severity_justification": "Allows authenticated users to send emails containing data:text/html script links to recipients. Impact is bounded by the self-hosted/authenticated context, but it's a real design flaw in the sanitizer that could harm recipients of crafted emails.",
+      "category_justification": "Insufficient output sanitization for outgoing HTML email — a data: URI with embedded HTML/script can bypass the sanitizer and reach email recipients.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/wwwroot/js/quill-interop.js",
+      "start_line": 37,
+      "end_line": 40,
+      "message": "setHtml assigns directly to root.innerHTML, bypassing Quill's internal delta model. The isEmpty() function calls this._instance.getText(), which reads from the delta (not the DOM). After SwitchToRichTextAsync calls setHtml to load markdown-converted HTML, the delta remains empty, so isEmpty() returns true and the body validation in SendAsync incorrectly rejects the content as missing. The correct API is quill.clipboard.dangerouslyPasteHTML(html) which updates both the DOM and the delta.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "setHtml() sets root.innerHTML directly, which only updates the DOM. isEmpty() calls getText() which reads from Quill's internal delta model (unchanged by the DOM mutation). After SwitchToRichTextAsync calls setHtml to load markdown-converted HTML, the delta is still empty, getText().trim() returns '', isEmpty() returns true, GetBodyAndContentTypeAsync returns (null, 'html'), and SendAsync adds the body validation error. This is a concrete bug blocking email sends after Markdown→RichText mode switch.",
+      "severity_justification": "Breaks the core compose workflow: any user who writes in Markdown mode and switches to Rich Text before sending will receive a false validation error and be unable to send the email.",
+      "category_justification": "Logic error in quill-interop.js — incorrect DOM mutation path causes isEmpty() to return wrong result, blocking email send.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Endpoints/ComposeEndpoints.cs",
+      "start_line": 25,
+      "end_line": 27,
+      "message": "When request.To is empty, the endpoint returns the InvalidEmailAddress localizer key instead of a more appropriate 'no recipients' message. More importantly, the server performs no validation on Subject or Body: the [Required] and [StringLength] annotations on SendMailRequest are not enforced because Minimal APIs do not apply DataAnnotations by default — .WithParameterValidation() or an equivalent filter is absent. An empty subject or a body exceeding 1 MB passes straight through to SMTP send.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: no WithParameterValidation(), AddValidation(), IEndpointFilter, or any validation middleware exists anywhere in the project. DataAnnotations on SendMailRequest (Required, StringLength, MaxLength, RegularExpression) are not enforced — empty Subject, oversized Body, and invalid ContentType values pass straight through to SMTP. The empty-To error also returns the wrong localizer key (InvalidEmailAddress instead of a no-recipient message).",
+      "severity_justification": "Empty subjects and bodies reach SMTP send silently, and bodies over 1 MB bypass the size constraint. Not catastrophic (no data corruption or auth bypass), but represents broken validation contracts that the code author clearly intended to enforce.",
+      "category_justification": "Validation logic the author intended to enforce via DataAnnotations is silently not applied, allowing invalid requests to reach the service layer.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 215,
+      "end_line": 222,
+      "message": "OnAfterRenderAsync fires after every render cycle, not just the first. The guard is !_quillInitialized, but _quillInitialized is set to true only after the JS interop await resolves. If Blazor triggers a re-render (e.g. from a parent component or StateHasChanged) while quillInterop.init is still awaiting, the condition will be true again and init will be called a second time. quillInterop.init calls destroy() internally, which nulls the previous instance and loses any text the user has typed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The mechanism is correctly described: _quillInitialized is set after the await, not before, meaning a re-render firing during the interop await would pass the guard again and call init() which destroys the existing instance. quillInterop.init() confirmed to call destroy() first. This is a well-known Blazor OnAfterRenderAsync antipattern. The practical likelihood is low since the init JS is synchronous and no obvious external triggers exist for Compose re-renders during this window, but the code pattern is objectively wrong.",
+      "severity_justification": "The race window is extremely small (synchronous JS call), no external subscribers trigger Compose re-renders during init, and even if it fires, the user just loses a fresh empty editor. The code pattern is wrong but practical risk is near-zero.",
+      "category_justification": "Async race condition in Blazor lifecycle method — a reliability concern about component initialization state management.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Services/MailSendingService.cs",
+      "start_line": 70,
+      "end_line": 75,
+      "message": "ConnectAsync(host, port, useTls: bool) maps true to SslOnConnect (implicit TLS, port 465) and false to no TLS at all. For STARTTLS connections (port 587), the correct option is SecureSocketOptions.StartTlsWhenAvailable or SecureSocketOptions.StartTls, not false. Storing a boolean in the mailbox entity and passing it directly here means any mailbox configured for STARTTLS (useTls=false) will send credentials and mail in clear text. The same pattern is used in AppendToSentFolderAsync for IMAP.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding correctly identifies that the bool approach cannot express the full range of MailKit TLS modes (SslOnConnect vs StartTls vs Auto vs None). MailKit v4.x maps false → Auto (opportunistic STARTTLS, not None), so the specific 'clear text credentials' claim is overstated for standard servers, but the broader concern is valid: Auto doesn't require STARTTLS, enabling silent downgrade attacks. There's also a real inconsistency: MailTestEndpoints explicitly uses SecureSocketOptions.None for false while MailSendingService and ImapSyncService use the bool overload (different behavior).",
+      "severity_justification": "With MailKit's Auto behavior, standard SMTP/IMAP servers advertising STARTTLS will negotiate TLS. But a server that doesn't advertise STARTTLS (or a stripped advertisement in a network attack) would result in plain-text credential transmission. The risk is real but not as immediately exploitable as the finding implies.",
+      "category_justification": "Concerns the encryption of SMTP/IMAP connections and credential transmission — a security property of the mail sending flow.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Endpoints/ComposeEndpoints.cs",
+      "start_line": 28,
+      "end_line": 34,
+      "message": "The email validation loop stops and returns a BadRequest on the first invalid email it finds. This prevents the user from seeing all invalid email addresses in one go. Instead, the loop should collect all invalid addresses and return them in a single response, allowing the user to correct them all at once.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct that the loop fails on first bad email, but the impact is negligible: the Blazor frontend already performs comprehensive collect-all-errors validation before submission, so the API endpoint is never reached with invalid addresses in normal use. The fail-fast API pattern is an accepted design. The suggestion is a generic style preference that could be applied to any validation loop, not a code-specific issue.",
+      "severity_justification": "Even if the finding were a TP, the practical impact would be minimal — only direct API callers would encounter it, and it causes no data loss, security issue, or broken functionality.",
+      "category_justification": "A preference about API response shape and developer ergonomics for API clients, not a correctness or reliability concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Endpoints/ComposeEndpoints.cs",
+      "start_line": 21,
+      "end_line": 22,
+      "message": "The check for `request.To.Length == 0` is redundant because the `[MinLength(1)]` attribute on `SendMailRequest.To` already provides this validation at the model binding stage. ASP.NET Core will return a 400 Bad Request before the handler is ever invoked if the `To` array is empty.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding assumes DataAnnotations are enforced at model binding stage in Minimal APIs, but this project has no WithParameterValidation(), AddValidation(), or any endpoint filter. MinLength(1) on SendMailRequest.To has no runtime effect. The explicit request.To.Length == 0 check is the only guard and is not redundant.",
+      "severity_justification": "The finding is simply incorrect — the explicit check is actually necessary, not redundant. No actual code issue here.",
+      "category_justification": "The finding makes an incorrect claim about model validation enforcement in ASP.NET Core Minimal APIs.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Services/MailSendingService.cs",
+      "start_line": 34,
+      "end_line": 34,
+      "message": "The service has a dependency on `Feirb.Api.Data.Entities.Mailbox` but is located in `Feirb.Api/Services`. This makes it tightly coupled to the data access layer's entity models. To improve separation of concerns, the service should operate on a domain model or a dedicated DTO for mailboxes, rather than a database entity. This would decouple the mail sending logic from the data persistence details.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Every service in the project (ImapSyncService, ClassificationService, AuthService, JobService, etc.) uses Data.Entities directly — at least 10 pre-existing services follow this pattern. The MailSendingService follows the established project convention. The comment is a generic architectural preference that could be copy-pasted to any other service file unchanged; it identifies no issue specific to this PR or this code.",
+      "severity_justification": "Even if valid, this is a pre-existing architectural style choice affecting the entire codebase, with no correctness or security impact.",
+      "category_justification": "Separation of concerns / layering concern — an architectural style suggestion.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Services/MailSendingService.cs",
+      "start_line": 40,
+      "end_line": 40,
+      "message": "The method returns `string.Empty` if `message.MessageId` is null. The caller in `ComposeEndpoints.cs` receives this empty string and returns it in a `SendMailResponse`. An empty `MessageId` could be confusing for the client. The method should either ensure a `MessageId` is always generated (e.g., by creating one if it's missing) or return `null` so the caller can handle it appropriately, perhaps by returning a 204 No Content or a more descriptive response.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "MimeKit auto-generates MessageId during SendAsync so the null case is essentially unreachable in practice. More importantly, the frontend Compose.razor completely ignores the MessageId in the response — it only checks IsSuccessStatusCode and navigates to inbox. The string.Empty fallback is dead code for a value no consumer reads, making this a purely theoretical concern with zero practical impact.",
+      "severity_justification": "Even if the null case were reachable, the client ignores the field entirely. No functional behavior is affected.",
+      "category_justification": "Stylistic concern about the null-coalescing fallback and return type — no correctness or behavior issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 242,
+      "end_line": 242,
+      "message": "The `IsValidEmail` method is duplicated in both `Compose.razor` and `ComposeEndpoints.cs`. Duplicated logic can lead to inconsistencies if one is updated and the other is not. This logic should be extracted into a shared utility method in the `Feirb.Shared` project to be reused by both the client and server, ensuring consistent email validation behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "IsValidEmail is confirmed to be identical in both Compose.razor (line 352) and ComposeEndpoints.cs (line 51), both introduced in this PR. No shared utility exists in Feirb.Shared. The duplication is code-specific and concrete — both files were changed in this PR and the shared logic was not extracted.",
+      "severity_justification": "Both copies are currently identical and use a stable .NET standard library call, so immediate drift risk is low. The concern is real but unlikely to cause near-term harm.",
+      "category_justification": "DRY violation — duplicate logic across client and server code that could diverge if either is updated independently.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 331,
+      "end_line": 334,
+      "message": "The `catch` block in `SendAsync` is too broad. It catches all exceptions, including potential `HttpRequestException` from the HTTP call or other unexpected errors, and shows a generic \"Failed to send\" notification. This hides the actual cause of the failure from both the user and developers. The error should be logged, and different exception types could be handled to provide more specific feedback to the user where appropriate.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The broad catch pattern is the project's established convention across 20+ identical catch blocks in the Blazor Web frontend (Labels, Classification, Mailboxes pages, etc.). Compose.razor follows the existing pattern exactly. The finding is a generic best-practice reminder that could be copy-pasted unchanged to any of those other catch blocks; it identifies nothing specific to this PR's code.",
+      "severity_justification": "Even if valid, this is a pre-existing project-wide pattern with no functional impact beyond generic error messages in a UI that cannot meaningfully differentiate network failures to users anyway.",
+      "category_justification": "Error handling style concern — generic advice about exception specificity in a UI component.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 298,
+      "end_line": 302,
+      "message": "The client-side validation logic for email addresses iterates through all recipient fields (To, CC, BCC) but only reports an error for the first invalid address it finds for a given field (`_errors.TryAdd`). If multiple addresses in the 'To' field are invalid, only the first one will be flagged. The validation should collect all invalid addresses to provide comprehensive feedback to the user.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually correct: _errors.TryAdd means only the first invalid email per field is stored and displayed. The errors dictionary and template both support only one message per field. This is a real UX limitation introduced by this PR where users with multiple invalid emails in one field must correct them one at a time.",
+      "severity_justification": "Minor UX inconvenience — requires multi-step correction flow for multiple invalid addresses. No data loss, security issue, or broken functionality. Also requires template changes to fully fix, not just validation logic.",
+      "category_justification": "UX completeness concern in client-side validation logic — not a correctness or reliability bug.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Services/MailSendingService.cs",
+      "start_line": 121,
+      "end_line": 124,
+      "message": "The `catch` block in `AppendToSentFolderAsync` logs the failure as a warning but swallows the exception. If appending to the 'Sent' folder fails, the user is never notified. While sending the email is the primary goal, failing to save it in 'Sent' is a significant issue for the user, who will assume the email is saved. This failure should be propagated or the user should be notified so they are aware the sent message was not saved.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct: AppendToSentFolderAsync swallows all exceptions with only a warning log. SendMailAsync returns success, the API returns 200 OK, and the client shows 'Email sent successfully.' The user has no way to know the Sent folder copy failed. ImapSyncService only syncs Inbox so there's no recovery path — the sent email is permanently missing from Sent folder with no notification.",
+      "severity_justification": "The email is delivered (SMTP succeeded) so no data loss to recipients, but the user reasonably expects their sent email to appear in their Sent folder and will be confused when it doesn't. Silent partial failure on a user-visible feature.",
+      "category_justification": "Silent failure of a secondary but user-visible operation (Sent folder save) without surfacing the partial failure to the user.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 239,
+      "end_line": 240,
+      "message": "The `ParseEmails` method splits the input string by commas but doesn't handle email addresses that might contain commas within quotes, as allowed by RFC 5322 (e.g., \"Doe, John\" <john.doe@example.com>). While simple splitting is common, it's not fully robust. Using a dedicated library for parsing mailbox addresses would be more reliable.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The ParseEmails comma-split limitation for RFC 5322 display names is moot because IsValidEmail uses addr.Address == email which independently rejects display-name format regardless. The UI placeholder explicitly shows bare email format only. The feature is designed for bare email addresses — 'Doe, John' <john.doe@example.com> is unsupported at multiple layers by design, not oversight.",
+      "severity_justification": "Even if the finding were TP, there's no realistic user scenario where this matters — the UI is designed for bare emails and IsValidEmail prevents display-name format from the independent check.",
+      "category_justification": "Email parsing edge case — a claim about RFC 5322 compliance in address parsing.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Endpoints/ComposeEndpoints.cs",
+      "start_line": 39,
+      "end_line": 43,
+      "message": "Validation for email format in `IsValidEmail` function could allow emails with invalid formatting if extra whitespace is present around the email address, as it's only trimmed in the calling code.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The calling code at line 36 already trims before passing to IsValidEmail: IsValidEmail(email.Trim()). Additionally, even without trimming, the addr.Address == email comparison would return false for whitespace-padded input (addr.Address strips whitespace, the comparison fails, method returns false — a rejection, not an acceptance). The finding is factually incorrect about both the actual code and the hypothetical failure direction.",
+      "severity_justification": "The scenario described doesn't exist in the code — no bug, no security concern.",
+      "category_justification": "The finding makes an incorrect claim about validation logic behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Services/MailSendingService.cs",
+      "start_line": 85,
+      "end_line": 92,
+      "message": "The `SmtpClient` is not using deterministic disposal via `using` directive. If an exception occurs before `DisconnectAsync`, it can leave connections open, causing resource leakage.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 73 explicitly declares 'using var client = new SmtpClient()' and the ImapClient in AppendToSentFolderAsync also uses 'using var'. Both clients have deterministic disposal via the C# 8+ using-declaration pattern. The finding is factually wrong about the code.",
+      "severity_justification": "The scenario described (missing using) doesn't exist in the code — no resource leak issue.",
+      "category_justification": "The finding concerns resource management / disposal of network connections.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 393,
+      "end_line": 405,
+      "message": "`SwitchToRichTextAsync` assumes dependent DOM elements are visible and ready without error handling for missing `quillInterop`. This could lead to runtime JavaScript errors in edge cases where the DOM or JS is not fully loaded.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "quill-interop.js loads before blazor.webassembly.js in index.html, so quillInterop is always defined when Blazor runs. All quillInterop functions guard against null _instance. The finding is a generic 'what if JS isn't loaded' concern without a specific, realistic failure path in this code's actual loading sequence.",
+      "severity_justification": "Even in the hypothetical CDN-failure scenario, the same issue would occur at initial OnAfterRenderAsync initialization, not specifically at SwitchToRichTextAsync. No realistic failure mode unique to this method.",
+      "category_justification": "Generic concern about JavaScript interop availability and error handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 412,
+      "end_line": 418,
+      "message": "The `SendAsync` method conflates validation and sending logic in a single function, making the code harder to test and maintain. Validation results should ideally be separated into reusable methods.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic 'separate validation from execution' preference that applies to any Blazor action handler. The method already extracts ParseEmails, IsValidEmail, and GetBodyAndContentTypeAsync as helpers. The pattern of inlining validation in command methods is the project's established convention across all pages. The finding names no specific inconsistency or concrete problem.",
+      "severity_justification": "No functional impact — this is a style preference about method decomposition with no correctness or reliability implication.",
+      "category_justification": "Code organization preference about separating validation from execution logic.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api.Services/OutgoingHtmlSanitizer.cs",
+      "start_line": 18,
+      "end_line": 28,
+      "message": "Sanitizer has predefined allowed schemes ('mailto', 'http', etc.), but it doesn't log or reject invalid schemes explicitly. This could lead to indeterminate behavior when encountering untrusted or unsupported schemes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "HtmlSanitizer.AllowedSchemes is a whitelist — URIs with non-allowed schemes are deterministically removed by the library. AllowedSchemes.Clear() plus explicit adds IS the explicit scheme rejection. There is no 'indeterminate behavior'; the behavior is precisely defined. The finding misunderstands the library's API. Logging scheme rejections is not a standard requirement for a sanitizer.",
+      "severity_justification": "The scenario described (indeterminate behavior from non-whitelisted schemes) doesn't exist — the library handles this correctly by stripping non-allowed scheme URLs.",
+      "category_justification": "The finding concerns sanitizer behavior and scheme handling, which is a security concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Shared/Mail/SendMailRequest.cs",
+      "start_line": 14,
+      "end_line": 17,
+      "message": "The `ContentType` property's regular expression allows only 'html' or 'plain', but there’s no server-side check validating if this matches the email body content during request processing.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "ContentType acts as an instruction to the server, not a self-describing body claim. Both mismatch cases (wrong label) produce predictable, benign outcomes — plain text with HTML shows literal tags, HTML with plain text is sent as HTML text. The finding asks for body-content auditing against a label, which is an unusual requirement that adds no security or correctness value. No concrete bug or risk is identified.",
+      "severity_justification": "No security risk or functional failure from ContentType/body mismatch — both cases have predictable, harmless outcomes.",
+      "category_justification": "Concern about consistency between ContentType label and actual body content.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/wwwroot/js/quill-interop.js",
+      "start_line": 33,
+      "end_line": 37,
+      "message": "In `window.quillInterop.getHtml`, there is no defensive check for whether `_instance` has a valid parent context. This could lead to null reference errors if the instance is destroyed prematurely.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getHtml already has 'if (!this._instance) return \"\"' — the null check is present. destroy() sets _instance = null which the check handles. There is no realistic scenario where _instance is non-null but root is null or root.innerHTML throws. The finding claims a check is missing when it isn't, and the 'valid parent context' concern is vague with no concrete failure path.",
+      "severity_justification": "The scenario described doesn't exist — the existing null check covers the only realistic destruction scenario.",
+      "category_justification": "JavaScript null/reference safety concern in interop code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Feirb.Api.Tests/Endpoints/ComposeEndpointsTests.cs",
+      "start_line": 75,
+      "end_line": 82,
+      "message": "The `SendMail_InvalidMailbox_Returns404Async` test does not verify the response body content, only the HTTP status code. This could lead to test false positives in cases where the error message is incorrect or missing.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Only checking the HTTP status code for error responses is the established convention for ALL error-case tests in this file (401, 400 tests do the same). The finding could be copy-pasted unchanged to 4+ other tests. HTTP status code is the primary API contract; error message body is secondary. No test-specific anomaly is identified.",
+      "severity_justification": "Even if TP, only checking status codes for error cases is a standard and accepted testing approach with minimal practical risk.",
+      "category_justification": "Concern about test coverage of response body content in error cases.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Feirb.Api.Tests/Endpoints/ComposeEndpointsTests.cs",
+      "start_line": 144,
+      "end_line": 160,
+      "message": "The `SendMail_PlainText_Returns200Async` test does not assert the content of the email message, skipping validation of the email correctness in plain text mode.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The service is mocked, so 'email correctness in plain text mode' (BuildMimeMessage behavior) cannot be tested here — it requires unit tests of MailSendingService. The test verifies what its name says: that ContentType='plain' is accepted by the endpoint. This is the same status-code-only pattern used by 4+ other tests in the file. The finding is a generic 'test should verify more' suggestion with no specific behavior gap identified.",
+      "severity_justification": "No concrete bug risk identified — generic completeness suggestion about a test that correctly tests its stated scope.",
+      "category_justification": "Test coverage concern about assertion depth in an integration test.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/wwwroot/index.html",
+      "start_line": 25,
+      "end_line": 25,
+      "message": "[html.security.audit.missing-integrity.missing-integrity] This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for example from a CDN) are delivered without unexpected manipulation. Without this attribute, if an attacker can modify the externally hosted resource, this could lead to XSS and other types of attacks. To prevent this, include the base64-encoded cryptographic hash of the resource (file) you’re telling the browser to fetch in the 'integrity' attribute for all externally hosted files.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Static analysis tool boilerplate alert ([html.security.audit.missing-integrity.missing-integrity] prefix). The same SRI-missing concern applies to 8+ pre-existing CDN resources in the file (bootstrap-icons, cropperjs, gridstack, highlight.js, chart.js) — none have integrity attributes. The finding restates a general best practice without identifying anything specific to the compose PR changes. Could be copy-pasted unchanged to every other CDN tag in the file.",
+      "severity_justification": "SRI is a defense-in-depth measure against CDN supply chain attacks. Real risk exists but is low for a self-hosted NAS app; the pre-existing CDN dependencies create the same exposure surface.",
+      "category_justification": "Subresource integrity / supply chain security concern for CDN-hosted resources.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "html.security.audit.missing-integrity.missing-integrity"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/wwwroot/index.html",
+      "start_line": 56,
+      "end_line": 56,
+      "message": "[html.security.audit.missing-integrity.missing-integrity] This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for example from a CDN) are delivered without unexpected manipulation. Without this attribute, if an attacker can modify the externally hosted resource, this could lead to XSS and other types of attacks. To prevent this, include the base64-encoded cryptographic hash of the resource (file) you’re telling the browser to fetch in the 'integrity' attribute for all externally hosted files.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical boilerplate static analysis tool alert ([html.security.audit.missing-integrity.missing-integrity]) as Finding 25, targeting line 56 (quill.js script tag added by this PR). The same SRI-missing concern applies to all 8+ pre-existing CDN resources in the file (bootstrap-icons, cropperjs, gridstack, highlight.js, chart.js) which also lack integrity attributes. Generic best-practice restatement that could be copy-pasted to every CDN tag in the file without modification.",
+      "severity_justification": "SRI is defense-in-depth against CDN supply chain attacks. Real but low risk for a self-hosted NAS app; pre-existing CDN dependencies create the same exposure.",
+      "category_justification": "Subresource integrity / CDN supply chain security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "html.security.audit.missing-integrity.missing-integrity"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/wwwroot/index.html",
+      "start_line": 57,
+      "end_line": 57,
+      "message": "[html.security.audit.missing-integrity.missing-integrity] This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for example from a CDN) are delivered without unexpected manipulation. Without this attribute, if an attacker can modify the externally hosted resource, this could lead to XSS and other types of attacks. To prevent this, include the base64-encoded cryptographic hash of the resource (file) you’re telling the browser to fetch in the 'integrity' attribute for all externally hosted files.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical boilerplate static analysis tool alert ([html.security.audit.missing-integrity.missing-integrity]) as Findings 25 and 26, targeting line 57 (marked.min.js script tag added by this PR). The same SRI-missing pattern exists across all pre-existing CDN resources in the file. Generic template alert copy-pasteable to every CDN tag without modification.",
+      "severity_justification": "SRI is defense-in-depth against CDN supply chain attacks. Real but low risk for a self-hosted NAS app; identical exposure already exists from pre-existing CDN dependencies.",
+      "category_justification": "Subresource integrity / CDN supply chain security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "html.security.audit.missing-integrity.missing-integrity"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/wwwroot/index.html",
+      "start_line": 58,
+      "end_line": 58,
+      "message": "[html.security.audit.missing-integrity.missing-integrity] This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for example from a CDN) are delivered without unexpected manipulation. Without this attribute, if an attacker can modify the externally hosted resource, this could lead to XSS and other types of attacks. To prevent this, include the base64-encoded cryptographic hash of the resource (file) you’re telling the browser to fetch in the 'integrity' attribute for all externally hosted files.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical boilerplate static analysis tool alert ([html.security.audit.missing-integrity.missing-integrity]) as Findings 25, 26, and 27, targeting line 58 (turndown.js script tag added by this PR). The same SRI-missing pattern exists across all pre-existing CDN resources in the file. Generic template alert copy-pasteable to every CDN tag without modification.",
+      "severity_justification": "SRI is defense-in-depth against CDN supply chain attacks. Real but low risk for a self-hosted NAS app; identical exposure already exists from pre-existing CDN dependencies.",
+      "category_justification": "Subresource integrity / CDN supply chain security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "html.security.audit.missing-integrity.missing-integrity"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Endpoints/ComposeEndpoints.cs",
+      "start_line": 45,
+      "end_line": 48,
+      "message": "Catching the broad `InvalidOperationException` and mapping every occurrence to `404 Not Found` is too loose. `MailSendingService.SendMailAsync` only throws `InvalidOperationException(\"Mailbox not found...\")` for the not-found case today, but it also calls into MailKit and `IDataProtectionProvider` which can throw `InvalidOperationException` for unrelated reasons (e.g., protector configuration, IMAP namespace access). Those would all be reported to the client as \"mailbox not found\", masking real failures and confusing callers.\n\nConsider introducing a dedicated exception type (e.g., `MailboxNotFoundException`) in the service and catching only that here, letting other exceptions propagate to the standard 500 handler.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `SendViaSmtpAsync` has no try/catch, so SMTP client errors or data protection failures throwing `InvalidOperationException` propagate into the catch block in `ComposeEndpoints` and are returned to the client as 404 'MailboxNotFound'. Only `AppendToSentFolderAsync` has its own broad catch. A dedicated exception type would prevent this masking.",
+      "severity_justification": "Real infrastructure failures (SMTP misconfiguration, data protection errors) would be silently surfaced to callers as 404 'mailbox not found', making debugging significantly harder and potentially confusing clients about the actual error state.",
+      "category_justification": "The wrong HTTP status code and error message are returned when non-mailbox errors throw `InvalidOperationException`, misrepresenting the actual failure to the caller.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/wwwroot/js/quill-interop.js",
+      "start_line": 24,
+      "end_line": 28,
+      "message": "`destroy()` only nulls `this._instance`, it does not remove the toolbar/editor DOM that Quill injected next to `editorElement`. Because `init()` calls `destroy()` and then `new Quill(editorElement, …)` again on the same node, any subsequent re-init (e.g., on Blazor re-render or page navigation back to /compose) will leave the previous toolbar in the DOM and stack a new one on top. To truly clean up you need to remove the injected toolbar element and restore/clear the editor container before reinitializing.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The stacking scenario doesn't occur in practice: (1) `_quillInitialized` prevents double-init within a single component lifecycle; (2) Quill's injected toolbar is a child of a Blazor-controlled parent div, so it is removed when Blazor teardowns the component on navigation; (3) `SwitchToRichTextAsync` also guards with `!_quillInitialized`. The `destroy()` function is incomplete but the described consequence of stacked toolbars is not triggered by the actual code flow.",
+      "severity_justification": "Even if triggered, the worst case would be a duplicate toolbar rendered in the compose view — a UI glitch with no data loss or security impact.",
+      "category_justification": "The claim is about incorrect DOM lifecycle management causing visual defects.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 309,
+      "end_line": 310,
+      "message": "`error` is assigned from the response body but never used (it is not logged, not surfaced in the toast, and not added to `_errors`). Either include the server-provided message in the notification/error state or drop this line so static analysis stays clean.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `var error = await response.Content.ReadAsStringAsync()` is assigned but never referenced. The subsequent line adds a generic toast notification that ignores the server's response body entirely. The variable is dead code.",
+      "severity_justification": "It's a dead variable — no functional bug, just unnecessary I/O reading a response body that's discarded. The practical impact is negligible but it's a code quality issue that could confuse readers and wastes a network read.",
+      "category_justification": "Unused variable / dead code — a code cleanliness issue with no behavioral impact.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Services/OutgoingHtmlSanitizer.cs",
+      "start_line": 12,
+      "end_line": 30,
+      "message": "The PR description and the linked issue state \"HTML sanitization server-side (reuse inbox display sanitization)\", but this introduces a brand-new sanitizer in `Feirb.Api` that diverges from `Feirb.Web/Services/HtmlSanitizer.cs`: it does not remove `video`/`audio`/`source`/`picture`/`link`, it has no `FilterUrl` handler restricting `<img>` to data URIs, and it removes `script` (which is not in the default allowed-tag list anyway, so that line is a no-op). At minimum this should be aligned with the inbox sanitizer's policy, or extracted into a shared component so the two stay in sync.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: OutgoingHtmlSanitizer omits removal of video/audio/source/picture/link tags that the existing inbox HtmlSanitizer removes, has no FilterUrl handler for img tags, and the script removal is a confirmed no-op since Ganss.Xss never allows script by default. All three factual claims are accurate.",
+      "severity_justification": "The omitted tags (video, audio, link) could allow outgoing emails to carry media/link elements that wouldn't be safe for display via the inbox sanitizer. The img FilterUrl gap allows external image URLs in outgoing email HTML. The drift risk is real — updates to the inbox sanitizer policy won't propagate here.",
+      "category_justification": "Duplicated divergent sanitizer logic creates a realistic policy-drift risk. The no-op script removal is also dead code.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Feirb.Api.Tests/Endpoints/ComposeEndpointsTests.cs",
+      "start_line": 61,
+      "end_line": 74,
+      "message": "`SendMail_InvalidMailbox_Returns404Async` configures the substitute to throw `InvalidOperationException(\"Mailbox not found\")` and asserts a 404, but the request being sent (`CreateValidRequest(Guid.NewGuid())`) targets a mailbox that doesn't exist in the test database — so this test would actually pass even without the stub, because the auth/ownership check would 404 first. More importantly, it does not pin down the contract the endpoint promises: that *only* a \"mailbox not found\" failure becomes a 404, while other `InvalidOperationException`s propagate as 500. As written, the endpoint catches every `InvalidOperationException` (see `ComposeEndpoints.cs:45`) which this test does not detect. Consider asserting on the exact stubbed exception path with a valid `mailboxId` that the user owns, and adding a separate test that an unrelated failure does not become a 404.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claim that the test 'would pass even without the stub' is factually incorrect. IMailSendingService is fully replaced by an NSubstitute mock; removing the .ThrowsAsync override makes the mock return success (200), which fails the 404 assertion. The 'auth/ownership check' cited is inside the real MailSendingService, which is never called. The secondary concern about the broad-catch is a repeat of Finding 1.",
+      "severity_justification": "The test does correctly exercise its intended code path. The missing coverage concern is real but low severity and already covered by Finding 1.",
+      "category_justification": "The finding is about test design and coverage.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Feirb.Api.Tests/Endpoints/ComposeEndpointsTests.cs",
+      "start_line": 76,
+      "end_line": 91,
+      "message": "There is no test covering the \"valid e-mail format but the mailbox does not belong to the authenticated user\" case — i.e. an authenticated user passing another user's `mailboxId`. The mailbox ownership check is one of the explicit acceptance criteria in the issue and the most important authorization boundary in this PR, so a dedicated test (e.g., create a second user, obtain a token, supply the first user's mailbox ID, expect 404) would significantly raise confidence.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: no test in ComposeEndpointsTests exercises the cross-user mailbox ownership boundary. The real ownership check in MailSendingService is never reached because the service is fully mocked. Cross-user ownership testing is an established pattern in this codebase (MailboxEndpointsTests, LabelEndpointsTests, etc.) that is absent here for the compose feature.",
+      "severity_justification": "Mailbox ownership is an explicit authorization boundary: user A must not be able to send mail via user B's mailbox. The absence of a test for this leaves a critical security invariant unverified, especially since the real service code is completely bypassed by the mock.",
+      "category_justification": "Missing test case for an important authorization boundary, with the established codebase pattern of cross-user ownership tests not applied here.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Services/OutgoingHtmlSanitizer.cs",
+      "start_line": 22,
+      "end_line": 27,
+      "message": "This sanitizer is less restrictive than the existing inbox display sanitizer (`src/Feirb.Web/Services/HtmlSanitizer.cs:23-43`): it does not remove media/link tags and does not block external image URLs. Since outgoing HTML is supposed to reuse the display sanitization policy, this can allow tracking pixels or other externally loaded content into sent messages.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: OutgoingHtmlSanitizer omits removal of video/audio/source/picture/link and has no FilterUrl handler for img tags, confirmed by direct comparison with the inbox HtmlSanitizer. The divergence is real and allows external image URLs and media tags in outgoing mail HTML.",
+      "severity_justification": "For outgoing mail, external images are a normal feature of HTML email composition — this is not a server vulnerability. The security risk is to recipients (tracking pixels), not the application. The more significant concern is the policy drift maintainability issue. Severity is low rather than medium/high because the threat model for outgoing email legitimately differs from inbox display.",
+      "category_justification": "The finding frames the gap as a security concern (tracking pixels, external content leakage) even if the practical impact is mild for an outgoing mail composer.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 67,
+      "end_line": 70,
+      "message": "Hiding the CC/BCC section only flips `_showCcBcc`; the `_cc` and `_bcc` values remain populated and `SendAsync` always parses and sends them. A user can enter CC/BCC recipients, hide the section, and still send to hidden recipients with no visible indication. Either keep the section visible when values are present or clear/ignore those fields when hiding.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: _cc and _bcc are never cleared when _showCcBcc is toggled to false. SendAsync unconditionally calls ParseEmails(_cc) and ParseEmails(_bcc) and includes the results in the SendMailRequest, regardless of whether the CC/BCC section is visible.",
+      "severity_justification": "Emails can be sent to recipients the user did not intend to include, with no UI indication. A user who types CC addresses then collapses the section believing they've cleared them would silently send to those recipients — a meaningful UX correctness bug with real privacy/operational implications.",
+      "category_justification": "The component's behavior contradicts user expectations: hiding the CC/BCC section implies those fields are inactive, but the values are silently used on send.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 17,
+      "end_line": 19,
+      "message": "The loading spinner has `role=\"status\"` but no text or `aria-label`, so screen reader users get an unnamed status while mailboxes are loading. Other pages include a visually hidden loading label inside the spinner (for example, `src/Feirb.Web/Pages/Inbox.razor:22-25`).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Compose.razor spinner has no visually hidden text label, while every other page-level spinner in the codebase (Inbox.razor, Mailboxes/Index, MessageDetail, etc.) consistently includes <span class='visually-hidden'>@L[\"...\"]</span>. The convention is clear and Compose violates it.",
+      "severity_justification": "Accessibility issue affecting screen reader users during a brief loading state. Not a data or functional bug, but a concrete deviation from the established a11y convention in this codebase.",
+      "category_justification": "Missing accessible label on a status spinner is an a11y violation (WCAG 4.1.2 Name, Role, Value) and breaks the codebase's own pattern for loading spinners.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 110,
+      "end_line": 115,
+      "message": "The body label is not associated with either editor control, and the Quill editor container has no accessible name. Screen reader users may not be able to identify the message body field; add an associated label/ARIA label for both editor modes.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the ComposeBody label has no `for` attribute, the Quill editor div has no aria-label/aria-labelledby, and the markdown textarea has no `id`. Every other field in the same form (mailbox, to, cc, bcc, subject) has a proper for/id association — the body editor section is the only one missing it.",
+      "severity_justification": "Accessibility issue affecting screen reader users navigating the body field. It's a concrete violation of the codebase's own pattern for form labels, and WCAG 1.3.1, but not a data integrity or security issue.",
+      "category_justification": "Missing label association for a form control is a standard a11y concern (WCAG 1.3.1 Info and Relationships) that breaks the component's own established labeling pattern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Services/MailSendingService.cs",
+      "start_line": 28,
+      "end_line": 31,
+      "message": "The endpoint tests replace `IMailSendingService` with a substitute, so the new SMTP send, HTML sanitization, and Sent-folder append paths introduced here are not exercised. Similar service logic has direct tests (`tests/Feirb.Api.Tests/Services/EmailServiceTests.cs`); add coverage for this service so failures in message construction/sanitization/append behavior are caught.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: no MailSendingService or OutgoingHtmlSanitizer test files exist. ComposeEndpointsTests fully mocks out IMailSendingService. EmailServiceTests.cs confirms the codebase convention of testing API services directly. The real service's BuildMimeMessage, sanitization, and AppendToSentFolderAsync paths are not exercised by any test.",
+      "severity_justification": "Missing unit/service-level tests for new production code is a real gap, but not blocking — the service logic is relatively straightforward, the endpoint integration tests cover the happy path, and direct service testing (especially SMTP/IMAP paths) is inherently difficult without test infrastructure. The sanitizer in particular would benefit from direct tests but lacks them.",
+      "category_justification": "Missing test coverage for newly introduced service classes, flagged against an established codebase pattern of direct service testing.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Api/Endpoints/ComposeEndpoints.cs",
+      "start_line": 45,
+      "end_line": 48,
+      "message": "Only mailbox lookup failures are translated here. Expected send failures from SMTP/connect/authentication, message parsing, or data protection will bubble out as 500 responses instead of returning the localized `SendMailFailed` error added for this endpoint. Handle non-mailbox send exceptions explicitly so clients get a controlled failure response rather than an unhandled server error.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ComposeEndpoints only catches InvalidOperationException. MailKit SMTP/auth exceptions and CryptographicException from data protection have no handler and will produce raw 500s. SendMailFailed was added to all locale resource files in this PR but is never referenced in ComposeEndpoints.cs — it is dead localization.",
+      "severity_justification": "SMTP failures produce 500s instead of a controlled response, but the current Compose.razor client ignores the response body and shows the same toast regardless of status code. The practical user-facing impact is minimal; the concern is API contract quality and unused localization strings.",
+      "category_justification": "Unhandled exceptions from infrastructure operations (SMTP, data protection) cause uncontrolled 500 responses rather than graceful, expected error handling.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Resources/SharedResources.fr-FR.resx",
+      "start_line": 1536,
+      "end_line": 1538,
+      "message": "The French translation for BCC is inconsistent with the toggle text below and should use the standard French abbreviation \"CCI\".",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: French ComposeBcc is 'BCC' (English) while ComposeShowCcBcc correctly uses 'CC / CCI'. Italian correctly uses 'CCN' in both ComposeBcc and the toggle. The French file is internally inconsistent — the field label and toggle use different abbreviations for the same concept.",
+      "severity_justification": "A localization inconsistency visible to French-speaking users: the field label says 'BCC' while the toggle button says 'CCI' for the same feature. No functional impact but a UI quality issue.",
+      "category_justification": "Inconsistent localization within the same resource file — a translation quality/consistency issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/wwwroot/js/quill-interop.js",
+      "start_line": 35,
+      "end_line": 37,
+      "message": "`setHtml` assigns arbitrary HTML directly to the editor DOM. Markdown mode output from `marked.parse` can include raw HTML, so switching back to rich text can execute attacker-supplied event handlers in the app origin before the server-side sanitizer ever runs. Sanitize the HTML before injecting it or use Quill's clipboard import path with an appropriate sanitizer.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "_markdownBody is only ever populated by the authenticated user's own direct textarea input or by converting their own Quill content. There are no route parameters, query strings, or server-side pre-fill mechanisms. The innerHTML injection only constitutes self-XSS — the authenticated user attacking their own session — which is not a meaningful vulnerability. The 'attacker-supplied' framing is not supported by the actual code.",
+      "severity_justification": "Self-XSS in a self-hosted single-user mail client has negligible practical impact. Even if the pattern is unsafe in principle, no concrete attack vector exists in the current implementation.",
+      "category_justification": "The finding raises a client-side XSS concern about innerHTML injection from parsed Markdown.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/wwwroot/index.html",
+      "start_line": 56,
+      "end_line": 59,
+      "message": "These editor libraries are loaded globally for every page, even though they are only needed on `/compose`. Quill/marked/turndown add avoidable startup network and parse cost for users who never open the compose screen; consider lazy-loading them from the compose component instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: quill/marked/turndown are loaded globally in index.html and only used on /compose. The libraries add measurable parse/network overhead to every page. However, this follows the pre-existing project pattern (cropperjs, gridstack, chart.js, highlight.js are all loaded globally for page-specific features), so the PR introduced no new pattern — it extended an existing one.",
+      "severity_justification": "Real but minor performance overhead in a self-hosted NAS application with a small user base. Blazor WASM startup cost already dominates; the incremental cost of these libraries is noticeable in principle but low impact in practice. The concern is pre-existing across multiple libraries.",
+      "category_justification": "Unnecessary global script loading adds avoidable network and parse cost on every page load.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 205,
+      "end_line": 208,
+      "message": "After a load failure `_mailboxes` remains null, so the rendered branch below shows the “No mailboxes configured” warning in addition to the toast. That misleads users into thinking they have no mailboxes when the request actually failed; keep an explicit load-error state instead of falling through to the empty-mailbox UI.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: on a load exception, _mailboxes remains null and _isLoading becomes false, causing the template to render the 'No mailboxes configured. Please add a mailbox in settings first.' alert alongside the failure toast. The two messages directly contradict each other — the alert misdirects users to settings when the failure is a network/API error, not a missing mailbox configuration.",
+      "severity_justification": "Users see misleading guidance (add a mailbox in settings) when the real issue is a load failure. Confusing but the toast does correctly indicate something went wrong; the user gets contradictory rather than zero information. No data loss or security impact.",
+      "category_justification": "The rendered UI state incorrectly conflates a load error with the 'no mailboxes configured' state, producing misleading output for a distinct error condition.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Feirb.Web/Pages/Compose.razor",
+      "start_line": 230,
+      "end_line": 235,
+      "message": "Using a fixed delay to wait for the editor to become visible is race-prone; rendering is not guaranteed to complete within 50 ms on slower devices, so `quillInterop.init`/`setHtml` can still run against the hidden/unready element. Move the post-render editor initialization/content update into `OnAfterRenderAsync` or another render-completion flow instead of timing it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The Task.Delay(50) is factually a race-prone pattern in Blazor. The correct approach is OnAfterRenderAsync with a pending-init flag, which the code already uses for initial Quill setup. However, practical impact is mitigated: _quillEditorRef is always in the DOM (display:none, not @if), so Quill init/setHtml work without the element being visually rendered.",
+      "severity_justification": "The race is real but unlikely to manifest given the element is always in the DOM. The delay adds latency on fast devices and is theoretically insufficient on slow ones, but functional failures from this specific pattern would be rare given the display:none (not DOM removal) toggle.",
+      "category_justification": "Race condition in render lifecycle management — a timing-dependent operation that should use Blazor's render completion hooks instead of a fixed delay.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

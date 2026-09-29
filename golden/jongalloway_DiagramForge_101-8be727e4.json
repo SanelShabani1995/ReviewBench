@@ -1,0 +1,451 @@
+{
+  "pr_key": "jongalloway_DiagramForge_101-8be727e4",
+  "pr": {
+    "repo": "https://github.com/jongalloway/DiagramForge",
+    "pr_number": 101,
+    "base": "969398a66116b68aafa8d267e824442000229ec7",
+    "head": "8be727e43f0bfd1dd285794ce5c557b5ea44336e"
+  },
+  "findings": [
+    {
+      "file": "src/DiagramForge/Layout/DefaultLayoutEngine.cs",
+      "start_line": 436,
+      "end_line": 440,
+      "message": "SizeStandardNode delegates to SizeClassNode only when Compartments.Count > 0, but the renderer (SvgNodeWriter.cs line 151) calls AppendClassCompartments whenever Annotations.Count > 0 OR Compartments.Count > 0. A node with annotations but no compartments is sized by SizeStandardNode as if it had no annotations (no extra header height, no label:centerY offset). The annotations then render at pad + fontSize * 0.85 from the top, while the class name label falls back to node.Height / 2 — both converge to approximately the same Y position, causing the annotation and label to overlap and the annotation to overflow the node box.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "All claims verified. SizeStandardNode delegates to SizeClassNode only when Compartments.Count > 0, but the renderer calls AppendClassCompartments when Annotations.Count > 0 OR Compartments.Count > 0. For annotation-only nodes, no label:centerY is stored, so the class label falls back to node.Height/2, which produces a baseline (≈24.55px with defaults) nearly identical to the annotation baseline (≈23.05px). The node height also doesn't account for annotation height, so annotations overflow the box.",
+      "severity_justification": "Annotation-only nodes (annotations without compartments) will have overlapping text and overflow the node box, producing a clearly broken visual output. This is a real rendering defect, though annotation-only nodes may be a less common path than nodes with both annotations and compartments.",
+      "category_justification": "The sizing logic and the rendering condition are mismatched, causing incorrect visual output (text overlap and node overflow) for a valid class of nodes.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Layout/DefaultLayoutEngine.cs",
+      "start_line": 327,
+      "end_line": 331,
+      "message": "PrepareNodeLabels only calls PrepareLabelLines on node.Label, leaving node.Annotations[i].Lines and compartment.Lines[j].Lines as null. Both SizeClassNode (via EstimateTextWidth → GetLabelLines) and the renderer (via GetRenderedLabelLines) fall back to splitting on '\\n' without word-wrapping. When MaxNodeWidth is set on the diagram, long annotation or compartment text will never be wrapped: the text overflows the node width even though the layout engine would correctly wrap the primary label.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "PrepareNodeLabels provably only processes node.Label, leaving Annotations[].Lines and compartment Lines[].Lines unpopulated. Both GetLabelLines (layout) and GetRenderedLabelLines (renderer) fall back to raw Split('\\n') for those labels. When MaxNodeWidth is set, word-wrapping is bypassed for annotations and compartments, causing SizeClassNode to size nodes wider than MaxNodeWidth. The overflow claim is slightly imprecise (the node is sized to fit the unwrapped text so text does not clip the box), but the underlying gap is factually correct.",
+      "severity_justification": "Annotations and compartment lines bypass the MaxNodeWidth wrapping constraint, producing nodes wider than intended. Not a crash or data loss, but a visible layout defect for class diagram nodes with long annotation or compartment text.",
+      "category_justification": "The sizing and wrapping logic produces incorrect output due to PrepareNodeLabels not covering the new label types added by this PR.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Layout/DefaultLayoutEngine.cs",
+      "start_line": 490,
+      "end_line": 492,
+      "message": "annotationsHeight is computed as node.Annotations.Count * fontSize * DefaultLabelLineHeight using the node label's fontSize, but the renderer uses ann.FontSize ?? fontSize per annotation and advances annBaseline by annFontSize * DefaultLabelLineHeight. When any annotation has a custom FontSize larger than the node's label font size, the allocated header height is too small: the annotation glyphs extend past the space reserved in headerHeight, pushing the class name label into — or past — the annotation text. The fix is to sum per-annotation heights using each annotation's actual font size.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "SizeClassNode computes annotationsHeight as node.Annotations.Count * fontSize * DefaultLabelLineHeight using the node label's fontSize uniformly, while the renderer advances annBaseline by annFontSize * DefaultLabelLineHeight per annotation using each annotation's own FontSize. When any annotation has a larger custom FontSize, the allocated header height is too small and the class name label:centerY falls inside the annotation text area.",
+      "severity_justification": "The bug only manifests when annotations have a custom FontSize larger than the node label's font size, which is an uncommon path in typical class diagram usage (stereotypes like <<entity>> share the default font). The visual defect is real but unlikely in practice.",
+      "category_justification": "A concrete mismatch between how height is allocated in the layout engine and how the renderer consumes that space, producing incorrect visual output in specific cases.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Layout/DefaultLayoutEngine.cs",
+      "start_line": 490,
+      "end_line": 492,
+      "message": "annotationsHeight assumes exactly one rendered line per annotation (Count * fontSize * lineHeight). If any annotation's Label.Text contains '\\n', GetRenderedLabelLines returns multiple lines and the renderer advances annBaseline by annFontSize * DefaultLabelLineHeight for each line. The sizing does not account for this: headerHeight is underestimated, label:centerY is placed too high, and the class name label overlaps the annotation text. The fix is to use the actual rendered line count per annotation when computing annotationsHeight.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "SizeClassNode allocates annotationsHeight as node.Annotations.Count * fontSize * DefaultLabelLineHeight (one line per annotation), but GetRenderedLabelLines(ann) splits on '\\n' and the renderer advances annBaseline per rendered line. A multi-line annotation text causes the renderer to consume more height than the layout allocated, putting label:centerY inside the annotation area. GetTextLineCount exists in the engine for primary labels but is not used for annotations.",
+      "severity_justification": "Multi-line annotation text with embedded '\\n' is unusual in real-world class diagrams where annotations are typically single-line stereotypes like <<entity>>. The visual defect is real but triggered only by unusual input.",
+      "category_justification": "A concrete mismatch between the line-count assumption in the layout sizing and the actual rendering behavior, producing incorrect visual positioning for multi-line annotations.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Rendering/SvgNodeWriter.cs",
+      "start_line": 348,
+      "end_line": 358,
+      "message": "currentY only advances by lineFontSize * DefaultLabelLineHeight once per compartment Lines entry, regardless of how many sub-lines GetRenderedLabelLines(line) returns. If a compartment line label has '\\n' in its text, the inner foreach renders N text elements and advances lineBaseline N times, but currentY is only advanced by one line worth. Subsequent compartment entries then overlap the multi-line entry. SizeClassNode makes the same one-line-per-entry assumption (line 506–508), so both the height allocation and the render positioning are wrong for multi-line compartment entries.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Per the authoritative diff, SizeClassNode uses compartment.Lines.Sum(l => GetTextLineCount(l) * (l.FontSize ?? fontSize) * DefaultLabelLineHeight) which correctly accounts for multi-line labels, and the renderer uses currentY += subLines.Length * lineFontSize * DefaultLabelLineHeight which also correctly advances by N sub-lines. The finding claims both have one-line-per-entry bugs, but the diff contradicts this. The actual checked-out file differs from the diff on these lines, but the instructions require trusting the diff hunk.",
+      "severity_justification": "If the bug were actually present as the file suggests, compartment lines would overlap for any multi-line label entry, which would be a visible rendering defect.",
+      "category_justification": "The finding addresses a sizing and rendering mismatch for multi-line compartment line labels.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Rendering/SvgNodeWriter.cs",
+      "start_line": 204,
+      "end_line": 207,
+      "message": "The fallback for `class:headerHeight` is incorrect. It uses `node.Label.FontSize` but doesn't account for `node.Annotations`, which contribute to the header height in the layout engine. This can lead to misaligned compartment dividers if the metadata is missing.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The fallback at line 335-337 computes pad + labelFontSize + pad, omitting annotationsHeight that SizeClassNode always includes. The finding is factually correct. While the fallback is only reachable if the layout engine has not been run (since SizeClassNode always sets class:headerHeight for compartment nodes), it's still a real defect in the defensive fallback path that would produce misaligned dividers for annotated nodes.",
+      "severity_justification": "The fallback is only reachable if the layout engine is bypassed or metadata is cleared, which is not the normal execution path. In normal usage, class:headerHeight is always set for nodes with compartments.",
+      "category_justification": "The fallback value omits annotation height, producing an incorrect header height that would misplace the first compartment divider line when the metadata is absent.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Rendering/SvgNodeWriter.cs",
+      "start_line": 159,
+      "end_line": 161,
+      "message": "The x-coordinate for the node label text has a fallback that is inconsistent with the new class diagram layout. It uses `node.Width / 2` for centering, but class diagram labels should be left-aligned with padding. If `label:centerX` metadata is missing, the class name will be incorrectly centered instead of left-aligned.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "SizeClassNode intentionally does not set label:centerX, leaving the fallback of node.Width / 2 to center the class name horizontally. This is correct per UML class diagram convention and matches the PR's own ASCII diagram showing the class name centered. AppendNodeLabel uses text-anchor=middle, so x=node.Width/2 correctly centers the text. The finding's claim that class names should be left-aligned is wrong.",
+      "severity_justification": "Even if the finding were correct, the behavior (centering vs left-alignment) is a visual style concern, not a data corruption issue.",
+      "category_justification": "The finding makes a factual claim about incorrect x-coordinate positioning behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Rendering/SvgNodeWriter.cs",
+      "start_line": 218,
+      "end_line": 218,
+      "message": "In `AppendClassCompartments`, the divider line is drawn using `strokeColor` which is derived from `node.Stroke` or `theme.NodeStroke`. This is correct, but the height calculation in `SizeClassNode` uses `theme.StrokeWidth` directly. This could lead to a layout/render mismatch if a node has a custom stroke width set, as the renderer will use the correct custom width while the layout engine used the theme's default.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The Node model has no StrokeWidth property — only StrokeColor. Both SizeClassNode and the renderer use theme.StrokeWidth consistently for the divider line. There is no mechanism for a per-node custom stroke width that could cause a layout/render mismatch. The finding's premise is based on a feature that does not exist in the model.",
+      "severity_justification": "Even if the concern were valid, a stroke-width mismatch of a divider line would be a minor visual imprecision, not a functional failure.",
+      "category_justification": "The finding claims an incorrect layout/render mismatch between layout and rendering of the divider stroke width.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Layout/DefaultLayoutEngine.cs",
+      "start_line": 506,
+      "end_line": 508,
+      "message": "When calculating `linesHeight`, the code sums up the height for each line based on its font size. However, if a compartment has no lines, `linesHeight` is 0. The surrounding padding (`compPad`) and divider width are still added, resulting in an empty compartment with padding being rendered. This might be undesirable if empty compartments are meant to be skipped entirely.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The behavior is internally consistent (layout and renderer both process empty compartments identically) and follows standard UML convention where empty sections with dividers are valid. The finding is speculative ('might be undesirable', 'if empty compartments are meant to be skipped') rather than identifying a concrete defect. No evidence that empty compartments should be skipped exists in the codebase.",
+      "severity_justification": "Even if the behavior were considered undesirable, the visual impact is a small divider and minimal padding for empty sections, which is standard UML rendering.",
+      "category_justification": "The finding raises a design/behavior question about whether empty compartments should be rendered, not a correctness bug.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Rendering/SvgNodeWriter.cs",
+      "start_line": 235,
+      "end_line": 235,
+      "message": "The renderer left-aligns compartment text at `x=\"{pad}\"`, but the layout engine does not store this value in metadata. While this is the only alignment currently supported, a more robust approach would be for the layout engine to calculate and store `compartment:textX` in the node's metadata, similar to how it handles `label:centerX`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding explicitly acknowledges no current bug ('the only alignment currently supported'). It is a pure design suggestion for future extensibility with no concrete defect. The hardcoded pad value is consistent between the layout engine and renderer. The suggestion to store compartment:textX in metadata is a refactoring preference, not an actionable correctness issue.",
+      "severity_justification": "No current defect — purely a speculative future-proofing suggestion.",
+      "category_justification": "The finding proposes an architectural improvement (storing a value in metadata rather than hardcoding it) without identifying a bug.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Layout/DefaultLayoutEngine.cs",
+      "start_line": 447,
+      "end_line": 449,
+      "message": "In SizeStandardNode, the condition to check if a node has compartments delegates to SizeClassNode, but edge cases like empty compartments or improperly initialized Count could result in unhandled scenarios.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Node.Compartments is a List<NodeCompartment> initialized as new() in the class body — it is never null and List<T>.Count is always valid. No concrete unhandled scenario is identified. 'Improperly initialized Count' is not a real concern for List<T>, and empty compartments are handled correctly by SizeClassNode with linesHeight=0. The finding is generic speculation with no factual basis.",
+      "severity_justification": "No actual bug exists. The concern is entirely hypothetical with no concrete failure mode.",
+      "category_justification": "The finding claims potential unhandled edge cases in the compartment count check.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Rendering/SvgNodeWriter.cs",
+      "start_line": 277,
+      "end_line": 286,
+      "message": "SvgNodeWriter.AppendClassCompartments does not check whether the node.Compartments have invalid or empty lines. Adding validation in this loop could avoid unnecessary rendering calls or malformed SVG output.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Label.Text is non-nullable string with a required constructor — it cannot be null in well-formed code. Empty text produces valid SVG empty text elements, not malformed output. The finding uses entirely speculative language ('could avoid', 'could result in') without demonstrating a concrete defect or invalid SVG path. This is generic defensive programming advice with no specific code evidence.",
+      "severity_justification": "No concrete failure mode exists. Empty labels produce valid SVG and null labels would require violating the type contract.",
+      "category_justification": "The finding claims potential for malformed SVG output from unvalidated lines.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Rendering/SvgNodeWriter.cs",
+      "start_line": 317,
+      "end_line": 324,
+      "message": "Divider line rendering assumes node width is positive. If node width is invalid due to earlier layout errors, rendering the divider line with 'x2' exceeding its intended range may create invalid SVG output.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "node.Width is guaranteed positive by SizeClassNode's Math.Max(minWidth, ...) where minWidth defaults to 120. No realistic code path produces invalid width. Furthermore, SVG line elements are valid with any numeric x2 coordinate — a negative or zero value does not produce invalid SVG. The finding is entirely speculative with no concrete failure path identified.",
+      "severity_justification": "No real failure path exists, and even the hypothetical scenario would not produce invalid SVG.",
+      "category_justification": "The finding raises a defensive-programming concern about rendering robustness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Layout/DefaultLayoutEngine.cs",
+      "start_line": 548,
+      "end_line": 554,
+      "message": "SizeClassNode does not validate whether line.FontSize is below minimum renderable sizes. Very small values may lead to negligible height allocations causing text being clipped.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "No font size validation exists anywhere in the codebase — the same pattern (l.FontSize ?? fontSize with no bounds check) is used throughout all label handling in both layout and renderer. The concern is speculative generic advice that applies equally to all font size uses, not specific to SizeClassNode. No parser generates pathologically small font sizes, and the finding demonstrates no concrete failure path.",
+      "severity_justification": "Extremely small custom font sizes are not generated by any parser in the codebase and require intentional API misuse to trigger.",
+      "category_justification": "The finding claims negligible height allocation could cause text clipping.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/DiagramForge.Tests/Layout/ClassDiagramLayoutTests.cs",
+      "start_line": 119,
+      "end_line": 125,
+      "message": "The ClassNode_Width_AnnotationContributesToWidth test compares node widths but does not verify non-overlapping annotations. Ensure regression guards include annotation spatial validation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding asks a width test to also verify spatial positioning — mixing concerns in one test. Separate spatial positioning tests already exist (ClassNode_LabelCenterY_PlacedInHeaderNotCenter, ClassNode_Height_AnnotationIncreasesHeight). For nodes with compartments (what this test uses), SizeClassNode correctly positions annotations and a spatial overlap assertion would pass. The suggestion is vague and generic without identifying a specific missing scenario.",
+      "severity_justification": "Pure testing coverage suggestion with no production defect identified.",
+      "category_justification": "The finding proposes adding additional assertions to an existing test for annotation spatial validation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/DiagramForge.Tests/Layout/ClassDiagramLayoutTests.cs",
+      "start_line": 202,
+      "end_line": 208,
+      "message": "The ClassNode_LabelCenterY_PlacedInHeaderNotCenter test relies on metadata being set accurately but does not validate fallback handling if 'label:centerY' is missing entirely.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test already handles the missing-metadata case via TryGetValue plus an explicit Assert.True(hasCenterY) — if label:centerY is absent the test fails with a clear message. Testing the renderer's fallback path (node.Height / 2 when metadata is absent) is a separate concern belonging in a renderer test, not this layout test. The finding conflates two distinct test concerns and identifies no concrete defect.",
+      "severity_justification": "The test correctly validates its intended scope. No production defect or test failure path is identified.",
+      "category_justification": "The finding is a suggestion about test coverage for fallback behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Layout/DefaultLayoutEngine.cs",
+      "start_line": 541,
+      "end_line": 543,
+      "message": "The headerHeight calculation in SizeClassNode applies consistent spacing for annotations, but varying annotation lengths are unaccounted for, leading to potential misalignments.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The term 'varying annotation lengths' is ambiguous. If it means text width, that IS already accounted for in the maxTextWidth computation via EstimateTextWidth(ann, annFontSize). If it means height contributions varying by font size or line count, those are already precisely identified in other findings. The finding is too vague to be independently actionable — it doesn't specify what is unaccounted for and provides no concrete misalignment example.",
+      "severity_justification": "The vague claim doesn't demonstrate a concrete failure mode beyond what is already captured precisely by other findings.",
+      "category_justification": "The finding claims a layout calculation is incorrect, leading to misalignment.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Layout/DefaultLayoutEngine.cs",
+      "start_line": 455,
+      "end_line": 461,
+      "message": "The EstimateTextWidth implementation inside SizeClassNode should sanitize or normalize input strings for extra whitespace or special characters before computing widths.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "EstimateTextWidth already strips \\r and handles \\n. Trimming whitespace would reduce accuracy since spaces contribute to visual width. The method's imprecision for special/Unicode characters is an acknowledged heuristic tradeoff documented in the code. The method is pre-existing (not introduced by this PR). The finding is generic sanitization advice with no concrete failure mode, specific problematic input, or incorrect output demonstrated.",
+      "severity_justification": "No concrete bug exists. The heuristic is documented as intentionally approximate.",
+      "category_justification": "The finding is a generic code quality suggestion about input normalization in a text measurement utility.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Layout/DefaultLayoutEngine.cs",
+      "start_line": 506,
+      "end_line": 509,
+      "message": "Compartment height is calculated as one line-height per `Label`, while rendering expands each label with `GetRenderedLabelLines`. A compartment entry containing embedded newlines or pre-populated `Label.Lines` will be laid out too short, causing following compartments or the node border to overlap the rendered text.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `SizeClassNode` sums `(l.FontSize ?? fontSize) * DefaultLabelLineHeight` per Label — allocating exactly one line-height each — while `AppendClassCompartments` calls `GetRenderedLabelLines(line)` which splits on `\\n` and renders multiple `<text>` elements per Label. For a Label with embedded newlines, the node is sized for 1 line but renders N lines, causing overflow. `GetTextLineCount` exists in the engine but is not used in this sum. The test `ClassNode_MultiLineCompartmentLabel_HeightMatchesTwoSeparateLines` was written to catch this and would fail with the committed code.",
+      "severity_justification": "Causes visible rendering artifacts (text overflow, overlapping compartments) when compartment lines contain embedded newlines or pre-populated Label.Lines, but single-line labels — the common parser output — are unaffected.",
+      "category_justification": "A sizing/layout logic error that produces incorrect visual output: the node bounding box doesn't match the content the renderer places inside it.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/DiagramForge.Tests/Layout/ClassDiagramLayoutTests.cs",
+      "start_line": 10,
+      "end_line": 13,
+      "message": "The new tests cover layout sizing but do not exercise the new SVG rendering path for annotations, divider lines, or compartment text. Existing rendering tests validate SVG output for labels and shapes, so the new renderer behavior should have similar coverage to catch issues like missing/incorrect dividers or text positioning.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: all 19 new tests in ClassDiagramLayoutTests.cs assert only on sizing/layout metrics. No test in the suite checks SVG output for the new AppendClassCompartments path — no assertions on <line> dividers, annotation <text> elements, or compartment text placement. SvgRendererTests.cs covers SVG output for labels/shapes but has nothing for compartments or annotations. The coverage gap is real and specific.",
+      "severity_justification": "Missing tests are a quality concern but don't indicate a shipped bug. The layout tests provide some indirect confidence; the gap primarily risks undetected regression in SVG rendering details like divider position or annotation placement.",
+      "category_justification": "The finding is purely about missing test coverage for newly introduced rendering behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/DiagramForge/Layout/DefaultLayoutEngine.cs",
+      "start_line": 436,
+      "end_line": 441,
+      "message": "When a node that was previously laid out with compartments is later laid out after its compartments are removed, the class-specific metadata is left behind. Since the renderer always honors `label:centerY`, the label can remain pinned to the old header position even though the node is now standard-sized; clear the class metadata on the standard-node path before sizing.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: SizeStandardNode (non-class path) does not remove label:centerY or class:headerHeight from Node.Metadata. The renderer unconditionally reads label:centerY if present (line 146 of SvgNodeWriter.cs) and falls back to node.Height/2 only when absent. If Layout is called twice on the same node — once with compartments, once without — the stale key causes the label to render at the old header offset. Layout() itself performs no metadata reset. The scenario requires re-layout after mutation, which is unusual in the current API but valid since ILayoutEngine and Metadata are public.",
+      "severity_justification": "Only manifests in a re-layout-after-mutation scenario not triggered by any current usage path. Fix is trivial (remove the keys on the standard path) but the impact when it does occur (label pinned to wrong Y) is a visible rendering bug.",
+      "category_justification": "Stale state in Node.Metadata causes incorrect label positioning in the rendered SVG — a concrete correctness defect in the rendering pipeline under a valid but unusual call pattern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/DiagramForge.Tests/Layout/ClassDiagramLayoutTests.cs",
+      "start_line": 106,
+      "end_line": 107,
+      "message": "This assertion would still pass if annotation text were completely ignored, because the annotated node only has to be at least as wide as the unannotated minimum-width node. To guard the intended behavior, assert that the long annotation makes the node wider than the unannotated version (or compare against the expected measured annotation width).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: both the annotated and unannotated nodes share identical class name 'X' and compartment '+x: int'. If annotation text were ignored in width sizing, both nodes produce the same width, making `diagramWithAnn >= diagramNoAnn` trivially `W >= W` (true). The assertion does not fail when annotations are silently dropped. The test name claims to verify annotation contribution to width but the >= guard only catches regressions where annotations shrink the node.",
+      "severity_justification": "A weak test assertion that fails to catch a specific correctness regression (annotations being ignored in width computation). The production code is not affected; only the test's ability to detect bugs is compromised.",
+      "category_justification": "The finding is purely about a test assertion that is too weak to verify the stated behavior — a test correctness/design issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

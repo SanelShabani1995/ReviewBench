@@ -1,0 +1,631 @@
+{
+  "pr_key": "jenreh_appkit_48-0c634d30",
+  "pr": {
+    "repo": "https://github.com/jenreh/appkit",
+    "pr_number": 48,
+    "base": "a76ed1d8347b3cced79cd1f8a9ba462c9e71f4dd",
+    "head": "0c634d306294b43d149275b4f234be61999e2a7b"
+  },
+  "findings": [
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/resources/bpmn_viewer.py",
+      "start_line": 607,
+      "end_line": 616,
+      "message": "`handleToolResult` returns immediately when `diagramRendered || fetchStarted` is true. After the initial diagram renders, any subsequent `ui/notifications/tool-result` message (e.g. the new DiagramResult returned by `update_bpmn_diagram`) is silently dropped. `currentDiagramId` is never updated to the new version's ID, so the Save and Rename buttons continue targeting the stale original diagram, and the viewer never displays the LLM-modified diagram.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `handleToolResult` has an early return at line 609 (`if (diagramRendered || fetchStarted) return`) that fires after any diagram has rendered. Since `update_bpmn_diagram` produces a fresh diagram ID via `new_diagram_id = str(uuid.uuid4())` in `_load_modify_and_save`, and the viewer receives that result via `ui/notifications/tool-result`, the result is silently dropped. `currentDiagramId` is never updated, so Save and Rename continue targeting the old diagram.",
+      "severity_justification": "After a user invokes `update_bpmn_diagram`, the viewer cannot display the updated diagram, and Save/Rename operations silently corrupt the original diagram instead of the intended updated one. Core user-facing workflows (update, save, rename) are broken.",
+      "category_justification": "Logic error: the early-return guard in `handleToolResult` prevents the viewer from responding to subsequent tool results, breaking the update flow end-to-end.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/server.py",
+      "start_line": 99,
+      "end_line": 102,
+      "message": "The tool previously registered as `generate_bpmn_diagram` is renamed to `new_bpmn_diagram` with no backward-compatibility shim. Any LLM system prompt, client, or MCP tool registry that references `generate_bpmn_diagram` by name will receive a ToolNotFound error. The module docstring on line 4 still advertises the old name, leaving the API contract inconsistent.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the module docstring at line 4 still lists `generate_bpmn_diagram` while the actual FastMCP tool function was renamed to `new_bpmn_diagram` in this PR. The README also still references the old tool name. The rename is a breaking change for any caller referencing the tool by name.",
+      "severity_justification": "MCP tool names are the actual API contract — LLM system prompts or integrations referencing `generate_bpmn_diagram` will get ToolNotFound errors. The stale module docstring and README compound the confusion. Medium rather than high because this is an internal component without evidence of external hard-wired callers.",
+      "category_justification": "Renaming a public MCP tool without a compatibility shim is an API contract break; the stale docstring is a secondary documentation symptom of the same issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/services/bpmn_json_extractor.py",
+      "start_line": 233,
+      "end_line": 259,
+      "message": "`_build_id_map` can produce duplicate output IDs. If an opaque element (e.g. `Activity_1abc`) has a label whose snake_case form matches a later non-opaque ID (e.g. `\"task\"`), the opaque element is assigned `\"task\"` first, then the non-opaque element overwrites `id_map[\"task\"]` with itself. Both steps end up mapped to the same identifier, producing a JSON with two steps sharing the same `id` — which either fails Pydantic validation downstream or confuses the LLM into dropping one of them.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed by code trace: `_build_id_map` does not check whether the output value for a non-opaque ID is already occupied by a previously mapped opaque element. The opaque element writes `id_map['Activity_1abc'] = 'task'`, then the non-opaque element unconditionally writes `id_map['task'] = 'task'`, leaving two distinct keys with the same value. `_remap_step_ids` then assigns both steps `id = 'task'`, which either fails Pydantic's duplicate-ID validation or produces corrupt LLM input.",
+      "severity_justification": "Triggers on real-world BPMN files that mix opaque modeler IDs with semantic IDs (e.g. files partly edited in bpmn.io and partly by the LLM). When it fires it fails the downstream `update_bpmn_diagram` flow entirely.",
+      "category_justification": "Logic error in the ID-mapping algorithm that can produce duplicate identifiers, breaking invariants relied upon by downstream validation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/server.py",
+      "start_line": 435,
+      "end_line": 441,
+      "message": "`_load_modify_and_save` always calls `storage.save()` with a freshly generated UUID, creating a brand-new diagram record on every invocation of `update_bpmn_diagram`. The original diagram is never soft-deleted or otherwise cleaned up. The purpose-built `storage.update()` method added in this same PR is never used by this flow. Over time every LLM-driven modification accumulates an orphaned, unreachable record in both DB and filesystem, with no targeted cleanup path.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `_load_modify_and_save` generates `new_diagram_id = str(uuid.uuid4())` and calls `storage.save()` via `_persist_and_respond`, leaving the original diagram record untouched. `storage.update()` — purpose-built and added in this same PR — is only wired to the viewer's manual save path (`_validate_and_update`), not the LLM-driven update flow. The only cleanup is the age-based `delete_older_than_days` service, which treats orphaned originals no differently from any other diagram.",
+      "severity_justification": "Every invocation of `update_bpmn_diagram` silently accumulates a dead diagram record (DB row + filesystem file). The original is unreachable after the update since the viewer replaces `currentDiagramId`. With repeated LLM edits, storage grows unboundedly until the age-based cleanup catches up. Not data-loss or security-critical, but a clear resource-leak design flaw.",
+      "category_justification": "Operational concern: unbounded accumulation of orphaned storage records with no targeted cleanup path, and a purpose-built API method left unused by the flow it was designed for.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/server.py",
+      "start_line": 439,
+      "end_line": 441,
+      "message": "`_load_modify_and_save` passes `update_prompt` (e.g. `\"Add a review step after approval\"`) as the `prompt` argument to `_persist_and_respond`, which derives `name` directly from that string. The new diagram version is therefore named after the change instruction, not the original diagram's display name. Users see misleading names like `\"Add a review step after approval\"` instead of `\"Approval Process\"`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `_load_modify_and_save` passes `update_prompt` as the `prompt` argument to `_persist_and_respond`, which takes `prompt.strip()[:128]` as the diagram name. A modification instruction like 'Add a review step after approval' becomes the new diagram's display name instead of carrying over the original's name.",
+      "severity_justification": "This is a user-facing naming UX issue — the resulting name is misleading but does not break functionality. The diagram is still created, saved, and accessible; users would just see confusing names.",
+      "category_justification": "The name derivation logic is factually wrong for the update flow: it uses the modification prompt instead of the original diagram name, producing incorrect display metadata.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/backend/storage/filesystem.py",
+      "start_line": 61,
+      "end_line": 68,
+      "message": "`FilesystemStorageBackend.rename()` accepts the `name` argument, checks that the diagram file exists, then returns `True` without writing the name anywhere. The caller (`_validate_and_rename`) receives `True` and returns a `{success: true}` JSON response to the viewer, which updates its display. The name is lost on restart or any load that bypasses the in-memory viewer state. For deployments using filesystem-only storage this silently drops every rename operation.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `FilesystemStorageBackend.rename()` discards the `name` argument (explicitly marked `# noqa: ARG002`) and returns `True` when the file exists. The comment states 'Filesystem doesn't store names'. The caller `_validate_and_rename` receives `True` and returns `{success: true}`, so the viewer's UI updates — but nothing is persisted. On any subsequent load from filesystem-only storage, the rename is silently lost.",
+      "severity_justification": "For filesystem-only deployments, every rename operation is silently acknowledged as successful but never persisted. Users see their change accepted only to find the old name after any page reload or viewer reopen. The silent false-positive success response makes this harder to detect than an explicit failure.",
+      "category_justification": "The function returns a success signal for an operation it did not perform, creating a correctness gap between the reported outcome and the actual state of persistent storage.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/backend/storage/dual.py",
+      "start_line": 52,
+      "end_line": 66,
+      "message": "`DualStorageBackend.update()` always attempts the filesystem write regardless of whether `db_ok` is `True`. If the DB rejects the update because the diagram belongs to a different user (`db_ok = False`), the FS copy is still overwritten. The API response correctly says \"not found\", but the next time the DB is unavailable and `load()` falls back to FS, the attacker's XML is served. The same pattern exists in `DualStorageBackend.rename()` (lines 68–78).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `DualStorageBackend.update()` calls `self._fs.update()` unconditionally without checking `db_ok`. The FS backend ignores `user_id` (all ARG002). So a user who doesn't own diagram X can still overwrite its FS copy: DB returns False, FS overwrites silently, API returns 'not found'. The fallback in `load()` serves the FS copy when `db.load()` returns None (e.g. after soft-delete), completing the attack. The finding slightly overstates the trigger ('DB unavailable' vs 'DB returns None') but the unauthorized FS overwrite and subsequent exposure path are real.",
+      "severity_justification": "Requires knowing a UUID and the DB record subsequently becoming absent — not trivially exploitable, but the authorization check bypass is genuine. In a multi-user dual-backend deployment, one user's malicious XML could be served to the diagram's legitimate owner after soft-deletion.",
+      "category_justification": "User ownership check exists only in the DB layer; the FS layer has no access control, and `DualStorageBackend` always writes to both without gating on DB authorization result.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-image/src/appkit_mcp_image/server.py",
+      "start_line": 27,
+      "end_line": 43,
+      "message": "`_get_image_api_origin()` is called eagerly at decoration time inside `create_image_mcp_server()`. Only `KeyError` from `service_registry().get()` is caught; any other exception (e.g. `AttributeError` if `ReflexConfig` exists but `single_port` is unset) propagates and aborts server creation. Additionally, if `reflex_config.api_url` or `deploy_url` is `None`, `urlparse(\"None\")` yields no scheme/netloc, raising `ValueError(\"Invalid image API base URL\")` and crashing server startup — with no fallback.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The file `appkit-mcp-image/src/appkit_mcp_image/server.py` is not modified in this PR — the finding is about pre-existing code unrelated to the changes. Additionally, the `AttributeError` sub-claim is factually wrong: `ReflexConfig.single_port` is defined with `bool = False`, so it can never raise AttributeError. The `None`-URL scenario is real but pre-existing.",
+      "severity_justification": "The None URL crash would only fire at server startup when ReflexConfig is registered but api_url/deploy_url are left at their default None — an unusual misconfiguration. Pre-existing and not exacerbated by this PR.",
+      "category_justification": "Potential crash at server startup due to unguarded ValueError on None URL values.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-assistant/src/appkit_assistant/components/mcp_app_bridge.jsx",
+      "start_line": 254,
+      "end_line": 255,
+      "message": "`toolInputInitialSentRef` and `toolResultInitialSentRef` are never reset when `resourceUrl` changes. When a new resource loads its iframe and sends `ui/notifications/initialized`, the handler sets the flags to `true` and sends the initial tool-input/result. Because `ready` does not change (it was already `true`), the skip effects do not fire to consume the flags. The next time `parsedInput` or `parsedResult` changes, the effect sees the flag still set, skips the send, and resets the flag — silently dropping the first update to the newly-loaded iframe.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `setReady` is only ever called once to set `true` and is never reset. When `resourceUrl` changes, the fetch effect does not call `setReady(false)` and does not reset `toolInputInitialSentRef`/`toolResultInitialSentRef`. When the new iframe sends `ui/notifications/initialized`, `setReady(true)` is a no-op (already `true`), so the skip-effects that consume the flags don't fire. The flags stay `true` until the next `parsedInput`/`parsedResult` change, which then skips its send instead of forwarding the update to the new iframe.",
+      "severity_justification": "The first tool-input or tool-result update after a resource change is silently dropped to the newly-loaded iframe. The iframe displays stale data until a second update arrives, which may never happen depending on user flow.",
+      "category_justification": "Logic error in the ref-based skip mechanism: flags are not reset on resource reload, causing the first downstream prop update to be incorrectly suppressed.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/server.py",
+      "start_line": 1,
+      "end_line": 10,
+      "message": "The `bpmn_process_json` MCP prompt is removed entirely in this PR (the `@mcp.prompt()` definition is deleted from the diff). Any client application or LLM system prompt that calls `prompts/get` with `name=\"bpmn_process_json\"` will receive a not-found error with no deprecation notice or replacement guidance. The module docstring on lines 9-10 still advertises this prompt, creating a misleading API surface.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `grep` finds no `@mcp.prompt` or `bpmn_process_json` implementation anywhere in the BPMN component source. The module docstring on lines 8-9 still lists `bpmn_process_json` as an exposed prompt. Any client calling `prompts/get` with that name will receive a not-found error, and the docstring actively misleads about the server's API surface.",
+      "severity_justification": "Removing a named MCP prompt without a deprecation notice or replacement is a silent breaking change for any caller referencing it. The stale docstring makes the issue harder to detect. Medium rather than high because the BPMN server is an internal component and the prompt content was largely absorbed into `update_bpmn_diagram`'s LLM prompt.",
+      "category_justification": "Silent removal of a public MCP API endpoint (a named prompt) without deprecation or documentation update is an API contract break.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/backend/repository.py",
+      "start_line": 80,
+      "end_line": 86,
+      "message": "When creating a new BPMN diagram, the logic for determining the diagram's name does not use the `diagram_id` in the fallback case. Instead of using the `diagram_id` that was just generated for the new diagram, it references a `diagram_id` variable from the outer scope, which does not exist. This will cause a `NameError`.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`diagram_id` is a named keyword-only parameter of `save_diagram` (declared as `diagram_id: str` in the method signature at line 65). It is fully in scope at line 84 where `f'Diagram {diagram_id[:8]}'` is evaluated. The finding's claim that it references an outer-scope variable that does not exist is factually incorrect — no NameError can occur.",
+      "severity_justification": "If the claim were true it would be a runtime crash on every diagram creation; but since it is incorrect the actual severity is irrelevant.",
+      "category_justification": "The finding alleged a NameError bug in diagram name resolution logic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/backend/storage/dual.py",
+      "start_line": 64,
+      "end_line": 74,
+      "message": "In `DualStorageBackend`, the `rename` method proceeds to rename the diagram on the filesystem (`self._fs.rename`) even if the database rename (`self._db.rename`) fails and returns `False`. The filesystem operation should only be attempted if the database operation was successful.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `rename()` calls `self._fs.rename()` unconditionally regardless of `db_ok`. The code is exactly as described. The finding is a narrower/lower-impact version of the same pattern found in `update()` — the FS operation is not gated on DB authorization success. In this case the actual impact is reduced since `FilesystemStorageBackend.rename()` is a no-op that doesn't persist names, but the structural issue is real.",
+      "severity_justification": "Unlike `update()`, the FS `rename()` implementation doesn't modify any stored data (it's a no-op), so there is no unauthorized data mutation in practice. The issue is a design flaw that would matter if the FS backend were ever extended to actually store names.",
+      "category_justification": "The FS operation should be conditional on the DB authorization result; calling it unconditionally violates the intended ownership-scoped semantics of the dual backend.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/server.py",
+      "start_line": 105,
+      "end_line": 121,
+      "message": "The `new_bpmn_diagram` tool has a misleading `WARNING` in its docstring. The warning instructs users to use `update_bpmn_diagram(diagram_id, update_prompt)` for modifications, but that tool is not actually defined on the MCP server in this PR. The only modification tools are `save_or_update` and `rename_bpmn_diagram`. This will confuse users of the API.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`update_bpmn_diagram` is registered as an `@mcp.tool` at line 161-162 in server.py. The finding's claim that it 'is not actually defined on the MCP server in this PR' is factually incorrect. The docstring warning in `new_bpmn_diagram` correctly points users to an existing tool.",
+      "severity_justification": "The finding is incorrect; there is no actual issue to address.",
+      "category_justification": "The finding alleged a misleading docstring, which would be a documentation concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/services/bpmn_generator.py",
+      "start_line": 227,
+      "end_line": 234,
+      "message": "The `BPMNGenerator.generate` method, when called with `raw_prompt=True`, uses the `description` as the full user prompt. However, it still uses the `diagram_type` parameter to construct a system prompt. The system prompt is hardcoded to expect a JSON response describing a process, which may not be what a raw prompt is intended to produce if a different `diagram_type` is involved. This might lead to unexpected LLM behavior for non-process diagrams with raw prompts.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`diagram_type` is only interpolated into the user prompt when `raw_prompt=False`. When `raw_prompt=True`, `user_prompt = description` and `_build_initial_thread(user_prompt)` is called with no `diagram_type` reference. The system prompt (`self._system_prompt`) is static and does not use `diagram_type` regardless of `raw_prompt`. The finding's core claim — 'it still uses the `diagram_type` parameter to construct a system prompt' — is factually incorrect. Additionally, the only caller of `raw_prompt=True` always passes `'process'` as `diagram_type`, so the hypothetical mismatch scenario cannot arise.",
+      "severity_justification": "The claim is incorrect; there is no actual issue with diagram_type leaking into system prompts when raw_prompt=True.",
+      "category_justification": "The finding alleged incorrect LLM prompt construction logic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/models.py",
+      "start_line": 150,
+      "end_line": 153,
+      "message": "The validation logic for `BpmnStep` allows a step to have both `branches` and `next` defined simultaneously, but a `ValueError` is only raised if both are non-null. The check `if step.branches and step.next is not None:` does not prevent a step from having `branches=[]` and `next` being non-null. Downstream logic in `_build_flow_graph` prioritizes `branches`, so the `next` value would be silently ignored, which can be misleading.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The scenario is already prevented: for a non-gateway step with `branches=[]`, the `elif step.branches is not None and len(step.branches) == 0:` guard raises `ValueError('Step has empty branches list.')` before the `branches and next` check is even evaluated. The combination of `branches=[]` plus non-null `next` cannot slip through to downstream logic. The finding fails to account for this preceding guard.",
+      "severity_justification": "The finding is incorrect; there is no exploitable gap in the validation logic.",
+      "category_justification": "The finding alleged a validation gap allowing a contradictory step configuration to pass through.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/server.py",
+      "start_line": 99,
+      "end_line": 101,
+      "message": "The MCP resource for the BPMN viewer is missing `name`, `description`, and `mime_type` attributes. While not strictly required by FastMCP, providing this metadata is a best practice for discoverability and compatibility with MCP app ecosystems. Other resources in the codebase, such as in `appkit-mcp-charts`, do provide this information.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct — the BPMN `@mcp.resource` lacks `name`, `description`, and `mime_type` while the charts server provides them. However, this is pre-existing code untouched by the PR, and the omission has no functional impact (FastMCP operates correctly without it; the function docstring provides description). The finding is a best-practice/consistency suggestion with genuinely negligible impact — no behavior is broken.",
+      "severity_justification": "Missing optional metadata attributes have no effect on runtime behavior, tool invocation, or user-facing functionality.",
+      "category_justification": "Inconsistency with the codebase convention of providing resource metadata for discoverability.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-image/src/appkit_mcp_image/resources/image_viewer.py",
+      "start_line": 408,
+      "end_line": 420,
+      "message": "The `buildImageDownloadUrl` function incorrectly handles URLs that already contain query parameters. It determines the separator by checking `url.indexOf('?') === -1`, but this is insufficient for URLs with fragments, like `.../image.png?foo=bar#baz`. If a URL has a fragment but no query string, `indexOf('?')` is -1 and it will incorrectly append `?content_disposition...` before the fragment, creating an invalid URL. A more robust approach would be to parse the URL properly before adding parameters.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding describes a bug in a naive `indexOf` implementation, but the actual code uses `new URL(url, window.location.origin)` + `parsed.searchParams.set('content_disposition', 'attachment')` as the primary path, which correctly handles fragments, existing query strings, and all URL edge cases. The `indexOf` fallback is only used when `new URL()` throws (invalid URL), making the fragment scenario essentially irrelevant.",
+      "severity_justification": "The finding is factually wrong about the code path used; there is no actual bug.",
+      "category_justification": "The finding alleged incorrect URL construction logic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "alembic/versions/2026_03_15_add_name_to_bpmn_diagrams.py",
+      "start_line": 34,
+      "end_line": 40,
+      "message": "The SQL `UPDATE` statement in the migration populates the new `name` column based on the `prompt`. However, it does not handle the case where a prompt might contain characters that need escaping or could be misinterpreted in an SQL string, such as single quotes. While `sqlalchemy.text` provides some protection, using parameterized queries would be safer and is the recommended practice to prevent potential SQL injection vulnerabilities, even in a migration script.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The SQL operates entirely on existing column values (`prompt`, `diagram_id`) referenced by name in a static CASE expression. No Python variable or user-supplied string is interpolated into the `sa.text()` call. There is no injection surface: single quotes within stored `prompt` values are handled by the database engine and cannot break the SQL syntax. The finding mischaracterises column-name references as user-input interpolation.",
+      "severity_justification": "The finding is factually incorrect; there is no injection risk in this pattern.",
+      "category_justification": "The finding alleged a SQL injection vulnerability in the migration script.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/services/bpmn_json_extractor.py",
+      "start_line": 164,
+      "end_line": 169,
+      "message": "The logic to distinguish a parallel gateway split from a merge incorrectly identifies any `parallelGateway` with fewer than two outgoing flows as a 'merge' type. A parallel gateway with one outgoing flow is valid and acts as a simple pass-through, not a join/merge point. A merge point is characterized by having multiple *incoming* flows, which is not checked here. This misclassification could cause issues in logic that relies on the step type.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the extractor uses only outgoing flow count to distinguish 'parallel' (split) from 'merge' (join), ignoring incoming flows. A parallelGateway with 1 outgoing but 1 incoming (pass-through) is incorrectly typed 'merge'. The heuristic conflates two distinct structural patterns. The finding is factually correct about the mechanism.",
+      "severity_justification": "In practice, parallelGateway with 1 outgoing is almost always a join in real BPMN diagrams. Even when misclassified, the XML roundtrip is lossless (both 'parallel' and 'merge' map to parallelGateway). The main harm is LLM confusion about diagram structure when modifying an affected diagram, which is a realistic but low-frequency scenario.",
+      "category_justification": "Logic error in the split/join classification heuristic: uses only outgoing flow count instead of the more semantically correct incoming flow count.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/server.py",
+      "start_line": 334,
+      "end_line": 352,
+      "message": "`_persist_and_respond` derives a `name` here and includes it in the `DiagramResult`, but never passes it to `storage.save(...)`. The `StorageBackend.save` signature still takes only `prompt`, and `bpmn_diagram_repo.save_diagram` independently re-derives the stored `name` from `prompt` using the same fallback formula. This duplicates the name-derivation rule in two places (server vs repository), so any future change must be made in lockstep or the response will disagree with what's persisted. Consider either threading the resolved `name` through `StorageBackend.save` (and into the repo) or centralizing the derivation in a single helper that both sites call.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the name-derivation formula is coded identically in both `_persist_and_respond` (server.py) and `save_diagram` (repository.py). `storage.save()` never receives the resolved name since the StorageBackend.save() signature has no `name` parameter, so the repository independently re-derives it from prompt using the same fallback formula. Both sites currently agree but any one-sided change will cause the API response name to diverge from the persisted name.",
+      "severity_justification": "Both formulas currently produce the same result so there is no immediate bug; the risk is future drift between the response value and the stored value if one site is updated without the other.",
+      "category_justification": "This is a DRY violation — duplicate business logic in two places (server and repository) with no mechanism to keep them in sync.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/server.py",
+      "start_line": 474,
+      "end_line": 479,
+      "message": "The `save_or_update` tool docstring (lines 260-262) promises a JSON payload of `{success, id, name, error}`, but on the success path this function constructs `DiagramResult(success=True, id=diagram_id)` and never sets `name`. As a result the returned JSON's `name` is always `null` for successful in-place updates, even though the diagram has a stored name. Either load and return the current name (e.g. via a repo helper) or update the docstring to drop `name` from the contract.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the `save_or_update` docstring promises `{success, id, name, error}` but `_validate_and_update` constructs `DiagramResult(success=True, id=diagram_id)` without setting `name`, so the response always has `name: null`. The bpmn_viewer consumer only checks `parsed.success` and never reads `parsed.name`, so there is no current behavioral bug, but the documented contract is violated.",
+      "severity_justification": "No current consumer relies on the `name` field in the save response so there is no user-visible breakage; the impact is limited to a misleading docstring contract that could mislead future consumers.",
+      "category_justification": "The core issue is a mismatch between the docstring-advertised return shape and the actual returned JSON where `name` is always null.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/server.py",
+      "start_line": 180,
+      "end_line": 192,
+      "message": "The `update_bpmn_diagram` docstring promises a JSON response with `{success, id, name, download_url, view_url, error}`, but the implementation `raise`s `ValueError` on the empty-id, empty-prompt, \"not found\", and LLM-failure paths (see `_load_modify_and_save`). These get surfaced to MCP clients as `ToolError` exceptions (as confirmed by the new tests), not as JSON error envelopes. By contrast, `save_or_update`, `get_bpmn_xml`, and `rename_bpmn_diagram` consistently return `_error_result(...)` JSON. Please align this tool with the surrounding pattern (return JSON errors) or document the exception-based error contract explicitly.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `update_bpmn_diagram` and `_load_modify_and_save` raise `ValueError` on all error paths (empty id, not found, LLM failure, build failure) which become `ToolError`, while `save_or_update`, `get_bpmn_xml`, and `rename_bpmn_diagram` consistently return `_error_result(...)` JSON. The docstring promises `{success, id, name, download_url, view_url, error}` implying JSON error envelopes, but the actual contract is exception-based.",
+      "severity_justification": "FastMCP consistently converts `ValueError` to `ToolError` so error signaling works; the issue is inconsistency with sibling tools and a misleading docstring rather than a functional failure. The visibility=['app'] tools that return JSON errors are a different category called from the browser viewer, so the split may be partly intentional.",
+      "category_justification": "The documented return contract ({success, ..., error} JSON) disagrees with the actual behavior (exceptions) on error paths, making this a correctness/API contract issue rather than purely a documentation one.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/backend/storage/dual.py",
+      "start_line": 55,
+      "end_line": 73,
+      "message": "In `DualStorageBackend.update` (and `rename`) the DB write happens first; if the FS write subsequently fails, the two backends silently drift out of sync — the error is only logged. The previous `save` likely had the same trade-off, but `update`/`rename` here also silently swallow the FS failure and still report success (returning `db_ok`). At minimum, consider including the specific diagram_id and operation in the log (done) but also surfacing partial-failure information (e.g. by returning a richer status) so callers can decide whether to retry.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: in `DualStorageBackend.update` and `rename`, FS exceptions are swallowed and `db_ok` is returned unconditionally, so FS can silently drift from DB. The finding is factually correct. However, load() reads DB first so stale FS copies are shadowed, limiting practical impact. This is also the same swallow-and-log pattern already used in `save`.",
+      "severity_justification": "The DB is the primary store and load() tries DB first, so a stale FS copy doesn't cause data loss or incorrect reads. The risk is operational (FS backup out of sync) rather than user-facing data corruption.",
+      "category_justification": "This is about error handling and fault tolerance in the dual-backend storage — silent partial failure and backend sync drift.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/backend/repository.py",
+      "start_line": 66,
+      "end_line": 89,
+      "message": "The `name` parameter added to `save_diagram` is never actually passed by any current caller (`DatabaseStorageBackend.save` and `DualStorageBackend.save` do not forward a `name`). As a result the parameter is effectively dead code: the `resolved_name` is always computed from `prompt`/`diagram_id` regardless of the caller's intent. If the intent is to let upstream code (e.g. `_persist_and_respond` in `server.py`) control the persisted name, please thread the value through `StorageBackend.save` and the storage backends; otherwise drop the unused parameter to avoid suggesting an option that does not actually work.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `DatabaseStorageBackend.save` calls `bpmn_diagram_repo.save_diagram` without `name`, and `DualStorageBackend.save` calls `self._db.save(...)` also without `name`. No call site passes the `name` parameter, so `resolved_name` is always derived from `prompt`/`diagram_id`. The `name` parameter in `save_diagram` is dead code.",
+      "severity_justification": "No data is lost or corrupted — the fallback formula produces correct results. The issue is that the `name` parameter appears to offer control it does not actually provide, which is misleading but not harmful.",
+      "category_justification": "Dead parameter that cannot be exercised by any caller — misleads readers into thinking upstream code can control the stored name through this parameter.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "alembic/versions/2026_03_15_add_name_to_bpmn_diagrams.py",
+      "start_line": 36,
+      "end_line": 48,
+      "message": "The migration's `UPDATE` uses `SUBSTR()` and the `||` string concatenation operator. These work on PostgreSQL and SQLite but not on every supported backend (e.g. MySQL/MariaDB require `CONCAT()` and `SUBSTRING()`). If this project only targets PostgreSQL (+ SQLite for tests), this is fine; otherwise consider using SQLAlchemy expressions (`sa.func.substr`, `sa.func.concat`) so the migration is dialect-agnostic.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The project targets only PostgreSQL (production/dev) and SQLite (tests) — both are confirmed by psycopg3 driver dependencies, pgvector docker-compose image, port 5432 config, and aiosqlite test dep. Both PostgreSQL and SQLite support SUBSTR() and || concatenation, so the migration is fully compatible with all actual target databases. The MySQL/MariaDB portability concern raised in the finding is not relevant to this codebase.",
+      "severity_justification": "Even if the concern were valid, migrations are typically environment-specific, and the project has a clearly documented single-database target.",
+      "category_justification": "The concern is about database dialect compatibility in a migration script.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/models.py",
+      "start_line": 179,
+      "end_line": 186,
+      "message": "This change allows an `endEvent` to pass validation with a non-empty `branches` list because only `next` is rejected for end events and non-gateway branches are now generally allowed. The flow builder then ignores endEvent outgoing flows, so invalid model output can be accepted and silently lose branches; end events should still reject `branches`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: an endEvent with a non-empty branches list now passes all validation checks in _validate_step_shapes. The old code had `elif step.branches is not None: raise ValueError(...)` which caught any non-gateway step with branches. The new code only rejects empty branches lists. In _build_flow_graph, endEvent triggers `continue` so branches are silently ignored — an invalid model is accepted and branches are dropped without any warning.",
+      "severity_justification": "An LLM-generated BPMN with an endEvent having branches passes validation and produces silently incorrect output (branches ignored). Since this is a BPMN generation tool, accepting structurally invalid diagrams without error affects the correctness of generated artifacts.",
+      "category_justification": "The validation logic regression allows structurally invalid BPMN models to pass validation, with branches on endEvents silently dropped during flow graph construction.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/services/bpmn_json_extractor.py",
+      "start_line": 92,
+      "end_line": 94,
+      "message": "`save_bpmn_diagram` accepts BPMN XML without namespaces (the validator falls back to `.//process`), but `update_bpmn_diagram` now extracts only a namespaced direct `<bpmn:process>`. Any previously accepted/saved unnamespaced diagram will fail to update with \"No <bpmn:process> element found\"; mirror the validator's namespace fallback here.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the validator explicitly falls back to `.//process` for unnamespaced XML and stores it as-is. `extract_process_json` only looks for the namespaced `{BPMN_NS}process` with no fallback, so any diagram saved via `save_bpmn_diagram` with unnamespaced XML would fail to update with 'No <bpmn:process> element found'.",
+      "severity_justification": "Only affects diagrams submitted via `save_bpmn_diagram` with unnamespaced BPMN XML, which is unusual in practice as standard BPMN tools always include namespaces. All internally-generated diagrams use proper namespaces. The failure is a clear error rather than silent data corruption.",
+      "category_justification": "The extractor inconsistently handles namespace fallback compared to the validator, causing previously-accepted diagrams to fail on update.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/services/bpmn_json_extractor.py",
+      "start_line": 56,
+      "end_line": 64,
+      "message": "The docstring says transliteration maps characters like `ä` to `ae`, but the implementation uses NFKD plus ASCII encoding with `ignore`, which produces `a` for `ä` (and drops characters such as `ß`). Update the documentation or the transliteration so callers have accurate expectations for generated IDs.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: NFKD + ASCII encode/ignore produces ä→a, ü→u, ö→o, and ß→'' (empty). The docstring claims transliteration (ä→ae, ü→ue) which would require an explicit character mapping table. The behavior is diacritic-stripping, not transliteration.",
+      "severity_justification": "This is purely a documentation inaccuracy — the generated IDs are stable and functional for their purpose (LLM step references). The only minor functional concern is that ä and a would collide to the same base ID, but the deduplication counter handles that.",
+      "category_justification": "The docstring makes a factually incorrect claim about what transliteration the function performs; the implementation and the inline comment accurately describe the actual behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/services/bpmn_json_extractor.py",
+      "start_line": 119,
+      "end_line": 126,
+      "message": "Branch conditions are extracted only from the sequence flow `name` attribute. BPMN condition labels can also be stored in `<conditionExpression>` (and the local XML builder writes one), so diagrams imported from other tools that omit `name` will lose their branch conditions during `update_bpmn_diagram`, despite the update prompt explicitly asking the LLM to preserve them.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the extractor reads `condition = sf.get('name', '')` only, while the XML builder writes conditions to both `name` attribute and `<conditionExpression>`. External diagrams using only `<conditionExpression>` without a `name` attribute will have empty conditions extracted, which the LLM update prompt cannot preserve since they are absent from the JSON context.",
+      "severity_justification": "Only affects diagrams imported from external tools that omit the `name` attribute on sequenceFlow elements. All internally-generated diagrams always have both `name` and `conditionExpression`, so the common workflow is unaffected.",
+      "category_justification": "The extractor silently loses branch condition information that exists in the XML, causing downstream LLM updates to produce diagrams with missing conditions.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/resources/bpmn_viewer.py",
+      "start_line": 529,
+      "end_line": 534,
+      "message": "Host theme changes only update `hostTheme` and the SVG colors, but the toolbar/canvas CSS variables are still driven by `@media (prefers-color-scheme: dark)` rather than a host-controlled attribute. When the host theme differs from the OS preference, the diagram SVG can switch to dark while the surrounding UI remains light (or vice versa). Apply the host theme to the root element, as the chart/image viewers do, before restyling the SVG.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `hostTheme` from the host context change notification is used only in `isDarkMode()` to control `applyDarkModeToSvg()` (SVG inline styles), while the CSS variables for toolbar/canvas/UI elements are still driven by `@media (prefers-color-scheme: dark)`. When host theme differs from OS preference, the SVG color scheme and the surrounding UI will be inconsistent.",
+      "severity_justification": "This is a visual UI inconsistency that only manifests when the host application's declared theme differs from the OS's `prefers-color-scheme`. It does not affect functionality or data correctness, and the mismatch scenario is uncommon in practice.",
+      "category_justification": "The host-context-changed theme handling is partially implemented — SVG colors respond to host theme but the surrounding UI does not, creating an inconsistent visual state.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "components/appkit-mcp-bpmn/src/appkit_mcp_bpmn/backend/repository.py",
+      "start_line": 77,
+      "end_line": 84,
+      "message": "The explicit `name` path is not constrained to the model/database limit before assignment. Callers that pass a non-empty name longer than 128 characters can hit a database error on `String(128)`, while the prompt fallback is truncated; apply the same trim/truncation or validation to `name` as the other name sources.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: in `save_diagram`, the explicit `name` path uses `name.strip()` with no truncation to 128 chars, while the `prompt` fallback uses `prompt.strip()[:128]`. A caller passing a name > 128 chars would hit a DB String(128) constraint error at flush time. The rename path in `_validate_and_rename` correctly validates `len(trimmed) > _MAX_NAME_LENGTH`, making the omission in `save_diagram` an inconsistency.",
+      "severity_justification": "The `name` parameter is currently dead code (no caller passes it), so the risk is zero today. It becomes a real DB error only when someone threads the name through to fix the related dead-code issue.",
+      "category_justification": "Missing input validation (length truncation) on one branch of the name resolution logic that could cause a DB constraint violation when the parameter is eventually used.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

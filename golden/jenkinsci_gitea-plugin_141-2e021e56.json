@@ -1,0 +1,255 @@
+{
+  "pr_key": "jenkinsci_gitea-plugin_141-2e021e56",
+  "pr": {
+    "repo": "https://github.com/jenkinsci/gitea-plugin",
+    "pr_number": 141,
+    "base": "19c54c3e5d9cc19d47302688526d1b016dd2110d",
+    "head": "2e021e56de9104d8d124cac086cf6b208b6b4a88"
+  },
+  "findings": [
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 114,
+      "end_line": 115,
+      "message": "fetchVersion() is called before the revision type is validated. The revision type check (lines 128-148) can fall through to `return` for unrecognized revision types. For a NOT_BUILT build with an unrecognized revision type, this makes an unnecessary API call that is then discarded. The version fetch should occur after the revision is confirmed to be a known type.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the code: fetchVersion() is called inside the NOT_BUILT branch before the revision type check. The revision type check has an else { return; } branch for unrecognized types, meaning the API call is wasted for NOT_BUILT builds with unrecognized revision types.",
+      "severity_justification": "Only an efficiency concern in a rare edge case (NOT_BUILT result with unrecognized revision type). No correctness or security impact.",
+      "category_justification": "An unnecessary API call (fetchVersion) is made when the result would ultimately be discarded due to the early return for unrecognized revision types.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 114,
+      "end_line": 114,
+      "message": "fetchVersion() is called on every NOT_BUILT notification with no caching. In pipelines where many parallel stages are NOT_BUILT (a common pattern in conditional pipelines), every call to sendNotifications() triggers a separate HTTP request to Gitea just to fetch the version. The version barely changes; it should be cached per source (or with a TTL) rather than fetched on each notification.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: fetchVersion() at line 114 is called on every NOT_BUILT notification with no caching. A grep of the codebase shows no version caching mechanism anywhere. In pipelines with many parallel NOT_BUILT stages, each sendNotifications() call triggers a separate HTTP request to Gitea just to determine the version, which is essentially static.",
+      "severity_justification": "In conditional pipelines with many parallel NOT_BUILT stages (a common pattern), this creates N unnecessary HTTP round-trips per build where N is the number of skipped stages. While not catastrophic, it adds measurable latency and unnecessary load on the Gitea server.",
+      "category_justification": "Repeated unnecessary network calls to fetch static data (server version) with no caching, causing redundant HTTP requests on every NOT_BUILT stage notification.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 114,
+      "end_line": 115,
+      "message": "NPE risk: retryOnServerError(c::fetchVersion).getVersionNumber() calls version.indexOf('+') in GiteaVersion.getVersionNumber() (GiteaVersion.java line 60) without a null guard on the `version` field. If the Gitea server returns a JSON response where the `version` field is absent or null (malformed response, future API change), this throws NPE, crashing the entire notification instead of gracefully falling back to WARNING. This is a new code path introduced by this PR.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: GiteaVersion.getVersionNumber() calls version.indexOf('+') with no null guard on `version`. If the JSON response lacks the field, Jackson leaves `version` as null (default no-arg constructor). The new call path retryOnServerError(c::fetchVersion).getVersionNumber() in this PR would throw NPE in that case, crashing the notification. The risk is real and the code path is new to this PR.",
+      "severity_justification": "In practice Gitea always returns a version field, making this a theoretical edge case (malformed response, future API change). The failure mode is a crash of the notification (not silent data corruption), and it is an existing latent issue in GiteaVersion. Low but non-trivial.",
+      "category_justification": "Potential NPE crash in an error/edge case scenario (missing version field in API response), causing the notification to fail without graceful degradation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 98,
+      "end_line": 98,
+      "message": "The GiteaConnection is now opened before the revision type check. In the original code, the connection was only opened after the revision was confirmed to be a known type (BranchSCMRevision, PullRequestSCMRevision, TagSCMRevision, or ReleaseSCMRevision). Now the connection is opened speculatively for all revision types, including unrecognized ones that immediately hit `return` (line 148). The connection is properly closed by try-with-resources, but this is a behavioral regression: connection overhead (authentication, HTTP handshake) is now incurred for builds that should be silently skipped.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified from the diff: in the original code, the try-with-resources block for GiteaConnection was placed after the revision type check (including the early `return` for unrecognized types). In the new code, the connection is opened first, then the revision type check (with its early return) happens inside the try block. Unrecognized revision types now incur connection overhead they previously avoided.",
+      "severity_justification": "Unrecognized revision types are an edge case in practice. The connection is properly closed by try-with-resources (no leak), and the overhead is just an HTTP handshake. Minor behavioral regression but low real-world impact.",
+      "category_justification": "Unnecessary connection overhead (authentication, HTTP handshake) is now incurred for builds that previously short-circuited before any connection was opened.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 164,
+      "end_line": 185,
+      "message": "The GiteaOperation<T> functional interface requires a non-void return type. retryOnServerError(() -> c.createCommitStatus(...)) happens to work because createCommitStatus returns GiteaCommitStatus (the return value is just discarded). However, this design prevents using retryOnServerError for any truly void operation — a caller would have to return null explicitly. A void-compatible overload or a Runnable-style variant would make this utility more robust and clear about intent.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually correct about the interface design requiring a non-void return, but this is a hypothetical design concern with no current impact. Both existing usages work correctly (fetchVersion returns GiteaVersion, createCommitStatus returns GiteaCommitStatus). There is no actual bug or broken code path, just a suggestion to add a void overload for future hypothetical usages. The utility is private to the class with only two call sites.",
+      "severity_justification": "No current bug or broken usage; purely a design preference about a private utility method.",
+      "category_justification": "Design concern about the generality/flexibility of a private utility method.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 168,
+      "end_line": 179,
+      "message": "The `retryOnServerError` method is not static, but it operates as a static utility method with no dependency on `GiteaNotifier` instance state. It should be declared `static` for clarity and to prevent accidental use of instance members.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims retryOnServerError is not static, but the actual code declares it as `private static <T> T retryOnServerError(...)`. The method is already static, making the finding factually incorrect.",
+      "severity_justification": "The finding is simply wrong about the code; no real issue exists.",
+      "category_justification": "The finding was about a static/instance method declaration concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 92,
+      "end_line": 96,
+      "message": "The code does not handle the possibility that `GiteaConnection.fetchVersion()` may throw an exception before retrieving the Gitea version. This may cause the `NOT_BUILT` result mapping to fail entirely, and the commit status may not be set. Adding error handling for this operation would ensure a fallback behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: retryOnServerError(c::fetchVersion) propagates IOException/InterruptedException out of sendNotifications, which callers catch and print as errors — resulting in no commit status being posted for NOT_BUILT builds when fetchVersion fails. This is a new failure point introduced by the PR. A try/catch around fetchVersion with fallback to WARNING would be more resilient.",
+      "severity_justification": "fetchVersion failure is an edge case (the retry mechanism handles 500 errors), and the same failure mode existed pre-PR for createCommitStatus. The consequence is a missing status notification for NOT_BUILT builds when the version endpoint is unreachable, which is uncommon.",
+      "category_justification": "Missing error handling for a new API call that could leave commit status unset instead of falling back gracefully.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 91,
+      "end_line": 92,
+      "message": "The new logic assumes that the `retryOnServerError` method works correctly, but it does not log retries, which may make debugging version fetch issues harder. Adding debug logs for retry attempts would improve observability of retry behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually correct that retryOnServerError doesn't log retries, but the original pre-refactoring retry loop also had no logging — this is not a regression. The suggestion is generic ('add debug logs for observability') and could be applied unchanged to any retry utility in any codebase, making it a boilerplate best-practice comment rather than a code-specific finding.",
+      "severity_justification": "No functional regression; purely an observability suggestion with no concrete impact on correctness or reliability.",
+      "category_justification": "Generic suggestion to add debug logging for better observability of retry behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 170,
+      "end_line": 175,
+      "message": "Within the `retryOnServerError` utility method, an infinite retry loop is effectively prevented by the `tries` counter, but there is no log message when the maximum retry count is exhausted. This omission makes identifying failures that occur after retry exhaustion harder. Adding an explicit log when retries are exhausted would enhance diagnosability.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "When retry exhaustion occurs, the exception is re-thrown and already caught and logged at all three caller sites (JobCheckOutListener, JobCompletedListener.onCompleted, JobCompletedListener.onStarted). The pre-existing inline retry loop also had no retry-level logging. This is a generic 'add logging' suggestion with no concrete impact, and the same comment could be applied to any retry utility in any codebase.",
+      "severity_justification": "No functional gap — failures after retry exhaustion are already surfaced via exception propagation and caller-level logging.",
+      "category_justification": "Generic suggestion to add logging at retry exhaustion, a boilerplate observability recommendation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 75,
+      "end_line": 77,
+      "message": "If `DisplayURLProvider.get().getRunURL(build)` throws `IllegalStateException`, the return statement skips subsequent code execution without setting a build status (e.g., PENDING). This leads to an abrupt end of status notifications. Handling this case more gracefully by setting a fallback description or state would maintain consistent behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is pre-existing code unmodified by the PR. The early return when Jenkins root URL is unavailable is intentional — you cannot post a useful commit status without a target URL. The code already logs a clear message to the user. The suggestion to set a 'fallback state' is not actionable since there's no meaningful URL to include in that status.",
+      "severity_justification": "Pre-existing intentional behavior; no real issue to address.",
+      "category_justification": "Finding concerns error handling and graceful degradation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 172,
+      "end_line": 172,
+      "message": "Can we somehow reuse retry code?",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a vague, open-ended question ('Can we somehow reuse retry code?') with no specificity about what should be reused, where, or why. It lacks any concrete claim, identification of duplication, or actionable suggestion. It reads as a casual comment rather than a substantive code review finding.",
+      "severity_justification": "No concrete issue identified; purely a vague rhetorical question with no substance.",
+      "category_justification": "Loosely concerns code reuse/DRY principles, but too vague to categorize meaningfully.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "lafriks",
+        "url": "https://github.com/jenkinsci/gitea-plugin/pull/141#discussion_r2849168993",
+        "created_at": "2026-02-24T19:35:35Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "2e021e56de9104d8d124cac086cf6b208b6b4a88"
+      }
+    },
+    {
+      "file": "src/main/java/org/jenkinsci/plugin/gitea/GiteaNotifier.java",
+      "start_line": 170,
+      "end_line": 178,
+      "message": "The helper name says it retries server errors, but the implementation only retries HTTP 500 and lets other 5xx server errors such as 502/503/504 fail immediately. Either broaden the condition to the intended server-error range or rename it to reflect that only 500 is retried.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the method is named `retryOnServerError` but the retry guard `e.getStatusCode() == 500` only covers HTTP 500, not other 5xx server errors (502, 503, 504). The name is factually misleading relative to the implementation.",
+      "severity_justification": "Primarily a naming/clarity issue. The conservative retry behavior (only 500) is defensible, but the misleading name could cause future maintainers to rely on it for broader retry semantics it doesn't provide.",
+      "category_justification": "The core issue is a discrepancy between the method name and its actual behavior, which is a naming/readability concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

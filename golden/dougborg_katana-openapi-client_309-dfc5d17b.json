@@ -1,0 +1,653 @@
+{
+  "pr_key": "dougborg_katana-openapi-client_309-dfc5d17b",
+  "pr": {
+    "repo": "https://github.com/dougborg/katana-openapi-client",
+    "pr_number": 309,
+    "base": "d524e5a233d972cd5fe59a224ed5a1a2f323d415",
+    "head": "dfc5d17b9e4f98357ffd4a36f1ca8bd9201e4884"
+  },
+  "findings": [
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 460,
+      "end_line": 467,
+      "message": "`get_inventory_movements` calls `make_tool_result` without a `ui=` argument, so this new tool is the only one in the PR that doesn't get a Prefab UI. The PR states all tools receive rich interactive UIs, but this tool will always render only the markdown fallback, even on Prefab-capable clients.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the file: the `get_inventory_movements` tool's return statement at lines 458–465 calls `make_tool_result` with no `ui=` argument. Every other tool modified in this PR passes `ui=build_*_ui(...)`. The PR description explicitly claims all tools receive rich interactive UIs via structuredContent, making this an omission that contradicts stated intent. No `build_inventory_movements_ui` function exists in `prefab_ui.py` either.",
+      "severity_justification": "Functional behavior is unaffected — the tool works correctly and returns markdown. The omission is a consistency gap: Prefab-capable clients won't get an interactive UI for this specific tool, while every other tool gets one. Not a correctness or reliability issue.",
+      "category_justification": "The finding is about inconsistency — one newly-added tool was not wired up to match the pattern applied to all other tools in the same PR, creating an inconsistency in the codebase convention.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_public_api_client/domain/converters.py",
+      "start_line": 70,
+      "end_line": 72,
+      "message": "`unwrap_unset` now equates `None` with `UNSET`, silently replacing any legitimate `None` from the API with `default`. For API fields typed `T | None | Unset` where `None` is a meaningful value (e.g., 'explicitly cleared'), callers that supply a non-None default — such as `unwrap_unset(po.order_no, request.order_number)` — will now receive `request.order_number` when the API returns `null`, masking the API's intent. This is a behavioral breaking change to a shared utility.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The change is verified at lines 70-72 of converters.py (commit c19da0ba, part of this PR's branch). The check changed from `isinstance(value, Unset)` to `value is None or isinstance(value, Unset)`, and the specific caller `unwrap_unset(po.order_no, request.order_number)` at purchase_orders.py:247 exists — meaning an API null response would now return the user-supplied fallback rather than None, silently masking API intent.",
+      "severity_justification": "The behavioral change to a shared utility could silently mask API-returned null values with caller-supplied defaults, making it harder to distinguish 'field not in response' from 'field explicitly null'. The specific call with request.order_number as default is a concrete example where this matters, but practical impact is limited since Katana's API rarely returns meaningful nulls for these fields.",
+      "category_justification": "The change alters the semantics of a shared utility in a way that conflates two distinct API states (null vs absent), potentially producing incorrect values when the API explicitly returns null.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 550,
+      "end_line": 575,
+      "message": "`create_stock_adjustment` with `confirm=True` directly executes the write without calling `require_confirmation()`, unlike every other write tool in the codebase (`receive_purchase_order`, `fulfill_order`, `create_manufacturing_order`). The field description says 'prompts for confirmation' but the tool will submit destructive stock changes immediately when `confirm=True`, bypassing the user-elicitation step.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_create_stock_adjustment_impl` has no call to `require_confirmation()`. When `request.confirm=True`, the code jumps straight to building the API request and calling `create_stock_adjustment.asyncio_detailed`. The field description and tool docstring both claim it 'prompts for confirmation', which is false. Every other write tool in the codebase (fulfill_order, create_manufacturing_order, create_purchase_order, delete_item) calls require_confirmation() before executing.",
+      "severity_justification": "Stock adjustments directly mutate inventory levels — a destructive, hard-to-reverse operation. Skipping elicitation bypasses a user-safety guardrail that the codebase consistently applies to all other write tools, and the misleading description could lead LLM agents or users to assume a confirmation prompt will appear before changes are committed.",
+      "category_justification": "The tool's stated behavior (user confirmation prompt) contradicts its actual implementation (immediate API write), and it deviates from the established pattern for all other write tools.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 560,
+      "end_line": 561,
+      "message": "The stock adjustment number `SA-{timestamp}` uses second-level precision (`%Y%m%d-%H%M%S`). Concurrent requests or two rapid sequential calls within the same second will generate the same number. If the Katana API enforces uniqueness on `stock_adjustment_number`, the second call will fail with a conflict error. The comment says 'collision-resistant' but that claim does not hold under load.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: line 560 uses second-level timestamp precision (`%Y%m%d-%H%M%S`), and the comment at line 559 calls it 'collision-resistant'. Two calls within the same second would produce the same number. If the API enforces uniqueness, the second call would fail.",
+      "severity_justification": "In an MCP server context serving AI assistants in conversational sessions, sub-second concurrent calls are practically impossible. The real risk is minimal given the deployment pattern. A UUID or millisecond timestamp would be trivially better, but this is unlikely to cause real failures.",
+      "category_justification": "The issue concerns a potential duplicate-key conflict that could cause a runtime API error under concurrent load, which is a reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/items.py",
+      "start_line": 507,
+      "end_line": 575,
+      "message": "`_update_item_impl` performs no API call and returns a success `UpdateItemResponse` when neither item-level nor variant-level fields are set. There is no guard clause that rejects an empty update request. A caller that accidentally omits all fields gets a success response with `name='Unknown'` and a message claiming the item was updated, while nothing actually changed in the API.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: when neither `has_item_fields` nor `request.has_variant_fields` is True, the function skips both API calls, `item_name` remains `''`, and returns `UpdateItemResponse(name='Unknown', message='... updated successfully')`. No guard clause rejects the empty update. The cache is also unnecessarily invalidated in this path.",
+      "severity_justification": "A caller that omits all optional fields gets a false success response with a misleading 'updated successfully' message and name='Unknown', while the API was never called. An LLM agent following the two-step pattern (search → update) could use this and incorrectly believe a mutation occurred, leading to silent no-ops or confused state.",
+      "category_justification": "The function returns a success response claiming an update occurred when no API call was made, which is incorrect behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/tests/test_prefab_ui.py",
+      "start_line": 157,
+      "end_line": 181,
+      "message": "Tests pass `\"Purchase\"` and `\"Sales\"` as `order_type` arguments, but the function's `OrderType` Literal is `\"Purchase Order\" | \"Sales Order\" | \"Manufacturing Order\"`. In `build_order_created_ui`, all action-button rendering is guarded by `if order_type == \"Purchase Order\":` etc., so none of the footer buttons are rendered by these tests. The tests only assert the top-level `$prefab` key exists, so they pass while exercising none of the order-type-specific branching.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: tests at lines 157-181 pass 'Purchase' and 'Sales' to functions that expect OrderType literals 'Purchase Order' / 'Sales Order'. In build_order_created_ui, action buttons are guarded by exact string comparisons like `if order_type == 'Purchase Order'`, so no footer buttons render during these tests. _assert_valid_prefab only checks `assert '$prefab' in result`, so all tests pass while the type-specific branching is never exercised.",
+      "severity_justification": "The underlying production code is correct — the wrong strings only appear in test arguments. The tests provide false assurance that order-type-specific button rendering is covered, but this is a test quality issue rather than a production bug. Static type checkers (mypy) would catch the Literal mismatch.",
+      "category_justification": "Tests pass incorrect argument values that don't match the declared Literal type, causing key conditional branches to be silently skipped and giving false coverage confidence.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/tests/integration/test_inventory_workflow.py",
+      "start_line": 110,
+      "end_line": 110,
+      "message": "This test still asserts `inventory.available_stock >= 0`, but the new implementation computes `available_stock = total_in_stock - total_committed`, which can be negative when more stock is committed than is on hand. The same stale assertion exists at line 219. These tests will fail against any dataset where committed quantity exceeds in-stock quantity, even though that is now a valid and expected return value.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: lines 110 and 219 assert `inventory.available_stock >= 0`. The new implementation at inventory.py computes `available = total_in_stock - total_committed`, which is explicitly allowed to be negative (it's a float, not guarded to 0). The assertions reflect the old semantics where available stock was never expected to go below zero.",
+      "severity_justification": "These are integration tests that run against a live API account, not in CI. They'd only fail if the test account happens to have committed > in_stock for a given SKU. The issue is a stale assertion that creates false test failures on valid data, but doesn't indicate a production bug — negative available stock is a valid and intended state in the new implementation.",
+      "category_justification": "The assertion encodes an invariant (available_stock >= 0) that the new implementation intentionally removes, making it a stale test assertion that will produce false failures.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 93,
+      "end_line": 95,
+      "message": "`unwrap_unset(inv.quantity_in_stock, \"0\")` passes a string `\"0\"` as the default. The `Inventory` model declares `quantity_in_stock: str` as a required (non-Unset) field, so the sentinel path is never hit. However, `float(unwrap_unset(..., \"0\"))` will crash with `ValueError` if the API ever returns an empty string or non-numeric string for these fields (e.g., during a partial API response). Using a numeric `0.0` default and converting before the sum would be safer and more intent-revealing.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `Inventory.quantity_in_stock` is typed `str` (required, never Unset), confirming the `\"0\"` sentinel default is unreachable. The `float()` wrapping will raise ValueError on any non-numeric string value from the API. Both claims in the finding are factually correct.",
+      "severity_justification": "The API consistently returns numeric strings for quantity fields as shown in the model documentation (e.g., '150.0', '25.0'), making a crash very unlikely in practice. The string '0' vs numeric 0.0 default is a clarity/style issue. The proposed fix only partially addresses the concern.",
+      "category_justification": "The unchecked float() conversion on an API-returned string could raise ValueError in edge cases (empty string, unexpected format), which is a reliability concern in production use.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/manufacturing_orders.py",
+      "start_line": 395,
+      "end_line": 395,
+      "message": "`make_simple_result` is called for `get_manufacturing_order`, but this tool does not build or pass a Prefab UI. This is inconsistent with the other tools modified in this PR, which all add a Prefab UI. A new UI builder for manufacturing order details should be created in `prefab_ui.py` and used here instead of `make_simple_result`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `get_manufacturing_order` at line 382 uses `make_simple_result` with no Prefab UI, while every other tool modified in this PR passes `ui=build_*_ui(...)` via `make_tool_result`. The PR description claims all tools get Prefab UIs. This is the same omission pattern as the `get_inventory_movements` tool (Finding 1).",
+      "severity_justification": "Same as Finding 1 — functional correctness is unaffected, the tool works and returns markdown. The omission is a consistency gap: Prefab-capable clients won't get an interactive UI for this tool.",
+      "category_justification": "A newly added tool was not wired up to match the Prefab UI pattern established and consistently applied to all other tools in this PR.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 560,
+      "end_line": 560,
+      "message": "`make_simple_result` is called for `create_stock_adjustment`, but this tool does not build or pass a Prefab UI. This is inconsistent with the other tools modified in this PR, which all add a Prefab UI. A new UI builder for stock adjustments should be created in `prefab_ui.py` and used here instead of `make_simple_result`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `create_stock_adjustment` calls `make_simple_result` with no Prefab UI, while all other tools in this PR use `make_tool_result` with `ui=build_*_ui(...)`. This is the third new tool in the PR (alongside `get_inventory_movements` and `get_manufacturing_order`) that omits the Prefab UI, contradicting the PR's stated goal of wiring all tools to rich interactive UIs.",
+      "severity_justification": "Same as Findings 1 and 9 — functional behavior is unaffected, the tool works correctly with markdown output. The omission is a consistency gap.",
+      "category_justification": "A newly added write tool was not wired up to the Prefab UI pattern consistently applied to all other tools in this PR.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/orders.py",
+      "start_line": 153,
+      "end_line": 156,
+      "message": "When a manufacturing order is already 'DONE', a confirmation is still requested from the user. The check for `current_status == 'DONE'` happens after `require_confirmation`. This will lead to an unnecessary user prompt for an action that is a no-op. The status check should be moved before the confirmation prompt.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code is correct. When `request.confirm=True`, the `if current_status == 'DONE':` check at line 163 comes *before* the `require_confirmation` call at line 174 and returns early. The order DONE → require_confirmation is correct. The finding has the execution order reversed.",
+      "severity_justification": "The finding is incorrect — there is no real bug here.",
+      "category_justification": "The finding claims an incorrect execution order (DONE check after confirmation), which would be a UX bug if true.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 512,
+      "end_line": 512,
+      "message": "The `adj_id` is unsafely accessed using `getattr(result, \"id\", None)`. The `unwrap(response)` call on the previous line returns an `attrs` model instance which has a defined `id` field. Direct access `result.id` should be used for type safety and clarity, as `getattr` can hide potential issues if the field name changes.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `StockAdjustment.id` is typed `int` (required, line 35 of stock_adjustment.py). When `result` is not None, using `getattr(result, 'id', None)` is weaker than direct `result.id` — it masks a potential rename/refactor issue and introduces a `None` return type that's inconsistent with the model's non-optional `int` field. The finding is factually correct.",
+      "severity_justification": "Purely a code clarity/type-safety issue. The `id` field is required and will always exist when `result` is not None, so no runtime failure is likely. The `if result else None` guard pattern is correct for handling the `T | None` return of `unwrap()`.",
+      "category_justification": "A style/clarity issue where defensive `getattr` obscures the type contract and could hide regressions from field renames.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/items.py",
+      "start_line": 491,
+      "end_line": 491,
+      "message": "The `item_name` is unsafely accessed using `getattr(variant_result, \"sku\", \"\")`. The `unwrap(resp)` call on the previous line returns a typed `attrs` model instance. Direct access `variant_result.sku` should be used for type safety and clarity, as `getattr` can hide potential issues if the field name changes.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `Variant.sku` is typed `str` (required, line 39 of variant.py). When `variant_result` is not None (guarded by `if not item_name and variant_result:`), using `getattr(variant_result, 'sku', '')` is weaker than direct `variant_result.sku`. The finding is factually correct about the same defensive-getattr pattern identified in Finding 12.",
+      "severity_justification": "Purely a code clarity/type-safety issue. `sku` is a required field that will always exist when `variant_result` is not None. No runtime failure is likely. Same low-impact pattern as Finding 12.",
+      "category_justification": "Style/clarity issue where defensive `getattr` obscures the type contract of the returned attrs model and could hide regressions from field renames.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/utils.py",
+      "start_line": 74,
+      "end_line": 74,
+      "message": "The `error_response.details` field is accessed via `getattr` and then unwrapped with `unwrap_unset`. Given `error_response` is a Pydantic model (`DetailedErrorResponse`), `details` will be present (even if `None` or `UNSET`). Direct access `unwrap_unset(error_response.details, [])` is safer and more idiomatic than using `getattr`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding incorrectly identifies `DetailedErrorResponse` as Pydantic (it's an attrs model) and misses that `error_response: DetailedErrorResponse | None = None` can be `None`. The `getattr(error_response, 'details', None)` pattern safely returns `None` when `error_response` is `None`. The suggested direct access `error_response.details` would raise AttributeError in that case. The existing code is correct.",
+      "severity_justification": "The finding is factually incorrect; the existing code is handling the None case correctly.",
+      "category_justification": "The finding is about access style/clarity, which falls under maintainability.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 178,
+      "end_line": 181,
+      "message": "The `movement_date` and `resource_type` fields are unsafely accessed using `hasattr`. This is an anti-pattern for `attrs` models, where fields always exist but may be `UNSET`. The correct and safer way to access these potentially unset fields is to use `unwrap_unset` from the project's domain converters, which is already used for other fields in the same model.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `hasattr` checks are verified unnecessary: `movement_date: datetime.datetime` and `resource_type: InventoryMovementResourceType` are both required fields (not Unset-typed). The else branches (`str(m.movement_date)` and `str(m.resource_type)`) are dead code. The finding correctly identifies the anti-pattern even though the cause (UNSET) and suggested fix (unwrap_unset) are both incorrect — direct access is the right fix.",
+      "severity_justification": "The dead code branches have no practical impact (the hasattr checks always return True for typed required fields). No runtime failures occur, just unnecessary indirection and dead code.",
+      "category_justification": "Unnecessary `hasattr` guards on typed required fields create dead code and obscure intent, which is a code clarity/maintainability issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/manufacturing_orders.py",
+      "start_line": 328,
+      "end_line": 334,
+      "message": "The `order_created_date`, `production_deadline_date`, and `done_date` fields are unsafely accessed using `isinstance(..., type(UNSET))` and `hasattr`. This is an anti-pattern for `attrs` models. The correct and safer way to handle potentially unset fields is to use `unwrap_unset` from the project's domain converters, which is used for other fields in the same model. The current implementation is also incorrect because it doesn't handle `None` values.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code uses `isinstance(mo.order_created_date, type(UNSET))` instead of the project's established `unwrap_unset` pattern, which the CLAUDE.md explicitly documents as the anti-pattern to avoid. The finding is correct that this is inconsistent. However, the claim 'doesn't handle None values' is factually wrong — `and mo.done_date` short-circuits to None correctly for None values. The core inconsistency concern is valid.",
+      "severity_justification": "The code works correctly — None and UNSET cases are handled. The issue is purely code style/consistency with the established `unwrap_unset` pattern in this codebase.",
+      "category_justification": "Using `isinstance(..., type(UNSET))` is inconsistent with the project's documented `unwrap_unset` convention, creating an inconsistent access pattern across the codebase.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 177,
+      "end_line": 181,
+      "message": "In the method '_check_inventory_impl', `unwrap_unset` is used to process inventory fields. However, the `unwrap_unset` function also handles `None`, which might mask cases where the API unexpectedly omits values. While this is technically correct as the default fallback is provided, it assumes 'None' is appropriate for unset fields, which might collide with valid `None` semantics in other cases.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The fields `quantity_in_stock`, `quantity_committed`, `quantity_expected` are all typed `str` (required, non-Unset) in the Inventory model. The unwrap_unset calls never hit the None/UNSET path, making the masking concern moot. The finding is generic — it restates a theoretical concern about unwrap_unset's behavior without demonstrating a concrete problem at these specific lines.",
+      "severity_justification": "No actual issue exists at these specific lines for these specific fields.",
+      "category_justification": "The concern is about a general code pattern rather than a specific bug.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 207,
+      "end_line": 212,
+      "message": "In '_get_inventory_movements_impl', `unwrap_unset` is called to process fields in `MovementInfo`. If unexpected data structures propagate into these fields, `unwrap_unset`'s broad handling might suppress potential source issues by falling back to a default value without warning.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The only unwrap_unset call at these lines is on `caused_by_order_no: str | Unset = UNSET`, which is exactly the correct use case for the function. The finding is generic boilerplate — 'might suppress source issues' could be applied to any unwrap_unset call anywhere in the codebase without identifying a concrete problem specific to this code.",
+      "severity_justification": "No real issue exists here; the usage is correct and conventional.",
+      "category_justification": "The concern is about a general code pattern rather than a specific bug.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 448,
+      "end_line": 449,
+      "message": "[python.lang.correctness.common-mistakes.string-concat-in-list.string-concat-in-list] Detected strings that are implicitly concatenated inside a list. Python will implicitly concatenate strings when not explicitly delimited. Was this supposed to be individual elements of the list?",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The two adjacent f-strings are deliberately concatenated to form a single table row string per generator iteration. This is standard Python multi-line string syntax inside a `'\\n'.join()` generator. The semgrep rule cannot distinguish intentional line-continuation string concatenation from an accidental missing comma. The code is correct and produces the intended single string per row.",
+      "severity_justification": "The code is correct — this is a static analysis false alarm on intentional multi-line string concatenation.",
+      "category_justification": "The rule targets a potential correctness bug (missing comma producing unexpected string concatenation in a list), but this is a generator expression with intentional concatenation.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.correctness.common-mistakes.string-concat-in-list.string-concat-in-list"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/manufacturing_orders.py",
+      "start_line": 340,
+      "end_line": 358,
+      "message": "`mo.status` is a `ManufacturingOrderStatus` (StrEnum) when present, but `ManufacturingOrderInfo.status` is typed as `str | None`. Pydantic will coerce StrEnum values to strings, but for consistency with other places in this codebase that explicitly use `.value` (e.g. `orders.py` line 207: `updated_mo.status.value if updated_mo.status else \"UNKNOWN\"`), and to ensure the JSON serialization is the bare string rather than the enum's repr, consider explicitly extracting `mo.status.value` here. The same applies to `ingredient_availability` which is also an enum.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding correctly identifies that `unwrap_unset(mo.status, None)` and `unwrap_unset(mo.ingredient_availability, None)` pass StrEnum values directly without `.value` extraction, while other code in the same file (and orders.py) explicitly calls `.value`. The serialization risk is overstated (Pydantic v2 coerces StrEnum to str properly), but the inconsistency with the established codebase pattern is real and verifiable.",
+      "severity_justification": "StrEnum values serialize correctly through Pydantic, so there is no runtime bug. The issue is purely a style/consistency concern with the pattern established elsewhere in the codebase.",
+      "category_justification": "This is a code consistency issue — the same codebase uses explicit `.value` extraction in analogous patterns, and this new code diverges from that convention without functional consequence.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/tool_result_utils.py",
+      "start_line": 60,
+      "end_line": 67,
+      "message": "When `ui` is provided, the structured_content of the ToolResult is replaced with a Prefab JSON envelope (with `data` key added). FastMCP typically validates `structured_content` against the tool's output schema (derived from the response Pydantic model). Replacing it with a Prefab UI envelope may cause MCP clients that rely on output schema validation to reject the response, and breaks the contract for programmatic clients that expect `structured_content` to match the declared output schema. Consider keeping `structured_content` as `response.model_dump()` and emitting the Prefab UI via a separate mechanism (e.g., an additional content block or a dedicated `meta`/`_prefab` field) so the documented behavior in the docstring (\"structured JSON for programmatic access\") is preserved for non-Prefab clients.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's core claim — that FastMCP validates structured_content against the tool's output schema — is factually incorrect. FastMCP's `Tool.run()` returns any `ToolResult` directly without validation, and all these tools return `ToolResult`. The programmatic access concern is also already addressed: the code explicitly embeds `response.model_dump()` under `prefab_json['data']`, which the docstring documents. The finding misunderstands FastMCP's execution path for tools returning ToolResult directly.",
+      "severity_justification": "If the claim were true, it would be a meaningful API contract violation. The fact it's incorrect makes it FP, but a validator rejecting responses would be a real medium-severity issue.",
+      "category_justification": "The concern is about the structured_content schema contract between the tool and MCP clients.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 62,
+      "end_line": 65,
+      "message": "This path now depends on the variant cache, but unlike the existing SKU-based item tools (`_search_items_impl` and `_get_variant_details_impl`), it is not wrapped with `@cache_read(EntityType.VARIANT)`. On a cold or stale cache, `check_inventory` will return zero stock for a valid SKU without ever querying the API.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_check_inventory_impl` depends on `services.cache.get_by_sku()` but lacks `@cache_read(EntityType.VARIANT)`. Analogous functions `_search_items_impl` and `_get_variant_details_impl` both have this decorator. On a cold/stale cache, `get_by_sku` returns None and the function silently returns all-zero stock for any valid SKU. The bug was introduced by this PR's rewrite replacing the direct API call with a cache lookup.",
+      "severity_justification": "A valid SKU can silently return zero stock, which could cause users to incorrectly believe items are out of stock, leading to erroneous purchase orders or missed production. The failure is silent (no error raised, just a warning log) making it hard to detect.",
+      "category_justification": "This is a logic error that causes the tool to return incorrect data (zero stock) for valid SKUs when the cache is cold or stale.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 363,
+      "end_line": 366,
+      "message": "This new SKU lookup has the same cold-cache failure mode: the function reads `services.cache.get_by_sku()` without first syncing the variant cache. A valid SKU can therefore return an empty movement history if variants have not already been cached.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_get_inventory_movements_impl` uses `services.cache.get_by_sku()` without `@cache_read(EntityType.VARIANT)`. No such decorator exists on either `_get_inventory_movements_impl` or `get_inventory_movements`. This is the exact same pattern as Finding 3 — a cold/stale cache causes silent return of empty movement history for a valid SKU.",
+      "severity_justification": "A valid SKU returns empty movement history silently when the cache is cold, which could mislead users investigating stock discrepancies or tracing inventory changes — the primary use case of this new tool.",
+      "category_justification": "Logic error causing incorrect (empty) results to be returned for valid inputs when the cache is unpopulated.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/items.py",
+      "start_line": 428,
+      "end_line": 432,
+      "message": "The description says the first variant is used when `sku` is omitted, but the implementation raises a `ValueError` whenever variant-level fields are provided without `sku`. This makes the tool contract misleading for callers.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `UpdateItemRequest.sku` field description says 'uses first variant if omitted' but `_update_item_impl` raises `ValueError` when `request.has_variant_fields` is True and `sku` is None — there is no fallback-to-first-variant code path. The documented contract directly contradicts the implementation.",
+      "severity_justification": "The error message is informative so callers are not silently misled, but they will encounter an unexpected error after relying on the documented 'uses first variant' behavior. No data corruption occurs.",
+      "category_justification": "This is a mismatch between the declared API contract (field description) and the actual implementation behavior of a tool's parameter.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 651,
+      "end_line": 654,
+      "message": "`create_stock_adjustment` is registered with the non-destructive annotation even though it can apply negative quantities and permanently change stock counts. Other inventory-changing/destructive tools, such as `fulfill_order`, use `destructiveHint=True`, so hosts may under-protect this action.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `destructiveHint=False` annotation is consistent with how all other 'create' operations are annotated in this codebase (create_sales_order, create_purchase_order, create_manufacturing_order, create_item). `destructiveHint=True` is reserved for terminal/irreversible operations (fulfill=state transition, delete=permanent removal). A stock adjustment creates a new record (reversible with another adjustment) rather than destructively mutating existing state. The comparison to `fulfill_order` is not apt.",
+      "severity_justification": "Even if the annotation were changed, the tool has its own confirm/preview mechanism protecting against accidental negative adjustments. The MCP host behavior difference for this hint is minimal in practice.",
+      "category_justification": "The concern is about the accuracy of the MCP tool's metadata annotation (destructiveHint) which affects how MCP hosts protect the action.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/items.py",
+      "start_line": 541,
+      "end_line": 544,
+      "message": "The variant selected by `sku` is not checked against `request.id`/`request.type` before being patched. A request can update item A's item-level fields while also updating the variant for item B if the SKU belongs to another product/material.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the code fetches a variant by SKU, then unconditionally patches it via `update_variant.asyncio_detailed(id=variant_id, ...)` without checking that `variant['product_id']` or `variant['material_id']` matches `request.id`. The cached variant data contains `product_id`/`material_id` fields that would enable this validation but are not used.",
+      "severity_justification": "A caller (or AI agent making parameter errors) can silently corrupt two different items in one call with no error raised. In an LLM-driven MCP workflow, logical parameter mistakes are plausible, making this a realistic data integrity risk.",
+      "category_justification": "The item-level and variant-level updates are applied to different entities when id/sku belong to different items, producing incorrect behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/inventory.py",
+      "start_line": 535,
+      "end_line": 537,
+      "message": "This stock adjustment path resolves SKUs from the cache without syncing it first. If the variant cache is empty or stale, preview/creation fails with `SKU not found` for valid items instead of resolving them reliably.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_create_stock_adjustment_impl` resolves SKUs via `services.cache.get_by_sku()` in a loop with no `@cache_read(EntityType.VARIANT)` decorator on either `_create_stock_adjustment_impl` or `create_stock_adjustment`. On a cold/stale cache, each row raises `ValueError(f\"SKU '{row.sku}' not found\")` even for valid SKUs. Same root cause as Findings 3 and 4.",
+      "severity_justification": "A cold-cache failure causes the entire stock adjustment to fail with a misleading 'not found' error for valid SKUs. This affects both preview and actual creation paths, making the tool completely unusable until the cache is warmed by another tool call.",
+      "category_justification": "Logic error causing valid SKUs to be reported as not found due to missing cache-sync before the lookup.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/resources/help.py",
+      "start_line": 328,
+      "end_line": 328,
+      "message": "`confirm` is documented as required here, but `CreateStockAdjustmentRequest.confirm` has a default of `False`, so callers can omit it for preview mode. The help text should match the actual schema.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: help.py line 328 says `confirm` (required) but `CreateStockAdjustmentRequest.confirm` has `default=False`, making it optional. This is a direct factual mismatch between the help documentation and the actual schema.",
+      "severity_justification": "Callers who read the help text will think they must supply `confirm`, but omitting it silently defaults to preview mode — a harmless but misleading discrepancy. No data is corrupted and the error is in documentation only.",
+      "category_justification": "The help resource is hardcoded documentation that incorrectly describes the parameter's required/optional status.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/tool_result_utils.py",
+      "start_line": 62,
+      "end_line": 65,
+      "message": "For UI-enabled tools this replaces the previous top-level response dict with the Prefab envelope and nests the actual tool data under `data`, while the non-UI branch still returns model fields at top level. That inconsistent/breaking structured_content shape can break programmatic clients that read fields like `id`, `items`, or `order_number` from the existing top-level response.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `make_tool_result` with `ui=` produces `{...prefab_json..., 'data': {...}}` while without `ui=` it produces flat `{...response fields...}`. The inconsistency is real within this PR — `get_inventory_movements` in the same file calls `make_tool_result` without `ui=`, returning a flat shape, while `check_inventory` and `list_low_stock_items` return the Prefab envelope. A programmatic client reading `result['id']` would fail on UI-enabled tools but succeed on non-UI tools.",
+      "severity_justification": "Any programmatic client reading top-level fields from structured_content will get inconsistent behavior across tools in the same server. The `data` nesting is deliberate but undiscoverable without inspection, making cross-tool programmatic use unreliable.",
+      "category_justification": "The structured_content contract — the machine-readable output format of MCP tools — has an inconsistent shape across tools in the same server.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/prefab_ui.py",
+      "start_line": 377,
+      "end_line": 381,
+      "message": "The confirm action only sends a generic message and does not preserve the original order payload (line items, supplier/customer, location, etc.). Because the preview response models do not include those request rows, clicking this button cannot reliably recreate the required `confirm=true` tool call and may force the model/user to guess missing parameters.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: `build_order_preview_ui`'s confirm button sends `SendMessage('Create the purchase order with confirm=true')` — a generic string with no encoded parameters. The response models (PurchaseOrderResponse, SalesOrderResponse, ManufacturingOrderResponse) contain aggregate fields but not original line items. The LLM conversation context partially mitigates this, but the button's action is not self-contained and relies on context window fidelity.",
+      "severity_justification": "In practice, Claude Desktop maintains conversation context so the LLM can reconstruct the confirm=true call. The failure mode only manifests with context truncation or long conversations. No data corruption occurs — at worst the user needs to re-enter parameters.",
+      "category_justification": "The Prefab UI action button design does not encode sufficient state for a reliable self-contained tool call, creating a dependency on external conversation context.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/prefab_ui.py",
+      "start_line": 687,
+      "end_line": 691,
+      "message": "The receipt confirm action omits the `items` payload required by `receive_purchase_order` (purchase order row IDs and quantities), and the preview response only stores `items_received`. Clicking this button cannot reliably execute the same receipt with `confirm=true`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `ReceivePurchaseOrderResponse` stores only `order_id`, `order_number`, `items_received` — the original `items` (purchase_order_row_id + quantity pairs) are not preserved. The confirm button sends a generic message without these IDs. `purchase_order_row_id` values are internal DB IDs that cannot be guessed and would require another API lookup to reconstruct.",
+      "severity_justification": "Unlike order creation parameters specified by users, `purchase_order_row_id` values come from API responses and are not part of natural user input. Context recovery is unreliable, making the confirm button likely to fail without additional API calls to re-fetch the row IDs.",
+      "category_justification": "The Prefab UI action button for receipt confirmation lacks the necessary state to reconstruct the required tool call parameters.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "katana_mcp_server/src/katana_mcp/tools/foundation/items.py",
+      "start_line": 541,
+      "end_line": 543,
+      "message": "Variant updates now depend on `services.cache.get_by_sku()`, but this implementation is not wrapped with `@cache_read(EntityType.VARIANT)` like the existing SKU-based read tools. On a cold/stale cache, updating valid variant-level fields can fail with `SKU not found`.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_update_item_impl` calls `services.cache.get_by_sku(sku=request.sku)` at line ~541 without `@cache_read(EntityType.VARIANT)` on either `_update_item_impl` or `update_item`. Contrast with `_search_items_impl` (line 126) and `_get_variant_details_impl` (line 805) which both have `@cache_read(EntityType.VARIANT)`. On a cold/stale cache, the lookup returns None and raises `ValueError(f\"SKU '{request.sku}' not found\")` for valid SKUs.",
+      "severity_justification": "A cold-cache failure causes variant-level update calls to fail with a misleading 'not found' error for valid SKUs, making the new variant update functionality completely unusable until the cache is warmed by another tool call.",
+      "category_justification": "Logic error causing valid SKUs to be reported as not found and updates to fail due to missing cache-sync before the lookup.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,353 @@
+{
+  "pr_key": "iTwin_presentation_1288-31c0f13a",
+  "pr": {
+    "repo": "https://github.com/iTwin/presentation",
+    "pr_number": 1288,
+    "base": "bbd50c283e2b9e3597a7bf7fdbb735ce8cd2f898",
+    "head": "31c0f13af9ed1c2a6998f4dee23efb86210da50d"
+  },
+  "findings": [
+    {
+      "file": "packages/components/src/test/propertygrid/DataProvider.test.ts",
+      "start_line": 1461,
+      "end_line": 1501,
+      "message": "The test 'sorts favorite records using FavoritePropertiesManager.sortFieldsAsync' checks `data.records[category.name]` (the original non-favorites category), not `data.records[FAVORITES_CATEGORY_NAME]`. The migration from `containSubset([a, b, c])` to `toMatchObject([a, c, b])` now explicitly encodes priority-sorted order, contradicting the test's stated purpose. The `FavoritePropertiesManager.sortFieldsAsync` is only applied to the favorites category (by `sortFavoriteFields`), not the original category, so this test never actually verified sortFieldsAsync behavior. The expected order `[a, c, b]` is priority-sorted (a:3, c:2, b:1), while the test's alphabetical sort callback would produce `[a, b, c]`. The same issue exists at lines 1503-1544.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: (1) the test checks `data.records[category.name]` (regular category), not `data.records[FAVORITES_CATEGORY_NAME]`; (2) DataProvider.ts sortFieldsAsync applies priority-descending sort for non-favorites categories, ignoring the `Presentation.favoriteProperties.sortFieldsAsync` mock entirely; (3) the PR migration changed from `containSubset([a,b,c])` (order-agnostic) to `toMatchObject([a,c,b])` (priority-descending) while the test name claims to test alphabetical `sortFieldsAsync` behavior. The mock's alphabetical sort is irrelevant to what is asserted.",
+      "severity_justification": "The test still passes and the assertion is valid (priority order is correct for regular categories), but the test name is misleading and it does not actually verify the `sortFieldsAsync` behavior it claims to test. No production code is broken.",
+      "category_justification": "This is a test correctness issue: the test asserts the wrong category and the migration hardcoded an order that contradicts the stated test purpose.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/components/src/test/tree/DataProvider.test.ts",
+      "start_line": 253,
+      "end_line": 256,
+      "message": "The memoization test lost a key assertion. The original Chai chain `expect(results[2]).to.eq(results[3]).to.eq(results[0])` verified that `getNodes(node, {start:0, size:0})` returns the same cached result object as `getNodes(node, undefined)`. The migration only preserved `expect(results[2]).toBe(results[3])`, dropping the assertion `results[2] === results[0]`. The test now no longer verifies that calls with `{start:0, size:0}` paging reuse the no-paging cache entry, which is a critical behavior of the memoization being tested.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed by git diff: original Chai chain `expect(results[2]).to.eq(results[3]).to.eq(results[0])` verified both results[2]===results[3] AND results[2]===results[0]. The migration only preserved `expect(results[2]).toBe(results[3])`, dropping the assertion that the {start:0,size:0} paging call returns the same cached object as the undefined-paging call. While `toHaveBeenCalledTimes(3)` partially covers this, it does not verify the same object reference.",
+      "severity_justification": "The behavior is partially covered by `toHaveBeenCalledTimes(3)` proving no extra manager calls, but the explicit object-identity check between results[2] and results[0] was lost, weakening the memoization test.",
+      "category_justification": "An assertion verifying memoization behavior was dropped during the chai-to-vitest migration.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/components/src/test/properties/inputs/UseNavigationPropertyTargetsLoader.test.ts",
+      "start_line": 61,
+      "end_line": 76,
+      "message": "The 'loads targets' test (getContentIterator variant) dropped the `expect(result.current.selectOptions).toHaveLength(1)` assertion. `selectOptions` and `loadedOptions` are distinct arrays—`selectOptions` can include a filter-reminder option when the batch is full. The `toMatchObject` on `loadedOptions` does not cover `selectOptions`. The same assertion is also missing from the deprecated getContent variant at line 142–158.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed by git diff in commit 86995cc3: both `selectOptions.toHaveLength(1)` and `loadedOptions.toHaveLength(1)` were dropped from the 'loads targets' tests, replaced with a single `loadedOptions.toMatchObject([{...}])`. The selectOptions and loadedOptions are confirmed to be distinct arrays in UseNavigationPropertyTargetsLoader.ts. However, in the single-item test scenario below VALUE_BATCH_SIZE, the filter reminder is never added so the dropped selectOptions check is of limited additional value.",
+      "severity_justification": "The dropped assertions cover a scenario where selectOptions and loadedOptions are functionally equivalent (single item, no filter reminder). The critical filter-reminder distinction is still tested in the 'loads full batch' test.",
+      "category_justification": "Assertions were dropped during the chai-to-vitest migration, weakening test coverage for selectOptions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/components/src/test/propertygrid/DataProvider.test.ts",
+      "start_line": 1503,
+      "end_line": 1544,
+      "message": "The test 'sorts favorite records using FavoritePropertiesManager.sortFields when sortFieldsAsync is not available' has the same issue as the sortFieldsAsync variant above: it checks `data.records[category.name]` with `toMatchObject([a, c, b])` (priority order), while the alphabetical sort callback would produce `[a, b, c]` for the favorites category. The test does not actually verify that the favorites manager's sort function is being applied.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same issue as the sortFieldsAsync variant: test checks `data.records[category.name]` (regular non-favorites category) with expected priority-descending order [a,c,b], while the `sortFields` alphabetical mock only affects the favorites category. DataProvider.ts confirms non-favorites always use inPlaceSort by priority regardless of the favorites manager mock. The test never verifies the sortFields behavior it claims to test.",
+      "severity_justification": "Test still passes and the priority-order assertion for the regular category is correct, but the test name is misleading and the favorites manager sort mock is never exercised by the assertion.",
+      "category_justification": "Test design issue: the assertion checks the wrong category and the mock has no effect on what is asserted, making the test name misleading.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/components/src/test/common/ContentDataProvider.test.ts",
+      "start_line": 465,
+      "end_line": 480,
+      "message": "The memoization test for `getContent` correctly migrates the Chai chain to individual `expect(responses[0]).toEqual(responses[N])` calls, but the equivalent migration in tree/DataProvider.test.ts at line 253-256 is incomplete (drops `results[2] === results[0]`). This is an inconsistency that could mask a regression in tree node memoization behaviour where `{start:0, size:0}` paging should reuse the same cache as no-paging.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ContentDataProvider.test.ts correctly migrated all chain assertions (responses[0] compared to responses[1], [2], [3] individually), while tree/DataProvider.test.ts only preserved results[2]===results[3] and dropped results[2]===results[0]. This is the same issue as Finding 2 — the assertion that {start:0,size:0} paging reuses the no-paging cache entry was dropped. The inconsistency between the two migrations is real and verifiable.",
+      "severity_justification": "The behavior is partially covered by toHaveBeenCalledTimes(3) in the tree test, but the object-identity check confirming results[2]===results[0] was lost, weakening the memoization test.",
+      "category_justification": "An assertion was dropped during migration, creating an inconsistency with an equivalent correctly-migrated test in the same codebase.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/full-stack-tests/src/components/properties/PropertyPaneDataProvider.test.ts",
+      "start_line": 372,
+      "end_line": 372,
+      "message": "The assertion `expect(value.items).toHaveLength(2)` was removed. While `toMatchObject` checks for the presence of the specified items, it does not guarantee that there aren't *more* items in the array. If the intention is to check for an exact count of 2, the length assertion should be restored.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `toHaveLength(2)` assertions were removed from both array-value assertions per the diff. Vitest's `toMatchObject` on arrays does not enforce exact length — an array with extra elements would still pass. The finding is factually correct about this weakening.",
+      "severity_justification": "This is a full-stack integration test that inserts exactly 2 known items into the test imodel. The data is fully deterministic, so the chance of a false negative (3+ items silently passing) is negligible. The removed assertion adds little practical value.",
+      "category_justification": "An assertion was dropped during migration that weakens the exact-length guarantee for array values.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/full-stack-tests/src/components/properties/PropertyPaneDataProvider.test.ts",
+      "start_line": 399,
+      "end_line": 399,
+      "message": "The assertion `expect(value.items).toHaveLength(2)` was removed. While `toMatchObject` checks for the presence of the specified items, it does not guarantee that there aren't *more* items in the array. If the intention is to check for an exact count of 2, the length assertion should be restored.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same issue as Finding 6 but for the StructArrayProperty at line 399. The `toHaveLength(2)` was removed per the diff, and `toMatchObject` on an array does not enforce exact length. The same deterministic test setup inserts exactly 2 struct items, making the practical risk negligible.",
+      "severity_justification": "Integration test with deterministic data (exactly 2 struct items inserted), so the chance of a false negative is negligible. The removed assertion adds little practical value in this context.",
+      "category_justification": "An assertion was dropped during migration that weakens the exact-length guarantee for the StructArrayProperty array values.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/components/src/test/instance-filter-builder/InstanceFilterBuilder.test.tsx",
+      "start_line": 291,
+      "end_line": 291,
+      "message": "The original test used `toHaveLength(2).and.to.containSubset(...)`. The new assertion `toMatchObject([concreteClass1, concreteClass2])` only checks that the array contains the given subset, but it doesn't enforce the exact length. If the array should have exactly two classes, `toHaveLength(2)` should be re-added.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed by git history: commit f615b929 correctly migrated to `toHaveLength(2)` + `toMatchObject(...)`, then commit 86995cc3 dropped `toHaveLength(2)`. The `toMatchObject` with a 2-element array does not enforce exact array length. The test setup uses a descriptor with exactly 2 select classes, so practical risk is low, but the assertion was deliberately removed.",
+      "severity_justification": "The descriptor in the test setup contains exactly 2 select classes so a false negative is unlikely, but a bug that adds spurious classes to the list would go undetected.",
+      "category_justification": "A length assertion was dropped during the cleanup commit, weakening the exactness of the test.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/components/src/test/instance-filter-builder/InstanceFilterBuilder.test.tsx",
+      "start_line": 306,
+      "end_line": 306,
+      "message": "The original test used `toHaveLength(1).and.to.containSubset(...)`. The new assertion `toMatchObject([concreteClass1])` only checks that the array contains the given subset, but it doesn't enforce the exact length. If the array should have exactly one class, `toHaveLength(1)` should be re-added.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same issue as Finding 8, confirmed by the same git diff in commit 86995cc3: `toHaveLength(1)` was removed from the 'does not duplicate classes' test, leaving only `toMatchObject([concreteClass1])`. This test specifically verifies deduplication behavior — the descriptor has two identical concreteClass1 entries, and the test is meant to verify only 1 class is returned. Without `toHaveLength(1)`, a regression returning 2 classes would pass `toMatchObject([concreteClass1])` since the first element still matches.",
+      "severity_justification": "Unlike Finding 8, this test is specifically about deduplication. A regression that returns 2 classes instead of 1 would be silently missed by `toMatchObject([concreteClass1])` alone, undermining the entire purpose of the test.",
+      "category_justification": "A length assertion was dropped that is critical for verifying the deduplication behavior this test was designed to check.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/components/src/test/common/ContentDataProvider.test.ts",
+      "start_line": 235,
+      "end_line": 236,
+      "message": "The assertion `expect(descriptor).to.not.eq(result)` was changed to `expect(descriptor).not.toBe(result)`. While `toBe` checks for referential identity, `eq` (or `toEqual` in Vitest/Jest) performs a deep equality check. The original intent might have been to ensure two different objects have the same content, which `not.toBe` already covers. However, changing from `eq` to `toBe` can be a significant change in logic. If `result` and `descriptor` are primitives, `toBe` and `toEqual` are the same, but for objects, they are different. Please verify this change is correct.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding incorrectly claims Chai's `.eq` performs deep equality. In Chai, `.eq` is strict equality (===), identical to Vitest's `toBe`. The migration from `to.not.eq(result)` to `not.toBe(result)` is correct and semantically equivalent. The deep equality assertion used `.deep.eq` which was correctly migrated to `toEqual`.",
+      "severity_justification": "The finding is based on a misunderstanding of Chai's API, so there is no actual issue. Even if acted upon, no code change would be needed.",
+      "category_justification": "The finding concerns assertion equivalence during a test framework migration.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/hierarchies/vitest.config.ts",
+      "start_line": 16,
+      "end_line": 16,
+      "message": "The coverage `include` path was changed from `src/**` to `src/hierarchies/**/*.ts`, which seems to significantly reduce the scope of coverage measurement for this package. `src/hierarchies` does not seem to contain all source files.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The only file excluded by the narrowed glob is `src/presentation-hierarchies.ts`, which is a pure barrel/re-export file with no executable logic. The new pattern `src/hierarchies/**/*.ts` is consistent with other packages in the repo (shared uses `src/shared/**/*.ts`, core-interop uses `src/core-interop/**/*.ts`). No actual implementation code is excluded from coverage.",
+      "severity_justification": "Even if treated as a TP, the excluded file has no testable logic, so coverage metrics are unaffected in practice.",
+      "category_justification": "The finding is about coverage configuration correctness.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/components/src/test/instance-filter-builder/InstanceFilterBuilder.test.tsx",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "File seems to be spelled wrong, I know that we have added [cspellFileNames to next branch](https://github.com/iTwin/presentation/blob/next/scripts/cspellFileNames.js), do you think we should add it to master as well?",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The PR already renamed the misspelled `IntanceFilterBuilder.test.tsx` to `InstanceFilterBuilder.test.tsx`, fixing the issue. The current file at this SHA is correctly spelled. The finding's suggestion to add cspellFileNames to master is a general tooling discussion, not a specific code defect in this PR.",
+      "severity_justification": "No actual issue remains — the typo was already corrected by this PR.",
+      "category_justification": "The finding concerns a filename spelling/convention issue and tooling to enforce it.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "JonasDov",
+        "url": "https://github.com/iTwin/presentation/pull/1288#discussion_r3056230836",
+        "created_at": "2026-04-09T07:41:18Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "31c0f13af9ed1c2a6998f4dee23efb86210da50d"
+      }
+    },
+    {
+      "file": "packages/components/src/test/properties/inputs/UseNavigationPropertyTargetsLoader.test.ts",
+      "start_line": 75,
+      "end_line": 76,
+      "message": "What do you think about changing to:\n\n```suggestion\n        expect(result.current.loadedOptions).toMatchObject([{ label: contentItem.label, key: contentItem.primaryKeys[0] }]);\n```\n\nSame for other places in this file",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggested code `expect(result.current.loadedOptions).toMatchObject([{ label: contentItem.label, key: contentItem.primaryKeys[0] }])` is already present in the file at this SHA. The change was applied in commit 86995cc3. The finding proposes a change that was already made.",
+      "severity_justification": "No action needed; the suggestion is already implemented.",
+      "category_justification": "The finding is a style/cleanup suggestion about assertion form.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "JonasDov",
+        "url": "https://github.com/iTwin/presentation/pull/1288#discussion_r3056245792",
+        "created_at": "2026-04-09T07:44:23Z",
+        "alignment": "code_changed",
+        "original_commit": "799ab7bc952b5b554b1c9bf4502dda4d8257cdb1",
+        "original_start_line": 75,
+        "original_end_line": 76
+      }
+    },
+    {
+      "file": "packages/components/src/test/propertygrid/DataProvider.test.ts",
+      "start_line": 534,
+      "end_line": 534,
+      "message": "Maybe we should use `expect(data.categories).toHaveLength(0)` istead of this? Same for other places in this and other files",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at line 534 already uses `expect(data.categories).toHaveLength(0)` exactly as suggested. The finding proposes a change that is already present in the codebase at this SHA.",
+      "severity_justification": "No action needed; the suggestion is already implemented.",
+      "category_justification": "The finding is a style suggestion about preferred assertion form.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "JonasDov",
+        "url": "https://github.com/iTwin/presentation/pull/1288#discussion_r3056258422",
+        "created_at": "2026-04-09T07:46:57Z",
+        "alignment": "code_changed",
+        "original_commit": "799ab7bc952b5b554b1c9bf4502dda4d8257cdb1",
+        "original_start_line": 534,
+        "original_end_line": 534
+      }
+    },
+    {
+      "file": "packages/components/src/test/table/UsePresentationTable.test.tsx",
+      "start_line": 387,
+      "end_line": 387,
+      "message": "Please change `toHaveLength`, same for other places in this file.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 387 already uses `toHaveLength(1)` and there are no remaining `.length` property assertions in test expectations in the file. The finding is vague about what to change from/to and the suggested improvement is already applied throughout the file at this SHA.",
+      "severity_justification": "No action needed; the file already uses the preferred assertion form.",
+      "category_justification": "The finding is a style suggestion about assertion form.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "JonasDov",
+        "url": "https://github.com/iTwin/presentation/pull/1288#discussion_r3057038948",
+        "created_at": "2026-04-09T10:12:09Z",
+        "alignment": "code_changed",
+        "original_commit": "2101fe8e39ca2c6137413030e6413af9b7a83096",
+        "original_start_line": 387,
+        "original_end_line": 387
+      }
+    },
+    {
+      "file": "apps/full-stack-tests/vitest.config.ts",
+      "start_line": 14,
+      "end_line": 17,
+      "message": "Removing `pool: \"forks\"` makes Vitest use its default worker-thread pool. These full-stack tests initialize shared backend/frontend singletons and `IModelHost` (see `src/IntegrationTests.ts:50-100`), and the cache directory is keyed by `process.pid`; worker threads share a process and PID, so parallel test files can share native/global state and the same cache directory. Keep process isolation here or explicitly force serial execution to avoid cross-test races.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding incorrectly asserts that removing `pool: 'forks'` causes Vitest to use a worker-thread pool. Vitest's default pool has been `forks` (child processes) since v1.0 and remains so in v4.x — every other package in this monorepo omits `pool` and uses the default without issue. Removing the explicit setting that matches the default is a no-op; the process isolation for IModelHost and the pid-based cache directory is unchanged.",
+      "severity_justification": "If the claim were true, sharing a PID across workers would cause the IModelHost cache directory collision and global singleton interference — a real reliability risk for integration tests. But since the premise is factually wrong, the actual impact is zero.",
+      "category_justification": "The finding is about process isolation, shared native singletons, and potential cross-test interference — all reliability concerns.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

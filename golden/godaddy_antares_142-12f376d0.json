@@ -1,0 +1,231 @@
+{
+  "pr_key": "godaddy_antares_142-12f376d0",
+  "pr": {
+    "repo": "https://github.com/godaddy/antares",
+    "pr_number": 142,
+    "base": "f910afef727b67f484a672fcae7a94d86272aed9",
+    "head": "12f376d05689fdecb86096f51f7ab2f7169c3f0a"
+  },
+  "findings": [
+    {
+      "file": "packages/@godaddy/antares/components/chart/legend/src/index.tsx",
+      "start_line": 83,
+      "end_line": 86,
+      "message": "When `label` is provided, the same string appears both as visible DOM content (<Text className={styles.label}>{label}</Text>) and as the list's aria-label attribute. Screen readers in linear navigation mode will announce the text twice: once as standalone text content, then again as the list's accessible name. The fix is to assign a stable id to the visible label element and use aria-labelledby on the list instead of aria-label, so the accessible name is derived from the visible text rather than duplicated in a hidden attribute.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code at lines 83-86 shows <Text>{label}</Text> rendered visibly and aria-label={label} on the sibling role=\"list\" element. Screen readers in browse mode will announce the visible text, then re-announce the same string as the list's accessible name. The fix (aria-labelledby referencing the visible element) is factually correct and is the standard ARIA pattern.",
+      "severity_justification": "This is a real but minor a11y annoyance — redundant announcements for screen reader users — but it doesn't prevent access to the content or cause incorrect information to be conveyed.",
+      "category_justification": "The issue is about screen reader announcement behavior and ARIA accessible name computation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/@godaddy/antares/components/chart/legend/src/index.tsx",
+      "start_line": 83,
+      "end_line": 83,
+      "message": "The visible label is rendered as a plain <span> (Text defaults to elementType='span') with no ARIA role, placed as a sibling to the list rather than being formally associated with it. The root div has no grouping role (e.g. role='group' or role='figure'). A user browsing by landmarks or list elements will encounter the label text as unstructured content with no machine-readable connection to the list it describes. This compounds the duplicate-announcement problem: the label text is orphaned from the list in the accessibility tree.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct that Text renders as a plain span, the root div has no grouping role, and there is no aria-labelledby linking the visible label to the list. While the 'no machine-readable connection' claim is slightly overstated (the aria-label on the list does name it), the structural gap — visible label as an unassociated sibling with no grouping container — is a real, verifiable a11y issue.",
+      "severity_justification": "The content is still accessible via the list's aria-label; the issue is imperfect structure and the redundant announcement concern already flagged in finding 1. No content is inaccessible.",
+      "category_justification": "The issue is about ARIA structure and accessibility tree organization.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/@godaddy/antares/components/chart/legend/src/index.tsx",
+      "start_line": 52,
+      "end_line": 71,
+      "message": "The useMemo on items depends on the `series` array reference. In chart usage, series is produced by useNormalizedSeries, which itself runs useMemo([series, seriesIdPrefix]) — any change in the chart's series prop produces a new array reference, busting Legend's memo too. In standalone usage (all example files), series is defined as a new inline array literal every render, so the memo is always invalidated. In both common cases, the memo never skips work. It only adds per-render dependency tracking overhead and makes the code harder to follow without providing any memoization benefit.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim that the memo 'never skips work' in chart usage is factually incorrect. Charts have substantial internal useState (dimensions from ResizeObserver, scroll, axis layout) that triggers re-renders without series changing. In those cases, useNormalizedSeries returns a stable reference and Legend's useMemo correctly skips remapping. The memo is vacuous only in standalone/example usage with inline array literals.",
+      "severity_justification": "Even if the finding were correct, the useMemo overhead is negligible for a list render.",
+      "category_justification": "The finding is about memoization effectiveness and per-render overhead.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/@godaddy/antares/variables.css",
+      "start_line": 19,
+      "end_line": 22,
+      "message": "Changing --_fs-base from syntax: \"<length>\" to syntax: \"*\" removes the typed fallback guarantee. With <length>, assigning an invalid value (e.g. a unitless number) causes the browser to reject it and fall back to initial-value: 1rem, keeping all 13 derived --fs-* tokens valid. With *, any token sequence is accepted, so an invalid value propagates into calc(var(--_fs-base) * pow(...)) and silently breaks the entire font-size scale system-wide. The companion property --_sp-base keeps syntax: \"<length>\" for exactly this reason; --_fs-base should be consistent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: --_fs-base was changed from syntax: \"<length>\" to syntax: \"*\" in this PR while --_sp-base retains \"<length>\". The CSS @property type-rejection fallback behavior described is accurate — with \"*\" any invalid value propagates into all 13 derived --fs-* tokens. The inconsistency with --_sp-base is a concrete, verifiable discrepancy.",
+      "severity_justification": "The variable is explicitly marked private ('reserved for use IN THIS FILE ONLY'), so consumer-side injection of invalid values is discouraged. The practical risk is low, though the inconsistency and regression in type safety is real.",
+      "category_justification": "Removing type-safe fallback from a foundational CSS token affects the reliability of the font-size scale system-wide if the variable is ever misassigned.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/@godaddy/antares/components/chart/legend/src/index.tsx",
+      "start_line": 16,
+      "end_line": 17,
+      "message": "LegendProps extends FlexProps<'div'> without omitting `role` or `aria-*` props. If a consumer passes role='list' (perhaps expecting it to label the component), it will be applied to the root wrapper div via ...rootFlexProps, while the inner Flex already has role='list'. This creates nested elements both with role='list', which is invalid in ARIA (lists cannot contain other lists without intervening listitem roles). `role` should be omitted from the public API to prevent this misuse.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: role is not excluded from the LegendProps Omit, rootFlexProps is spread to the root div, and the inner Flex hardcodes role=\"list\". A consumer passing role=\"list\" would produce nested list elements without an intervening listitem, which is invalid ARIA. The finding correctly identifies the missing Omit<..., 'role'>.",
+      "severity_justification": "Requires a consumer to explicitly pass role=\"list\" to a component named Legend — an unlikely misuse. Current code has no bug; this is a defensive API hardening concern.",
+      "category_justification": "The issue is about the public API surface — which props should be exposed vs. omitted to prevent misuse of the component contract.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/@godaddy/antares/components/chart/legend/src/index.tsx",
+      "start_line": 74,
+      "end_line": 82,
+      "message": "The root Flex renders as display: inline-flex unconditionally (consumers cannot override via props since `display` is omitted). This is a behavioral breaking change from the old Legend, which rendered as display: flex and was centered via justifyContent='center' on the list. Any existing layout that relied on the Legend stretching to fill its container will now collapse to content width. The PR compensates for built-in chart usages by adding alignSelf='center', but third-party consumers of the Legend component who relied on the old layout behavior have no migration path surfaced.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: old Legend was a single Flex with default display:flex and justifyContent=center; new Legend hardcodes display=inline-flex and explicitly Omits display from LegendProps so consumers cannot override. This is a behavioral breaking change for standalone consumers. The PR only adds compensating alignSelf=center to built-in chart usages.",
+      "severity_justification": "It's a real breaking change to a public API component, but the package is at v0.0.1 (pre-release) so external consumer exposure is limited. If any consumers exist, layouts would silently collapse to content-width without an upgrade path.",
+      "category_justification": "The issue is about a breaking change to the public component API contract — display behavior and the absence of a consumer override path.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/@godaddy/antares/components/chart/line-chart/src/index.tsx",
+      "start_line": 491,
+      "end_line": 491,
+      "message": "The line-chart Legend is rendered with className={styles.legend} to enable CSS order-based repositioning (.chart[data-legend-position='top'] .legend { order: -1 }). The `order` property only affects flex children within their direct parent. The Legend root is a child of the .wrapper Flex, not the .chart Flex. The data-legend-position attribute is set on .chart (the outer element), not .wrapper. The CSS selector '.chart[data-legend-position=...] .legend' is a descendant selector, so it matches .legend inside .chart but the order is applied within .wrapper's flex context. This happens to work, but the intent and correctness depend on the CSS selector being a descendant selector rather than a child selector — a fragile implicit dependency between the DOM structure and the CSS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The DOM structure and CSS are pre-existing (confirmed in the prior commit) and the pattern works correctly by design. The order property applied to .legend within .wrapper's flex context is the intended behavior — using an ancestor attribute to trigger descendant styling is a standard CSS pattern. The PR only added alignSelf=center; the structural concern described predates this PR and isn't a defect.",
+      "severity_justification": "Even if considered a concern, the pattern works correctly today and the theoretical fragility would only manifest from specific future DOM restructuring.",
+      "category_justification": "The concern is about CSS selector clarity and implicit DOM/CSS dependencies, not a correctness bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/@godaddy/antares/components/chart/legend/src/index.tsx",
+      "start_line": 95,
+      "end_line": 95,
+      "message": "When `orientation` is 'vertical', the `item` role is not present on the `Flex` component. This causes the snapshot for the vertical legend to incorrectly nest list items inside other list items. The `role=\"listitem\"` is only applied when `orientation` is horizontal. This should be applied regardless of orientation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code applies role=\"listitem\" unconditionally on every item in the useMemo — there is no orientation-based condition. The vertical snapshot in the diff confirms role=\"listitem\" is present for all items in vertical orientation. The finding's central claim is factually incorrect.",
+      "severity_justification": "The finding describes a bug that does not exist in the code.",
+      "category_justification": "The finding alleges a missing ARIA role attribute based on orientation, which is a correctness claim.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/@godaddy/antares/components/chart/legend/src/index.tsx",
+      "start_line": 83,
+      "end_line": 86,
+      "message": "Passing an empty string for `label` renders no visible label because of the truthy check above, but this still sets `aria-label=\"\"` on the list instead of falling back to \"Chart legend\". That leaves the legend list without an accessible name; treat blank/whitespace labels the same way in both places or fall back when the label is not rendered.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at line 83 uses a truthy check `label ?` which suppresses the visible label for empty strings, but line 86 uses `label ?? 'Chart legend'` (nullish coalescing) which passes empty strings through as `aria-label=\"\"`, leaving the list without an accessible name when label is an empty string.",
+      "severity_justification": "Triggered only by the unusual case of explicitly passing `label=\"\"`. Real-world callers would typically omit the prop (undefined) or pass a non-empty string, so the blast radius is small, but it is a real a11y gap.",
+      "category_justification": "The issue directly affects the accessible name of the role=list element — an empty aria-label leaves screen reader users without legend context.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/@godaddy/antares/components/chart/legend/test/legend.browser.test.tsx",
+      "start_line": 53,
+      "end_line": 57,
+      "message": "This test does not actually verify the new vertical orientation behavior: it only checks that three list items exist, which would also pass if `orientation=\"vertical\"` were ignored and the list stayed in a row. Please assert the rendered list direction/style (or another observable layout signal) so the new orientation feature is covered.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test at lines 53-57 only checks list existence and item count (3), which are identical regardless of orientation. It does not assert any layout signal (e.g. computed flex-direction, positioning, or a data attribute) that would fail if orientation='vertical' had no effect, so the stated behavior 'stacks items vertically' is not actually verified.",
+      "severity_justification": "The feature is covered by node snapshots that capture flex-direction:column, and the browser test gap is a coverage quality issue rather than a production risk. No behavior is broken.",
+      "category_justification": "The finding is about insufficient test coverage — the test does not exercise the specific behavior it claims to verify.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/@godaddy/antares/components/chart/legend/src/index.module.css",
+      "start_line": 4,
+      "end_line": 18,
+      "message": "The new size mapping is only covered by node snapshots that show `data-size`; they do not exercise the CSS that changes font size and swatch dimensions. Since this is the behavior the `size` option adds, please add a browser/computed-style assertion (similar to other browser tests in this package) so a broken or missing size selector would fail.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the only size-related test is a node snapshot (legend.node.test.tsx lines 39-41) which captures the data-size HTML attribute but never applies CSS. The browser test file has no #size describe block. A broken or missing CSS size selector would not fail any existing test.",
+      "severity_justification": "The size feature is a cosmetic/typographic enhancement. A broken CSS selector would produce incorrect sizing but not a functional or accessibility regression.",
+      "category_justification": "The finding identifies a gap in test coverage where the CSS behavior of the size feature is not exercised by any browser or computed-style assertion.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

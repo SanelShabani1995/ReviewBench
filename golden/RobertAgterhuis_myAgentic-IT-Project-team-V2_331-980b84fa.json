@@ -1,0 +1,511 @@
+{
+  "pr_key": "RobertAgterhuis_myAgentic-IT-Project-team-V2_331-980b84fa",
+  "pr": {
+    "repo": "https://github.com/RobertAgterhuis/myAgentic-IT-Project-team-V2",
+    "pr_number": 331,
+    "base": "1a056641fd4b5aa7e35710134be1b86c74ade11c",
+    "head": "980b84fa16e16b4a69bcbdcbc5d8828f83ebb524"
+  },
+  "findings": [
+    {
+      "file": "eslint-output.json",
+      "start_line": 1,
+      "end_line": 3383,
+      "message": "A generated 3383-line ESLint output file is committed to the repository containing 126 `@typescript-eslint/no-explicit-any` warnings (severity 1). This directly contradicts the PR description's claim that 'eslint --max-warnings=0 | 0 warnings, 0 errors'. The file also embeds absolute Windows paths (D:\\repositories\\...) that are machine-specific and meaningless on other developer machines or CI. Generated lint output should not be committed.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: eslint-output.json is a newly committed generated file with 126 @typescript-eslint/no-explicit-any warnings and Windows absolute paths (D:\\repositories\\...), directly contradicting the PR description's claim of 0 ESLint warnings. The file is not in .gitignore.",
+      "severity_justification": "The committed file contradicts the PR's stated verification results, pollutes the repo with machine-specific generated output, and the 126 suppressed warnings indicate the type safety goals of the conversion were not fully achieved.",
+      "category_justification": "Committing a generated lint output file with machine-specific paths is a repository hygiene/maintainability issue; it should be excluded via .gitignore and never tracked.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "platform/engine/dispatcher.ts",
+      "start_line": 21,
+      "end_line": 24,
+      "message": "The newly introduced `DispatcherStore` interface declares `read(path: string): string`, but neither `FileStore` nor `InMemoryStore` in `store.ts` implement a `read` method — both expose `readFile(path, encoding?)`. When `Dispatcher.buildContext()` calls `this._store.read(p)` (lines 233, 239), it will throw `TypeError: this._store.read is not a function` if passed a real store. Tests only pass because the mock store in `dispatcher.test.js` manually provides a `read` method. The TypeScript conversion made this interface mismatch explicit without fixing it.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: dispatcher.ts declares a DispatcherStore interface with read() at line 23 and calls this._store.read() at lines 233/239, but FileStore and InMemoryStore in store.ts only expose readFile() — there is no read() method. The test mock manually provides read(), masking the mismatch. The runtime call predates this PR, but the PR introduced the explicit DispatcherStore interface that formalizes and makes the mismatch visible without resolving it.",
+      "severity_justification": "Passing a real FileStore or InMemoryStore to Dispatcher.buildContext() would throw TypeError at runtime. Tests pass only because the mock manually provides read(). The mismatch is real but the Dispatcher appears to be tested/used only with mocks in practice.",
+      "category_justification": "The interface contract (read) does not match the actual store implementations (readFile), creating a runtime type error if real stores are used.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "vitest.config.mjs",
+      "start_line": 52,
+      "end_line": 54,
+      "message": "`deps: { inline: [/./] }` uses a regex that matches any single character, causing Vitest to inline every dependency (including all node_modules) into the test bundle. This was added as a workaround for the JS→TS module resolution changes. Inlining all dependencies significantly slows test startup, may cause CJS/ESM interop issues for modules that rely on their file path or singleton behaviour when loaded as separate files, and is far more aggressive than necessary. A targeted list of modules that need inlining should be used instead.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: vitest.config.mjs at lines 52-54 contains `deps: { inline: [/./] }`. The regex `/./` matches any single character (dot = any char in regex), so it matches all module paths and inlines every dependency. This was introduced by this PR (not present in the parent commit). The finding is factually correct.",
+      "severity_justification": "Inlining all dependencies slows test startup and can cause issues with singleton behavior and CJS/ESM interop. It's an overly broad workaround for a targeted module resolution problem, but tests do pass so it's not currently broken.",
+      "category_justification": "Overly aggressive dependency inlining affects test correctness and performance reliability, and could cause CJS/ESM interop issues or mask singleton-related bugs.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "vitest.config.mjs",
+      "start_line": 90,
+      "end_line": 97,
+      "message": "Coverage thresholds were silently lowered: branch coverage from 80% to 60%, and statements/functions/lines from 80% to 75%. This weakens the test quality gate significantly — a 20-percentage-point drop in branch coverage means many newly converted TypeScript branches go untested. No justification is provided in the PR description or commit messages.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified against git history: the parent commit had all coverage thresholds at 80%, and this PR lowered them to statements/functions/lines: 75% and branches: 60%. The finding accurately describes the change — a 20-point drop in branch coverage threshold.",
+      "severity_justification": "Silently lowering coverage thresholds — especially branch coverage by 20 points — weakens the quality gate with no stated justification. This could mask untested code paths in the newly converted TypeScript files, undermining the stated goal of a high-quality conversion.",
+      "category_justification": "The finding is directly about test coverage quality gates being weakened without justification.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "platform/engine/sprint-gate.ts",
+      "start_line": 386,
+      "end_line": 444,
+      "message": "`parseVelocityLog` is declared as `function parseVelocityLog(jsonContent: string, window: number)` — the `window` parameter is typed as `number`, not `number | undefined`. But the call site passes `opts.window as number | undefined` (line 440-442). The `as number | undefined` cast suppresses a TypeScript error and silently allows `undefined` to flow into a `number` parameter. The function handles `undefined` at runtime via `window || VELOCITY_WINDOW`, but the type signature is misleading and the cast is incorrect — it should either be `opts.window as number` or the parameter should be `window?: number`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: parseVelocityLog at line 386 declares `window: number` (not optional), but the call at lines 440-442 passes `opts.window as number | undefined`. The cast `as number | undefined` suppresses TypeScript's type check and allows undefined to flow into a number-typed parameter. The function handles it with `window || VELOCITY_WINDOW` at runtime, but the type annotation is incorrect and the cast is semantically wrong.",
+      "severity_justification": "There is no runtime bug since the function defensively handles undefined via the `||` fallback, but the misleading type annotation and incorrect cast undermine the type safety goal of the TypeScript conversion. It's a type correctness issue with no real behavioral impact.",
+      "category_justification": "The issue is a misleading type signature and an incorrect type assertion that undermines type safety, but does not cause a runtime bug. It's primarily a code quality and maintainability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "package.json",
+      "start_line": 4,
+      "end_line": 4,
+      "message": "`\"main\": \"src/webapp/server.ts\"` sets a `.ts` file as the package entry point. Node.js cannot execute TypeScript files natively; running `node src/webapp/server.ts` or `require('myagentic-it-project-team-v2')` in any environment that hasn't registered tsx (or another TypeScript runtime) will fail with a syntax error. The `start` script correctly uses `tsx`, but the `main` field is used by tools like `node`, `nodemon`, process managers, and npm package consumers that don't use tsx automatically.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: package.json line 5 sets `\"main\": \"src/webapp/server.ts\"` (changed from `server.js` by this PR). Node.js cannot execute .ts files natively without tsx or a similar runtime. The start script correctly uses tsx, but the main field is used by node directly and other tooling that doesn't use tsx automatically.",
+      "severity_justification": "This is an application package, not a distributed npm library, so the main field impact is limited. The start script uses tsx correctly. Direct use of the main field (e.g. `node .`) or tooling that references it would fail, but this is an uncommon usage pattern for this type of project.",
+      "category_justification": "The main field pointing to a .ts file can cause failures when tools or process managers use it directly without tsx, affecting operational reliability.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/webapp/server.ts",
+      "start_line": 275,
+      "end_line": 285,
+      "message": "`scheduleRebuildIndex` references `ctx._rebuildQuestionnaireIndex` through a closure over the `ctx` object, but `ctx` is declared after `scheduleRebuildIndex` and the reference only works because the function is invoked after `ctx` is fully initialised. More concretely, `ctx._rebuildQuestionnaireIndex` is set as a side effect inside `require('./routes/questionnaires')(ctx)` (line 323) before `Object.freeze(ctx)` (line 344). If initialization order changes, or if the questionnaire route factory fails silently, `ctx._rebuildQuestionnaireIndex` will be absent on the frozen object and the rebuild will silently never fire — with no error or log message.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is factually correct: scheduleRebuildIndex silently does nothing if ctx._rebuildQuestionnaireIndex is absent, with no log message. However, this exact pattern existed identically in server.js before this PR — the TypeScript conversion added type casts but made no behavioral changes to this code path.",
+      "severity_justification": "This is a fragility in the initialization pattern, not a current bug. The questionnaire route is always loaded before freeze in the current codebase. It would only become a problem if initialization order changes, which is speculative. No data loss occurs — index rebuilds just silently skip.",
+      "category_justification": "The concern is about silent failure in an initialization-dependent code path — a reliability and fault-detection issue rather than a correctness or security problem.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/webapp/store.ts",
+      "start_line": 80,
+      "end_line": 88,
+      "message": "The `FileStore.readdir` method's return type changed to `Array<string | { name: string; isFile(): boolean; isDirectory(): boolean }>`. When called without `withFileTypes`, `fs.readdirSync` returns `string[]`, but TypeScript now types the return value as the wider union. Callers that spread or iterate the result must guard with `typeof entry === 'string'`, which the route files do, but the `InMemoryStore.readdir` at lines 202-210 has a similar union return type while the helper `collectDirEntries` at line 108 pushes either plain strings or `{name, isFile, isDirectory}` objects into the same array — mixing these types breaks callers that don't expect the object form from a non-`withFileTypes` call.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The central claim that collectDirEntries 'mixes' strings and objects in the same array is factually incorrect. Both calls to collectDirEntries in InMemoryStore.readdir use the same options parameter — so when withFileTypes is falsy, both calls push strings; when true, both push objects. No mixing occurs. Callers without typeof guards (e.g. metrics-dashboard.ts) work correctly at runtime because they call readdir without withFileTypes, which consistently returns strings.",
+      "severity_justification": "Even if the return type annotation is wider than necessary, there is no runtime type mixing, no broken callers, and no actual bug introduced.",
+      "category_justification": "The finding makes a factual claim about runtime type mixing causing broken callers, which is the correctness category.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/setup-require-hook.js",
+      "start_line": 1,
+      "end_line": 51,
+      "message": "This file patches `Module._resolveFilename` — a private Node.js internal API — to redirect `.js` requires to `.ts` files. `Module._resolveFilename` is undocumented and subject to change across Node.js versions. It is also loaded as a Vitest `setupFiles` entry (vitest.config.mjs line 55), meaning it runs before every test file and applies globally to all `require()` calls in tests. This approach is fragile: it can silently intercept module resolution for third-party packages, it will break on Node.js versions that rename or restructure the internal, and it obscures the real fix (updating test imports to reference `.ts` paths directly or using proper module resolution config).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the file patches Module._resolveFilename (a private Node.js internal) and is loaded as Vitest setupFiles, introduced by this PR. The claims are factually correct. The hook does guard against non-relative paths, partially mitigating third-party interception, but the use of an undocumented private API is still fragile and the approach duplicates the resolveJsToTs Vite plugin already in vitest.config.mjs.",
+      "severity_justification": "Patching a private Node.js internal runs in every test, is subject to breakage across Node versions, and is a fragile workaround when proper solutions (updating imports or module resolution config) exist. Tests pass currently but this creates maintenance debt and may silently break.",
+      "category_justification": "Using an undocumented private Node.js API as a test setup mechanism is a reliability concern — it can break silently across Node.js version upgrades and is not a supported interface.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/webapp/routes/progress.ts",
+      "start_line": 228,
+      "end_line": 235,
+      "message": "The previous `progress.js` exported `PHASE_AGENTS`, `PHASE_ORDER`, and `PHASE_LABELS` as additional properties on `module.exports` (`module.exports.PHASE_AGENTS = PHASE_AGENTS`) for use by external consumers. The TypeScript conversion changed the export to `export = createProgressRoutes` with no additional named exports, silently dropping those public constants. Any consumer that accessed `require('./routes/progress').PHASE_AGENTS` will now receive `undefined` without a compile-time error, because the route factory function is used through untyped `require()` in `server.ts`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims consumers will get undefined for PHASE_AGENTS/PHASE_ORDER/PHASE_LABELS, but searching the entire codebase finds no consumer that accesses these via require('./routes/progress'). The original JS comment said 'Expose for testing' but no test file imports them from the progress route module. The dropped exports have no active consumers.",
+      "severity_justification": "Even if the finding were correct, no consumer uses these exports, so there is no actual breakage.",
+      "category_justification": "The finding is about a behavioral change (dropped exports) that could break consumers, which is a correctness concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/webapp/models.ts",
+      "start_line": 411,
+      "end_line": 413,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `options` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "This is a generic static analysis alert. The non-literal RegExp patterns come from DEFAULT_INDEX_SECTIONS (hardcoded at lines 373-374) or internally-supplied IndexSection config — no user-controlled input reaches the idPattern or heading values. The heading is also properly escaped. No exploitable ReDoS path exists in this code.",
+      "severity_justification": "Even if treated as a concern, the regex patterns are from internal configuration, not user input, making this a theoretical rather than practical issue.",
+      "category_justification": "The finding is framed as a security vulnerability (ReDoS), which is a security category.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "src/webapp/models.ts",
+      "start_line": 415,
+      "end_line": 418,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `options` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same generic Semgrep static analysis alert as Finding 11, targeting the rowRx RegExp construction at lines 415-418. The idPat variable comes from sec.idPattern which is either the hardcoded DEFAULT_INDEX_SECTIONS values ('DEC-T-[\\d]+', 'DEC-R2-[\\d]+', etc.) or internally-supplied IndexSection config. No user-controlled input reaches this code path.",
+      "severity_justification": "No exploitable ReDoS path exists since the regex patterns are from internal hardcoded configuration, not user input.",
+      "category_justification": "The finding is framed as a security vulnerability (ReDoS).",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "src/webapp/models.ts",
+      "start_line": 554,
+      "end_line": 554,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `prefix` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The prefix argument at line 554 is passed through escRx() (which escapes all regex metacharacters) before being used in new RegExp(). Additionally, all call sites pass the hardcoded string 'DEC-'. There is no user-controlled input flowing to this regex. This is a generic Semgrep alert that does not account for the escaping already in place.",
+      "severity_justification": "No exploitable ReDoS path exists — the input is escaped and comes from hardcoded strings, not user input.",
+      "category_justification": "The finding is framed as a ReDoS security vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "src/webapp/models.ts",
+      "start_line": 595,
+      "end_line": 597,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `id` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The id argument at lines 595-597 is passed through escRx() at line 594 before being embedded in the RegExp. escRx() escapes all regex special characters, preventing any ReDoS via crafted input. This is the same generic Semgrep alert pattern as findings 11-13, firing on any non-literal RegExp regardless of escaping.",
+      "severity_justification": "No exploitable ReDoS path — the id is escaped before use and the pattern is simple with no catastrophic backtracking risk even without escaping.",
+      "category_justification": "The finding is framed as a ReDoS security vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "src/webapp/models.ts",
+      "start_line": 619,
+      "end_line": 621,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `id` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to findings 13 and 14. The id argument is passed through escRx() at line 618 before being embedded in the RegExp at lines 619-621, escaping all regex special characters. This is a generic Semgrep alert that does not account for the escaping already in place.",
+      "severity_justification": "No exploitable ReDoS path — id is always escaped before use.",
+      "category_justification": "The finding is framed as a ReDoS security vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "src/webapp/models.ts",
+      "start_line": 655,
+      "end_line": 657,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `id` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to findings 13-15. The id argument is passed through escRx() at line 654 before being embedded in the RegExp at lines 655-657, escaping all regex special characters. Generic Semgrep alert that does not account for the escaping already present.",
+      "severity_justification": "No exploitable ReDoS path — id is always escaped before use.",
+      "category_justification": "The finding is framed as a ReDoS security vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "src/webapp/models.ts",
+      "start_line": 679,
+      "end_line": 681,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `id` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same pattern as findings 13-16. The id argument at lines 679-681 is passed through escRx() before being embedded in new RegExp(), escaping all regex special characters. Generic Semgrep alert that does not account for the escaping already present.",
+      "severity_justification": "No exploitable ReDoS path — id is always escaped before use.",
+      "category_justification": "The finding is framed as a ReDoS security vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "src/webapp/models.ts",
+      "start_line": 695,
+      "end_line": 697,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `id` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same pattern as findings 13-17. The id argument at lines 695-697 is passed through escRx() before being embedded in new RegExp(), escaping all regex special characters. Generic Semgrep alert that does not account for the escaping already present.",
+      "severity_justification": "No exploitable ReDoS path — id is always escaped before use.",
+      "category_justification": "The finding is framed as a ReDoS security vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "src/webapp/models.ts",
+      "start_line": 712,
+      "end_line": 714,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `id` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same pattern as findings 13-18. The id argument at lines 712-714 is passed through escRx() before being embedded in new RegExp(), escaping all regex special characters. Generic Semgrep alert that does not account for the escaping already present.",
+      "severity_justification": "No exploitable ReDoS path — id is always escaped before use.",
+      "category_justification": "The finding is framed as a ReDoS security vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "src/webapp/models.ts",
+      "start_line": 738,
+      "end_line": 740,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `id` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same pattern as findings 13-19. The id argument at lines 738-740 is passed through escRx() before being embedded in new RegExp(), escaping all regex special characters. Generic Semgrep alert that does not account for the escaping already present.",
+      "severity_justification": "No exploitable ReDoS path — id is always escaped before use.",
+      "category_justification": "The finding is framed as a ReDoS security vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "package.json",
+      "start_line": 9,
+      "end_line": 9,
+      "message": "The MCP startup command now targets `mcp-server.ts`, but the repository's IDE MCP configuration still launches `node src/webapp/mcp-server.js` (`.vscode/mcp.json:6`). After the JS file is removed, VS Code MCP integration will fail unless that config is updated or a JS shim remains.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: .vscode/mcp.json still references 'src/webapp/mcp-server.js' with 'node', but only mcp-server.ts exists at this SHA. The JS file was removed by the conversion. package.json's start:mcp now uses 'tsx src/webapp/mcp-server.ts'. The IDE MCP config is broken.",
+      "severity_justification": "Developer tooling (VS Code MCP integration) will fail to launch, impacting developer experience but not production functionality.",
+      "category_justification": "A stale configuration reference causes a tool integration to break at startup — a reliability/operational concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "BusinessDocs/metrics/runtime-metrics.json",
+      "start_line": 2,
+      "end_line": 6,
+      "message": "This commits locally generated runtime metrics into the repository. The server restores this file on startup (`src/webapp/server.ts:140-147`), so fresh checkouts will inherit stale request/error counters and endpoint timings from this development run instead of starting from their own environment.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually verified: runtime-metrics.json is committed to the repo and server.ts calls loadMetrics() at module level (line 186) restoring requestCount, errorCount, and per-endpoint timings from this file. Fresh checkouts inherit stale development counters. The finding accurately describes the mechanism.",
+      "severity_justification": "Metrics are observability data only — they don't affect app correctness or security. Fresh checkouts inherit inflated request counts and stale timings, which is misleading but not harmful. The app continues to function normally.",
+      "category_justification": "Stale committed state being loaded at startup is an operational concern affecting the accuracy of runtime metrics in fresh environments.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "BusinessDocs/session/run-history.json",
+      "start_line": 408,
+      "end_line": 420,
+      "message": "This looks like generated local run history rather than part of the TypeScript conversion. Committing these STOPPED runs changes the default history shown by the app/engine for every checkout and makes the repository state depend on a local test session.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually verified: run-history.json with 11 new STOPPED dev-session runs is committed. engine.runHistory() reads from DEFAULT_HISTORY_FILE (this file), and GET /api/orchestrator/run-history serves it directly. Fresh checkouts will see these stale entries in the UI.",
+      "severity_justification": "Run history is informational/observability data only. The 50-run cap means stale entries are eventually pushed out. App functionality is not affected.",
+      "category_justification": "Committing generated runtime state into the repo creates environment-specific data bleeding into all checkouts, an operational/data integrity concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "package.json",
+      "start_line": 8,
+      "end_line": 8,
+      "message": "This removes the `src/webapp/server.js` entry point, but checked-in runtime callers still invoke it directly (for example `infra/Dockerfile:51`, `playwright.config.ts:21`, and `.github/workflows/ci-pipeline.yml:285`). Container startup and E2E/CI flows will fail after the rename unless those callers are updated to `tsx src/webapp/server.ts` or a compatibility shim is kept.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified all three callers: Dockerfile CMD uses 'node src/webapp/server.js', playwright.config.ts webServer.command uses 'node src/webapp/server.js', and ci-pipeline.yml line 285 runs 'node src/webapp/server.js &'. Only server.ts exists at this SHA — server.js was removed by the conversion. All three callers will fail.",
+      "severity_justification": "Container startup (Dockerfile), E2E tests (playwright), and CI accessibility audits will all fail. The Dockerfile breakage means the production container image cannot start, which is a critical deployment blocker.",
+      "category_justification": "Stale references to a deleted entry point break container startup, E2E testing, and CI pipelines — operational/build reliability failures.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

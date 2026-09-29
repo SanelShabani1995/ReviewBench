@@ -1,0 +1,511 @@
+{
+  "pr_key": "ls1intum_Artemis_12594-d60ff38a",
+  "pr": {
+    "repo": "https://github.com/ls1intum/Artemis",
+    "pr_number": 12594,
+    "base": "5aeb9373e6b4a6d75d92fc4b4fc43731744e2a14",
+    "head": "d60ff38a39b535f3ff24cfdc8ac843346de89d43"
+  },
+  "findings": [
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/core/web/UserResource.java",
+      "start_line": 56,
+      "end_line": 59,
+      "message": "The PR replaced the L2-cache justification with 'batched within a single transaction', which is inaccurate in two ways. First, @BatchSize(20) is a Hibernate session-level optimisation, not a transaction-level one. Second, with spring.jpa.open-in-view: false and no @Transactional on this controller, each repository call opens its own short-lived session, so there is no shared session in which batching across multiple user loads can occur. For single-user GET endpoints — the common case — @BatchSize provides no benefit. Previously, User.authorities were served from the L2 entity cache after the first call; now every HTTP call that touches authorities pays the database round-trip unconditionally. The comment tells developers the N+1 is 'handled' by @BatchSize when it is not, likely causing the real regression to go unaddressed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The comment introduced by this PR says @BatchSize batches 'within a single transaction', but @BatchSize is a session-level optimization, not transaction-level. With spring.jpa.open-in-view: false (confirmed in application.yml), each repository call has its own session, so for single-user GET endpoints @BatchSize provides no N+1 mitigation. The term 'transaction' is factually wrong, and the comment overstates the mitigation provided.",
+      "severity_justification": "This is primarily a comment inaccuracy introduced by this PR. No runtime behavior is changed by the comment itself; the real concern is documentation misleading developers about the effectiveness of @BatchSize, which has always been there. The N+1 issue itself is pre-existing.",
+      "category_justification": "The finding is about a factually inaccurate code comment that uses 'transaction' instead of 'session' and overstates how @BatchSize mitigates N+1 queries in this specific architecture.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/core/web/admin/AdminUserResource.java",
+      "start_line": 78,
+      "end_line": 81,
+      "message": "Same inaccuracy as UserResource.java: the PR replaced the L2-cache rationale with 'batched within a single transaction', but @BatchSize is per Hibernate session and this controller has no @Transactional. With open-in-view: false there is no shared session across repository calls within a request, so @BatchSize(20) does not batch authority loads in the typical single-user lookup. Every HTTP call that touches User.authorities now unconditionally hits the database. The comment misrepresents the performance behaviour and creates a false sense that the N+1 problem is resolved.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The same inaccurate comment from Finding 1 appears verbatim in AdminUserResource.java at lines 78-81. It says @BatchSize batches 'within a single transaction' when @BatchSize is session-scoped, not transaction-scoped. With open-in-view: false confirmed, there is no shared session across repository calls, making the comment misleading for single-user lookups.",
+      "severity_justification": "Same as Finding 1 — this is a comment inaccuracy introduced by the PR. No runtime behavior is changed by the comment; the N+1 issue and @BatchSize behavior pre-exist this PR.",
+      "category_justification": "The finding is about an inaccurate code comment using 'transaction' instead of 'session', overstating the mitigation provided by @BatchSize in this architecture.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/core/service/course/CourseResetService.java",
+      "start_line": 493,
+      "end_line": 493,
+      "message": "Stale Javadoc comment: 'The user cache is properly evicted for all affected users.' This was made incorrect by this PR's changes to UserService.removeGroupFromAllUsers(), which removed the pre-fetch of affected user logins and the subsequent per-login cache eviction loop. The method now performs no cache eviction at all. The comment misleads maintainers of unenrollStudentsTutorsAndEditors() into believing stale-cache handling is present when it is not.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The comment at line 493 of CourseResetService.java says 'The user cache is properly evicted for all affected users.' Verified that UserService.removeGroupFromAllUsers() now only calls userRepository.removeGroupFromAllUsers() and logs — there is no cache eviction. This PR removed the eviction methods but left this comment stale, making it factually incorrect.",
+      "severity_justification": "With Hibernate L2 disabled cluster-wide and no Spring @Cacheable on User entities, there is currently no user cache to evict, so the stale comment causes no runtime issue. The risk is maintainers being misled into thinking eviction is handled if a new cache is introduced later.",
+      "category_justification": "This is a stale Javadoc comment that became incorrect when the PR removed the cache eviction logic it describes, misleading maintainers about the actual behavior of unenrollStudentsTutorsAndEditors().",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/core/repository/UserRepository.java",
+      "start_line": 71,
+      "end_line": 71,
+      "message": "USERS_CACHE = \"users\" is now dead production code. No @Cacheable annotation in production code uses the cache name \"users\", and the clearUserCaches() methods removed by this PR used User.class.getName() as the key — not this constant. The constant is only referenced in UserTestService.java:141 where it evicts a cache that is never populated, making the eviction a silent no-op. Leaving the constant in UserRepository creates the false impression that a live Spring 'users' cache exists and must be evicted around writes, which could lead future contributors to add incorrect eviction logic.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "USERS_CACHE = \"users\" at line 71 is confirmed dead production code — no @Cacheable annotation in production code uses the name \"users\". It is only referenced in UserTestService.java:141 where it evicts a cache that is never populated. The constant pre-existed this PR but was already dead. The PR, as a cache cleanup effort, was the natural time to remove it and did not.",
+      "severity_justification": "Dead constant with no runtime impact. Risk is future contributors seeing it and adding incorrect eviction logic, but this is speculative. No current functionality is affected.",
+      "category_justification": "Dead code (an unused constant) that misleads maintainers about the existence of a live 'users' Spring cache, with no runtime impact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/core/service/user/UserService.java",
+      "start_line": 586,
+      "end_line": 593,
+      "message": "The method `removeGroupFromAllUsers` performs a bulk update to remove a group from users, but it no longer evicts the affected users from the cache. While the Hibernate L2 cache for `User` entities has been removed, Spring's `CacheManager` might still be in use for user-related data (e.g., via `@Cacheable` on other services). The removal of `findLoginsByGroupName` and the cache eviction logic could lead to stale data if other user-related caches exist.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding speculates that Spring @Cacheable might cache user-related data affected by group removal. Investigation shows no Spring @Cacheable in production code caches user group membership. All existing Spring caches (titles, files, notification settings, saved posts) are keyed independently of group membership and are not invalidated by removeGroupFromAllUsers — correctly so, since they don't depend on group data. The claim is unverifiable speculation rather than an identified concrete issue.",
+      "severity_justification": "Even if taken at face value, the finding describes a hypothetical risk with no identified concrete cache that would actually become stale.",
+      "category_justification": "The concern is about stale cache data leading to incorrect behavior after group membership changes.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/core/service/UserScheduleService.java",
+      "start_line": 99,
+      "end_line": 105,
+      "message": "The method `deleteUser` no longer calls `clearUserCaches`. While the primary L2 cache for `User` entities was removed, this might affect other caches related to users if they exist (e.g. through Spring's `@Cacheable`). A user deleted from the database could persist in other caches, leading to stale data.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding speculates that 'other caches related to users might exist' without identifying any specific cache. As confirmed in Finding 5, no Spring @Cacheable caches user identity or group membership data that would be accessed after deletion. Notification/saved-post caches keyed by userId would hold orphaned entries, but a deleted user's auth tokens are invalid so no live request could access those stale cache entries.",
+      "severity_justification": "Even if accepted, the described scenario — stale cache entries for a deleted user — has no practical impact since deleted users cannot authenticate.",
+      "category_justification": "The concern is about stale cache data for deleted users potentially being accessed.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/core/service/user/UserCreationService.java",
+      "start_line": 277,
+      "end_line": 282,
+      "message": "The `saveUser` method no longer clears user-related caches. While the Hibernate L2 entity cache for `User` is gone, other caches might exist (e.g. DTOs cached with Spring's `@Cacheable`). If so, updating a user will not evict their previous state from those caches, leading to stale data being served.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same speculative concern as Findings 5 and 6. No Spring @Cacheable in production code caches user identity or attribute data that would become stale on a saveUser() call. The finding says 'other caches might exist' without identifying any specific cache — it is unverifiable speculation rather than a concrete issue.",
+      "severity_justification": "No specific cache is identified; the concern is hypothetical and not supported by the actual @Cacheable usage in the codebase.",
+      "category_justification": "The concern is about stale cached user data being served after a user update.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/superpowers/plans/2026-03-23-remove-tempid-from-quiz-entities.md",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "This file, an implementation plan for removing `tempID` from quiz entities, is deleted in this pull request. However, the PR's scope is about disabling the Hibernate L2 cache. The file deletion seems unrelated and might be accidental. It should be reverted from this PR and handled separately if it is indeed intended for deletion.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The file docs/superpowers/plans/2026-03-23-remove-tempid-from-quiz-entities.md was added in commit 51a0f0678c and deleted in this PR. The file describes an AI agent plan for removing tempID from quiz entities, which is completely unrelated to this PR's stated scope of disabling Hibernate L2 cache. The deletion is an unrelated change bundled into this PR.",
+      "severity_justification": "The deleted file is a planning/workflow document for AI agents, not production code. If deleted accidentally, it can be restored from git history. There is no runtime impact.",
+      "category_justification": "This is a PR hygiene concern — an unrelated file deletion bundled into a scoped refactoring PR, making the PR harder to review and reason about.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/core/config/HazelcastConfiguration.java",
+      "start_line": 353,
+      "end_line": 366,
+      "message": "The loop iterating over distributed objects to bind cache metrics now only considers `IMap`. Previously, it also handled `javax.cache.Cache` (ICache) instances for JCache/L2 metrics. While L2 is disabled, it's possible for `ICache` instances to be used for other purposes. If any `ICache` instances are still in use, their metrics will no longer be bound to Micrometer.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The javax.cache:cache-api and hibernate-jcache dependencies are completely removed from build.gradle, and there are no remaining ICache or javax.cache usages anywhere in production code. The finding speculates ICache instances 'might' be used for other purposes, but in this codebase they were exclusively for Hibernate L2. No ICache instances can exist at runtime.",
+      "severity_justification": "Even if accepted, this would only affect metrics visibility, not correctness or reliability.",
+      "category_justification": "The concern is about metrics not being bound to Micrometer if ICache instances existed, which is an operational observability concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/assessment/service/ResultService.java",
+      "start_line": 218,
+      "end_line": 221,
+      "message": "The comment block explaining the two deletion paths for a `Result` still references the L2 cache as a reason for the complexity. Since the L2 cache has been disabled, this part of the comment is misleading and should be updated to reflect the current state and prevent future confusion for developers.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims the comment still references L2 cache, but the code at this SHA has already been updated by this PR to remove all L2 cache references from the deleteResult() Javadoc. The comment now explains the two deletion paths in terms of Hibernate lazy-loading, FK constraints, and @PreRemove — no L2 cache mention remains.",
+      "severity_justification": "The finding is incorrect; the code is already in the correct state.",
+      "category_justification": "The concern is about stale/misleading comments in method Javadoc.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "documentation/docs/developer/guidelines/database.mdx",
+      "start_line": 300,
+      "end_line": 304,
+      "message": "The documentation about deleting parent entities still contains a callout box with a `danger` variant warning about `EntityNotFoundException` due to stale L2 cache. A few lines below, an `info` callout correctly states that L2 is disabled. The `danger` callout is now misleading and should be removed or updated to avoid confusion.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims a 'danger' callout about EntityNotFoundException from stale L2 cache still exists, but the PR already replaced it with an 'info' callout stating L2 is disabled and the reload pattern is still good practice. The current code at this SHA contains no misleading 'danger' callout about L2 cache.",
+      "severity_justification": "The finding is incorrect; the documentation is already in the correct state.",
+      "category_justification": "The concern was about misleading documentation callout variants.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/communication/domain/conversation/Conversation.java",
+      "start_line": 41,
+      "end_line": 43,
+      "message": "The @Cache annotation has been removed from the Conversation class, but there is no replacement caching mechanism in place for potentially expensive data that was previously cached.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is generic boilerplate that could apply identically to all 116 @Cache annotation removals in this PR. It does not identify any measured performance regression or specific query pattern for Conversation that justifies a replacement cache. The PR's explicit design intent — documented in the new caching.mdx guideline — is to remove Hibernate L2 cache without replacement unless a measured bottleneck is identified. No concrete issue specific to Conversation is identified.",
+      "severity_justification": "No concrete performance regression is identified for Conversation specifically.",
+      "category_justification": "The concern is about caching removal potentially impacting performance.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/core/service/HazelcastConfiguration.java",
+      "start_line": 375,
+      "end_line": 377,
+      "message": "The removal of the JCache metrics collection functionality could potentially hinder monitoring efforts as ICache statistics will no longer be bound to Micrometer.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Duplicate of Finding 9. The javax.cache:cache-api and hibernate-jcache dependencies are completely removed from build.gradle, and no production code uses ICache or javax.cache. No ICache instances can exist at runtime, so there is nothing to bind metrics for.",
+      "severity_justification": "The concern is moot since ICache instances cannot exist without the removed dependencies.",
+      "category_justification": "The concern is about monitoring/observability — cache metrics not being bound to Micrometer.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/resources/config/application.yml",
+      "start_line": 270,
+      "end_line": 274,
+      "message": "The Hibernate L2 cache configuration settings have been removed entirely, which may cause unintended side effects for any components that might have relied on this layer for read-heavy operations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is generic boilerplate — 'removing cache may cause side effects for read-heavy operations' — with no specific component, query, or measured regression identified. This could be copy-pasted onto any cache-removal PR without modification. The PR explicitly intends to remove these settings with documented rationale.",
+      "severity_justification": "No specific component or performance regression is identified.",
+      "category_justification": "The concern is about caching removal potentially impacting read-heavy operations.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "documentation/docs/developer/guidelines/caching.mdx",
+      "start_line": 20,
+      "end_line": 25,
+      "message": "While informing developers not to use Hibernate L2 cache, the document does not provide clear examples or alternatives for situations where developers might require efficient caching for specific use cases.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims the document doesn't provide clear examples or alternatives, but caching.mdx contains: a full section 'What replaces L2: Spring @Cacheable' with representative cache examples, a complete TitleCacheEvictionService code example as the canonical pattern, two documented eviction patterns, criteria for adding new caches, and links to performance alternatives. The claim is directly contradicted by the document content.",
+      "severity_justification": "The finding is factually incorrect about the document's content.",
+      "category_justification": "The concern is about documentation completeness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/quiz/domain/QuizTrainingLeaderboard.java",
+      "start_line": 11,
+      "end_line": 13,
+      "message": "Removal of the @Cache annotation may degrade performance for frequently accessed quiz leaderboard queries, which might have previously benefited from caching.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic boilerplate that could apply to any of the 116 @Cache annotation removals in this PR. No specific query pattern, hit rate, or measured performance regression for QuizTrainingLeaderboard is identified. The PR's documented intent is to remove all Hibernate L2 entity caching, and the new caching guideline explicitly states the default answer is to not cache without measured evidence.",
+      "severity_justification": "No concrete performance issue is identified for this specific entity.",
+      "category_justification": "The concern is about potential performance degradation from cache removal.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/communication/domain/Post.java",
+      "start_line": 36,
+      "end_line": 38,
+      "message": "The removal of the @Cache annotation from Post entities was not accompanied by an evaluation of whether alternatives, such as DTO-level caching, could maintain read optimization.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic boilerplate identical to Findings 12 and 16. No specific Post entity query pattern, hit rate, or measured performance regression is identified. The PR's documented policy explicitly states caching alternatives should only be added when there is a measured bottleneck. This finding could be copy-pasted onto any of the 116 annotation removals without changing a word.",
+      "severity_justification": "No concrete performance issue identified for Post entities specifically.",
+      "category_justification": "The concern is about potential performance degradation from cache removal without DTO-level replacement.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/core/domain/User.java",
+      "start_line": 162,
+      "end_line": 164,
+      "message": "The removal of caching from the authorities association in User entities might lead to a higher overhead for authorization checks, which need frequent access to this collection.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "While User.authorities is a hot path for authorization, Spring Security does not re-fetch user authorities from the database on every request — they are embedded in JWT tokens or stored in sessions. The finding provides no measured regression or hit rate data. It follows the same speculative pattern as Findings 12/16/17 — generic 'removing cache might hurt performance' applied to one of 116 annotation removals, which is exactly the PR's intentional design.",
+      "severity_justification": "No measured regression identified; Spring Security auth mechanisms typically avoid per-request DB reloads of authorities.",
+      "category_justification": "The concern is about performance overhead for authorization checks from cache removal.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/test/java/de/tum/cit/aet/artemis/shared/architecture/ArchitectureTest.java",
+      "start_line": 165,
+      "end_line": 168,
+      "message": "The added ArchUnit rule to prevent @Cache annotations does not verify the presence of adequate replacement strategies for removed caching logic.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding complains that the ArchUnit rule only enforces absence of @Cache without verifying replacement strategies. This contradicts the PR's documented policy: the default is 'do not cache', so no replacement is required. Requiring proof of a replacement would invert the policy. The rule is correctly scoped — it enforces the ban. The finding does not identify a concrete test gap or incorrect behavior.",
+      "severity_justification": "The finding describes an impossible or undesirable test requirement given the project's explicit policy that caching is opt-in with measured justification.",
+      "category_justification": "The concern is about the adequacy of the ArchUnit test coverage.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/core/service/UserService.java",
+      "start_line": 254,
+      "end_line": 256,
+      "message": "The removal of cache invalidation during UserService operations may introduce performance regressions for existing endpoints relying on user-related data lookups.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic boilerplate identical to Findings 5/6/7/14. No specific endpoint, query, or measured performance regression is identified for UserService operations. The PR's documented intent is to remove Hibernate L2 cache invalidation because it was producing correctness bugs, not performance gains. The finding cannot be verified or acted upon without specific evidence.",
+      "severity_justification": "No concrete regression identified; entirely speculative.",
+      "category_justification": "The concern is about performance regressions from removing cache invalidation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/exam/domain/Exam.java",
+      "start_line": 144,
+      "end_line": 146,
+      "message": "The absence of caching mechanisms for the exerciseGroups association in Exam entities might result in degraded performance on operations that enumerate or filter these groups.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic boilerplate identical to Findings 12/16/17. No specific query pattern, hit rate, or measured performance regression for Exam.exerciseGroups is identified. This could be copy-pasted onto any of the 116 @Cache annotation removals in this PR without modification. The PR's documented policy requires measured evidence before adding caching.",
+      "severity_justification": "No concrete performance issue identified for this specific association.",
+      "category_justification": "The concern is about potential performance degradation from cache removal on Exam.exerciseGroups.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/programming/domain/ParticipationVCSAccessToken.java",
+      "start_line": 17,
+      "end_line": 19,
+      "message": "A blank line was left between `@Table(...)` and `public class ParticipationVCSAccessToken` after removing `@Cache`. Consider removing this stray blank line so the annotations sit directly above the class declaration, matching the formatting in the other entities updated in this PR.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The blank line between @Table(...) and the class declaration is confirmed at line 18 in the file. Other entities updated in this PR (e.g., Bonus.java) have no such blank line, confirming the inconsistency. The blank was left when @Cache was removed.",
+      "severity_justification": "Purely cosmetic — a stray blank line with zero behavioral impact.",
+      "category_justification": "Formatting/style inconsistency introduced when removing the @Cache annotation.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/test/java/de/tum/cit/aet/artemis/shared/architecture/ArchitectureTest.java",
+      "start_line": 167,
+      "end_line": 167,
+      "message": "`#12584` resolves to the result-history dropdown PR in this repository, not the described Hibernate L2/ObjectNotFoundException incident. Please replace this with the correct issue/PR reference (or omit the number) so the ArchUnit failure message points developers to relevant context.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding makes a factual claim about what GitHub issue #12584 points to, which cannot be verified from the codebase. All internal evidence (PR description, caching.mdx) consistently assigns #12584 to the cross-node ObjectNotFoundException incident, contradicting the finding's assertion.",
+      "severity_justification": "Even if the issue number were wrong, it would only affect the helpfulness of a developer-facing error message in a test, not runtime behavior.",
+      "category_justification": "The concern is about whether the issue reference in a code comment/test failure message is accurate.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "documentation/docs/developer/guidelines/caching.mdx",
+      "start_line": 46,
+      "end_line": 46,
+      "message": "`#12584` refers to the result-history dropdown PR, not the ObjectNotFoundException/L2-cache incident described here. This should link to the correct issue/PR so the caching history remains traceable.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same unverifiable claim as Finding 2 — whether #12584 actually resolves to a result-history dropdown PR cannot be confirmed from the repository. All internal evidence (PR description, caching.mdx itself) consistently describes #12584 as the cross-node ObjectNotFoundException incident.",
+      "severity_justification": "Only affects traceability of a documentation reference; no runtime or behavioral impact.",
+      "category_justification": "The concern is about the accuracy of a historical issue reference in developer documentation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "CLAUDE.md",
+      "start_line": 144,
+      "end_line": 144,
+      "message": "The `#12584` reference points to the result-history dropdown PR rather than the described cross-node stale-read bug. Please use the correct tracking number or remove the reference to avoid sending developers to unrelated context.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Identical unverifiable claim about #12584 being a wrong reference, applied to CLAUDE.md. Cannot be confirmed from the repository alone, and all internal evidence consistently assigns #12584 to the cross-node stale-read bug.",
+      "severity_justification": "Only affects traceability of a documentation reference; no runtime or behavioral impact.",
+      "category_justification": "The concern is about the accuracy of a historical issue reference in developer-facing documentation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

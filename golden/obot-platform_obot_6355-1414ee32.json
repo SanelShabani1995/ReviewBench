@@ -1,0 +1,403 @@
+{
+  "pr_key": "obot-platform_obot_6355-1414ee32",
+  "pr": {
+    "repo": "https://github.com/obot-platform/obot",
+    "pr_number": 6355,
+    "base": "e7eab882033243249f8ca3106157a15be8d4bd44",
+    "head": "1414ee32f2a7f0b6297de61314d4defb7260b472"
+  },
+  "findings": [
+    {
+      "file": "docs/docs/functionality/message-policies.md",
+      "start_line": 54,
+      "end_line": 55,
+      "message": "The model alias names used here don't match what administrators see in the UI or in other docs. The code uses `DefaultModelAliasTypeLLMMini` ('llm-mini') for stage 1 and `DefaultModelAliasTypeLLM` ('llm') for stage 2. The Model Providers page and UI label these 'Language Model (Chat - Fast)' and 'Language Model (Chat)' respectively (confirmed in ui/user/src/lib/services/admin/types.ts and docs/docs/configuration/model-providers.md:58-59). Using backtick-formatted shorthands '`Chat - Fast`' and '`Chat`' implies these are exact UI labels, which they are not. Admins trying to configure the right model will not find these labels in the admin interface.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the doc uses backtick-formatted `Chat - Fast` and `Chat` at lines 54-55, but the actual UI labels (confirmed in ui/user/src/lib/services/admin/types.ts lines 289-290 and model-providers.md lines 58-59) are 'Language Model (Chat - Fast)' and 'Language Model (Chat)'. The backtick formatting implies exact labels/identifiers, creating a mismatch that could confuse admins trying to locate the right model settings.",
+      "severity_justification": "Admins can likely identify the correct models from context, but the inaccurate label names could cause confusion when navigating the admin UI. No functional impact, purely a documentation accuracy issue.",
+      "category_justification": "The finding is about inaccurate label names in documentation that don't match the actual UI labels.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/functionality/message-policies.md",
+      "start_line": 93,
+      "end_line": 93,
+      "message": "The violation record schema lists 'Project ID and thread ID when available' but for user-message direction violations, these fields are never populated — the code at llmproxy.go:1020 always passes empty strings (\"\", \"\") for projectID and threadID. Project and thread IDs are only captured for tool-call violations (llmproxy.go:545, 643). Admins who try to filter user-message violations by project or thread will find no matches and have no indication why. The doc should clarify that these fields are only populated for tool-call violations.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified in llmproxy.go: user-message violations always pass empty strings (\"\", \"\") for projectID and threadID to logViolation (~line 1022), while tool-call violations pass actual r.projectID and r.threadID (~lines 545, 643). The doc states 'Project ID and thread ID when available' without noting these fields are only populated for tool-call violations, which would mislead admins trying to filter user-message violations by project or thread.",
+      "severity_justification": "Admins filtering user-message violations by project/thread will get no results with no explanation, causing confusion. However this is a documentation accuracy issue rather than a functional bug, and the feature is experimental/opt-in.",
+      "category_justification": "The finding is about inaccurate documentation — the violation record schema description doesn't accurately reflect which fields are populated for each direction type.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/functionality/message-policies.md",
+      "start_line": 95,
+      "end_line": 96,
+      "message": "The doc refers to 'the Obot encryption configuration documentation' for blocked-content encryption setup but provides no link, unlike every other cross-reference in this file. The encryption providers docs exist at /configuration/encryption-providers/. Without a link, users have to search separately. Every other reference in the Related Topics and body text includes a hyperlink.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 96 says 'See the Obot encryption configuration documentation for setup details' with no hyperlink, while the encryption-providers directory exists at docs/docs/configuration/encryption-providers/. All other cross-references in the file (lines 153-156) use markdown hyperlinks consistently.",
+      "severity_justification": "A missing hyperlink is a minor usability issue — readers can still find the docs by navigating manually. No functional impact.",
+      "category_justification": "The finding is about a missing hyperlink in documentation, which is an inconsistency in cross-reference style within the file.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/functionality/message-policies.md",
+      "start_line": 154,
+      "end_line": 154,
+      "message": "The Related Topics description says 'Configure the default `llm` and `llm-mini` aliases' using internal API identifiers that do not appear in the admin UI. The Model Providers page labels these 'Language Model (Chat)' and 'Language Model (Chat - Fast)' (model-providers.md:58-59, admin/types.ts:ModelAliasLabels). Using the raw API alias keys here is inconsistent with every other reference to these models in the docs and will not help admins find the right settings.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 154 uses raw API identifiers `llm` and `llm-mini` in backticks for the Related Topics description, while model-providers.md consistently uses the admin UI labels 'Language Model (Chat)' and 'Language Model (Chat - Fast)' when describing the default model categories. The raw API identifiers don't appear as labels in the admin UI, which could confuse admins trying to locate the right settings.",
+      "severity_justification": "A minor documentation inconsistency that might cause mild confusion, but admins can still identify the correct settings from context. No functional impact.",
+      "category_justification": "The finding is about inconsistent terminology in documentation that doesn't match the UI labels admins would see.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/versioned_docs/version-v0.19.0/functionality/message-policies.md",
+      "start_line": 54,
+      "end_line": 55,
+      "message": "Same issue as in the current docs: the model alias labels '`Chat - Fast`' and '`Chat`' don't match the UI labels 'Language Model (Chat - Fast)' and 'Language Model (Chat)'. This file is an exact copy of the current docs file, so the same inaccuracy is present in both places.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the versioned docs file at docs/versioned_docs/version-v0.19.0/functionality/message-policies.md lines 54-55 contains identical text using `Chat - Fast` and `Chat` in backticks, which don't match the actual UI labels 'Language Model (Chat - Fast)' and 'Language Model (Chat)'. Same factual inaccuracy as Finding 1, present in both the current and versioned docs.",
+      "severity_justification": "Same as Finding 1 — minor documentation inaccuracy that could cause mild confusion but no functional impact. Admins can still identify the correct models from context.",
+      "category_justification": "Inaccurate label names in versioned documentation that don't match the actual admin UI labels.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/versioned_docs/version-v0.19.0/functionality/message-policies.md",
+      "start_line": 93,
+      "end_line": 93,
+      "message": "Same issue as in the current docs: 'Project ID and thread ID when available' implies these may be present for all violation types, but user-message violations never populate these fields. This is the versioned copy of the same inaccuracy.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the versioned docs file contains identical text at line 93 — 'Project ID and thread ID when available' — which implies these fields may be present for all violation types. As established in Finding 2, user-message violations always pass empty strings for projectID and threadID in llmproxy.go, so this is the same factual inaccuracy in the versioned copy.",
+      "severity_justification": "Same as Finding 2 — documentation inaccuracy that could mislead admins filtering user-message violations by project/thread, but no functional impact. The feature is experimental/opt-in.",
+      "category_justification": "Inaccurate violation record schema description in versioned documentation that doesn't reflect actual behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/versioned_docs/version-v0.19.0/functionality/message-policies.md",
+      "start_line": 95,
+      "end_line": 96,
+      "message": "Same missing link to encryption documentation as in the current docs version.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the versioned docs file at lines 95-96 contains the identical plain-text reference 'See the Obot encryption configuration documentation for setup details' with no hyperlink, the same missing link as documented in Finding 3 for the current docs version.",
+      "severity_justification": "Same as Finding 3 — minor usability issue where a missing hyperlink requires readers to search manually. No functional impact.",
+      "category_justification": "Missing hyperlink in versioned documentation, inconsistent with all other cross-references in the file.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/versioned_docs/version-v0.19.0/functionality/message-policies.md",
+      "start_line": 154,
+      "end_line": 154,
+      "message": "Same issue as in the current docs: references internal identifiers '`llm`' and '`llm-mini`' instead of the UI-visible labels 'Language Model (Chat)' and 'Language Model (Chat - Fast)'.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the versioned docs file at line 154 contains identical text using raw API identifiers `llm` and `llm-mini` in backticks, the same inconsistency as Finding 4 in the current docs. The versioned file is an exact copy.",
+      "severity_justification": "Same as Finding 4 — minor documentation inconsistency with no functional impact.",
+      "category_justification": "Inconsistent terminology in versioned documentation using internal API identifiers instead of UI-visible labels.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/configuration/server-configuration.md",
+      "start_line": 66,
+      "end_line": 66,
+      "message": "The documentation specifies `OBOT_SERVER_ENABLE_MESSAGE_POLICIES` as the environment variable to enable message policies. However, the corresponding field in the Go configuration struct (`pkg/services/config.go`) is not tagged with an `env` key. This means the feature flag can only be set via a command-line flag (`--enable-message-policies`), not by the documented environment variable.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is factually incorrect. The gptscript-ai/cmd framework auto-derives env var names from struct field names. Multiple other fields without explicit env tags are correctly documented (EnableAuthentication→OBOT_SERVER_ENABLE_AUTHENTICATION, DisableLegacyChat→OBOT_SERVER_DISABLE_LEGACY_CHAT, NanobotIntegration→OBOT_SERVER_NANOBOT_INTEGRATION). EnableMessagePolicies follows the same pattern, making OBOT_SERVER_ENABLE_MESSAGE_POLICIES a valid and functional env var.",
+      "severity_justification": "If true, this would mean the documented env var doesn't work, preventing admins from enabling the feature. But it's a false positive.",
+      "category_justification": "The finding incorrectly claims the env var doesn't work due to a missing struct tag.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/versioned_docs/version-v0.19.0/configuration/server-configuration.md",
+      "start_line": 66,
+      "end_line": 66,
+      "message": "The documentation specifies `OBOT_SERVER_ENABLE_MESSAGE_POLICIES` as the environment variable to enable message policies. However, the corresponding field in the Go configuration struct (`pkg/services/config.go`) is not tagged with an `env` key. This means the feature flag can only be set via a command-line flag (`--enable-message-policies`), not by the documented environment variable.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same claim as Finding 9, applied to the versioned docs. Already verified: the gptscript-ai/cmd framework auto-derives env var names from struct field names (e.g., EnableAuthentication→OBOT_SERVER_ENABLE_AUTHENTICATION, DisableLegacyChat→OBOT_SERVER_DISABLE_LEGACY_CHAT). EnableMessagePolicies correctly maps to OBOT_SERVER_ENABLE_MESSAGE_POLICIES without needing an explicit env tag.",
+      "severity_justification": "If true, the documented env var would be non-functional, but the claim is incorrect.",
+      "category_justification": "The finding incorrectly claims the env var is non-functional due to a missing struct tag.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/docs/functionality/obot-agent-management.md",
+      "start_line": 23,
+      "end_line": 23,
+      "message": "The wording is a little confusing to me. What do you think about this small change?\n```suggestion\nUse natural-language to enforce content rules on user prompts and tool calls. See [Message Policies](../message-policies/) for details.\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The only change proposed is hyphenating 'natural language' to 'natural-language'. This is a personal style preference with no concrete local convention being violated, no demonstrated ambiguity, and no functional impact. The reviewer explicitly frames it as subjective ('a little confusing to me', 'what do you think'). This does not meet the bar for a non-trivial, actionable finding.",
+      "severity_justification": "Purely cosmetic hyphenation preference with no impact on meaning or functionality.",
+      "category_justification": "The finding is about wording/style in documentation.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "thedadams",
+        "url": "https://github.com/obot-platform/obot/pull/6355#discussion_r3094135288",
+        "created_at": "2026-04-16T14:53:17Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "1414ee32f2a7f0b6297de61314d4defb7260b472"
+      }
+    },
+    {
+      "file": "docs/docs/functionality/message-policies.md",
+      "start_line": 7,
+      "end_line": 7,
+      "message": "Same comment here. Maybe this?\n```suggestion\nMessage Policies let administrators enforce content rules written in natural language on Obot Agent traffic at the LLM proxy layer. A policy can apply to:\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggestion text is word-for-word identical to the original line 7 text from the diff. No actual change is being proposed — this is a null finding. The reviewer references 'same comment' from Finding 11 about hyphenation, but the suggestion doesn't apply any hyphenation either.",
+      "severity_justification": "No change is proposed; completely cosmetic and no-op even if it were a real suggestion.",
+      "category_justification": "The finding is about wording in documentation, even though the suggestion is identical to the original.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "thedadams",
+        "url": "https://github.com/obot-platform/obot/pull/6355#discussion_r3094241665",
+        "created_at": "2026-04-16T15:08:45Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "1414ee32f2a7f0b6297de61314d4defb7260b472"
+      }
+    },
+    {
+      "file": "docs/docs/functionality/message-policies.md",
+      "start_line": 11,
+      "end_line": 11,
+      "message": "What does both directions mean here? I think I can interpret that as for both user messages and tools calls or for tool calls on request before the tool is run and response before sent to the LLM. Not sure if \"both directions\" would apply to the final response from the agent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The checked-out file at line 11 reads '**Both** directions', which is genuinely ambiguous — 'directions' is not an established term in this doc (the two list items are user messages and tool calls, not 'directions'), and could be misread as referring to request/response traffic directions rather than both policy types. Line 24 uses the clearer 'Both' without 'directions', highlighting the inconsistency.",
+      "severity_justification": "A minor clarity issue in docs. Readers familiar with the context can infer the meaning, but the phrasing is inconsistent with line 24 and potentially confusing.",
+      "category_justification": "The finding is about ambiguous wording in documentation.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "thedadams",
+        "url": "https://github.com/obot-platform/obot/pull/6355#discussion_r3094257341",
+        "created_at": "2026-04-16T15:11:13Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "1414ee32f2a7f0b6297de61314d4defb7260b472"
+      }
+    },
+    {
+      "file": "docs/docs/functionality/message-policies.md",
+      "start_line": 16,
+      "end_line": 16,
+      "message": "```suggestion\nWhen enabled, Obot adds **Message Policies** and **Message Policy Violations** under **Obot Agent Management** in the admin UI.\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggestion text is identical to the original line in the PR diff ('in the admin UI' is already present in the diff). The checked-out file is missing that phrase, but per instructions I trust the diff hunk. There is no actual change being proposed — this is a null suggestion.",
+      "severity_justification": "No change proposed; completely cosmetic even if it were a real suggestion.",
+      "category_justification": "The finding is about wording in documentation, though the suggestion makes no actual change.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "thedadams",
+        "url": "https://github.com/obot-platform/obot/pull/6355#discussion_r3094283163",
+        "created_at": "2026-04-16T15:15:15Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "1414ee32f2a7f0b6297de61314d4defb7260b472"
+      }
+    },
+    {
+      "file": "docs/docs/functionality/message-policies.md",
+      "start_line": 61,
+      "end_line": 61,
+      "message": "```suggestion\nFor user-message enforcement, Obot checks only the **most recent text message** in the request, and only when it is the final message in the conversation payload. This avoids re-evaluating an already-approved user prompt during tool-calling continuations.\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggestion text ('most recent text message') is identical to the original text in the PR diff. The checked-out file uses 'last user text message' but per instructions the diff hunk takes precedence. No actual change is being proposed — null finding.",
+      "severity_justification": "No change proposed; purely cosmetic even if it were a real suggestion.",
+      "category_justification": "The finding is about wording in documentation with no actual proposed change.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "thedadams",
+        "url": "https://github.com/obot-platform/obot/pull/6355#discussion_r3094327699",
+        "created_at": "2026-04-16T15:22:12Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "1414ee32f2a7f0b6297de61314d4defb7260b472"
+      }
+    },
+    {
+      "file": "docs/docs/functionality/message-policies.md",
+      "start_line": 77,
+      "end_line": 77,
+      "message": "```suggestion\n- If the tool call violates a policy, Obot signals to the Obot Agent that the tool call cannot be executed\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggestion text is identical to the original line in the PR diff ('that the tool call cannot be executed'). The checked-out file shows a different phrasing due to subsequent edits in the 'copilot feedback' commit, but per instructions the diff hunk takes precedence. No actual change is being proposed relative to the diff.",
+      "severity_justification": "No change proposed relative to the diff; purely cosmetic.",
+      "category_justification": "The finding is about wording in documentation.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "thedadams",
+        "url": "https://github.com/obot-platform/obot/pull/6355#discussion_r3094334995",
+        "created_at": "2026-04-16T15:23:21Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "1414ee32f2a7f0b6297de61314d4defb7260b472"
+      }
+    },
+    {
+      "file": "docs/docs/functionality/message-policies.md",
+      "start_line": 122,
+      "end_line": 122,
+      "message": "```suggestion\n3. Write the policy definition in natural language. Be as specific as you can about specific actions that are or are not allowed.\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggestion text is identical to the original line in the PR diff ('natural language'). The checked-out file at this SHA says 'plain language' due to a subsequent edit in the same 'copilot feedback' commit, but per instructions the diff hunk takes precedence. No actual change is being proposed relative to the diff.",
+      "severity_justification": "No change proposed relative to the diff; purely cosmetic.",
+      "category_justification": "The finding is about wording in documentation.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "thedadams",
+        "url": "https://github.com/obot-platform/obot/pull/6355#discussion_r3094406649",
+        "created_at": "2026-04-16T15:34:28Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "1414ee32f2a7f0b6297de61314d4defb7260b472"
+      }
+    },
+    {
+      "file": "docs/docs/functionality/message-policies.md",
+      "start_line": 138,
+      "end_line": 138,
+      "message": "Just to be consistent throughout.\n```suggestion\n- Write the rule as a natural-language instruction, not as implementation notes\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggestion text is identical to the original line in the PR diff ('natural-language instruction'). The checked-out file says 'plain-language' due to a subsequent edit in the 'copilot feedback' commit at this SHA, but per instructions the diff hunk takes precedence. No actual change is being proposed relative to the diff.",
+      "severity_justification": "No change proposed relative to the diff; purely cosmetic style preference.",
+      "category_justification": "The finding is about wording consistency in documentation.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "thedadams",
+        "url": "https://github.com/obot-platform/obot/pull/6355#discussion_r3094409878",
+        "created_at": "2026-04-16T15:34:58Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "1414ee32f2a7f0b6297de61314d4defb7260b472"
+      }
+    }
+  ]
+}

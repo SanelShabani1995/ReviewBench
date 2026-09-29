@@ -1,0 +1,231 @@
+{
+  "pr_key": "playcanvas_editor_1955-f3fdcf8a",
+  "pr": {
+    "repo": "https://github.com/playcanvas/editor",
+    "pr_number": 1955,
+    "base": "03b2190e01216196b7149554840d3a7c8280ec5c",
+    "head": "f3fdcf8a7e5336a0019a4a38722677e63030bd32"
+  },
+  "findings": [
+    {
+      "file": "src/editor/pickers/version-control/ui/version-control-side-panel-box.ts",
+      "start_line": 207,
+      "end_line": 220,
+      "message": "In clear(), checkboxTargetCheckpoint, checkboxSourceCheckpoint, and checkboxSourceClose are accessed (.value = ...) without null guards, relying only on the corresponding panel check (e.g. if (this.panelTargetCheckpoint)). Both fields are typed as optional (BooleanInput | undefined) and are always set together in _createCheckbox, but TypeScript doesn't enforce this coupling. Any future refactor that sets the panel without the checkbox (or vice versa) would silently throw at runtime.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code in clear() guards on panelTargetCheckpoint/panelSourceCheckpoint/panelSourceClose but accesses checkboxTargetCheckpoint.value, checkboxSourceCheckpoint.value, and checkboxSourceClose.value without null guards. All three checkbox fields are typed as `BooleanInput | undefined`, so TypeScript would flag these as unsafe property accesses. The pairing is only enforced by convention in _createCheckbox, not by types.",
+      "severity_justification": "No actual runtime bug exists today since the fields are always set together in _createCheckbox, but the type safety gap is real and could bite future refactors. The risk is low given the tight coupling in practice.",
+      "category_justification": "This is a type safety / defensive coding concern — the code relies on an implicit invariant (panel and checkbox always set together) that TypeScript doesn't enforce, making future maintenance risky.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/editor/pickers/version-control/ui/version-control-side-panel-box.ts",
+      "start_line": 207,
+      "end_line": 220,
+      "message": "PCUI BooleanInput initialises _value to null (not false), unlike LegacyCheckbox which defaulted to false via classList.contains('checked'). clear() sets checkboxSourceCheckpoint.value = false and checkboxSourceClose.value = false. On the very first clear() call (before any user interaction) the stored value is still null, so null !== false triggers _updateValue, which emits a 'change' event. This fires the 'createSourceCheckpoint' and 'closeSourceBranch' event handlers unexpectedly. The original LegacyCheckbox defaulted to false, so the same clear() call was a silent no-op. Downstream handlers are currently benign (resetting already-false panel state), but this is semantically wrong and will silently break if handlers ever acquire real side-effects.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The BooleanInput source confirms _value initializes to null, and _updateValue uses strict equality (null === false returns false) so it always emits 'change' on first clear(). LegacyCheckbox defaulted to false via classList.contains('checked'), making clear() a no-op. This is a verified behavioral regression introduced by the migration — spurious 'createSourceCheckpoint' and 'closeSourceBranch' events fire on first clear().",
+      "severity_justification": "The spurious events are currently benign: panel.createSourceCheckpoint was already initialized to false, and panel.closeSourceBranch being set to false instead of undefined doesn't break the merge flow. The issue is real but has no observable user impact today.",
+      "category_justification": "This is a behavior change introduced by migrating from LegacyCheckbox to BooleanInput — the initial value semantics differ, causing unintended change events to fire during clear().",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/editor/pickers/version-control/ui/version-control-side-panel-box.ts",
+      "start_line": 109,
+      "end_line": 110,
+      "message": "_createCheckbox is an internal construction helper but is not declared private. The class is exported, so external callers can invoke it directly, bypassing the ordering logic in append() that keeps checkpoint panels at the bottom. The TypeScript underscore convention gives no enforcement. Marking it private would prevent misuse.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "_createCheckbox is factually missing the private modifier — it relies only on the underscore naming convention for privacy. The class is exported and the method could technically be called externally. However, this is a pre-existing issue unchanged by the PR.",
+      "severity_justification": "No actual misuse exists and the underscore convention signals intent. The risk of external callers bypassing append() ordering logic is theoretical.",
+      "category_justification": "This is a code quality / TypeScript convention issue about proper use of access modifiers to enforce encapsulation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/editor/pickers/version-control/ui/version-control-side-panel-box.ts",
+      "start_line": 126,
+      "end_line": 136,
+      "message": "labelHelp (the help icon '\\uE138') is unconditionally appended to the checkbox container even when tooltipMsg is undefined. With position: absolute; right: 10px the icon occupies real space in the layout and is rendered with cursor: pointer, yet clicking it has no effect when no tooltip is attached. Any future caller of _createCheckbox that omits tooltipMsg will silently produce a dead, misleading UI element. The icon should only be appended when tooltipMsg is truthy.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct — labelHelp is unconditionally appended regardless of whether tooltipMsg is provided, and the SCSS gives it cursor:pointer. However, this exact same behavior existed in the pre-migration code. All current callers always supply tooltipMsg. The concern about future callers is valid but theoretical.",
+      "severity_justification": "No current callsite omits tooltipMsg, and _createCheckbox is an internal method only called within the constructor. The risk is purely hypothetical for future misuse.",
+      "category_justification": "This is a defensive coding / API design issue — the internal helper silently produces a dead UI element if called without tooltipMsg, which could mislead future maintainers.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sass/editor/_editor-main.scss",
+      "start_line": 4926,
+      "end_line": 4967,
+      "message": "The create-branch and close-branch/hard-reset-checkpoint SCSS blocks use .ui-panel.main > .content as the outer scope selector (legacy class names), then nest the new PCUI selector .pcui-panel-content > .pcui-container:not(.checkpoint-checkbox) inside. The migrated version-control-side-panel-box now renders .pcui-panel-content, but the outer .ui-panel.main wrapper has not been migrated and still uses the legacy .content class. This creates a selector chain that only works while the outer container remains un-migrated. When that outer panel is eventually ported to PCUI, both the flex-direction and padding rules inside these blocks will silently stop matching, breaking the form-row layout in Create Branch, Close Branch, and Hard Reset Checkpoint views.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: picker-version-control-side-panel.ts uses LegacyPanel with class 'main', creating .ui-panel.main > .content in the DOM. The SCSS nests .pcui-panel-content > .pcui-container:not(.checkpoint-checkbox) inside .ui-panel.main > .content — a mixed legacy/PCUI selector chain that works only while the outer panel remains un-migrated.",
+      "severity_justification": "No current breakage — the outer panel is still legacy so the selectors match today. The risk is purely future-oriented: when picker-version-control-side-panel.ts is migrated, these form-row layout rules will silently stop applying. Worth noting but not blocking.",
+      "category_justification": "This is a technical debt issue — an inconsistent mixed selector chain that creates a latent future regression when the remaining legacy outer panel is eventually migrated to PCUI.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/editor/pickers/version-control/ui/version-control-side-panel-box.ts",
+      "start_line": 149,
+      "end_line": 149,
+      "message": "append(panel: any) erases all type information. The method is called with PCUI Container objects (e.g. panelTypeName, panelWriteConfirm) from picker files, and also with legacy LegacyPanel objects from editor.call('picker:versioncontrol:widget:checkpoint'). clear() later calls child.destroy() on everything in this.children. Both PCUI Container and LegacyPanel have destroy(), so it works today, but the any type means the compiler cannot catch callers that pass objects without a destroy() method, which would throw silently at the next clear() call.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the pre-migration code typed append(panel: LegacyPanel), while the PR changed it to append(panel: any), losing compiler enforcement. The reason is valid (callers now mix PCUI Container and legacy panel objects), but a structural type like { destroy(): void } would preserve safety without using any.",
+      "severity_justification": "All current callers pass objects with destroy() (verified: PCUI Container and LegacyPanel both have it), so there is no runtime risk today. The issue is purely about future type safety.",
+      "category_justification": "This is a TypeScript type hygiene issue — widening to any loses compile-time checking that would catch future callers passing non-destroyable objects.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/editor/pickers/version-control/ui/version-control-side-panel-box.ts",
+      "start_line": 208,
+      "end_line": 210,
+      "message": "The children array is cleared, but the DOM elements remain attached to their parent container. This leads to a memory leak, as the child components are never destroyed or removed from the DOM, but references to them are lost.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually incorrect. child.destroy() in clear() does properly remove DOM elements: PCUI Element.destroy() calls parent.remove(this) and then dom.parentElement.removeChild(dom), and LegacyElement.destroy() calls element.parentNode.removeChild(element). DOM elements are not left attached to their parent containers.",
+      "severity_justification": "The finding describes a memory leak that does not exist in the code.",
+      "category_justification": "The finding makes an incorrect factual claim about DOM cleanup behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "sass/editor/_editor-main.scss",
+      "start_line": 4877,
+      "end_line": 4877,
+      "message": "The `overflow: visible` style on the help icon label is redundant. The parent container `.pcui-container.checkpoint-checkbox` does not have `overflow: hidden`, so there is no clipping to override. This style can be safely removed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims overflow: visible is redundant because the parent has no overflow: hidden. But PCUI's own common stylesheet sets .pcui-label { overflow: hidden } globally (confirmed in sass/pcui/_pcui-common.scss). The override on .pcui-label.help is needed to counteract this default and allow the icon/tooltip to render outside its own bounds.",
+      "severity_justification": "The finding is incorrect — removing this style would reintroduce clipping on the help icon label.",
+      "category_justification": "The finding is about a supposedly unnecessary style rule.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/editor/pickers/version-control/ui/version-control-side-panel-box.ts",
+      "start_line": 86,
+      "end_line": 86,
+      "message": "Directly manipulating the DOM style of a PCUI component with `this.panelSourceClose.dom.style.paddingTop = '0'` bypasses the component's abstraction. It's better to use CSS classes to apply styling, which keeps styling separate from logic and makes the component's appearance easier to manage and override.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding restates generic best practice (CSS classes over inline styles) without identifying a concrete bug or local convention violation. The same inline style manipulation existed in the pre-migration code. PCUI even provides a .style shortcut so the .dom access is slightly avoidable, but this doesn't rise above generic advice that could be applied to any codebase.",
+      "severity_justification": "No functional impact — the inline style works correctly, and this is a pure stylistic preference.",
+      "category_justification": "The finding is about separation of styling concerns, a style/architecture preference.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/editor/pickers/version-control/ui/version-control-side-panel-box.ts",
+      "start_line": 56,
+      "end_line": 56,
+      "message": "The event listener for the 'change' event on `checkboxTargetCheckpoint` is missing the type for the `value` argument. While TypeScript might infer it, explicitly defining it as `(value: boolean)` improves code clarity and consistency with other event handlers in the same file.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. All three 'change' event handlers in the file explicitly annotate the value argument as boolean (lines 79, 90, 103). The checkboxTargetCheckpoint handler at line 79 does have (value: boolean). The PR actually added the boolean type annotation to these handlers as part of the migration.",
+      "severity_justification": "The finding identifies a non-existent omission — no actual type annotation is missing.",
+      "category_justification": "The finding is about TypeScript type annotation completeness.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/editor/pickers/version-control/ui/version-control-side-panel-box.ts",
+      "start_line": 128,
+      "end_line": 128,
+      "message": "The tooltip is attached using `LegacyTooltip`, which is inconsistent with the goal of migrating away from legacy UI components. The modern PCUI equivalent should be used instead to complete the refactoring and avoid mixing UI systems.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "LegacyTooltip is used in ~40+ files throughout the codebase and no drop-in PCUI equivalent with a matching .attach() API exists. The finding restates a general 'finish the migration' observation without identifying a concrete problem introduced by this PR. The PR's scope was specifically LegacyPanel/LegacyLabel/LegacyCheckbox and explicitly retained LegacyTooltip.",
+      "severity_justification": "No functional issue — LegacyTooltip works correctly and is the standard pattern throughout the codebase.",
+      "category_justification": "The finding is about consistency in migrating away from legacy UI components.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

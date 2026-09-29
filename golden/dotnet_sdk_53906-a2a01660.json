@@ -1,0 +1,271 @@
+{
+  "pr_key": "dotnet_sdk_53906-a2a01660",
+  "pr": {
+    "repo": "https://github.com/dotnet/sdk",
+    "pr_number": 53906,
+    "base": "5be3937332d7d45a12cb8a95fdbfc67c8fb99513",
+    "head": "a2a01660cad071645b1b18ddf910ef3d105b0e4e"
+  },
+  "findings": [
+    {
+      "file": "src/Containers/Microsoft.NET.Build.Containers/ContentStore.cs",
+      "start_line": 36,
+      "end_line": 44,
+      "message": "The new regex `^sha256:[0-9A-Fa-f]{64}$` is hardcoded to sha256 only. The OCI Image Spec allows other digest algorithms (e.g. sha512). If a registry returns a descriptor with a non-sha256 digest, `PathForDescriptor` will now throw `ArgumentException` instead of the old behavior (silently producing a wrong path via the already-hardcoded `Substring(\"sha256:\".Length)`). This is a behavioral breaking change that could surface as an unhandled runtime exception when pulling layers from registries that use other hash algorithms.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claim is factually correct: the new regex ^sha256:[0-9A-Fa-f]{64}$ restricts PathForDescriptor to sha256-only and throws ArgumentException for other algorithms. Verified in ContentStore.cs lines 36-44. The old unanchored regex would silently produce wrong paths for non-sha256 digests via the hardcoded Substring('sha256:'.Length). Registry.cs calls PathForDescriptor with descriptors from registry responses, so a non-sha256 digest from an external registry would now throw rather than silently misbehave.",
+      "severity_justification": "The old behavior for non-sha256 digests was already broken (silently producing a malformed path). The rest of the codebase (DigestUtils.GetShaFromDigest, Layer.cs) is exclusively sha256-only, so no actual regression occurs in supported workflows. The change to explicit fail-fast is arguably better.",
+      "category_justification": "The finding is about a behavioral change in validation logic affecting correctness for non-sha256 digest inputs.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Cli/dotnet/Commands/New/PostActions/DotnetAddPostActionProcessor.cs",
+      "start_line": 43,
+      "end_line": 55,
+      "message": "The fix is incomplete for mixed `targetFiles` lists. When `targetFiles` specifies multiple files and at least one is found in `creationEffects` (a newly created file), `projectsToProcess.Any()` returns true, so the `FindExistingTargetFiles` fallback is never reached for the remaining files that are pre-existing on disk. Those pre-existing files are silently skipped with no error. The PR description frames this as fixing the pre-existing file case, but it only works when ALL targeted files are absent from `creationEffects`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified by reading GetConfiguredFiles in PostActionProcessorBase.cs: it returns only files matched in creationEffects.FileChanges. The fallback to FindExistingTargetFiles at line 44 only triggers when projectsToProcess.Any() is false — i.e., when zero files matched in creationEffects. In a mixed list (one new + one pre-existing), the new file satisfies .Any(), the branch is skipped, and the pre-existing file is silently dropped.",
+      "severity_justification": "Pre-existing files in a mixed targetFiles list would be silently skipped with no error or warning, causing the post-action to add references only to newly-created project files and miss pre-existing ones. This is a correctness failure in the behavior the PR claims to fix, though the mixed case is a less common template design pattern.",
+      "category_justification": "The issue is a logic error in the fallback condition that causes silent omission of pre-existing target files when mixed with newly-created ones.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/dotnet.Tests/CommandTests/Run/RunFileTests_CscOnlyAndApi.cs",
+      "start_line": 402,
+      "end_line": 430,
+      "message": "The `CscOnly_CompilationDiagnostics` test previously passed `-bl` and asserted that `NoBinaryLogBecauseRunningJustCsc` appeared in output, verifying that binary logging is intercepted and warned against in csc-only mode. Both the `-bl` flag and the assertion are removed without explanation in the PR description. This silently drops coverage of the binary-log interception feature in csc-only mode. The PR description only mentions stdout/stderr launch settings message fixes, not any change to binary log behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually correct that -bl and NoBinaryLogBecauseRunningJustCsc were removed from CscOnly_CompilationDiagnostics without explanation in the PR description. This is a real unexplained test change. However, the 'silently drops coverage' claim is overstated — 8 other assertions for NoBinaryLogBecauseRunningJustCsc remain in the same file, including CscOnly_DotNetRoot which directly tests the same feature with -bl.",
+      "severity_justification": "The binary-log interception feature retains substantial test coverage in 8 other assertions in the same file. The removal is worth questioning but does not meaningfully reduce confidence in the feature's correctness.",
+      "category_justification": "The finding is about the removal of a test assertion and flag from an existing test without explanation, reducing test specificity for csc-only binary log behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/dotnet.Tests/CommandTests/Run/GivenDotnetRunBuildsVbProj.cs",
+      "start_line": 88,
+      "end_line": 88,
+      "message": "The assertion `.HaveStdErrContaining(\"Using launch settings from\")` uses a partial substring rather than the full formatted message with path (as used in `ItDefaultsToTheFirstUsableLaunchProfile` and `ItPrintsUsingLaunchSettingsMessageWhenNotQuiet` in the same file). If the launch settings file is resolved from an unexpected path, this test would still pass since it only matches the prefix. The `testInstance.Path` is available in scope and could be used to construct the full expected path, as the other tests do.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in GivenDotnetRunBuildsVbProj.cs: line 88 uses .HaveStdErrContaining(\"Using launch settings from\") while ItDefaultsToTheFirstUsableLaunchProfile and ItPrintsUsingLaunchSettingsMessageWhenNotQuiet in the same file use string.Format(CliCommandStrings.UsingLaunchSettingsFromMessage, launchSettingsPath) — a full path-including assertion. The testInstance.Path is available in scope to construct the exact expected string.",
+      "severity_justification": "The test still verifies the message category and output stream (stderr), but the weaker assertion would pass if the launch settings were loaded from a wrong or unexpected path. This is a minor test specificity gap, consistent with low severity.",
+      "category_justification": "The finding is about test assertion specificity — a partial substring match that could mask wrong-path scenarios, inconsistent with the stronger assertions used elsewhere in the same file.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/dotnet.Tests/CommandTests/New/DotnetAddPostActionTests.cs",
+      "start_line": 247,
+      "end_line": 305,
+      "message": "The new test `AddRefWithTargetFilesIgnoresParentDirectoryProjects` creates a `Conflicting.csproj` in the output directory to simulate 'stale file pollution', but the test only asserts that `callback.Target == existingProjectFileFullPath`. Since `MockAddProjectReferenceCallback.AddProjectReference` throws if called more than once, the test does catch double-invocation, but it does not assert that the processor returns `true` (success). If the processor silently returned `false` after finding the correct file, the test would still pass. A `Assert.True(result)` assertion on the return value of `actionProcessor.Process(...)` would make the test more complete.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's key claim — 'if the processor silently returned false after finding the correct file, the test would still pass' — is incorrect. If the processor returned false without calling the callback, callback.Target would be null and Assert.Equal(existingProjectFileFullPath, callback.Target) would fail. If the callback was called (Target set correctly), the mock returns true, which propagates through AddReference -> ProcessInternal -> Process, so the processor cannot return false after a successful callback invocation. The suggested Assert.True(result) would be purely redundant.",
+      "severity_justification": "Even as a TP this would be a minor testing style concern with no practical coverage gap.",
+      "category_justification": "The finding concerns test assertion completeness.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Cli/dotnet/Commands/New/PostActions/DotnetAddPostActionProcessor.cs",
+      "start_line": 34,
+      "end_line": 68,
+      "message": "The changes to `DotnetAddPostActionProcessor.cs` are unrelated to the PR's stated goals of fixing test assertions and container digest validation. These logic changes and the accompanying new test should be in a separate PR to maintain a clean and focused commit history.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic process/workflow opinion — 'this change should be in a separate PR' — rather than a finding about a concrete code defect. It does not identify a bug, correctness issue, or verifiable technical problem in the code itself. The same comment could be copy-pasted onto any PR that contains multiple unrelated changes without modification. Scope bundling is a project management preference, not an actionable code review finding.",
+      "severity_justification": "Even if valid as a process concern, bundling unrelated changes in a PR has negligible technical impact.",
+      "category_justification": "The concern is about commit/PR hygiene and separation of concerns, which falls under maintainability.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Cli/dotnet/Commands/New/PostActions/DotnetAddPostActionProcessor.cs",
+      "start_line": 20,
+      "end_line": 23,
+      "message": "The introduction of the 'hasConfiguredTargetFiles' boolean variable creates a redundant check in subsequent logic since 'projectsToProcess.Any()' is already evaluated independently. Simplifying this might reduce potential overlap issues and improve clarity.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The hasConfiguredTargetFiles boolean is not redundant — it's essential to distinguish two semantically different fallback cases (disk-based lookup vs. directory search). The two if-blocks are mutually exclusive branches based on hasConfiguredTargetFiles vs !hasConfiguredTargetFiles. The finding does not identify a concrete redundancy or propose a specific simplification, and the 'potential overlap issues' claim is unverifiable and vague.",
+      "severity_justification": "Even if the concern were valid, it would be a minor readability issue with no behavioral impact.",
+      "category_justification": "The finding is about code clarity and structure, not correctness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Containers/Microsoft.NET.Build.Containers/ContentStore.cs",
+      "start_line": 48,
+      "end_line": 51,
+      "message": "The regex used to validate the digest assumes all inputs are properly formatted. Untrusted inputs should trigger a stronger validation mechanism to retain robust input filtering, avoiding injection risks or unexpected exceptions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding does not identify a concrete exploitable vulnerability. The regex ^sha256:[0-9A-Fa-f]{64}$ is fully anchored and restricts input to exactly 64 hex chars after a literal prefix — no injection risk exists since hex chars are safe as filenames and path components. The finding uses generic boilerplate language ('stronger validation mechanism', 'injection risks') without specifying what attack is possible or what additional validation would prevent.",
+      "severity_justification": "No concrete vulnerability is identified; the validation is already strict and the character set used in the output path is injection-safe.",
+      "category_justification": "The finding frames the concern in terms of injection risks and input validation strength.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/dotnet.Tests/CommandTests/New/DotnetAddPostActionTests.cs",
+      "start_line": 223,
+      "end_line": 233,
+      "message": "There is no test case to verify what happens when 'targetFiles' does not resolve to files on disk—important for confirming failure modes are robust (e.g., clear error messages).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is generic test-coverage boilerplate — 'there is no test case to verify what happens when X doesn't resolve to files on disk' could be copy-pasted to any feature without modification. The failure path (return false + UnresolvedProjFile error) is pre-existing shared code, not new logic from this PR. No specific defect or surprising failure behavior is identified; the finding is just a suggestion to add coverage.",
+      "severity_justification": "Even as a TP this would be a minor test coverage gap for a pre-existing failure handler.",
+      "category_justification": "The finding concerns missing test coverage for a failure mode.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/dotnet.Tests/CommandTests/Run/GivenDotnetRunBuildsCsProj.cs",
+      "start_line": 1849,
+      "end_line": 1854,
+      "message": "The execution result check relies heavily on hardcoded file paths and error messages. Consider parameterizing these to account for platform-specific variations or localization failures.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding references lines 1849-1854 of GivenDotnetRunBuildsCsProj.cs, but the file only has 1125 lines total — those lines don't exist. The factual claim about the specific location is incorrect. Additionally, the concern about 'hardcoded file paths and error messages' is generic boilerplate; the actual test code in this file extensively uses Path.Combine, CliCommandStrings resource strings, and string.Format with resource keys for parameterization.",
+      "severity_justification": "The finding is factually wrong about the line numbers and the concern is generic.",
+      "category_justification": "The finding is about test assertion parameterization and hardcoded values in tests.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/dotnet.Tests/CommandTests/Run/RunCommandTests.cs",
+      "start_line": 10,
+      "end_line": 45,
+      "message": "The 'CreateRunCommand' helper does not appropriately check nulls or invalid paths for projectPath, increasing runtime risk if malfunctioning configurations are passed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "CreateRunCommand is a private static test helper used exclusively within the test class. There is no demonstrated scenario where null or an invalid path would be passed — and if it were, the resulting exception would immediately surface a clear test failure. Defensive null-checking in private test helpers is not a meaningful concern. The finding is generic boilerplate that could apply to any method without null guards, with no specific defect identified.",
+      "severity_justification": "Even if valid, adding null guards to a private test helper has negligible value.",
+      "category_justification": "The finding concerns null checking and input validation for runtime safety.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/dotnet.Tests/CommandTests/Run/RunFileTests_CscOnlyAndApi.cs",
+      "start_line": 405,
+      "end_line": 420,
+      "message": "These changes (removing the `-bl` argument and dropping the `NoBinaryLogBecauseRunningJustCsc` assertions) are not described in the PR description, which scopes the changes to launch settings stderr migration and container digest validation. Please either explain these test modifications in the PR description or move them to a separate PR so the rationale is clear.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The diff confirms that `-bl` argument removal and dropping of `NoBinaryLogBecauseRunningJustCsc` assertions are real changes in `RunFileTests_CscOnlyAndApi.cs`. The PR description only mentions launch settings stderr migration and container digest validation — these changes are not described. The production code still emits the message and other tests still assert on it, so the omission is meaningful.",
+      "severity_justification": "This is a documentation/process concern about an incomplete PR description. The code changes may be correct, but the rationale for removing these assertions is unexplained, which complicates future maintenance.",
+      "category_justification": "The issue is that the PR description doesn't explain these test modifications, making the rationale unclear to reviewers and future maintainers.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Cli/dotnet/Commands/New/PostActions/DotnetAddPostActionProcessor.cs",
+      "start_line": 45,
+      "end_line": 47,
+      "message": "This comment says the direct lookup happens before falling back to directory search, but the new condition below only runs the directory search when `targetFiles` was not configured. If the direct lookup finds nothing, this path now errors instead of falling back, so the comment should be corrected to avoid documenting the opposite behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The comment says 'before falling back to directory search' but the directory search block uses `!hasConfiguredTargetFiles`, making it mutually exclusive with the direct-lookup block which uses `hasConfiguredTargetFiles`. When targetFiles is configured and the disk lookup finds nothing, execution goes directly to the error path — there is no fallback to directory search as the comment implies.",
+      "severity_justification": "The logic itself appears intentionally correct (not falling back to directory search when targetFiles is explicitly configured is likely the desired behavior); only the comment is misleading. No runtime behavior is wrong.",
+      "category_justification": "The issue is solely a misleading inline comment that documents behavior (fallback to directory search) that doesn't exist in the actual code.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

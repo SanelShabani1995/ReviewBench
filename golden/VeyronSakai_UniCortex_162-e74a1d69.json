@@ -1,0 +1,511 @@
+{
+  "pr_key": "VeyronSakai_UniCortex_162-e74a1d69",
+  "pr": {
+    "repo": "https://github.com/VeyronSakai/UniCortex",
+    "pr_number": 162,
+    "base": "233db744cb9334c90eea27eeeae0eb8610ea7c4a",
+    "head": "e74a1d695f764ce933bb0abac76aceb3b76f6254"
+  },
+  "findings": [
+    {
+      "file": "Editor/Infrastructures/AllRecorderNotSupportedAdapter.cs",
+      "start_line": 1,
+      "end_line": 17,
+      "message": "AllRecorderNotSupportedAdapter.cs and AllRecorderOperationsAdapter.cs are both missing their Unity .meta files. Every other new .cs file in this PR has a paired .meta file, but these two do not (confirmed by filesystem listing). Unity will auto-generate .meta files with random GUIDs on first import, causing source control churn and potential GUID conflicts across developer machines and CI.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: AllRecorderNotSupportedAdapter.cs and AllRecorderOperationsAdapter.cs exist in the repo at this SHA but have no corresponding .meta files, while all other new .cs files in the PR (MovieRecordingNotSupportedAdapter.cs, MovieRecordingOperationsAdapter.cs, and all others) have paired .meta files. The claim is factually correct.",
+      "severity_justification": "Missing .meta files in a Unity project cause Unity to auto-generate them with random GUIDs on import, leading to source control churn and potential GUID conflicts across developer machines and CI, which is a real workflow problem though not a runtime bug.",
+      "category_justification": "Missing meta files are a Unity project build/source-control concern — they affect reproducibility across machines and CI, which is a reliability/operational issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Infrastructures/MovieRecordingOperationsAdapter.cs",
+      "start_line": 26,
+      "end_line": 26,
+      "message": "EditorApplication.playModeStateChanged is subscribed in the constructor but never unsubscribed. Shutdown() (called on AssemblyReloadEvents.beforeAssemblyReload) removes the dispatcher from EditorApplication.update but does not remove OnPlayModeStateChanged. The delegate keeps the adapter instance alive beyond the shutdown point; if Unity fires a play-mode state change during the reload sequence, OnPlayModeStateChanged executes on a partially-torn-down adapter.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: MovieRecordingOperationsAdapter subscribes EditorApplication.playModeStateChanged in its constructor but never unsubscribes. The Shutdown() method in EntryPoint.cs only removes EditorApplication.update, leaving the playModeStateChanged delegate registered. This means the adapter instance is kept alive by the event after shutdown, and OnPlayModeStateChanged could fire on a partially-torn-down adapter during the assembly reload sequence.",
+      "severity_justification": "Unity domain reloads clear the managed AppDomain so the stale subscription is cleaned up, but the missing unsubscription is still a correctness/lifecycle issue. The risk of actual misbehavior is low but real if Unity fires a play-mode change during the brief window between Shutdown() and full domain unload.",
+      "category_justification": "This is a lifecycle/resource management issue — an event subscription that isn't cleaned up during shutdown, which can cause unexpected callbacks on a partially-torn-down object.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Infrastructures/MovieRecordingOperationsAdapter.cs",
+      "start_line": 134,
+      "end_line": 145,
+      "message": "StopMovieRecording does not protect CleanupRecordingState in a finally block. If _controller.StopRecording() throws, CleanupRecordingState() is never called and _controller remains non-null. Every subsequent call to StartMovieRecording will then throw 'A recording is already in progress', permanently blocking recording until the next domain reload. Contrast with StartMovieRecording, which correctly wraps PrepareRecording/StartRecording in try/catch with CleanupRecordingState in the catch.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: StopMovieRecording calls _controller.StopRecording() then CleanupRecordingState() sequentially with no try/finally. If StopRecording() throws, _controller stays non-null and the adapter is permanently stuck in the 'recording in progress' state until domain reload. StartMovieRecording does use try/catch with CleanupRecordingState in the catch, making this an inconsistency that creates a permanent blocking condition.",
+      "severity_justification": "If StopRecording() throws for any reason, the adapter is permanently bricked for that Editor session — no further recordings can be started until a domain reload. This is a real user-facing issue that degrades the feature's reliability.",
+      "category_justification": "Incorrect exception handling that leaves the object in a permanently broken state is a reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Infrastructures/MovieRecordingOperationsAdapter.cs",
+      "start_line": 115,
+      "end_line": 127,
+      "message": "RecorderController is constructed with the full RecorderControllerSettings and StartRecording() activates every enabled recorder in that settings object, not just the one at the given index. The index parameter is only used for pre-flight validation and to select which path to return on stop. If the user has multiple enabled recorders, all of them will record simultaneously. This contradicts the documented 'Start recording with the specified Movie recorder' semantics and means StopMovieRecording only returns the path for one of potentially several running recorders.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: RecorderController is constructed with the full RecorderControllerSettings containing all recorders. No code disables the other recorders before calling StartRecording(). The index parameter only validates and selects the target recorder for output path tracking. This contradicts the documented/specified 'start the specified recorder by index' semantics — all enabled recorders run simultaneously.",
+      "severity_justification": "If a user has multiple enabled recorders, all will record when only one was requested. This is a behavioral correctness violation of the API contract, though it only manifests when more than one recorder is in the list.",
+      "category_justification": "The implementation's behavior contradicts the documented API semantics — recording is supposed to be for a specific indexed recorder, but all enabled recorders start.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Infrastructures/MovieRecordingOperationsAdapter.cs",
+      "start_line": 140,
+      "end_line": 143,
+      "message": "RecorderController is not disposed after StopRecording() in either StopMovieRecording() or OnPlayModeStateChanged(). RecorderController implements IDisposable (it holds native encoder handles and file writers). Setting _controller = null without calling Dispose() leaks those resources. Both stop paths should call _controller.Dispose() before nulling the reference.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding's key claim that RecorderController implements IDisposable and holds native handles requiring explicit Dispose() cannot be verified from the repository. Unity Recorder's RecorderController is not documented to implement IDisposable — cleanup is handled by StopRecording() which the code already calls. Without being able to confirm the IDisposable claim, the finding is unverifiable.",
+      "severity_justification": "Even if the claim were true, Unity GC and domain reloads would eventually reclaim resources, limiting practical impact.",
+      "category_justification": "The concern is about potential resource leaks from an IDisposable not being disposed.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Infrastructures/AllRecorderOperationsAdapter.cs",
+      "start_line": 64,
+      "end_line": 78,
+      "message": "RecorderErrorHelper.GetErrors calls GetMethod(\"GetErrors\", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public) without specifying parameter types. If RecorderSettings (a private Unity Recorder API) has more than one GetErrors overload, GetMethod throws AmbiguousMatchException rather than returning null, crashing every call to GetRecorderList. The overload accepting Type[] should be used to pin the exact signature, e.g., GetMethod(\"GetErrors\", flags, null, new[] { typeof(List<string>) }, null).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The code calls Type.GetMethod(string, BindingFlags) without specifying parameter types. This is factually fragile: if RecorderSettings has (or gains) multiple GetErrors overloads, GetMethod throws AmbiguousMatchException rather than returning null, bypassing the null-check guard and crashing all recorder list calls. The suggested fix of pinning the parameter signature is correct and standard defensive practice for private API reflection.",
+      "severity_justification": "The issue only manifests if RecorderSettings has multiple GetErrors overloads, which is currently unconfirmed. In practice it's unlikely to cause an immediate crash, but is a real fragility against future Unity Recorder changes.",
+      "category_justification": "A reflection call that can throw AmbiguousMatchException rather than returning null is a reliability concern — the null guard doesn't protect against this failure mode.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Handlers/MovieRecorder/GetRecorderListHandler.cs",
+      "start_line": 30,
+      "end_line": 38,
+      "message": "GetRecorderListHandler only catches NotSupportedException, but AllRecorderOperationsAdapter.GetRecorderList() throws InvalidOperationException when RecorderErrorHelper.GetErrors cannot find the reflection target (and AmbiguousMatchException if there are overloads). These exceptions propagate uncaught from the async handler, producing an unhandled exception instead of a structured HTTP error response. InvalidOperationException (and TargetInvocationException) should be caught and returned as 400/500 responses.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`RequestRouter` has `catch (Exception)` → returns 500",
+      "severity_justification": "When the reflection fails (e.g., Unity Recorder changes internal API), the GET /recorder/all/list endpoint crashes with an unhandled exception instead of returning a structured error response, breaking the client's ability to handle the failure gracefully.",
+      "category_justification": "Missing exception handling in an HTTP handler that causes unhandled exceptions instead of structured error responses is a reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Handlers/MovieRecorder/RemoveMovieRecorderHandler.cs",
+      "start_line": 40,
+      "end_line": 43,
+      "message": "RemoveMovieRecorderRequest.index is an int field that defaults to 0 when absent from the JSON. JsonUtility.FromJson sets missing int fields to 0, so a body of {} or any body that omits index is silently treated as 'remove recorder at index 0' — deleting the first recorder without any signal to the caller. There is no way to distinguish the caller explicitly sending 0 from the field being omitted. A distinct sentinel (e.g., nullable or a presence check) is needed, or the body schema should require index to be present.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: RemoveMovieRecorderRequest.index is an int field, JsonUtility.FromJson sets missing int fields to 0, and the handler only guards against empty/null body — a body of {} passes the check and silently uses index=0, deleting the first recorder without any error signal to the caller.",
+      "severity_justification": "Silently deleting the first recorder when a client accidentally omits the index field is a destructive action with no error feedback. The caller has no way to know the field was missing vs. intentionally set to 0.",
+      "category_justification": "The field defaulting silently to a valid index causes incorrect behavior (deleting an unintended recorder) that contradicts the intent of requiring an explicit index.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Infrastructures/MovieRecordingOperationsAdapter.cs",
+      "start_line": 32,
+      "end_line": 46,
+      "message": "AddMovieRecorder creates a MovieRecorderSettings via ScriptableObject.CreateInstance but never sets recorder.hideFlags = HideFlags.DontSave or otherwise anchors the object in the asset graph before handing it to AddRecorderSettings. If AddRecorderSettings does not take ownership (e.g., does not add the object as a sub-asset of the global settings file), Unity's GC can destroy the ScriptableObject, leaving a dangling reference inside RecorderControllerSettings and causing NullReferenceExceptions on subsequent list or start calls.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding's core claim — that AddRecorderSettings doesn't take ownership of the passed ScriptableObject — cannot be verified from the available code. The Unity Recorder package source isn't in the repo. Unity Recorder's standard AddRecorderSettings implementation saves the recorder as a sub-asset of the global settings file (backed by LoadSerializedFileAndForget), which properly anchors it. The GC concern is based on an assumption about API behavior that is likely incorrect for this well-maintained package.",
+      "severity_justification": "If the claim were true, dangling ScriptableObject references would cause NullReferenceExceptions on subsequent operations, which would be a serious reliability issue.",
+      "category_justification": "The concern is about object lifetime and potential dangling references from ScriptableObject GC.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Infrastructures/MovieRecordingOperationsAdapter.cs",
+      "start_line": 51,
+      "end_line": 65,
+      "message": "RemoveMovieRecorder emits a misleading error when the list is empty and index == 0: 'Recorder index 0 is out of range (0..-1)'. The range description '0..-1' is confusing and suggests a valid index exists. The error should special-case the empty list to say 'No recorders are configured' rather than computing an upper bound of Length-1 = -1.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: when allRecorders.Length == 0, the error message produces 'Recorder index 0 is out of range (0..-1).' — factually confirmed by the string interpolation allRecorders.Length - 1 = -1. The range '0..-1' is misleading and suggests a valid range exists.",
+      "severity_justification": "This is a cosmetic error message quality issue. It doesn't cause incorrect behavior — the exception is still thrown correctly — but the message misleads the caller when the recorder list is empty.",
+      "category_justification": "The issue is a confusing diagnostic message, not a logic error or behavioral bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Handlers/AddMovieRecorderHandler.cs",
+      "start_line": 49,
+      "end_line": 52,
+      "message": "The default value for `encoder` is set to `string.Empty`, but the use case expects a non-empty string or null. This will cause the wrong encoder to be selected if the client sends a `null` value for this optional field. The default should be `MovieRecorderEncoderType.UnityMediaEncoder` as documented.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim is factually incorrect. CreateEncoderSettings checks string.IsNullOrEmpty(encoder) first, so passing string.Empty results in the correct default UnityMediaEncoder behavior — identical to passing MovieRecorderEncoderType.UnityMediaEncoder. The finding is wrong that string.Empty causes the wrong encoder to be selected.",
+      "severity_justification": "Even if taken at face value, the concern would only affect cases where the client explicitly sends null for the optional encoder field, which is an edge case.",
+      "category_justification": "The finding is about incorrect behavior from a default value, a correctness concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Tests/Editor/TestDoubles/SpyMovieRecordingOperations.cs",
+      "start_line": 56,
+      "end_line": 56,
+      "message": "The `RemoveMovieRecorder` method in this test spy does not correctly handle multiple removals. Removing an element at a specific index will shift the indices of subsequent elements, causing future removals by index to target the wrong recorder. To fix this, either re-index the list after removal or use a different data structure.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The spy's RemoveAt behavior correctly mirrors production: in MovieRecordingOperationsAdapter.RemoveMovieRecorder, indices also shift after removal. GetRecorderList() in both spy and production re-indexes from the current list state. Multiple removals in both systems require re-fetching the list for valid indices — this is the correct contract, not a bug.",
+      "severity_justification": "Even if classified as a flaw, it's a test double in test code only, not affecting production behavior.",
+      "category_justification": "The finding is about the correctness of a test spy implementation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Tools~/UniCortex.Core.Test/UseCases/MovieRecordingUseCaseTest.cs",
+      "start_line": 70,
+      "end_line": 70,
+      "message": "The test `StartAndStop_InPlayMode_ReturnsOutputPath` does not properly clean up the test environment. The created recorders are not removed after the test run, which can lead to state leakage and affect subsequent tests. A `try...finally` block should be used to ensure `RemoveAllRecordersAsync` is always called.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test class has a [TearDown] method that calls RemoveAllRecordersAsync() after every test, providing the same guarantee as a try/finally in the test body. NUnit's TearDown executes after each test regardless of pass/fail. The finding's claim that recorders are not removed is factually incorrect.",
+      "severity_justification": "Even if the concern were valid, the impact would be limited to test state leakage between integration tests.",
+      "category_justification": "The finding concerns test cleanup and state isolation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Infrastructures/MovieRecordingOperationsAdapter.cs",
+      "start_line": 218,
+      "end_line": 219,
+      "message": "Missing null check for `_controller` in `RestoreGlobalSettings`. If `_controller` is null, this method should early return to avoid potential null reference exceptions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. RestoreGlobalSettings does not reference _controller at all — it only uses _activeControllerSettings, which already has a null guard. There is no way a null _controller can cause a NullReferenceException in this method.",
+      "severity_justification": "The finding describes a non-existent issue.",
+      "category_justification": "The finding makes an incorrect claim about a potential null reference exception in specific code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Infrastructures/MovieRecordingOperationsAdapter.cs",
+      "start_line": 106,
+      "end_line": 109,
+      "message": "`Recorder index out of range` error checks may cause overlap with `IndexOutOfRangeException` if the exception is thrown internally by Unity's APIs instead of being caught here. The message can confuse users about whether it's Unity's or adapter code's fault.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The explicit bounds check runs before any array access, preventing IndexOutOfRangeException from array access on allRecorders. The finding speculates about confusion without identifying a concrete code path where both messages could appear or where attribution would be unclear. The guard structure correctly preempts any index-related exception.",
+      "severity_justification": "Even if the concern were valid, it would only affect the clarity of error messages, not runtime correctness.",
+      "category_justification": "The finding is about error message clarity and potential confusion, a maintainability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Infrastructures/MovieRecordingOperationsAdapter.cs",
+      "start_line": 135,
+      "end_line": 136,
+      "message": "The error messages for unexpected recorder types (`MovieRecorderSettings` checks) do not capture sufficient context about the runtime state, which might impede debugging.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The error messages already include the recorder index and the actual type name, which are the relevant facts for debugging a type-mismatch. The finding is a generic assertion that 'more context' is needed without specifying what specific information is missing or demonstrating a concrete debugging scenario where the current messages would be inadequate.",
+      "severity_justification": "Error message verbosity is a minor cosmetic concern with no impact on functionality.",
+      "category_justification": "The finding is about diagnostic message quality.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Handlers/MovieRecorder/AddMovieRecorderHandler.cs",
+      "start_line": 36,
+      "end_line": 39,
+      "message": "The validation for the `name` and `outputPath` fields does not ensure sanitized input paths, potentially leading to issues with invalid or unsafe file paths.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic security/validation best-practice assertion that could be copy-pasted onto any handler that accepts a file path. It does not demonstrate a concrete exploitable vulnerability, identify a specific unsafe data flow, or show how an attacker could exploit unsanitized input in this context. UniCortex is a Unity Editor tool running locally — it is not an internet-facing service. The finding lacks specificity about what 'invalid or unsafe' means here and what harm could result.",
+      "severity_justification": "This is a local Unity Editor tool; the attack surface for path-based exploits is negligible.",
+      "category_justification": "The finding is framed as an input sanitization/path safety concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Domains/Models/MovieRecorderEncodingQuality.cs",
+      "start_line": 6,
+      "end_line": 8,
+      "message": "The constants for encoding quality (`Low`, `Medium`, `High`) are string-based, which is prone to runtime errors from typos or case sensitivity. Using an enum would be safer.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic 'use enums instead of strings' advice that doesn't account for the HTTP/JSON API context. JsonUtility serializes enums as integers, not names, making string constants the appropriate choice here. Case sensitivity is already handled by OrdinalIgnoreCase comparisons in ParseEncodingQuality. Typo risk is mitigated by using the named constants rather than bare strings. The same comment could be applied to any string-constant class in any codebase.",
+      "severity_justification": "No runtime impact; the existing design is appropriate for the serialization constraints.",
+      "category_justification": "The finding is about API design choices — strings vs enums for a type discriminator.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Tests/Editor/Presentations/AddMovieRecorderHandlerTest.cs",
+      "start_line": 58,
+      "end_line": 65,
+      "message": "The test `Handle_Returns400_WhenOutputPathMissing` is missing a valid assertion for the response body or error message, reducing its effectiveness in detecting regressions in error handling.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: Handle_Returns400_WhenOutputPathMissing only asserts on the HTTP status code, not the response body or error message. A regression that returns 400 with an empty body, wrong error message, or malformed JSON would pass this test undetected. The happy-path test does check the response body, making this inconsistency in test thoroughness a real (if minor) gap.",
+      "severity_justification": "The test still catches the essential behavior (returns 400 on missing outputPath). The missing body assertion only creates a gap for regressions in error message content, which is a low-severity concern.",
+      "category_justification": "The finding is about insufficient test assertions reducing regression detection effectiveness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Tests/Editor/TestDoubles/SpyMovieRecordingOperations.cs",
+      "start_line": 47,
+      "end_line": 49,
+      "message": "The logic in `AddMovieRecorder` might cause unintended side effects from index reuse in `_recorders` if an Add operation follows a Remove operation, potentially creating duplicate or mismatched indices.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The stored index field in _recorders can become stale/duplicate after remove-then-add, but GetRecorderList() ignores the stored r.index entirely and re-computes indices positionally via Select((r, i) => ...). No observable side effect reaches test consumers — all index queries return correct fresh values. The finding identifies an internal state inconsistency with zero practical impact.",
+      "severity_justification": "Even if taken at face value, this is a test double implementation detail with no production impact.",
+      "category_justification": "The finding is about a test double implementation's internal state management.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/UseCases/StartMovieRecordingUseCase.cs",
+      "start_line": 20,
+      "end_line": 21,
+      "message": "The `ExecuteAsync` method does not provide explicit logging or error feedback for cases where the recording start operation fails internally (e.g., unhandled runtime exceptions in adapter calls).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Generic 'add logging' advice with no concrete problem demonstrated. Exceptions from the adapter propagate to StartMovieRecorderHandler which catches them and returns structured HTTP error responses — error feedback exists. Most use cases in this codebase have no logging either, so there's no violated convention. The comment is boilerplate that applies equally to AddMovieRecorderUseCase, RemoveMovieRecorderUseCase, and dozens of others unchanged by this PR.",
+      "severity_justification": "No functional impact; errors are surfaced to the caller via HTTP responses.",
+      "category_justification": "The finding is about observability/logging practices.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Tools~/UniCortex.Core.Test/UseCases/MovieRecordingUseCaseTest.cs",
+      "start_line": 94,
+      "end_line": 104,
+      "message": "`DeleteRecordingFiles` searches `UNICORTEX_PROJECT_PATH` for `UniCortex_Test_*.mp4`, but the recordings in this test are written to `Path.GetTempPath()` (line 63). The cleanup will never delete the files it intends to, causing recordings to accumulate in the system temp directory across runs. Either write the recording into `UNICORTEX_PROJECT_PATH` (matching other tests like `DeleteAssetFile`) or have `DeleteRecordingFiles` scan `Path.GetTempPath()` instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 63 writes recordings to Path.GetTempPath() (e.g. /tmp/UniCortex_Test_20240101_120000.mp4), but DeleteRecordingFiles scans UNICORTEX_PROJECT_PATH for UniCortex_Test_*.mp4. The paths are different, so cleanup never deletes the actual files.",
+      "severity_justification": "Recordings accumulate in the system temp directory across test runs, which is waste but not functionally blocking — tests still pass and no data is corrupted. The impact is disk space leakage in CI/dev environments.",
+      "category_justification": "This is a test cleanup defect: the TearDown/cleanup helper targets the wrong directory, leaving test artifacts behind.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Infrastructures/MovieRecordingOperationsAdapter.cs",
+      "start_line": 111,
+      "end_line": 114,
+      "message": "This mutates the shared Recorder Window/global settings to Manual mode but `CleanupRecordingState` only restores frame-rate related fields. After recording stops or fails, users' previous RecorderController record mode is left changed, which can break subsequent Recorder Window usage. Save and restore the prior record mode along with the frame-rate settings.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: SetRecordModeToManual() mutates global settings at line 114, but _savedFrameRate/_savedFrameRatePlayback/_savedCapFrameRate are the only fields saved. RestoreGlobalSettings() only restores those three, leaving the record mode permanently set to Manual after any recording stop or failure.",
+      "severity_justification": "Silently mutates shared Recorder Window state, breaking subsequent manual use of the Recorder Window in ways that are non-obvious to the user. The prior record mode is a user-configured setting that would need to be manually reset.",
+      "category_justification": "The state restoration logic is incomplete — it correctly identifies fields to save/restore for frame rate but omits the record mode change, leaving global settings in a different state than before the operation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Editor/Handlers/MovieRecorder/StartMovieRecorderHandler.cs",
+      "start_line": 37,
+      "end_line": 39,
+      "message": "`index` is required for this operation, but an omitted field deserializes to the valid recorder index `0`. A request body like `{}` will therefore start recorder 0 instead of failing validation. The API should distinguish a missing index from an explicit zero before calling the use case.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: StartMovieRecordingRequest.index is a plain int (default 0), and the handler only validates that the body is non-empty — no check that index was explicitly provided. A body of {} deserializes to index=0 and proceeds to start recorder 0 without error.",
+      "severity_justification": "Silent operation on index 0 only occurs when a recorder exists there and the client omits the field; if no recorder exists at 0 the use case throws and a 400 is returned. The blast radius is limited and the scenario (accidentally omitting index while a recorder exists at 0) is an edge case.",
+      "category_justification": "This is an API contract issue — the distinction between a missing required field and an explicit zero cannot be made with the current untyped int field, affecting the API's correctness guarantees.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Tools~/UniCortex.Core.Test/UseCases/MovieRecordingUseCaseTest.cs",
+      "start_line": 96,
+      "end_line": 100,
+      "message": "The test records to `Path.GetTempPath()` but cleanup searches under `UNICORTEX_PROJECT_PATH`, so the generated `UniCortex_Test_*.mp4` files are never deleted from the temp directory. This can leave large video artifacts behind on every test run.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Duplicate of Finding 1, verified against the same code: line 63 writes to Path.GetTempPath() with pattern UniCortex_Test_*.mp4, but DeleteRecordingFiles (lines 94-104) scans UNICORTEX_PROJECT_PATH for that pattern. The paths never match so cleanup never runs.",
+      "severity_justification": "Recordings accumulate in the system temp directory across test runs causing disk space leakage, but tests still pass and no data is corrupted. Impact is bounded to CI/dev environments.",
+      "category_justification": "Test cleanup helper targets the wrong directory, leaving video artifacts behind after each test run.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

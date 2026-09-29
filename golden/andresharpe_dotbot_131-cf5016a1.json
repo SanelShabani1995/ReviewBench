@@ -1,0 +1,431 @@
+{
+  "pr_key": "andresharpe_dotbot_131-cf5016a1",
+  "pr": {
+    "repo": "https://github.com/andresharpe/dotbot",
+    "pr_number": 131,
+    "base": "3aca583499731814d73c2da1d78248dd102f0977",
+    "head": "cf5016a1a8c829b1a685ffd3b98292b64f31813f"
+  },
+  "findings": [
+    {
+      "file": "workflows/default/systems/ui/static/modules/workflow.js",
+      "start_line": 169,
+      "end_line": 178,
+      "message": "The folder rendering loop in the `hasFolders` branch is not recursive. It only renders `folder.items` (direct children) and ignores `folder.folders` (subfolders), so any items at depth ≥ 3 (e.g. `a/b/c.md`) are silently dropped. The old code used flat grouping by full folder path so nothing was lost; the new tree-based approach requires a recursive render like `renderProductTree` uses in product.js. Additionally, `folder.items.length` is passed to `renderFolderGroup` as the badge count, but should be `countTreeItems(folder)` to correctly include nested items.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The diff hunk for workflow.js shows the hasFolders branch was rewritten to include a local recursive function `renderTreeItems` that handles nested subfolders, and uses `countTreeItems(folder)` for badge counts. The finding's claim that the loop is non-recursive and uses `folder.items.length` directly contradicts the diff hunk, which shows both issues were addressed in the PR.",
+      "severity_justification": "If the non-recursive version were actually shipped, items at depth >= 3 would be silently dropped and badge counts would be wrong — a real UX bug. But per the diff, the recursive version was introduced.",
+      "category_justification": "The claim is about a logic error (missing recursion) that would cause data to be silently dropped from the UI.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/modules/ProductAPI.psm1",
+      "start_line": 99,
+      "end_line": 100,
+      "message": "Switching from `-Filter '*.md'` to all files causes user-uploaded kickstart briefing files (PDFs, images, docs) stored in `workspace/product/briefing/` to appear in the product navigation tree. `Start-ProductKickstart` writes decoded uploads to that subdirectory and it is never excluded by the new filter. These are input/staging files, not product documents, and their unexpected appearance in the sidebar is likely unintentional. The filter should at minimum exclude the `briefing` subdirectory.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: Get-ProductList now scans all files recursively with only a .gitkeep exclusion. Start-ProductKickstart saves decoded user uploads (PDFs, images, docs) to workspace/product/briefing/. These binary files will appear in the product navigation tree as binary placeholders — staging/input files for the AI kickstart process mixed in with product documents. No exclusion logic exists for the briefing directory in the new filter.",
+      "severity_justification": "Creates confusing UX where user-uploaded staging files appear in the product documentation tree, but does not break core functionality or cause data loss.",
+      "category_justification": "The filter change introduces unintended behavior — staging files appear in product navigation — contradicting the purpose of the briefing subdirectory as an AI input area.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/modules/StateBuilder.psm1",
+      "start_line": 726,
+      "end_line": 726,
+      "message": "`product_docs` in the state response still counts only `.md` files (`-Filter '*.md'`), but `Get-ProductList` now returns all file types. The UI auto-refresh in `ui-updates.js` compares `state.product_docs` against a stored count to decide when to invalidate the nav. Adding a binary file to the product directory without also adding a `.md` file will never trigger a nav refresh, leaving the sidebar stale. `StateBuilder.psm1` was not changed in this PR, but the PR introduced the mismatch.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: StateBuilder.psm1 line 726 still uses -Filter '*.md' to compute product_docs count, while Get-ProductList now returns all file types. ui-updates.js uses product_docs as the sole signal to invalidate and refresh the product nav. Adding only binary files to the product directory will not change the count and will leave the sidebar stale.",
+      "severity_justification": "The practical impact is limited — binary-only additions to the product directory without any .md file change are an edge case. The primary workflow (adding .md files) still triggers refresh correctly. The nav can also be refreshed by other means (tab switch, page reload).",
+      "category_justification": "A logic mismatch between what product_docs counts and what Get-ProductList returns, causing the auto-refresh trigger to miss binary-only file additions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/product.js",
+      "start_line": 189,
+      "end_line": 215,
+      "message": "The nav container guard `if (!container || container.dataset.loaded === 'true') return;` is checked once at the top of `updateProductFileNav`. If a concurrent caller (e.g. the polling path in `ui-updates.js`) deletes `dataset.loaded` and calls `updateProductFileNav` while the first invocation's `await fetch(...)` is still in flight, two executions will both pass the guard and proceed to replace `container.innerHTML` and attach duplicate event listeners on every `.file-nav-item`. There is no in-flight lock or AbortController to prevent this race.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed race condition: dataset.loaded is only set after fetch completes, but multiple callers (tabs.js on tab-switch, kickstart.js, ui-updates.js on polling) can independently invoke updateProductFileNav() while a prior invocation's fetch is in-flight. Both invocations pass the guard and proceed to overwrite container.innerHTML and attach duplicate event listeners on every .file-nav-item.",
+      "severity_justification": "The race requires specific timing (tab switch or kickstart event while a fetch is in-flight, typically a narrow window of milliseconds). The consequence is duplicate event listeners causing actions to fire twice per click — a noticeable UX bug but not data loss or security-critical.",
+      "category_justification": "Concurrency/timing issue with async state management — a classic async guard race condition.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/utils.js",
+      "start_line": 654,
+      "end_line": 676,
+      "message": "`buildFolderTree` uses `item[pathKey]` as-is to split path segments. For md files in the product list, `filename` retains the `.md` extension (e.g. `mission.md`), so root-level md files produce a single-element parts array and land in `root.items` — correct. But for a path like `subfolder/doc.md`, the last segment is `doc.md`, not `doc`, so the item ends up inside folder `subfolder` with its item key still containing the extension. The display name strips `.md` in `renderProductFileItem`, so the visual is fine, but the tree structure carries the raw filename as the leaf. More importantly the folder name itself is taken verbatim from `parts[i]`, so a file like `a.b/doc.md` (folder with a dot) behaves unexpectedly with no guard.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding correctly describes that items in the tree carry raw filenames (with .md), but the display name is correctly derived via doc.filename.split('/').pop().replace(/\\.md$/, '') and the data-doc attribute uses doc.name (already extension-stripped by the backend). The 'folder with a dot behaves unexpectedly' claim is unsubstantiated — split('/') on 'a.b/doc.md' produces ['a.b', 'doc.md'] and the folder named 'a.b' renders correctly. No actual bug is demonstrated.",
+      "severity_justification": "Even if the concern were valid, the visual display and click-to-load behavior are both correct. The structural observation about raw filenames in the tree is harmless.",
+      "category_justification": "The finding is about data structure correctness and potential rendering issues.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/product.js",
+      "start_line": 161,
+      "end_line": 166,
+      "message": "In `renderProductFileItem`, `data-size` is written as `\"${doc.size || 0}\"` without `escapeHtml`. `doc.size` is a server-supplied integer (`$File.Length`) so in practice it is always numeric, but the value is trusted and unvalidated on the client. If the server ever returns a non-numeric value here (e.g. due to a serialisation bug), the unescaped value is injected directly into the HTML attribute, creating a potential XSS vector. Using `parseInt(doc.size, 10) || 0` before interpolation would close this.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "doc.size originates from $File.Length (PowerShell System.Int64), which ConvertTo-Json serializes as a JSON number — never a string with injectable characters. The || 0 fallback handles null/undefined/NaN safely. The finding hypothesises a serialisation bug but cannot demonstrate a concrete path from the Int64 source to an injectable string value. This is a generic unescaped-attribute pattern warning without a plausible exploit.",
+      "severity_justification": "Even accepting the theoretical premise, data-size attributes in an internal admin UI are a very low-severity concern. The downstream consumer also does parseInt(..., 10) safely.",
+      "category_justification": "The finding claims a potential XSS vector via an unescaped HTML attribute.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/product.js",
+      "start_line": 205,
+      "end_line": 215,
+      "message": "After attaching click handlers, the code auto-activates the first `.file-nav-item`. If the container's first item is a binary file, `activateProductItem` is called immediately and replaces the viewer content. But if `updateProductFileNav` is then called again (nav invalidated) and re-renders, the viewer retains the placeholder for the previously-active binary doc while the nav may now highlight a different first item. Because binary files are not tracked by `product_docs` in state, there is no coordinated reset of the viewer when binary-only changes occur.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Every execution of updateProductFileNav that progresses past the docs.length === 0 guard always calls activateProductItem(firstItem) at the end, keeping nav and viewer in sync. The described scenario — viewer retaining an old binary placeholder while the nav highlights a different item — cannot occur because both are updated together in every render. The binary-only tracking gap (StateBuilder) means neither nav nor viewer refreshes, maintaining mutual consistency (both stale).",
+      "severity_justification": "The scenario described doesn't materialise in the actual code flow.",
+      "category_justification": "The finding claims a state inconsistency between nav and viewer, which is a logic/correctness concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/workflow.js",
+      "start_line": 150,
+      "end_line": 155,
+      "message": "In the new `renderItem` closure, `item.type` is inserted unescaped into both the `class` attribute (`class=\"item-icon ${item.type}\"`) and the `data-type` attribute (`data-type=\"${item.type}\"`). `item.type` is derived from `ref.type` which ultimately originates from directory names discovered from the filesystem. A workspace directory whose name contains a double-quote could break out of the attribute and inject HTML. This pattern was present in the old flat-rendering path but the PR extends it to the new folder rendering path without adding escaping.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The PR diff explicitly shows the renderItem closure adding `const safeType = (item.type || '').replace(/[^a-zA-Z0-9_-]/g, '')` for the class attribute and `escapeHtml(item.type)` for data-type. The finding claims these are absent in the new renderItem path, which directly contradicts the diff hunk. Per the rule to trust the diff for specific lines under review, the finding is incorrect.",
+      "severity_justification": "Unescaped item.type in HTML attributes could allow class/attribute injection if a workspace directory name contains special characters — a real concern if the sanitization were actually absent.",
+      "category_justification": "The finding identifies potential HTML injection via unescaped filesystem-derived values in HTML attributes.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/modules/ProductAPI.psm1",
+      "start_line": 96,
+      "end_line": 97,
+      "message": "The `Get-ChildItem` call does not have a depth limit. Scanning a project directory with very deep nesting (e.g., node_modules, build artifacts) could cause significant performance issues or excessive memory usage on the server when the Product tab is loaded.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The scan target is .bot/workspace/product/, a dedicated managed documentation directory — not the project root. node_modules and build artifacts are never placed there. Additionally, -Recurse with no depth limit was already present before this PR (the only change was removing -Filter '*.md'). The finding misidentifies the scanned directory and the performance concern is not novel to this PR.",
+      "severity_justification": "Even if a depth limit were warranted, the directory is purpose-specific and controlled, making deep nesting from build artifacts practically impossible.",
+      "category_justification": "The finding is about recursive directory scanning potentially causing performance or memory issues.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/product.js",
+      "start_line": 56,
+      "end_line": 56,
+      "message": "The `parseInt(item.dataset.size, 10)` call can result in NaN if `item.dataset.size` is an empty string, which it will be for directories or other file-like objects that have a size of 0. The subsequent `formatFileSize` call with NaN will not produce a user-friendly output. It should default to 0.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code is `parseInt(item.dataset.size, 10) || 0`. NaN is falsy in JavaScript so `NaN || 0` correctly returns 0 — the finding's suggested fix is already in place. Additionally, data-size is rendered as `${doc.size || 0}` which always produces at minimum '0', never an empty string. formatFileSize never receives NaN in practice.",
+      "severity_justification": "Even if the claim were correct, the impact would be a cosmetic display issue in the binary file placeholder. But the claim is factually wrong.",
+      "category_justification": "The finding claims a value can be NaN leading to bad output — a logic correctness concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/product.js",
+      "start_line": 109,
+      "end_line": 109,
+      "message": "The `renderProductFileItem` function uses `doc.filename.split('/').pop()` to get the display name. If `doc.filename` is an empty string, `pop()` will return `undefined`, leading to a `TypeError` when `replace()` is called on it. This can happen if the backend API returns an item with an empty filename.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "''.split('/') returns [''] (one-element array with empty string), not []. So .pop() returns '' not undefined, and ''.replace(/\\.md$/, '') is valid with no TypeError. The finding's premise that pop() returns undefined for an empty-string input is factually wrong. The backend also always produces non-empty filenames from FileInfo objects.",
+      "severity_justification": "Even if the claim were correct, it would be a cosmetic rendering issue (empty display name) rather than a crash in normal operation, since the backend never produces empty filenames.",
+      "category_justification": "The finding claims a TypeError would occur due to calling replace on undefined.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/product.js",
+      "start_line": 83,
+      "end_line": 92,
+      "message": "Function 'showBinaryPlaceholder' directly embeds user-provided file names into the HTML without sufficient input sanitization. This could enable XSS attacks if the filename contains malicious content.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "doc.filename is passed through escapeHtml() at line 96 of the function, which uses a DOM-based textContent/innerHTML approach that correctly escapes all HTML special characters. formatFileSize returns only numeric digit strings with unit suffixes. The finding's claim of insufficient sanitization is factually wrong — the escaping is present and robust.",
+      "severity_justification": "The claim is incorrect; no actual XSS vector exists in this function.",
+      "category_justification": "The finding alleges an XSS vulnerability via unsanitized input in innerHTML.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/product.js",
+      "start_line": 92,
+      "end_line": 123,
+      "message": "The 'showBinaryPlaceholder' function does not validate or sanitize filenames beyond escaping. Using filenames directly in JavaScript or HTML contexts presents a risk if filenames originate from untrusted sources.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a near-duplicate of finding 12 and is equally incorrect. doc.filename is passed through escapeHtml() before HTML interpolation, which is the correct and sufficient mitigation for HTML injection. The finding vaguely asserts risk from 'untrusted sources' without demonstrating any concrete exploit path — escaping is exactly the right defence for embedding user-supplied strings in HTML. This is a generic boilerplate security warning that could be copy-pasted onto any code that handles filenames.",
+      "severity_justification": "No concrete vulnerability exists; escapeHtml() is applied correctly.",
+      "category_justification": "The finding alleges a security risk from unsanitized filenames in HTML/JS contexts.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/modules/ProductAPI.psm1",
+      "start_line": 39,
+      "end_line": 41,
+      "message": "The 'Resolve-ProductDocumentInfo' function derives the file type based on the extension, but does not validate against a predefined allowed list. This could allow unexpected file types to be processed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The function only produces two type values: 'md' for .md files and 'binary' for everything else — this is a complete, closed classification with no unexpected values possible. The finding claims there's no allowlist, but the binary/md dichotomy IS the complete type space. 'Unexpected file types being processed' is not demonstrated to cause any harm; the code handles all non-md files uniformly as binary with a placeholder. This is a generic boilerplate warning about missing allowlist validation without identifying any concrete risk.",
+      "severity_justification": "No concrete harm is possible — all files are classified as either 'md' or 'binary' with no code paths that behave differently based on specific extension values beyond that binary distinction.",
+      "category_justification": "The finding frames this as a security concern about processing unexpected file types.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/css/sidebar.css",
+      "start_line": 453,
+      "end_line": 511,
+      "message": "CSS rules for '.chain-folder-header' use CSS-only styling to collapse folders but do not enforce visibility restrictions. This could lead to unintended display behavior if custom scripts modify the DOM by bypassing CSS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic boilerplate finding that could be copy-pasted onto any CSS-based show/hide implementation. Using CSS classes to toggle visibility (display:none via .collapsed .chain-folder-items) is the standard, correct approach for this pattern. The claim that 'custom scripts modifying the DOM bypassing CSS' is a risk is not a real vulnerability — it describes normal JavaScript DOM manipulation, which is exactly how attachFolderToggleHandlers works by design. No concrete unintended behavior is demonstrated.",
+      "severity_justification": "No actual issue exists; the CSS collapse pattern is standard and intentional.",
+      "category_justification": "The finding is about UI/display behavior rather than security or correctness, and amounts to a vague style concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/utils.js",
+      "start_line": 642,
+      "end_line": 749,
+      "message": "The implementation of 'buildFolderTree' assumes consistent input formatting for paths but does not validate that provided items do not induce a cyclic structure. A cyclic dependency could lead to a runtime error.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "buildFolderTree constructs a new tree object from scratch by splitting path strings on '/'. It never follows references between existing items or creates back-edges — each folder node is a freshly created {items:[], folders:{}} object. Cyclic structures are structurally impossible: the tree is built purely from string path segments, not from inter-item references. The finding misunderstands how the function works; there is no mechanism by which input data could induce a cycle.",
+      "severity_justification": "No runtime risk exists — the algorithm cannot produce cycles by construction.",
+      "category_justification": "The finding claims a potential runtime error from cyclic structures, which is a correctness/reliability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/product.js",
+      "start_line": 123,
+      "end_line": 123,
+      "message": "In 'activateProductItem', the function parses 'data-sizes' and other metadata directly from HTML elements but does not validate types. This could cause issues if data attributes are modified maliciously.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic boilerplate security warning. The data attributes are read from DOM elements that the application itself writes — they are not user-controlled inputs in any meaningful attack sense. parseInt(item.dataset.size, 10) || 0 already safely handles non-numeric values. 'Malicious modification of data attributes' requires existing JS execution on the page, at which point the attacker already has full DOM control and this specific attribute is irrelevant. No concrete exploit path is demonstrated.",
+      "severity_justification": "No exploitable vulnerability exists; the concern is hypothetical and the existing || 0 guard handles malformed values safely.",
+      "category_justification": "The finding frames data attribute parsing as a security concern about malicious modification.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/workflow.js",
+      "start_line": 67,
+      "end_line": 70,
+      "message": "'setCachedFileData' does not expire items actively used or validate cache continuity. Cache being stale may induce inefficient retries or incorrect user-facing representations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claim that setCachedFileData does not expire items is factually wrong. getCachedFileData checks (Date.now() - cached.timestamp) < CACHE_TTL with CACHE_TTL = 5 minutes defined in config.js. TTL-based lazy expiration is implemented. The referenced lines 67-70 don't contain setCachedFileData, and the caching system was not modified by this PR.",
+      "severity_justification": "The finding is incorrect; the cache has a 5-minute TTL. Even if it were a genuine concern, stale workflow file data would be a minor UX issue.",
+      "category_justification": "The finding is about cache staleness and retry behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/product.js",
+      "start_line": 164,
+      "end_line": 164,
+      "message": "These values are interpolated into quoted attributes using `escapeHtml`, which does not escape quotes (the repo also has `escapeAttr` for this purpose). A product filename containing `\"` can break out of `data-doc`/`data-filename`, corrupt the DOM, and potentially inject markup when the product tree is rendered.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "escapeHtml uses div.textContent/div.innerHTML which does not encode double quotes (only &, <, > are encoded), while escapeAttr explicitly handles \" → &quot;. Line 164 uses escapeHtml for data-doc, data-type, and data-filename attributes delimited by double quotes. A filename with \" would break out of the attribute. The repo already has escapeAttr for this purpose, making this a concrete, verifiable misuse.",
+      "severity_justification": "This is a local dev dashboard, not a web-facing app. Windows disallows \" in filenames entirely; macOS/Linux allow it but it's extremely rare in practice. An attacker exploiting this would already need local filesystem access. Real-world exploitability is very limited.",
+      "category_justification": "HTML attribute breakout via insufficient escaping is a DOM injection / XSS concern, even if limited in practical impact here.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/static/modules/utils.js",
+      "start_line": 699,
+      "end_line": 703,
+      "message": "The new collapsible folder header is rendered as a plain `div` and `attachFolderToggleHandlers` only wires a mouse click handler, so keyboard users cannot focus or toggle folders. Use a semantic button or add appropriate role/tabindex plus keyboard handling to make the tree navigation operable without a mouse.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: renderFolderGroup (lines 698-707) renders the header as a plain div with no tabindex/role. attachFolderToggleHandlers (lines 715-723) only attaches a click listener. No keyboard event handling exists anywhere in the folder toggle infrastructure. The claim is factually accurate.",
+      "severity_justification": "This is a local developer dashboard tool, not a public-facing UI. The user population is limited and unlikely to depend on keyboard-only navigation. Still a real a11y gap that the PR codifies into a shared utility.",
+      "category_justification": "The issue is about keyboard operability — a core accessibility requirement (WCAG 2.1 SC 2.1.1). The finding specifically targets the lack of focusability and keyboard interaction on interactive elements.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "workflows/default/systems/ui/modules/ProductAPI.psm1",
+      "start_line": 99,
+      "end_line": 100,
+      "message": "There are ProductAPI direct tests for listing/loading docs, but they still only create markdown files. The new contract to include non-markdown files with `type`, `size`, and `depth` is untested, so regressions such as binaries being omitted or reported without size would not be caught.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The PR diff for Test-Components.ps1 explicitly adds tests for binary file inclusion, type=binary, size > 0, depth=0 for root files, depth=1 for nested files, and .gitkeep exclusion. The finding's claim that the new contract is untested is directly contradicted by the diff.",
+      "severity_justification": "The finding is incorrect — testing coverage for the new fields is present in the diff, so there's no real gap to worry about.",
+      "category_justification": "The finding is about test coverage for a new API contract.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}
