@@ -58,12 +58,17 @@ The run summary shows the digest to register.
 ### Try it before you register
 
 ```sh
-scripts/try-agent.sh ghcr.io/<you>/<name>@sha256:<digest> --pr 0
+# from a clone of this repository; -e passes your model key through from your shell
+scripts/try-agent.sh ghcr.io/<you>/<name>@sha256:<digest> --pr 0 -e OPENAI_API_KEY
 ```
 
 It runs your image on the test set (or, with `--set full`, the full set)
 exactly as the benchmark does and checks the findings file. See
-[Try it locally](../README.md#try-it-locally-first).
+[Try it locally](../README.md#try-it-locally-first). Two things the portal
+does for you that you do yourself here: a private package needs
+`docker login ghcr.io` first (a classic token with `read:packages`, the same
+one you will enter as `GHCR_PULL_TOKEN`), and an endpoint other than OpenAI
+needs `-e RB_MODEL_BASE_URL=https://…`.
 
 ### Public or private
 

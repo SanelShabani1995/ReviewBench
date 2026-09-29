@@ -22,6 +22,7 @@ Files:
 
 ```sh
 docker build --platform linux/amd64 -t codex-cli-reviewer:dev .
-# from the repository root
+# from a clone of review-bench/ReviewBench, with OPENAI_API_KEY set in your shell
 scripts/try-agent.sh codex-cli-reviewer:dev --pr 0 -e OPENAI_API_KEY -e RB_CONFIG_MODEL=gpt-5.5
+# on Azure OpenAI, add: -e RB_MODEL_BASE_URL=https://<resource>.openai.azure.com/openai/v1
 ```
