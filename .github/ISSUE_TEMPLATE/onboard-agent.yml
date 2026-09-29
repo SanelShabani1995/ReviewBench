@@ -121,7 +121,7 @@ body:
     attributes:
       label: Before you submit
       options:
-        - label: My image satisfies the agent contract and I tested it on the public showcase.
+        - label: My image satisfies the agent contract and I tested it on the test set.
           required: true
         - label: No credential is baked into my image, and none appears in this form.
           required: true

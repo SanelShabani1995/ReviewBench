@@ -7,7 +7,7 @@ can prove the plumbing before wiring in your agent.
 docker build -t my-reviewer:dev .
 ```
 
-Then run it on one pull request from the public showcase, the way the
+Then run it on one pull request from the test set, the way the
 benchmark will, from the root of this repository:
 
 ```sh

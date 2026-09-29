@@ -61,8 +61,9 @@ The run summary shows the digest to register.
 scripts/try-agent.sh ghcr.io/<you>/<name>@sha256:<digest> --pr 0
 ```
 
-It runs your image on public pull requests exactly as the benchmark does and
-checks the findings file. See [Try it locally](../README.md#try-it-locally-first).
+It runs your image on the test set (or, with `--set full`, the full set)
+exactly as the benchmark does and checks the findings file. See
+[Try it locally](../README.md#try-it-locally-first).
 
 ### Public or private
 
@@ -84,7 +85,7 @@ After approval, the portal shows a credentials form for your reviewer. Enter the
 
 ## 4. Run
 
-- **Test run**: the 25 public pull requests, with per-PR detail, misses and judge votes. Use it to iterate; it is not on the leaderboard.
+- **Test run**: the test set of 25 pull requests, with per-PR detail, misses and judge votes. Use it to iterate; it is not on the leaderboard.
 - **Tuning on the full set**: on your side. Evaluate your agent with the full set of 219 pull requests and the published judge prompts and models, as often as you like.
 - **Final run**: three fresh rounds over all 219; the mean becomes your row after a maintainer merges the publication.
 

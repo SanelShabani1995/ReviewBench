@@ -1,6 +1,6 @@
-# Corpus showcase — 25 example PRs
+# Test set: 25 example PRs
 
-A diverse subset of the corpus chosen to demonstrate the breadth of repos, languages, change shapes, and golden-finding categories. Each PR has at least one notable TP finding. (Golden findings in this corpus are graded `low` / `medium` / `high`.)
+A diverse subset of the full set chosen to demonstrate the breadth of repos, languages, change shapes, and golden-finding categories. Each PR has at least one notable TP finding. (Golden findings in this corpus are graded `low` / `medium` / `high`.)
 
 ## Overall stats
 
