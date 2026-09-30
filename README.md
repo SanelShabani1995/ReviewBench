@@ -108,113 +108,88 @@ adapter that lets ReviewBench run your existing agent: it reads one pull
 request and writes one findings file. One open-source reviewer needed about
 90 lines of adapter code, mostly to map field names.
 
-Four steps; the [onboarding guide](docs/ONBOARDING.md) walks through each one.
+The [onboarding guide](docs/ONBOARDING.md) is the step-by-step walkthrough.
+This section is the overview.
 
-1. **Wrap your agent** in a container that satisfies
-   [the contract](AGENT_CONTRACT.md). Start from
-   [`examples/codex-cli`](examples/codex-cli/), a complete reviewer backed by a
-   model.
-2. **Build and push** the image to GitHub Container Registry and note its
-   digest ([how](docs/ONBOARDING.md#1-build-and-push-your-image)).
-3. **Try it locally** on the test set (25 pull requests), below.
-4. **Register it** on the [website](https://review-bench.ai/submit). Everything
-   after that happens there.
+### What you need before you start
+
+| You need | Used for |
+|---|---|
+| A GitHub account or organisation to own the image on `ghcr.io` | Pushing the image, signing in to the portal |
+| A model API key, ideally dedicated and spend-capped | Your agent's inference (you pay for it) |
+| Your model API URL, for example `https://api.openai.com/v1` | Registration; its host is allowed through the network proxy |
+| A classic GitHub token with only `read:packages`, **if your package is private** | Letting the benchmark pull your image |
+| `docker`, `git`, `jq` and `bash` (WSL on Windows) | Trying your image locally |
+| A display name, configuration labels (for example `model`, `effort`), secret names and a contact | The registration form |
+
+The full checklist, including decisions to make up front, is in
+[step 0 of the guide](docs/ONBOARDING.md#0-prepare).
+
+### The path, end to end
+
+| # | Step | Where | Done when |
+|---|---|---|---|
+| 1 | [Wrap your agent](docs/ONBOARDING.md#1-wrap-your-agent) in a container that satisfies [the contract](AGENT_CONTRACT.md). Start from [`examples/codex-cli`](examples/codex-cli/). | Your repository | Your adapter writes a findings file and exits 0 |
+| 2 | [Build and push](docs/ONBOARDING.md#2-build-and-push-your-image) to GitHub Container Registry | GitHub Actions or your machine | You have `ghcr.io/<you>/<name>@sha256:…` |
+| 3 | [Try it locally](docs/ONBOARDING.md#3-try-it-locally) on the 25 test pull requests | Your machine | `passed 25, failed 0` |
+| 4 | [Register](docs/ONBOARDING.md#4-register-in-the-portal) on the [website](https://review-bench.ai/submit) | Portal | An onboarding pull request appears in this repository |
+| 5 | [Enter credentials](docs/ONBOARDING.md#5-enter-your-credentials) | Portal | Every declared secret is set |
+| 6 | [Approval](docs/ONBOARDING.md#6-wait-for-approval): a maintainer merges your onboarding pull request | This repository | Merged, usually within a business day |
+| 7 | [Test run](docs/ONBOARDING.md#7-test-run) on the 25 test pull requests, scored by the judge | Portal | Per-PR results you can iterate on |
+| 8 | [Tune](docs/ONBOARDING.md#8-tune-on-your-side) on the full set of 219 with the public judge | Your machine | You are happy with a configuration |
+| 9 | [Final run](docs/ONBOARDING.md#9-final-run): three rounds over all 219 | Portal | A maintainer publishes your leaderboard row |
+
+Steps 4 and 5 can happen before your onboarding pull request is merged; only
+runs wait for approval. There is no monthly cap on runs.
 
 ### Try it locally first
 
 [`scripts/try-agent.sh`](scripts/try-agent.sh) runs your image on the test
 set the way the benchmark does: one fresh container per pull request, the
-same mounts and variables, and the same checks on the findings file. With
-`--set full` it runs the full set instead. It needs docker, git and jq, and
+same mounts and variables, and the same checks on the findings file. It
 fetches each pull request from GitHub.
 
 ```sh
 git clone https://github.com/review-bench/ReviewBench && cd ReviewBench
-scripts/try-agent.sh my-reviewer:dev --pr 0 -e MY_API_KEY      # one pull request
-scripts/try-agent.sh my-reviewer:dev -e MY_API_KEY             # all 25
-scripts/try-agent.sh my-reviewer:dev --set full -e MY_API_KEY  # the full set, all 219
+export OPENAI_API_KEY=...                                    # the name your agent reads
+scripts/try-agent.sh my-reviewer:dev --pr 0 -e OPENAI_API_KEY      # one pull request
+scripts/try-agent.sh my-reviewer:dev -e OPENAI_API_KEY             # all 25
+scripts/try-agent.sh my-reviewer:dev --set full -e OPENAI_API_KEY  # the full set, all 219
 ```
 
-`-e NAME` passes that variable from your shell into the container under the
-name your agent reads; the script never puts the value on a command line or
-into the findings files. If your endpoint is not OpenAI, add
-`-e RB_MODEL_BASE_URL=https://…` as well. A private package needs
-`docker login ghcr.io` on your machine first.
+- `-e NAME` passes that variable from your shell into the container; the
+  value never appears on a command line or in the findings files.
+- If your endpoint is not OpenAI, add `-e RB_MODEL_BASE_URL=https://…`.
+- A private package needs `docker login ghcr.io` on your machine first.
 
-It does not score. Scores come from a **test run** in the portal, which runs
-the same 25 pull requests with the benchmark's judge and shows the result for
-each one.
-
-**Test set scores are not leaderboard scores.** These 25 pull requests are a
-small sample, so a score on them says your adapter works, not how good your
-agent is. The leaderboard runs on the full set of 219, which you can score
-yourself (see Running).
-
-### Onboarding
-
-Sign in to the [website](https://review-bench.ai/submit) with GitHub and
-register your reviewer. You fill in a display name, the image pinned by
-digest, the hosts your agent talks to, the names of the secrets it needs, the
-configuration labels you want shown, and a contact. If your image is private,
-choose "private package" and the website adds `GHCR_PULL_TOKEN` to the secret
-names for you; see [private images](docs/ONBOARDING.md#public-or-private).
-
-The website opens an onboarding pull request in this repository for you. It
-adds a manifest under [`agents/`](agents/) that follows
-[the schema](schema/agent-manifest.schema.json); CI validates it with
-[`schema/validate-manifest.mjs`](schema/validate-manifest.mjs). A maintainer
-merges it. You do not write the manifest or open the pull request yourself.
-
-Credentials are entered on the website, never in the pull request. They are
-stored in Azure Key Vault and travel from there straight into your container.
-No person reads the values.
-
-### Running
-
-Once the manifest is merged, test runs and finals start from the website;
-tuning happens on your side:
-
-1. **Test run.** Your image runs on the test set (25 pull requests). You
-   get a result for each pull request, so you can see exactly what your
-   adapter produced and fix it.
-2. **Tuning on the full set** happens on your side. The full set, the judge
-   prompts and the judge models are public, so you can score all 219 pull
-   requests yourself, as often as you like, with your own compute.
-3. **Final.** Three rounds on the full set (219 pull requests) with the
-   configuration you pick. A maintainer reviews the result; once approved,
-   your leaderboard row is published.
-
-There is no monthly cap on runs. You choose which configuration goes to the
-final; you do not choose which run, because the final is measured fresh. Your
-row shows how many configurations you tested.
+The script checks format; it does not score. Scores come from a **test run**
+in the portal. **Test set scores are not leaderboard scores:** 25 pull
+requests show that your adapter works, not how good your agent is. The
+leaderboard runs on the full set of 219, which you can score yourself.
 
 ### Costs
 
 - **Your agent's inference is yours.** It runs with your credentials, inside
   your container. We never see them, and the model you use is part of what
   the benchmark measures, so we cannot supply it.
-- **The judge's cost is coverd by us for test and final runs.** Every reviewer's result are evaluated
-  with the same judge panel models, at our cost. Tuning on the full set on your
-  side uses your own judge calls.
+- **The judge's cost is covered by us for test and final runs.** Every
+  reviewer's results are evaluated with the same judge panel models, at our
+  cost. Tuning on the full set on your side uses your own judge calls.
 
 ### Credentials
 
 The manifest declares only the *shape* of what your agent needs: which
 environment variables, which file paths. Values never go in a pull request or
-an issue. You enter them on the website and they are stored in Azure Key Vault.
-
-They travel from the vault straight into your container, are scrubbed after
-every run, and are never printed or logged. The runner is destroyed when the
-job ends.
-
-Two things we strongly recommend:
+an issue. You enter them on the website and they are stored in Azure Key
+Vault. They travel from the vault straight into your container, are scrubbed
+after every run, and are never printed or logged. The runner is destroyed
+when the job ends.
 
 - **Use a dedicated key** with a spend cap that you can revoke at any time.
 - **Never bake a key into your image.** Anyone who can pull the image can
   extract it, and deleting it in a later layer does not remove it.
 
-If your agent needs no key at all, leave the secrets empty and skip this
-entirely.
+If your agent needs no key at all, leave the secrets empty.
 
 ### Questions
 
