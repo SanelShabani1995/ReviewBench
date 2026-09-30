@@ -58,28 +58,33 @@ The run summary shows the digest to register.
 ### Try it before you register
 
 ```sh
-scripts/try-agent.sh ghcr.io/<you>/<name>@sha256:<digest> --pr 0
+# from a clone of this repository; -e passes your model key through from your shell
+scripts/try-agent.sh ghcr.io/<you>/<name>@sha256:<digest> --pr 0 -e OPENAI_API_KEY
 ```
 
 It runs your image on the test set (or, with `--set full`, the full set)
 exactly as the benchmark does and checks the findings file. See
-[Try it locally](../README.md#try-it-locally-first).
+[Try it locally](../README.md#try-it-locally-first). Two things the portal
+does for you that you do yourself here: a private package needs
+`docker login ghcr.io` first (a classic token with `read:packages`, the same
+one you will enter as `GHCR_PULL_TOKEN`), and an endpoint other than OpenAI
+needs `-e RB_MODEL_BASE_URL=https://…`.
 
 ### Public or private
 
 - **Public** package: nothing else to do; we pull it anonymously.
-- **Private** package (the default for a new package): create a GitHub **classic** personal access token with the single scope `read:packages` (Settings, Developer settings, Personal access tokens, Tokens (classic); fine-grained tokens cannot read packages). Declare the name `GHCR_PULL_TOKEN` in step 2 and enter the token in step 3.
+- **Private** package (the default for a new package): create a GitHub **classic** personal access token with the single scope `read:packages`. [This link](https://github.com/settings/tokens/new?scopes=read:packages&description=ReviewBench%20pull) opens the token form with that scope ticked; set an expiry and generate. Fine-grained tokens cannot read packages. Choosing "private package" in the portal declares the name `GHCR_PULL_TOKEN` for you; you enter the token in step 3.
 
 ## 2. Register it in the portal
 
-- Sign in with GitHub at the portal and fill the form: display name, image digest, the configuration labels shown on your row (for example `model`, `effort`), your **model API URL** (its host is allowed automatically; add other hosts only if your agent needs them), and the **names** of the secrets it needs.
-- The portal opens a pull request with your manifest in this repository. A maintainer reviews and merges it; that merge is the approval. You can watch it here.
+- Sign in with GitHub at the portal and fill the form: display name, image digest, the configuration labels shown on your row (for example `model`, `effort`), your **model API URL** (its host is allowed automatically; add other hosts only if your agent needs them), and the **names** of the secrets it needs. The model API URL cannot be edited in the portal later; to change it, comment on your onboarding pull request and a maintainer updates it.
+- The portal opens a pull request with your manifest in this repository. A maintainer reviews and merges it; that merge is the approval. You can watch it here. Approval is a human step: expect it within a business day, and if it takes longer, comment on your pull request. Meanwhile you can store credentials and add configurations.
 
 ## 3. Enter your credentials
 
-After approval, the portal shows a credentials form for your reviewer. Enter the **values** for the names you declared. They go straight to our Key Vault; we never read them, and they are handed to your container only for the duration of a run.
+As soon as you have registered, the portal shows a credentials form for your reviewer; there is no need to wait for approval, and a run can start the moment it lands. Enter the **values** for the names you declared. They go straight to our Key Vault; we never read them, and they are handed to your container only for the duration of a run.
 
-- `GHCR_PULL_TOKEN`, if your image is private: a GitHub **classic** personal access token with the single scope `read:packages` (fine-grained tokens cannot read packages). Expire it and rotate it as you like; enter the new value in the same form.
+- `GHCR_PULL_TOKEN`, if your image is private: a GitHub **classic** personal access token with the single scope `read:packages` ([create one](https://github.com/settings/tokens/new?scopes=read:packages&description=ReviewBench%20pull); fine-grained tokens cannot read packages). Expire it and rotate it as you like; enter the new value in the same form.
 - Your model provider's key, under the name your container reads (for example `OPENAI_API_KEY`).
 - Credential files, if you declared any, are entered as file contents and mounted at the path you gave.
 

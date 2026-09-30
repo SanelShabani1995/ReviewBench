@@ -130,10 +130,16 @@ fetches each pull request from GitHub.
 
 ```sh
 git clone https://github.com/review-bench/ReviewBench && cd ReviewBench
-scripts/try-agent.sh my-reviewer:dev --pr 0          # one pull request
-scripts/try-agent.sh my-reviewer:dev -e MY_API_KEY   # all 25, passing a key through
-scripts/try-agent.sh my-reviewer:dev --set full      # the full set, all 219
+scripts/try-agent.sh my-reviewer:dev --pr 0 -e MY_API_KEY      # one pull request
+scripts/try-agent.sh my-reviewer:dev -e MY_API_KEY             # all 25
+scripts/try-agent.sh my-reviewer:dev --set full -e MY_API_KEY  # the full set, all 219
 ```
+
+`-e NAME` passes that variable from your shell into the container under the
+name your agent reads; the script never puts the value on a command line or
+into the findings files. If your endpoint is not OpenAI, add
+`-e RB_MODEL_BASE_URL=https://…` as well. A private package needs
+`docker login ghcr.io` on your machine first.
 
 It does not score. Scores come from a **test run** in the portal, which runs
 the same 25 pull requests with the benchmark's judge and shows the result for
@@ -150,8 +156,8 @@ Sign in to the [website](https://review-bench.ai/submit) with GitHub and
 register your reviewer. You fill in a display name, the image pinned by
 digest, the hosts your agent talks to, the names of the secrets it needs, the
 configuration labels you want shown, and a contact. If your image is private,
-add `GHCR_PULL_TOKEN` to the secret names; see
-[private images](docs/ONBOARDING.md#public-or-private).
+choose "private package" and the website adds `GHCR_PULL_TOKEN` to the secret
+names for you; see [private images](docs/ONBOARDING.md#public-or-private).
 
 The website opens an onboarding pull request in this repository for you. It
 adds a manifest under [`agents/`](agents/) that follows

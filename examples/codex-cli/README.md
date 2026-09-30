@@ -14,14 +14,16 @@ Files:
 2. Register it in the portal with:
    - image: the digest from step 1
    - model API URL: `https://api.openai.com/v1`, or your Azure OpenAI endpoint such as `https://<resource>.openai.azure.com/openai/v1`. The agent reads it as `RB_MODEL_BASE_URL`, and its host is allowed automatically.
-   - secret names: `OPENAI_API_KEY` (and `GHCR_PULL_TOKEN` if the package is private)
-   - labels: `model=gpt-5.5`, `effort=medium` (any model and effort Codex accepts; `reasoning` works as a name for `effort` too)
-3. After approval, enter your OpenAI key (and pull token) in the credentials form and start a test run.
+   - secret names: `OPENAI_API_KEY`, which holds your Azure key on Azure OpenAI (choosing "private package" adds `GHCR_PULL_TOKEN` for you)
+   - labels: `model=gpt-5.5`, `effort=medium` (any model and effort Codex accepts; `reasoning` works as a name for `effort` too). On Azure OpenAI, `model` is your deployment name.
+3. Enter your OpenAI key in the credentials form right away, plus a classic token with `read:packages` if the package is private ([create one](https://github.com/settings/tokens/new?scopes=read:packages&description=ReviewBench%20pull)); no need to wait for approval. Once a maintainer approves, start a test run.
 
 ## Locally
 
 ```sh
 docker build --platform linux/amd64 -t codex-cli-reviewer:dev .
-# from the repository root
+# from a clone of review-bench/ReviewBench, with OPENAI_API_KEY set in your shell
 scripts/try-agent.sh codex-cli-reviewer:dev --pr 0 -e OPENAI_API_KEY -e RB_CONFIG_MODEL=gpt-5.5
+# on Azure OpenAI, add: -e RB_MODEL_BASE_URL=https://<resource>.openai.azure.com/openai/v1
+# and set RB_CONFIG_MODEL to your deployment name
 ```
