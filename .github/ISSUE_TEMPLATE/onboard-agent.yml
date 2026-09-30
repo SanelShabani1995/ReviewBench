@@ -36,10 +36,10 @@ body:
     id: provider
     attributes:
       label: Provider
-      description: The company or person behind it.
+      description: Optional. The company or person behind it; when left blank, the API uses the Display name.
       placeholder: My Company
     validations:
-      required: true
+      required: false
 
   - type: input
     id: image

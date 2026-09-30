@@ -8,7 +8,6 @@
   "required": [
     "name",
     "display_name",
-    "provider",
     "image",
     "contact",
     "contacts"
@@ -31,7 +30,7 @@
     },
     "provider": {
       "type": "string",
-      "description": "The company or individual behind the reviewer.",
+      "description": "The company or individual behind the reviewer. Optional: when omitted, the API stores the display_name here.",
       "minLength": 1,
       "maxLength": 64
     },
