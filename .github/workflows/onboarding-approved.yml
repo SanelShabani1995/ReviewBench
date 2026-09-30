@@ -46,7 +46,7 @@ jobs:
               echo "$mentions: **$display** (\`$name\`) is approved."
               echo
               if [ "$declared" -gt 0 ]; then
-                echo "Next step: connect the agent's credentials in the vendor portal, then start a run."
+                echo "Next step: start a test run in the vendor portal. If you have not stored the agent's credentials yet, do that first."
               else
                 echo "The manifest declares no credentials, so the agent is ready to run."
               fi
