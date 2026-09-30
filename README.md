@@ -156,8 +156,8 @@ Sign in to the [website](https://review-bench.ai/submit) with GitHub and
 register your reviewer. You fill in a display name, the image pinned by
 digest, the hosts your agent talks to, the names of the secrets it needs, the
 configuration labels you want shown, and a contact. If your image is private,
-add `GHCR_PULL_TOKEN` to the secret names; see
-[private images](docs/ONBOARDING.md#public-or-private).
+choose "private package" and the website adds `GHCR_PULL_TOKEN` to the secret
+names for you; see [private images](docs/ONBOARDING.md#public-or-private).
 
 The website opens an onboarding pull request in this repository for you. It
 adds a manifest under [`agents/`](agents/) that follows
