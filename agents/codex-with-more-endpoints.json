@@ -1,0 +1,34 @@
+{
+  "name": "codex-with-more-endpoints",
+  "display_name": "codex-with-more-endpoints",
+  "provider": "OpenAI",
+  "image": "ghcr.io/simonaliao/review-bench-self-serve@sha256:33c7b1ba4cdd8e198289f4b2a602726134e3c831100187d798015b0e552484c1",
+  "image_visibility": "public",
+  "contact": "zhehuiliao@microsoft.com",
+  "configuration": [
+    {
+      "key": "model",
+      "value": "gpt-5.6-sol"
+    },
+    {
+      "key": "reasoning",
+      "value": "medium"
+    }
+  ],
+  "secrets": {
+    "env": [
+      "OPENAI_API_KEY",
+      "GHCR_PULL_TOKEN"
+    ]
+  },
+  "model_api_url": "https://deeppromptcentralus.openai.azure.com/openai/v1",
+  "egress": [
+    "api.github.com",
+    "chatgpt.com",
+    "github.com",
+    "deeppromptcentralus.openai.azure.com"
+  ],
+  "contacts": [
+    "simonaliao"
+  ]
+}
