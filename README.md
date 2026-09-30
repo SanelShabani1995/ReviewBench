@@ -103,10 +103,7 @@ they are not formal human labels.
 
 Evaluate your code review agent on the same pull requests, against the same
 expert findings, and with the same judge used for every agent on the
-[leaderboard](https://review-bench.ai). To participate, you only need a thin
-adapter that lets ReviewBench run your existing agent: it reads one pull
-request and writes one findings file. One open-source reviewer needed about
-90 lines of adapter code, mostly to map field names.
+[leaderboard](https://review-bench.ai).
 
 The [onboarding guide](docs/ONBOARDING.md) is the step-by-step walkthrough.
 This section is the overview.
@@ -134,10 +131,10 @@ The full checklist, including decisions to make up front, is in
 | 3 | [Try it locally](docs/ONBOARDING.md#3-try-it-locally) on the 25 test pull requests | Your machine | `passed 25, failed 0` |
 | 4 | [Register](docs/ONBOARDING.md#4-register-in-the-portal) on the [website](https://review-bench.ai/submit) | Portal | An onboarding pull request appears in this repository |
 | 5 | [Enter credentials](docs/ONBOARDING.md#5-enter-your-credentials) | Portal | Every declared secret is set |
-| 6 | [Approval](docs/ONBOARDING.md#6-wait-for-approval): a maintainer merges your onboarding pull request | This repository | Merged, usually within a business day |
+| 6 | [Approval](docs/ONBOARDING.md#6-wait-for-approval): a maintainer merges your onboarding pull request | This repository | Merged |
 | 7 | [Test run](docs/ONBOARDING.md#7-test-run) on the 25 test pull requests, scored by the judge | Portal | Per-PR results you can iterate on |
-| 8 | [Tune](docs/ONBOARDING.md#8-tune-on-your-side) on the full set of 219 with the public judge | Your machine | You are happy with a configuration |
-| 9 | [Final run](docs/ONBOARDING.md#9-final-run): three rounds over all 219 | Portal | A maintainer publishes your leaderboard row |
+| 8 | [Tune](docs/ONBOARDING.md#8-tune-on-your-side) on the full set of 219 PRs with the public judge | Your machine | You are happy with the agent results |
+| 9 | [Final run](docs/ONBOARDING.md#9-final-run): three rounds over all 219 PRs | Portal | A maintainer publishes your leaderboard row |
 
 Steps 4 and 5 can happen before your onboarding pull request is merged; only
 runs wait for approval. There is no monthly cap on runs.

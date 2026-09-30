@@ -22,18 +22,18 @@ flowchart LR
   J --> K[Leaderboard row]
 ```
 
-| Step | Where | Who | Typical time |
-|---|---|---|---|
-| 0. Prepare | Your machine and accounts | You | Minutes |
-| 1. Wrap your agent | Your repository | You | Hours (one reviewer needed about 90 lines) |
-| 2. Build and push | GitHub Actions or your machine | You | Minutes |
-| 3. Try it locally | Your machine | You | Up to 15 minutes per pull request |
-| 4. Register | Portal | You | Minutes |
-| 5. Credentials | Portal | You | Minutes |
-| 6. Approval | Onboarding pull request in this repository | Maintainer | Within a business day |
-| 7. Test run | Portal | You start it, we run it | 25 pull requests |
-| 8. Tuning | Your machine | You | As long as you like |
-| 9. Final run | Portal | You start it, a maintainer publishes it | 3 × 219 pull requests |
+| Step | Where | Who |
+|---|---|---|
+| 0. Prepare | Your machine and accounts | You |
+| 1. Wrap your agent | Your repository | You |
+| 2. Build and push | GitHub Actions or your machine | You |
+| 3. Try it locally | Your machine | You |
+| 4. Register | Portal | You |
+| 5. Credentials | Portal | You |
+| 6. Approval | Onboarding pull request in this repository | Maintainer |
+| 7. Test run | Portal | You start it, we run it |
+| 8. Tuning | Your machine | You |
+| 9. Final run | Portal | You start it, a maintainer publishes it |
 
 ## 0. Prepare
 
