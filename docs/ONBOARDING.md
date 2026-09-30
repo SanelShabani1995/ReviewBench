@@ -73,7 +73,7 @@ needs `-e RB_MODEL_BASE_URL=https://…`.
 ### Public or private
 
 - **Public** package: nothing else to do; we pull it anonymously.
-- **Private** package (the default for a new package): create a GitHub **classic** personal access token with the single scope `read:packages` (Settings, Developer settings, Personal access tokens, Tokens (classic); fine-grained tokens cannot read packages). Declare the name `GHCR_PULL_TOKEN` in step 2 and enter the token in step 3.
+- **Private** package (the default for a new package): create a GitHub **classic** personal access token with the single scope `read:packages`. [This link](https://github.com/settings/tokens/new?scopes=read:packages&description=ReviewBench%20pull) opens the token form with that scope ticked; set an expiry and generate. Fine-grained tokens cannot read packages. Choosing "private package" in the portal declares the name `GHCR_PULL_TOKEN` for you; you enter the token in step 3.
 
 ## 2. Register it in the portal
 
@@ -84,7 +84,7 @@ needs `-e RB_MODEL_BASE_URL=https://…`.
 
 After approval, the portal shows a credentials form for your reviewer. Enter the **values** for the names you declared. They go straight to our Key Vault; we never read them, and they are handed to your container only for the duration of a run.
 
-- `GHCR_PULL_TOKEN`, if your image is private: a GitHub **classic** personal access token with the single scope `read:packages` (fine-grained tokens cannot read packages). Expire it and rotate it as you like; enter the new value in the same form.
+- `GHCR_PULL_TOKEN`, if your image is private: a GitHub **classic** personal access token with the single scope `read:packages` ([create one](https://github.com/settings/tokens/new?scopes=read:packages&description=ReviewBench%20pull); fine-grained tokens cannot read packages). Expire it and rotate it as you like; enter the new value in the same form.
 - Your model provider's key, under the name your container reads (for example `OPENAI_API_KEY`).
 - Credential files, if you declared any, are entered as file contents and mounted at the path you gave.
 

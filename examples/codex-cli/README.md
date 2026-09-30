@@ -14,9 +14,9 @@ Files:
 2. Register it in the portal with:
    - image: the digest from step 1
    - model API URL: `https://api.openai.com/v1`, or your Azure OpenAI endpoint such as `https://<resource>.openai.azure.com/openai/v1`. The agent reads it as `RB_MODEL_BASE_URL`, and its host is allowed automatically.
-   - secret names: `OPENAI_API_KEY` (and `GHCR_PULL_TOKEN` if the package is private)
+   - secret names: `OPENAI_API_KEY` (choosing "private package" adds `GHCR_PULL_TOKEN` for you)
    - labels: `model=gpt-5.5`, `effort=medium` (any model and effort Codex accepts; `reasoning` works as a name for `effort` too)
-3. After approval, enter your OpenAI key (and pull token) in the credentials form and start a test run.
+3. After approval, enter your OpenAI key in the credentials form, plus a classic token with `read:packages` if the package is private ([create one](https://github.com/settings/tokens/new?scopes=read:packages&description=ReviewBench%20pull)), and start a test run.
 
 ## Locally
 
