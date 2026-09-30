@@ -78,7 +78,7 @@ needs `-e RB_MODEL_BASE_URL=https://…`.
 ## 2. Register it in the portal
 
 - Sign in with GitHub at the portal and fill the form: display name, provider, image digest, the configuration labels shown on your row (for example `model`, `effort`), your **model API URL** (its host is allowed automatically; add other hosts only if your agent needs them), and the **names** of the secrets it needs.
-- The portal opens a pull request with your manifest in this repository. A maintainer reviews and merges it; that merge is the approval. You can watch it here.
+- The portal opens a pull request with your manifest in this repository. A maintainer reviews and merges it; that merge is the approval. You can watch it here. Approval is a human step: expect it within a business day, and if it takes longer, comment on your pull request. Meanwhile you can store credentials and add configurations.
 
 ## 3. Enter your credentials
 
