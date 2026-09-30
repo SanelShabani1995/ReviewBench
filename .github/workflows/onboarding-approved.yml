@@ -1,8 +1,9 @@
 name: Onboarding approved
 
 # When a manifest pull request is merged, tell the agent's contacts what
-# comes next: connecting credentials in the vendor portal. Mentioning them
-# is what makes GitHub send the email.
+# comes next: a test run in the vendor portal, after storing credentials if
+# the manifest declares any and they are not stored yet. Mentioning the
+# contacts is what makes GitHub send the email.
 
 on:
   pull_request:
@@ -45,10 +46,9 @@ jobs:
             {
               echo "$mentions: **$display** (\`$name\`) is approved."
               echo
+              echo "Next step: start a test run in the vendor portal."
               if [ "$declared" -gt 0 ]; then
-                echo "Next step: connect the agent's credentials in the vendor portal, then start a run."
-              else
-                echo "The manifest declares no credentials, so the agent is ready to run."
+                echo "If you have not stored the agent's credentials yet, do that first."
               fi
               echo
               echo "$PORTAL"
