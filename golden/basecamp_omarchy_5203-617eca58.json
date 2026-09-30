@@ -1,0 +1,91 @@
+{
+  "pr_key": "basecamp_omarchy_5203-617eca58",
+  "pr": {
+    "repo": "https://github.com/basecamp/omarchy",
+    "pr_number": 5203,
+    "base": "8f441acbef103cab78fe594f54a389608296511e",
+    "head": "617eca58cacd87690ddaa4446410ba19150a6bf0"
+  },
+  "findings": [
+    {
+      "file": "migrations/1775241210.sh",
+      "start_line": 6,
+      "end_line": 6,
+      "message": "`sudo voxtype setup gpu --enable || true` will prompt for a password during migration because there is no NOPASSWD sudoers entry for voxtype anywhere in the codebase (only /usr/bin/systemctl, /usr/bin/tzupdate, etc. are covered). If the user doesn't supply a password or the prompt times out, `|| true` silently swallows the failure and the migration is marked complete — permanently, since the state file is written after the script exits 0. The GPU will remain disabled with no indication of failure and no opportunity to retry.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: no NOPASSWD sudoers entry for voxtype exists anywhere in the codebase. omarchy-migrate runs as a regular user, so `sudo voxtype setup gpu --enable` will prompt for a password interactively. The `|| true` provably swallows any failure, and omarchy-migrate records the migration as complete on exit 0 regardless. The GPU setup silently fails with no way to retry. Also notable: omarchy-voxtype-install calls `voxtype setup gpu --enable` without sudo, suggesting root may not even be needed.",
+      "severity_justification": "The GPU acceleration feature silently remains disabled with no user notification or retry opportunity. Not a critical failure (system stays functional) but the migration permanently marks itself complete without actually achieving its goal.",
+      "category_justification": "The issue is about error handling in a migration script — silent failure masking via `|| true` combined with missing sudo privilege configuration causes the operation to silently fail while being marked as complete.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "migrations/1775241210.sh",
+      "start_line": 12,
+      "end_line": 14,
+      "message": "`voxtype setup systemd`, `systemctl --user restart voxtype`, and `omarchy-restart-waybar` run unconditionally for every user who has voxtype installed, even if they don't have Vulkan and the GPU enable block was skipped. This is redundant for users who already ran migration 1773506226.sh (which did the same thing), and unnecessarily restarts the voxtype service and waybar on every affected machine regardless of whether anything actually changed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: lines 12-14 in the new migration are outside the Vulkan conditional and are identical to the unconditional tail of migration 1773506226.sh. Any user who successfully ran 1773506226.sh will run these same commands again, causing redundant service restarts for no practical gain.",
+      "severity_justification": "The impact is a brief, unnecessary restart of voxtype and waybar (visible flash) on machines that already ran the previous migration. Disruptive but not harmful, and the operations are idempotent.",
+      "category_justification": "The issue is redundant logic in a migration script — the unconditional block duplicates the prior migration's tail and runs even when nothing actually changed, contrary to good migration design.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "migrations/1775241210.sh",
+      "start_line": 6,
+      "end_line": 6,
+      "message": "The `|| true` on `sudo voxtype setup gpu --enable` masks all failure modes: wrong password, voxtype not accepting the flag, permission errors, etc. Since the whole point of this migration is to fix a previously broken GPU-enable step, silently suppressing failure defeats the purpose — the migration runner's error-handling path (which offers to skip or abort) would be more appropriate here.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `|| true` on line 6 ensures the script always exits 0, bypassing omarchy-migrate's error-handling path which offers skip/abort on non-zero exit. Since the PR's entire purpose is to fix a previously broken GPU-enable step, silently masking all failure modes from that exact command directly undermines the migration's goal.",
+      "severity_justification": "GPU acceleration is non-fatal — voxtype works without it. The failure is silent but doesn't break the system. Severity is low partly because this overlaps substantially with Finding 1's higher-impact analysis of the sudo+NOPASSWD+||true combination.",
+      "category_justification": "Silent failure masking in a migration script — the error suppression bypasses the runner's intended error-handling path and leaves the system in an unknown state without any user notification.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "migrations/1775241210.sh",
+      "start_line": 15,
+      "end_line": 15,
+      "message": "The script invokes 'omarchy-restart-waybar' without verifying its availability or return status. This can lead to script errors if the command is missing or fails.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "omarchy-restart-waybar is a core omarchy binary present in the repo, and calling it without a guard is the consistent pattern in 9 other migrations. The finding is a generic 'verify command availability' template that does not reflect any concrete risk specific to this code — it would apply equally to every omarchy command in every migration script.",
+      "severity_justification": "Even if taken at face value, the impact would be a non-zero exit from the migration script, which omarchy-migrate handles with a skip/abort prompt — not a silent failure.",
+      "category_justification": "The finding is framed as a reliability concern about missing command checks.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

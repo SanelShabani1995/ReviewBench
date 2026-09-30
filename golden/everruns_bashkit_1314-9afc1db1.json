@@ -1,0 +1,343 @@
+{
+  "pr_key": "everruns_bashkit_1314-9afc1db1",
+  "pr": {
+    "repo": "https://github.com/everruns/bashkit",
+    "pr_number": 1314,
+    "base": "e51470a94becc1fab2e335ff7f1a41888d5cd113",
+    "head": "9afc1db1dfa755747eea72b33d004ae95c4cced9"
+  },
+  "findings": [
+    {
+      "file": "crates/bashkit-python/src/lib.rs",
+      "start_line": 1459,
+      "end_line": 1461,
+      "message": "clear_cancel() silently swallows RwLock poison errors and returns without clearing the flag. If the write lock was poisoned (e.g., a thread panicked inside reset() while holding the write lock), the method returns () with no error, leaving the cancellation flag set. Since this is the designated recovery mechanism, a silent no-op leaves the instance permanently unusable — every subsequent execute() still returns 'execution cancelled' — with no way for the caller to detect or recover from the failure. The same issue exists in the BashTool implementation at line 1974.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code at lines 1459-1461 (and 1974-1976) does use `if let Ok(token) = self.cancelled.read()` which silently discards PoisonError if the RwLock is poisoned. Since clear_cancel() is the designated recovery mechanism, a silent no-op on failure leaves the instance permanently unusable with no caller-visible error. The same pattern exists in cancel() as pre-existing code, but clear_cancel() is new and the specific concern about the recovery path being silent is valid.",
+      "severity_justification": "RwLock poisoning requires a thread to panic while holding the write lock, which is an unlikely scenario in normal operation. The write lock in reset() is held only to swap an Arc pointer, making panics there very rare. Additionally, the same silent-swallow pattern exists throughout the file for cancel() and reset() itself.",
+      "category_justification": "The issue is about silent error swallowing in a recovery mechanism — callers cannot detect failure to clear the cancellation flag, leaving the instance permanently in an error state with no observable signal.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/src/lib.rs",
+      "start_line": 1974,
+      "end_line": 1976,
+      "message": "Same silent RwLock poison swallow as PyBash::clear_cancel. BashTool::clear_cancel silently does nothing on a poisoned lock, leaving subsequent execute() calls permanently failing with 'execution cancelled' and no error surfaced to the caller.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Lines 1974-1976 contain identical code to the PyBash::clear_cancel — `if let Ok(token) = self.cancelled.read()` silently discards PoisonError. The finding is factually correct. This is a duplicate of Finding 1 applied to BashTool, but evaluated independently it is a valid TP.",
+      "severity_justification": "Same reasoning as Finding 1: RwLock poisoning requires a panic while holding the write lock, which is rare in this code path. Low practical impact.",
+      "category_justification": "Silent error swallowing in a recovery mechanism — callers cannot detect failure, leaving the instance permanently unusable with no observable signal.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/src/lib.rs",
+      "start_line": 1460,
+      "end_line": 1460,
+      "message": "clear_cancel() stores false with Ordering::Relaxed, while the interpreter's check_cancelled() (interpreter/mod.rs:876) loads the same AtomicBool with Ordering::Relaxed. For cross-thread usage — where one Python thread calls clear_cancel() then releases the GIL, and another thread calls execute_sync() which also releases the GIL and runs on a different OS thread — there is no happens-before guarantee on weakly-ordered architectures (ARM). The store may not be visible before the load. The correct pairing is Ordering::Release on the store and Ordering::Acquire on the load. The same issue exists at line 1975 for BashTool.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "While technically accurate that Relaxed ordering lacks cross-thread guarantees, the same Ordering::Relaxed pattern is used throughout the pre-existing code including cancel() at line 1443. The intended usage pattern (clear_cancel() called after the cancelled execution finishes) means the task completion through the async Mutex (Acquire/Release) and Python GIL transitions provide implicit happens-before guarantees in practice. This isn't a new issue introduced by clear_cancel() that doesn't already apply to cancel().",
+      "severity_justification": "Even if theoretically incorrect, the practical impact is negligible: Python GIL transitions provide OS-level fences, the async mutex provides Acquire/Release barriers, and the documented usage pattern requires task completion before calling clear_cancel().",
+      "category_justification": "Memory ordering for atomic operations is a correctness concern about whether a write is guaranteed to be visible to another thread.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/src/lib.rs",
+      "start_line": 1975,
+      "end_line": 1975,
+      "message": "Same Ordering::Relaxed issue as PyBash::clear_cancel. BashTool::clear_cancel stores false with Relaxed, providing no cross-thread visibility guarantee for concurrent execute_sync() calls on weakly-ordered architectures.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Duplicate of Finding 3 applied to BashTool. The same Ordering::Relaxed pattern is pre-existing throughout the codebase including cancel() at line 1958, and the practical risk is negligible given Python GIL semantics and mutex-synchronized task completion in the intended usage pattern.",
+      "severity_justification": "Same reasoning as Finding 3 — theoretical concern on weakly-ordered architectures, but Python GIL and async Mutex transitions provide implicit barriers in practice.",
+      "category_justification": "Memory ordering for atomic operations is a correctness concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/tests/_bashkit_categories.py",
+      "start_line": 1755,
+      "end_line": 1765,
+      "message": "test_bash_async_clear_cancel_after_cancelled_execute is described as 'cancel() during execute, await it, clear_cancel()' but the code calls bash.cancel() before await bash.execute(), not during an in-flight execution. This is the same pre-execution-cancel scenario as the sync tests, not the actual use case the PR's motivation describes. The primary scenario — cancel a long-running in-flight execution, await the cancelled result, then call clear_cancel() and resume — is never tested. In-flight cancellation may leave partial interpreter state (env vars set by commands that ran before the cancel) that differs from pre-execution cancellation, so this is a real behavioral gap in test coverage.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test docstring claims 'cancel() during execute' but the code calls cancel() before await execute() — making it identical in structure to the sync pre-execution tests. The primary motivated use case (cancelling a genuinely in-flight long-running execution, then clearing and resuming) is not covered. The finding correctly identifies both the misleading docstring and the test coverage gap.",
+      "severity_justification": "The existing tests do verify that clear_cancel() restores functionality after cancellation. The gap is testing an in-flight cancellation scenario where partial interpreter state could differ, which is a real behavioral risk but not a correctness bug in the implementation itself.",
+      "category_justification": "The finding is about incorrect/misleading test description and a gap in test coverage for the primary use case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/tests/_bashkit_categories.py",
+      "start_line": 1767,
+      "end_line": 1776,
+      "message": "test_bashtool_async_clear_cancel_after_cancelled_execute has the same docstring mismatch: claims 'cancel() → await execute' but executes cancel() before the coroutine starts. The actual use case of cancelling a running execution and recovering via clear_cancel() is not exercised here or anywhere in the test suite.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at lines 1767-1776 confirms: tool.cancel() is called before await tool.execute(), not during an in-flight execution, contradicting the docstring 'cancel() → await execute'. Identical issue to Finding 5, independently valid.",
+      "severity_justification": "Same reasoning as Finding 5 — the core functionality is tested, but the in-flight cancellation recovery scenario remains untested. Not a bug in the implementation.",
+      "category_justification": "Misleading test docstring and gap in test coverage for the primary motivated use case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/README.md",
+      "start_line": 207,
+      "end_line": 209,
+      "message": "The code snippet shows bash.cancel() immediately followed by bash.clear_cancel() with no awaiting or waiting in between. This pattern directly contradicts the docstring's own safety note ('Wait for the cancelled execution to finish before clearing') and could mislead callers into calling clear_cancel() before the in-flight execution has returned, which the docs warn may allow the execution to continue past its cancellation point. The example should show the complete safe recovery flow: cancel, await the execution result, then call clear_cancel().",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The README snippet (lines 207-209) shows cancel() immediately followed by clear_cancel() with no execution in between, which contradicts the prose immediately below it ('Call clear_cancel() after the cancelled execution finishes') and the safety notes in the .pyi docstrings. A reader following just the code example could call clear_cancel() before an in-flight execution completes, which the docs explicitly warn against.",
+      "severity_justification": "This is a documentation misleading-example issue. The safety consequence (execution continuing past cancellation) is real but only affects callers who follow only the snippet, not the prose. The fix is showing a complete recovery flow in the example.",
+      "category_justification": "The finding is about a misleading code example in the README that contradicts the documented safety requirement.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/tests/_bashkit_categories.py",
+      "start_line": 1797,
+      "end_line": 1808,
+      "message": "test_bash_clear_cancel_after_reset_is_noop is described as verifying that clear_cancel() on the 'new token is a no-op'. But after cancel() + reset(), the RwLock now holds the new interpreter's token (already false). clear_cancel() stores false into an already-false token, which is a no-op by value but is NOT a no-op that proves anything about the old token being safely abandoned. The test passes but does not actually verify that the old token (still set to true) cannot affect the new interpreter — a property that relies on reset() replacing the inner Bash entirely with a new one. The test comment's claim ('orphans the old token') is the important invariant but is not asserted.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The test at lines 1799-1807 verifies the sequence cancel→reset→clear_cancel→execute works, but clear_cancel() could be removed and the test would still pass. The docstring claim 'orphans the old token' is the key invariant but is never asserted — the test doesn't verify whether the old token's true value is isolated. The test is misleadingly named and described relative to what it actually exercises.",
+      "severity_justification": "The end-to-end assertion (execute_sync succeeds) provides implicit assurance that the new interpreter is unaffected by the old token. This is a test quality and documentation precision issue, not a correctness gap that could allow a real bug to pass undetected.",
+      "category_justification": "The finding is about test precision and whether the test actually verifies what its docstring claims.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/tests/_bashkit_categories.py",
+      "start_line": 1735,
+      "end_line": 1737,
+      "message": "In `test_bash_clear_cancel_allows_subsequent_execution`, the first call `bash.execute_sync(\"echo should_fail\")` is not guaranteed to fail with a cancellation error. If `cancel()` is called but there is no active execution, the cancellation flag is set but the next execution might still succeed if it's fast enough. To make this test deterministic, it should assert that the first execution *actually* fails due to cancellation, for example by checking `r.exit_code != 0 and \"cancel\" in r.stderr.lower()`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding incorrectly claims the first execute_sync() 'might still succeed if it's fast enough.' cancel() sets a sticky AtomicBool that persists until explicitly cleared. check_cancelled() is called at the first command boundary in the execution loop, so any execute_sync() after cancel() will deterministically fail — there is no timing race. The test is correct.",
+      "severity_justification": "The finding is factually incorrect about how sticky cancellation works, so there's no real defect to address.",
+      "category_justification": "The finding is about test determinism and correctness of test assertions.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/tests/_bashkit_categories.py",
+      "start_line": 1745,
+      "end_line": 1747,
+      "message": "In `test_bashtool_clear_cancel_allows_subsequent_execution`, the assertion `assert r.exit_code != 0` is not specific enough. The test should verify that the execution failed specifically due to cancellation, not some other random error. A more robust check would be `assert r.exit_code != 0 and \"cancel\" in r.stderr.lower()` to ensure the cancellation mechanism is what caused the failure.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The existing cancellation test convention in this file uses OR-logic (exit_code != 0 or cancel in stderr), not AND. The finding's suggested AND pattern is inconsistent with established local conventions. Furthermore, the test setup (fresh instance, only cancel() called) is deterministic — the sticky flag guarantees cancellation is the cause of failure. No real test defect exists.",
+      "severity_justification": "No real defect in the test; the assertion is correct and sufficient for the deterministic test setup.",
+      "category_justification": "Finding is about test assertion specificity.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/README.md",
+      "start_line": 321,
+      "end_line": 322,
+      "message": "The documentation for `BashTool`'s API reference is slightly inconsistent. It lists `cancel()` and `clear_cancel()` in parentheses, which differs from the format of other methods in the list. For consistency, it should be formatted as two separate items: `- cancel()` and `- clear_cancel()`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The BashTool section intentionally uses a prose summary ('All X from Bash') rather than duplicating the full method list. The inline parenthetical `(cancel(), clear_cancel())` is clarifying context within that summary, not a malformed list. This is a deliberate structural choice, not a formatting inconsistency that would confuse readers.",
+      "severity_justification": "Pure cosmetic documentation style preference with no impact on readability or correctness.",
+      "category_justification": "Finding is about documentation formatting consistency.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/bashkit/_bashkit.pyi",
+      "start_line": 425,
+      "end_line": 431,
+      "message": "The example code in the docstring for `Bash.clear_cancel` is not representative of the main use case. It calls `cancel()` and `clear_cancel()` when no execution is in flight, which is a no-op for cancellation itself. A more illustrative example would show `cancel()` being called during a long-running `execute` call (e.g., in a separate thread), and then `clear_cancel()` being called after the cancelled execution has returned.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a documentation preference about example completeness. The example correctly demonstrates the API contract (clear_cancel restores executability after cancel). Docstring examples are conventionally kept minimal and self-contained; the prose description above the example already explains the correct usage pattern and safety note. No concrete defect exists — the example isn't misleading about the API's behavior.",
+      "severity_justification": "Pure documentation preference with no impact on correctness or developer misuse.",
+      "category_justification": "Finding is about the quality of a docstring example.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/bashkit/_bashkit.pyi",
+      "start_line": 727,
+      "end_line": 733,
+      "message": "The example code in the docstring for `BashTool.clear_cancel` does not demonstrate the intended use case. It calls `cancel()` and then immediately `clear_cancel()` before any command is executed, which doesn't correctly illustrate recovering from a cancelled in-flight execution. A better example would involve a long-running command, a `cancel()` call from another thread, awaiting the result, and then calling `clear_cancel()`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical to Finding 12 applied to BashTool.clear_cancel. The example correctly demonstrates the API contract; the prose description covers the intended use case and safety note. This is a documentation preference about example completeness, not a concrete defect.",
+      "severity_justification": "Pure documentation preference with no impact on correctness or developer misuse.",
+      "category_justification": "Finding is about the quality of a docstring example.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/tests/_bashkit_categories.py",
+      "start_line": 1728,
+      "end_line": 1728,
+      "message": "These six tests live in `_bashkit_categories.py`, which pytest does not discover directly because the filename starts with `_`. This suite is only exercised through explicit re-exports in `tests/test_basic.py`, and that `_NAMES` tuple was not updated in this PR. As written, the added `clear_cancel` coverage will not run under normal `pytest tests/` collection, so the change lands without the regression tests it claims.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims _NAMES in test_basic.py was not updated, but the diff and the checked-out file both show all 8 new clear_cancel test names were added to _NAMES. The tests are correctly wired for pytest discovery.",
+      "severity_justification": "The finding is factually wrong — no real issue exists.",
+      "category_justification": "Finding is about test discovery/coverage.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "chaliy",
+        "url": "https://github.com/everruns/bashkit/pull/1314#discussion_r3089731601",
+        "created_at": "2026-04-15T22:21:45Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "9afc1db1dfa755747eea72b33d004ae95c4cced9"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/src/lib.rs",
+      "start_line": 1447,
+      "end_line": 1447,
+      "message": "`bashkit` is a typed package (`py.typed` + `_bashkit.pyi`), so adding a public method only in the Rust binding leaves the shipped typing surface out of sync. `Bash.clear_cancel()` / `BashTool.clear_cancel()` will exist at runtime but still raise `attr-defined` errors for mypy/pyright users until `_bashkit.pyi` is updated too.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims _bashkit.pyi was not updated, but the diff and the checked-out file both show clear_cancel() stubs were added for both Bash (line 419) and BashTool (line 745) in _bashkit.pyi. The typing surface is fully in sync with the runtime.",
+      "severity_justification": "The finding is factually wrong — no real issue exists.",
+      "category_justification": "Finding is about type stub synchronization with runtime API.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "chaliy",
+        "url": "https://github.com/everruns/bashkit/pull/1314#discussion_r3089731608",
+        "created_at": "2026-04-15T22:21:45Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "9afc1db1dfa755747eea72b33d004ae95c4cced9"
+      }
+    },
+    {
+      "file": "crates/bashkit-python/src/lib.rs",
+      "start_line": 1447,
+      "end_line": 1447,
+      "message": "This API addition also leaves the Python docs misleading. `crates/bashkit-python/README.md` still tells callers to `reset()` after `cancel()`, which drops session and VFS state and defeats the point of `clear_cancel()`. The cancellation docs should be updated alongside the binding.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims the README still tells callers to use reset() after cancel(), but the README was updated in this PR. The cancellation section now shows clear_cancel() and explicitly says 'Use reset() only when you want to discard VFS and shell state entirely.' The documentation is fully aligned with the new API.",
+      "severity_justification": "The finding is factually wrong — no real issue exists.",
+      "category_justification": "Finding is about documentation accuracy for the new API.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "chaliy",
+        "url": "https://github.com/everruns/bashkit/pull/1314#discussion_r3090019924",
+        "created_at": "2026-04-15T23:44:08Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "9afc1db1dfa755747eea72b33d004ae95c4cced9"
+      }
+    }
+  ]
+}

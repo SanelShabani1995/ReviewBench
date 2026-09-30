@@ -1,0 +1,431 @@
+{
+  "pr_key": "konturio_disaster-ninja-fe_1128-421e2dbe",
+  "pr": {
+    "repo": "https://github.com/konturio/disaster-ninja-fe",
+    "pr_number": 1128,
+    "base": "49802085fc7ba9e94925a8c776026bfd1aaf9227",
+    "head": "421e2dbe0832b9e7a46ca664e8a04ddf8ce34405"
+  },
+  "findings": [
+    {
+      "file": "src/core/localization/gettext/ar/common.po",
+      "start_line": 143,
+      "end_line": 148,
+      "message": "The `#: toolbar##upload_mcda` location reference comment is now incorrectly placed before the `msgid \"Zoom to\"` entry instead of before `msgid \"Upload MCDA\"`. The same insertion pattern was applied to all 8 language-specific .po files (be, de, es, id, ko, ru, uk). The template common.pot has the correct order (upload_mcda ref before Upload MCDA, zoom_to ref before Zoom to). This corrupts gettext location metadata — tools that use location references to associate strings with source locations will misidentify `Upload MCDA` as having no source reference and incorrectly attribute `toolbar##upload_mcda` to the Zoom to string.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in ar/common.po and ru/common.po: lines 143-144 show both `#: toolbar##upload_mcda` and `#: toolbar##zoom_to` references stacked before `msgid \"Zoom to\"`, while `msgid \"Upload MCDA\"` has no source reference. The template common.pot has the correct structure with each reference immediately preceding its own msgid. The insertion was done incorrectly in all 8 language files.",
+      "severity_justification": "This corrupts gettext location metadata, which may affect tooling that uses location comments to associate strings with source locations. However, it does not break the actual translations or runtime behavior — the strings still function correctly. The impact is limited to tooling/workflow for translators.",
+      "category_justification": "This is a structural/formatting issue in localization files that affects how gettext tooling interprets source references, not runtime correctness.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/zoom_to/index.tsx",
+      "start_line": 20,
+      "end_line": 20,
+      "message": "The icon name `'ZoomTo16'` does not appear anywhere else in the codebase and cannot be verified to exist in `@konturio/default-icons`. `ToolbarIcon.tsx` resolves icons dynamically via `icons[icon]` from that package. If `ZoomTo16` is absent from the package, the button will render with no icon and emit a console.error. The other toolbar controls use icons like `Reference16`, `UploadAnalysis16`, `SelectArea24` — all of which are used in multiple places. `ZoomTo16` is unique to this PR, suggesting it may not yet have been added to the icon library.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: `ZoomTo16` appears only in the new file, nowhere else in the codebase (unlike all other toolbar icons which appear in multiple places). ToolbarIcon.tsx confirmed to resolve icons dynamically via `icons[icon]` and emit a console.error when missing. Node_modules unavailable to confirm icon existence, but the uniqueness of the icon name combined with its single-use pattern is a credible signal that it may not yet exist in the icon package.",
+      "severity_justification": "If the icon is absent from the package, the toolbar button renders without an icon and logs a console.error — a visible UX degradation but not a functional breakage since the button itself still works.",
+      "category_justification": "The concern is about a missing dependency (icon asset) that would cause runtime degradation — a reliability/dependency management issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/zoom_to/index.tsx",
+      "start_line": 38,
+      "end_line": 41,
+      "message": "The `onStateChange` handler for `state === 'regular'` re-reads geometry from the atom and may dispatch `setState('disabled')`. This fires not only after a user click (active→regular transition) but also every time the `onInit` subscription sets state to `regular` when geometry becomes available. While reatom v2 deduplicates same-state transitions, the `regular` branch is an unnecessary re-entrant check that could mask bugs if the geometry atom state changes between the subscription dispatch and the onStateChange read. More critically, the `regular` check creates an implicit coupling: setting state to `regular` has side effects (potential immediate re-transition to `disabled`) that are not obvious and differ based on whether the atom has geometry at that exact moment.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `regular` guard in `onStateChange` is an established pattern in the codebase, as shown by `reference_area/index.ts` which has identical code with a comment explaining exactly why it exists ('this case happens when another control sets this one into regular state, but focused geometry is empty'). The zoom_to implementation correctly follows this convention. The finding mischaracterizes an intentional defensive guard as a design flaw.",
+      "severity_justification": "Even if taken at face value, the described behavior doesn't produce incorrect results in practice.",
+      "category_justification": "The finding is about code structure and implicit coupling — a maintainability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/zoom_to/index.tsx",
+      "start_line": 11,
+      "end_line": 11,
+      "message": "`focusedGeometryUnsubscribe` is a module-level variable. `toolbar.setupControl()` and the `onStateChange`/`onInit`/`onRemove` registrations all execute at module evaluation time (when the lazy import resolves). If the feature module is somehow evaluated more than once (e.g., due to bundler issues or testing environments), subsequent calls to `initZoomTo()` could overwrite `focusedGeometryUnsubscribe` before calling the old one, leaking the previous subscription. This is a fragile design that should at minimum guard against the overwrite.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The concern is already addressed: (1) `setupControl`'s `init()` has an `initialised` flag guard that prevents `onInit` from running more than once, even if `initZoomTo()` is called multiple times; (2) ES modules are evaluated exactly once per runtime so module-level re-evaluation is not a real scenario; (3) the identical pattern exists in `reference_area/index.ts` and is established practice in this codebase.",
+      "severity_justification": "Even if the guard were absent, the scenario requires module re-evaluation which is a non-standard edge case with no realistic trigger in this app.",
+      "category_justification": "The concern is about subscription lifecycle and potential memory leaks from an overwritten unsubscribe reference.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/toolbar/index.ts",
+      "start_line": 7,
+      "end_line": 7,
+      "message": "`toolbar/index.ts` statically imports `ZOOM_TO_CONTROL_ID` from `~features/zoom_to/constants`. This forces eager evaluation of `constants.ts` at toolbar module load time, which also evaluates `ZOOM_TO_CONTROL_NAME = i18n.t('toolbar.zoom_to')`. The captured string value is then used later when `zoom_to/index.tsx` is lazily imported. If i18n initialization order ever changes (e.g., async language loading), `ZOOM_TO_CONTROL_NAME` would be frozen to the wrong locale. The other similar feature constants (mcda, sensor, reference_area) are NOT statically imported by `toolbar/index.ts`; only `ZOOM_TO_CONTROL_ID` is needed here. The constant should be defined inline in `toolbar/index.ts` rather than pulling in the full `constants.ts` module.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's central claim is false: mcda, sensor, and reference_area constants ARE all statically imported by toolbar/index.ts in exactly the same way as zoom_to. Furthermore, reference_area/constants.ts also calls i18n.t() at module evaluation time, making this an established pattern. The zoom_to implementation is fully consistent with existing conventions.",
+      "severity_justification": "Even if taken at face value, the i18n evaluation-order concern applies equally to all other toolbar features already in production.",
+      "category_justification": "The concern is about module evaluation order and import structure.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/zoom_to/index.tsx",
+      "start_line": 29,
+      "end_line": 37,
+      "message": "When the button is clicked (`state === 'active'`), the code reads geometry via `store.v3ctx.get(focusedGeometryAtom)`, which bypasses reatom's transactional context (`ctx`). Using `store.v3ctx.get` outside an action context is a direct imperative read that could observe a stale or partially-updated atom value if the focused geometry is being updated concurrently. The established pattern in the codebase for reading atoms in side-effect handlers is to use the reatom context passed to the callback, not `store.v3ctx.get` directly.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's claim is factually wrong on two counts: (1) the `ctx` parameter in `onStateChange` is the control context (`Record<string, unknown>`), not a reatom atom-reading context — it cannot be used to read atoms; (2) `store.v3ctx.get` in `onStateChange` IS the established pattern, used identically in reference_area/index.ts and osm_edit_link/index.tsx. The zoom_to code follows the existing convention correctly.",
+      "severity_justification": "The finding incorrectly identifies standard usage as an anti-pattern, so there is no real issue here.",
+      "category_justification": "The finding makes incorrect factual claims about the established coding pattern and the nature of the ctx parameter.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/template/common.pot",
+      "start_line": 143,
+      "end_line": 146,
+      "message": "In `common.pot` the new `zoom_to` entry is placed after `Upload MCDA` without the `#: toolbar##upload_mcda` reference being preserved before `Upload MCDA`. Looking at the diff, the `#: toolbar##upload_mcda` comment was moved to appear before the new `zoom_to` entry in all `.po` files. The template itself is correctly ordered, but because the language `.po` files use a different insertion point than the template, the two are now structurally inconsistent, which will cause `msgmerge` to produce incorrect results when updating translations from the template.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's primary factual claim is false: common.pot DOES preserve `#: toolbar##upload_mcda` before `msgid \"Upload MCDA\"` (verified at lines 139-140). The finding then self-contradicts by acknowledging 'The template itself is correctly ordered.' The real structural inconsistency (between .po files and the template) was correctly identified in Finding 1. The msgmerge concern is speculative since msgmerge matches by msgid, not reference comment ordering.",
+      "severity_justification": "The finding is based on a false claim about common.pot; the actual underlying issue (malformed .po references) is a documentation/tooling concern already covered by Finding 1.",
+      "category_justification": "The finding concerns localization file structure and gettext tooling metadata.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/uk/common.po",
+      "start_line": 133,
+      "end_line": 138,
+      "message": "The new `#: toolbar##zoom_to` reference was inserted between the existing `#: toolbar##upload_mcda` reference and its `msgid \"Upload MCDA\"` entry. As a result, the `toolbar##upload_mcda` reference comment is now attached to the new `msgid \"Zoom to\"` entry, and `msgid \"Upload MCDA\"` is left without any reference comment. The new `#: toolbar##zoom_to` / `msgid \"Zoom to\"` block should be inserted as a separate, standalone entry (as done in `template/common.pot`) so that `toolbar##upload_mcda` stays attached to `msgid \"Upload MCDA\"`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the actual files: in all language .po files, the `#: toolbar##upload_mcda` reference comment is now attached to `msgid \"Zoom to\"` rather than `msgid \"Upload MCDA\"`. The template common.pot has the correct structure with the entries separated. The diff shows the new zoom_to entry was inserted between the `upload_mcda` reference comment and its msgid, breaking the comment-to-message association across all 8 language files.",
+      "severity_justification": "Gettext resolves translations by msgid at runtime, so the misplaced reference comment does not break actual translation lookups. However, it can mislead translators and gettext tooling (e.g., xgettext merging will misassociate the reference), and it affects all 8 language files.",
+      "category_justification": "This is a structural/formatting issue in localization files that affects comment-to-message associations, impacting maintainability of the translation workflow rather than runtime behavior.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/ru/common.po",
+      "start_line": 133,
+      "end_line": 138,
+      "message": "Same issue as in the other `.po` files: the new `#: toolbar##zoom_to` line is inserted between the existing `#: toolbar##upload_mcda` reference and its `msgid \"Upload MCDA\"`. The `toolbar##upload_mcda` reference now points at `msgid \"Zoom to\"`, and `msgid \"Upload MCDA\"` no longer has a reference comment. The new entry should be a standalone block (matching `template/common.pot`).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Already verified: ru/common.po has the identical structural issue — `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`, matching the pattern seen across all 8 language .po files in this PR.",
+      "severity_justification": "Same as the uk/common.po case: runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/ko/common.po",
+      "start_line": 143,
+      "end_line": 148,
+      "message": "Same `.po` insertion issue: `#: toolbar##zoom_to` was placed between the existing `#: toolbar##upload_mcda` reference and `msgid \"Upload MCDA\"`, so the `upload_mcda` reference is now associated with `msgid \"Zoom to\"` and `Upload MCDA` has lost its reference. Insert the new entry as a separate block, as in `template/common.pot`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Already verified: ko/common.po has the identical structural issue — `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`, consistent with all other language .po files in this PR.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/id/common.po",
+      "start_line": 143,
+      "end_line": 148,
+      "message": "Same `.po` insertion issue: `#: toolbar##zoom_to` was placed between `#: toolbar##upload_mcda` and `msgid \"Upload MCDA\"`, reassigning the `upload_mcda` reference to the new `msgid \"Zoom to\"` entry and leaving `Upload MCDA` without a reference. Insert the new entry as a separate block.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Already verified: id/common.po has the identical structural issue — `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`, consistent with all other language .po files in this PR.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/es/common.po",
+      "start_line": 143,
+      "end_line": 148,
+      "message": "Same `.po` insertion issue: `#: toolbar##zoom_to` was inserted between `#: toolbar##upload_mcda` and `msgid \"Upload MCDA\"`, so `upload_mcda` now references `msgid \"Zoom to\"` and `Upload MCDA` no longer has a reference comment. Insert the new entry as a separate block.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Already verified: es/common.po has the identical structural issue — `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`, consistent with all other language .po files in this PR.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/de/common.po",
+      "start_line": 143,
+      "end_line": 148,
+      "message": "Same `.po` insertion issue: `#: toolbar##zoom_to` was inserted between `#: toolbar##upload_mcda` and `msgid \"Upload MCDA\"`, so the `upload_mcda` reference is now attached to `msgid \"Zoom to\"` and `Upload MCDA` has no reference. Insert the new entry as a separate block.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Already verified: de/common.po has the identical structural issue — `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`, consistent with all other language .po files in this PR.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/be/common.po",
+      "start_line": 132,
+      "end_line": 137,
+      "message": "Same `.po` insertion issue: `#: toolbar##zoom_to` was inserted between `#: toolbar##upload_mcda` and `msgid \"Upload MCDA\"`. The `upload_mcda` reference is now associated with `msgid \"Zoom to\"` and `Upload MCDA` has lost its reference comment. Insert the new entry as a separate block.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Already verified: be/common.po has the identical structural issue — `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`, consistent with all other language .po files in this PR.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/uk/common.po",
+      "start_line": 133,
+      "end_line": 136,
+      "message": "The new entry was inserted under the existing `toolbar##upload_mcda` reference, so gettext conversion will associate `toolbar.upload_mcda` with \"Zoom to\" and leave the \"Upload MCDA\" entry without a key reference. Add a blank line before the new `toolbar##zoom_to` reference (or place the new entry after the Upload MCDA entry) so each msgid keeps the correct reference.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Duplicate of Finding 1 — same file (uk/common.po), same structural issue already verified: `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/ru/common.po",
+      "start_line": 133,
+      "end_line": 136,
+      "message": "The new entry was inserted under the existing `toolbar##upload_mcda` reference, so gettext conversion will associate `toolbar.upload_mcda` with \"Zoom to\" and leave the \"Upload MCDA\" entry without a key reference. Add a blank line before the new `toolbar##zoom_to` reference (or place the new entry after the Upload MCDA entry) so each msgid keeps the correct reference.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Duplicate of Finding 2 — same file (ru/common.po), same structural issue already verified: `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/ko/common.po",
+      "start_line": 143,
+      "end_line": 146,
+      "message": "The new entry was inserted under the existing `toolbar##upload_mcda` reference, so gettext conversion will associate `toolbar.upload_mcda` with \"Zoom to\" and leave the \"Upload MCDA\" entry without a key reference. Add a blank line before the new `toolbar##zoom_to` reference (or place the new entry after the Upload MCDA entry) so each msgid keeps the correct reference.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Duplicate of Finding 3 — same file (ko/common.po), same structural issue already verified: `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/id/common.po",
+      "start_line": 143,
+      "end_line": 146,
+      "message": "The new entry was inserted under the existing `toolbar##upload_mcda` reference, so gettext conversion will associate `toolbar.upload_mcda` with \"Zoom to\" and leave the \"Upload MCDA\" entry without a key reference. Add a blank line before the new `toolbar##zoom_to` reference (or place the new entry after the Upload MCDA entry) so each msgid keeps the correct reference.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Duplicate of Finding 4 — same file (id/common.po), same structural issue already verified: `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/es/common.po",
+      "start_line": 143,
+      "end_line": 146,
+      "message": "The new entry was inserted under the existing `toolbar##upload_mcda` reference, so gettext conversion will associate `toolbar.upload_mcda` with \"Zoom to\" and leave the \"Upload MCDA\" entry without a key reference. Add a blank line before the new `toolbar##zoom_to` reference (or place the new entry after the Upload MCDA entry) so each msgid keeps the correct reference.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Duplicate of Finding 5 — same file (es/common.po), same structural issue already verified: `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/de/common.po",
+      "start_line": 143,
+      "end_line": 146,
+      "message": "The new entry was inserted under the existing `toolbar##upload_mcda` reference, so gettext conversion will associate `toolbar.upload_mcda` with \"Zoom to\" and leave the \"Upload MCDA\" entry without a key reference. Add a blank line before the new `toolbar##zoom_to` reference (or place the new entry after the Upload MCDA entry) so each msgid keeps the correct reference.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Duplicate of Finding 6 — same file (de/common.po), same structural issue already verified: `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/localization/gettext/be/common.po",
+      "start_line": 132,
+      "end_line": 135,
+      "message": "The new entry was inserted under the existing `toolbar##upload_mcda` reference, so gettext conversion will associate `toolbar.upload_mcda` with \"Zoom to\" and leave the \"Upload MCDA\" entry without a key reference. Add a blank line before the new `toolbar##zoom_to` reference (or place the new entry after the Upload MCDA entry) so each msgid keeps the correct reference.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Duplicate of Finding 7 — same file (be/common.po), same structural issue already verified: `#: toolbar##upload_mcda` reference comment is attached to `msgid \"Zoom to\"` instead of `msgid \"Upload MCDA\"`.",
+      "severity_justification": "Runtime translation lookups are unaffected since gettext resolves by msgid, but the misplaced reference misleads translators and gettext tooling.",
+      "category_justification": "Structural formatting issue in localization files affecting comment-to-message associations and translation workflow maintainability.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

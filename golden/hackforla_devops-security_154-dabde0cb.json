@@ -1,0 +1,175 @@
+{
+  "pr_key": "hackforla_devops-security_154-dabde0cb",
+  "pr": {
+    "repo": "https://github.com/hackforla/devops-security",
+    "pr_number": 154,
+    "base": "12f355213639cd3dd16133ef960008cdfeed7215",
+    "head": "dabde0cbb2cd71d88da17c02b42cf42e2c713139"
+  },
+  "findings": [
+    {
+      "file": "terraform/aws-custom-policies/incubator-tf-plan-secrets-read-policy.json",
+      "start_line": 11,
+      "end_line": 13,
+      "message": "The AWS account ID 035866691871 is hardcoded in the resource ARNs. This is a public repository, so the account ID is now publicly visible. Other policy files in this repo (e.g. enforce-mfa-for-users-policy.json) use wildcard account IDs ('arn:aws:iam::*:...') to avoid this. The module uses file() which cannot do variable substitution; a templatefile() approach or using '*' in the account position would avoid exposing the account ID.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The account ID 035866691871 is verifiably hardcoded in the new policy file introduced by this PR, this is a public repository, other policy files in the same repo (enforce-mfa-for-users-policy.json) use wildcard account positions, and the module's use of file() instead of templatefile() is confirmed — all specific claims check out.",
+      "severity_justification": "AWS account IDs are not credentials but their public exposure in a public repo aids enumeration and targeting. The inconsistency with the established local convention of wildcard account ARNs is a concrete drift that should be addressed.",
+      "category_justification": "Exposing an AWS account ID in a public repository is an information disclosure concern and the finding is about IAM policy resource scoping.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "terraform/aws-gha-oidc-providers.tf",
+      "start_line": 43,
+      "end_line": 56,
+      "message": "The new incubator_tf_plan and incubator_tf_apply roles are never referenced by the CI workflows. Both terraform-plan.yaml and terraform-apply.yaml still authenticate using static AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY secrets rather than OIDC role assumption. The security improvement (privilege separation) has no effect until the workflows are updated to use 'role-to-assume' with the new role ARNs.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both terraform-plan.yaml and terraform-apply.yaml are confirmed to use static AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY secrets with no role-to-assume configuration. The new incubator_tf_plan and incubator_tf_apply roles are defined in Terraform but never wired into the CI workflows, making the privilege separation inert.",
+      "severity_justification": "The stated security goal of the PR (privilege separation between plan and apply) is not achieved until the workflows are updated. The infrastructure is provisioned but the actual security improvement is not realized, leaving the static key arrangement unchanged.",
+      "category_justification": "The finding is about the security improvement (OIDC-based privilege separation) being incomplete — the new roles exist but static long-lived credentials remain in use, which is the exact attack surface the PR intends to reduce.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "terraform/aws-gha-oidc-providers.tf",
+      "start_line": 1,
+      "end_line": 13,
+      "message": "The original module-created role 'gha-incubator' with AdministratorAccess is still in place and still trusts both pull_request events and refs/heads/* (any branch). The stated goal of this PR is to remove excessive admin-level privileges from plan workflows, but the admin role is additive — nothing removes or restricts the old role. Any workflow that still uses the gha-incubator role retains full admin access, making the privilege separation ineffective.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The gha-incubator role with AdministratorAccess is verifiably still present and unchanged in the file at this SHA. The module trusts both refs/heads/* and pull_request events. The PR adds new scoped roles additively without removing the overprivileged one, leaving the security posture essentially unchanged if any workflow assumes the old role.",
+      "severity_justification": "The old AdministratorAccess role remains fully accessible. The PR's stated goal of privilege separation is structurally incomplete because a bypass path (the original admin role) is left intact. However, the workflows aren't yet using OIDC at all, which limits immediate impact.",
+      "category_justification": "An overprivileged IAM role with AdministratorAccess that trusts PR events and any branch remains reachable, undermining the privilege-separation goal of the PR.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "terraform/aws-gha-oidc-providers.tf",
+      "start_line": 29,
+      "end_line": 36,
+      "message": "The incubator_tf_plan role's trust policy includes 'repo:hackforla/incubator:pull_request' as a trusted subject. This allows any pull request workflow — including those opened from forks — to potentially assume this role and call secretsmanager:GetSecretValue for the listed secrets. For a public repository this is a meaningful risk: a malicious contributor opening a PR could trigger a workflow that exfiltrates plaintext credential values.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The trust policy verifiably includes 'repo:hackforla/incubator:pull_request' as a trusted OIDC subject, and the role has secretsmanager:GetSecretValue on specific secrets. For a public repo, fork PRs can obtain OIDC tokens (if the workflow grants id-token: write) and assume this role, enabling secret exfiltration — a concrete, well-documented GitHub Actions OIDC risk pattern.",
+      "severity_justification": "The role has ReadOnlyAccess plus specific Secrets Manager GetSecretValue, so successful exploitation would expose plaintext secret values. Risk is not yet active since workflows don't use OIDC yet, but the trust policy is a design flaw that should be corrected before the role is wired into any workflow.",
+      "category_justification": "Overly broad OIDC trust policy condition on a role with Secrets Manager read access creates a concrete path for secret exfiltration from fork PR workflows in a public repository.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "terraform/aws-custom-policies/incubator-tf-plan-secrets-read-policy.json",
+      "start_line": 10,
+      "end_line": 14,
+      "message": "The resource ARNs end with a wildcard ('*'), intended to match the random suffix AWS appends to secret names. However, the wildcard is applied to the full suffix, so 'home-unite-us-cognito-client*' would also match any future secret whose name begins with that string (e.g. 'home-unite-us-cognito-client-backup' or 'home-unite-us-cognito-client-prod'). The scope should be reviewed against actual secret naming conventions to avoid accidentally granting access to unintended secrets.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The wildcard suffix on the ARNs is factually confirmed and the finding correctly identifies that it could match secrets beyond the intended target. The concern is technically valid and code-specific, though the wildcard is also the necessary pattern for Secrets Manager ARN scoping due to AWS's auto-appended suffix.",
+      "severity_justification": "The wildcard is the standard required approach for Secrets Manager ARN policies. Accidental over-matching requires a future secret to be created with a nearly identical name prefix. Risk is real but low-probability and limited to secrets within the same specific account/region with highly specific prefixes.",
+      "category_justification": "The concern is about overly broad resource scoping in an IAM policy, which could grant unintended access to additional secrets.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "terraform/aws-custom-policies/incubator-tf-plan-secrets-read-policy.json",
+      "start_line": 8,
+      "end_line": 9,
+      "message": "Granting secretsmanager:GetSecretValue to a terraform plan role gives it access to plaintext secret values, not just metadata. AWS ReadOnlyAccess deliberately excludes this action. If the incubator repo's Terraform uses data sources like 'aws_secretsmanager_secret_version', plan will read actual credentials at PR time. This means the plan role — which is trusted by pull_request events — can retrieve production OAuth and Cognito secrets, significantly widening the blast radius of a compromised PR workflow.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "All specific claims are factually correct: GetSecretValue returns plaintext values, ReadOnlyAccess deliberately excludes it, Terraform resolves data sources at plan time, and the trust policy trusts pull_request events. The combined effect is that any PR-triggered workflow in hackforla/incubator could read production OAuth and Cognito secrets in plaintext.",
+      "severity_justification": "Production OAuth and Cognito credentials are readable by a role that can be assumed by PR workflows. Secret exfiltration is a direct outcome if the role is wired into workflows. Mitigated somewhat by the fact that workflows don't yet use this OIDC role, but the design is flawed.",
+      "category_justification": "Granting GetSecretValue to a plan role trusted by pull_request events creates a concrete path for credential exfiltration from PR workflows in a public repository.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "terraform/aws-gha-oidc-providers.tf",
+      "start_line": 66,
+      "end_line": 79,
+      "message": "The `Condition` block in the assume_role_policy for `incubator_tf_apply` role specifies access to the `main` branch only. This might prevent actions on other branches from assuming the apply role, which may hinder CI/CD workflows unless this restriction is deliberate.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Restricting the apply role to refs/heads/main is intentional and correct — the terraform-apply.yaml workflow already only triggers on push to main, so the trust policy condition is perfectly aligned. This is the explicit goal of the PR (apply only on main). The finding is speculative ('might hinder... unless deliberate') about a design choice that is clearly deliberate.",
+      "severity_justification": "Even if the finding were valid, restricting apply to main is a security improvement. The claim doesn't identify any actual breakage or mis-alignment.",
+      "category_justification": "The finding questions whether the branch restriction is intentional/correct, which is a question about behavioral correctness of the trust policy design.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "terraform/aws-custom-policies/incubator-tf-plan-secrets-read-policy.json",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "the name of the file should not be specific to secrets, but all of the 'other' things that TF plan needs other than read only",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The filename follows the established naming convention in this repo (compare enforce-mfa-for-users-policy.json, level-4-iam-services-supervisor-policy.json). The suggestion to use a generic name is a vague design preference that contradicts local conventions and the security principle of narrow, purpose-specific policy files. No concrete problem is identified.",
+      "severity_justification": "Pure naming preference with no functional impact. The specific naming is consistent with codebase conventions and arguably better from a security audit perspective.",
+      "category_justification": "The finding is about file naming and policy file organization, a maintainability/design concern.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "ale210",
+        "url": "https://github.com/hackforla/devops-security/pull/154#discussion_r3090243667",
+        "created_at": "2026-04-16T01:15:03Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "dabde0cbb2cd71d88da17c02b42cf42e2c713139"
+      }
+    }
+  ]
+}

@@ -1,0 +1,637 @@
+{
+  "pr_key": "Mirkiux_featkit_17-de0187b0",
+  "pr": {
+    "repo": "https://github.com/Mirkiux/featkit",
+    "pr_number": 17,
+    "base": "471774c774a89902228a0b74b696ff7304332437",
+    "head": "de0187b0e5e781ca08ef7d7923e33cba6531c200"
+  },
+  "findings": [
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 229,
+      "end_line": 233,
+      "message": "ENTROPY formula has `.otherwise()` placed after `F.sum()` instead of after `F.when()`. `F.sum(...)` returns an aggregate Column; calling `.otherwise()` on it is only valid on a `when`-column and will raise a Spark AnalysisException at runtime. The correct structure is `F.sum(F.when(cv > 0, -p * F.log(p)).otherwise(F.lit(0.0))).alias(alias)` — the `.otherwise` belongs inside the `F.sum()`, not chained outside it. The `ast.parse` check in tests only verifies Python syntax, not Spark plan validity, so this bug passes all current tests.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at SHA de0187b0 line 232: the generated ENTROPY expression is `F.sum(F.when(...)).otherwise(F.lit(0.0)).alias(...)` — `.otherwise()` is called on the aggregate Column from `F.sum()`, not on the `F.when()` column. The original diff had the correct structure `F.sum(F.when(...).otherwise(...)).alias(...)`. The Copilot suggestion commit introduced an extra `)` that closes F.sum() before .otherwise(), producing semantically invalid Spark code that passes ast.parse but fails at runtime.",
+      "severity_justification": "The generated ENTROPY metric code is syntactically valid Python but semantically broken Spark — it would raise a runtime error when executing the distributional metric computation, silently bypassing all current tests which only check ast.parse.",
+      "category_justification": "The generated code string has a structural error in the PySpark expression: misplaced parenthesis causes `.otherwise()` to be called on an aggregate Column instead of a `when()`-Column, producing incorrect Spark execution plan.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 307,
+      "end_line": 316,
+      "message": "`frame_w` is only assigned inside `if w is not None:`, but every windowed operator branch (PROM_U, SUM_U, FREQ, XM, MEDIA_ABS, RATIO, etc.) unconditionally references it. If `_temporal_pyspark_expr` is called with a `TemporalFeature` whose `window_size` is `None` and a windowed operator, Python raises `UnboundLocalError: local variable 'frame_w' referenced before assignment`. The guard in `TemporalFeature.__init__` prevents this via the normal pipeline, but the generator function has no own guard and is fragile to direct calls or future refactors.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the checked-out file: `frame_w` is only assigned inside `if w is not None:` but PROM_U, PROM_P, SUM_U, SUM_P, MIN_U, MAX_U, FREQ, XM, MEDIA_ABS, RATIO all reference it unconditionally. TemporalFeature.__init__ prevents this in normal pipeline use, but the generator method has no internal guard, making it fragile to direct calls or future refactors.",
+      "severity_justification": "The UnboundLocalError can only occur if callers bypass TemporalFeature's constructor validation, which is a well-enforced guard in the normal pipeline path. The risk is real but limited to direct calls or future refactor breakage.",
+      "category_justification": "The issue is about the fragility of the method with respect to its implicit preconditions — an UnboundLocalError if called outside the protected pipeline flow.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 334,
+      "end_line": 342,
+      "message": "`TemporalOperator.FREQ` and `TemporalOperator.XM` emit byte-for-byte identical PySpark expressions: `F.sum(F.when(col_ref.isNotNull(), F.lit(1)).otherwise(F.lit(0))).over(frame_w)`. If XM represents a distinct concept (e.g. months-exclusive or cross-month occurrence, which differs from simple non-null frequency count), this is a semantic correctness bug that silently produces wrong features. If they are genuinely identical, one of the enum variants is dead and the if-branch is unreachable dead code.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at SHA de0187b0 lines 334-342: FREQ and XM branches return byte-for-byte identical PySpark expressions. Both are distinct TemporalOperator enum members used in separate contracts (NumericOutputContract, FlagOutputContract), strongly implying different intended semantics. The finding accurately identifies that this is either a semantic correctness bug (XM produces wrong output) or dead code (XM branch is unreachable meaningful logic).",
+      "severity_justification": "If XM represents a distinct concept (e.g. cross-month occurrence vs. simple non-null count), features using XM silently produce wrong values with no runtime error, which is a quiet data correctness issue in a feature engineering library.",
+      "category_justification": "The two operators share an identical implementation despite being distinct enum members in the type system, meaning either the XM implementation is wrong or one branch is dead code — both are correctness concerns.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 331,
+      "end_line": 333,
+      "message": "`TemporalOperator.CREC` (growth rate) always generates `F.lag(col_ref, 1).over(base_window)` regardless of `window_size`. Because CREC is not in `_POINT_IN_TIME_OPERATORS`, `TemporalSpaceBuilder` assigns it one entry per value in `time_windows` (e.g. 3, 6, 12), each creating a distinct `TemporalFeature` with a different `window_size`. The generator ignores `window_size` entirely for CREC — all those variants produce identical code, so only the column alias differs. The user-supplied window sizes have no effect on the generated CREC logic.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: CREC is not in _POINT_IN_TIME_OPERATORS, so TemporalSpaceBuilder assigns it one feature per time_window value. The generator's CREC branch always uses F.lag(col_ref, 1) regardless of window_size, producing identical expressions with different aliases. With time_windows=[3,6,12], the final DataFrame has 3 CREC columns with identical values — the window sizes have no effect.",
+      "severity_justification": "Silently produces redundant duplicate feature columns with different names but identical computed values, wasting compute and confusing downstream consumers without any runtime error or warning.",
+      "category_justification": "CREC features generated for different window sizes produce identical expressions, meaning the window_size parameter is silently ignored — a semantic correctness bug in code generation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 295,
+      "end_line": 299,
+      "message": "The `col_ref` ternary is dead code: both branches of the `isinstance(feat.source, DistributionalColumn)` check produce the exact same string `f'F.col(\"{src_col}\")'`. The conditional never changes the value of `col_ref`, so any intended behavioral difference between pivoted and distributional source columns is silently dropped.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at lines 295-299: the ternary has `f'F.col(\"{src_col}\")' if not isinstance(...) else f'F.col(\"{src_col}\")'` — both branches produce the identical string. The isinstance check is dead code that never changes col_ref's value.",
+      "severity_justification": "The current behavior is functionally equivalent to a simple assignment — no wrong output is produced today. The concern is that an intended behavioral difference between distributional and pivot source columns is silently absent, but there is no evidence a different value was needed.",
+      "category_justification": "Dead code / redundant conditional with identical branches — a code quality issue that adds confusion without any functional distinction.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 397,
+      "end_line": 404,
+      "message": "`generate()` uses bare `assert isinstance(result, FeatureStoreOutput)` and `assert isinstance(result.code, _PS)` for runtime type validation. `assert` statements are stripped entirely when Python is run with `-O` (optimized mode), which is common in production and CI environments. If `super().generate()` ever returns an unexpected type, the subsequent attribute accesses would raise a cryptic `AttributeError` instead of a meaningful error. These should be explicit `if not isinstance(...): raise TypeError(...)` guards.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at lines 401 and 403: bare `assert isinstance()` statements are used for type validation and would be stripped under Python -O. The finding correctly identifies both the lines and the consequence. It is code-specific (names the exact assertions, method, and types involved).",
+      "severity_justification": "super().generate() is a deterministic concrete method whose return type is structurally guaranteed to be FeatureStoreOutput(PySparkOutput) given all build_* methods return PySparkOutput. The assert-stripping risk is real in principle but negligible in practice since the invariant cannot be violated without changing the base class.",
+      "category_justification": "Using assert for runtime type enforcement creates fragility when Python is invoked with -O, turning type errors into cryptic AttributeErrors — a robustness concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 107,
+      "end_line": 127,
+      "message": "`build_layer2a` generates `.agg(\\n,\\n)` (a trailing-comma-only argument list) when `pipeline.layer2a` is empty, which is a Python syntax error. `agg_list` is `\"\".join([])` when no pivot columns exist. While `PivotSpaceBuilder` always produces at least one column if a measurement field is present, the function has no guard against the empty case and will silently produce unparseable code (failing `ast.parse`) in edge cases such as pipelines with `aggregators_override` that filters out all valid aggregators.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: when pipeline.layer2a is empty, agg_list='', and the generated code becomes `groupBy(...).agg(\\n,\\n)` which ast.parse confirms is a SyntaxError. The original diff had an if/else guard for this case; the Copilot suggestion commit (de0187b0) removed it. PivotSpaceBuilder._valid_aggregators can return [] when aggregators_override filters out all valid aggregators, making the empty case reachable.",
+      "severity_justification": "Produces syntactically invalid generated Python code in an edge case (aggregators_override filtering all aggregators), which would fail ast.parse and be unexecutable — a silent regression introduced by the Copilot suggestion removing the original guard.",
+      "category_justification": "The code generator emits invalid Python syntax when pipeline.layer2a is empty, making the generated script unparseable and unrunnable.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 51,
+      "end_line": 53,
+      "message": "`_spark_read()` is defined as a static helper that returns a `spark.read.table(\"...\")` string, but it is never called anywhere in the class. All `build_*` methods inline the read expression directly. The helper is dead code and creates a misleading impression that it is part of the code generation contract.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "grep confirms _spark_read is defined at line 51 but never called anywhere — not in the class itself, not in tests, not elsewhere. All build_* methods inline the read expression directly. It is dead code.",
+      "severity_justification": "Dead code with no behavioral impact. It's a minor maintainability issue — the unused helper adds noise and a misleading suggestion it's part of an interface.",
+      "category_justification": "Unused static method that is dead code — a code cleanliness issue with no runtime consequence.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 315,
+      "end_line": 318,
+      "message": "`TemporalOperator.PROM_U` and `TemporalOperator.PROM_P` produce identical PySpark expressions (`F.avg(col_ref).over(frame_w)`), as do `SUM_U` and `SUM_P`. If the U/P distinction (uniform vs. proportional) is meaningful at code-gen time, the generated code is wrong. If it is not, one branch in each pair is unreachable dead code. Either way, the duplicated branches should be collapsed or the difference implemented.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at lines 315-322: PROM_U and PROM_P produce identical `F.avg(col_ref).over(frame_w)` expressions, and SUM_U and SUM_P produce identical `F.sum(col_ref).over(frame_w)` expressions. Both pairs are distinct enum members in contracts. Either the P-variant (proportional/weighted) logic is missing (semantic bug) or one branch in each pair is dead code.",
+      "severity_justification": "If U/P encodes a meaningful distinction (e.g. weighted vs. unweighted average), generated PROM_P and SUM_P features silently produce wrong values with no runtime error, which is a quiet data correctness issue in a feature engineering library.",
+      "category_justification": "Two distinct enum variants produce identical code in each pair — either the implementation is incomplete (missing the P-variant logic) or the branches are dead code, both being correctness concerns.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 158,
+      "end_line": 179,
+      "message": "In `build_layer2b`, the `defaultdict` import is deferred inside the method body rather than at module top-level. More importantly, `groups` is a plain `dict` (Python 3.7+ insertion-ordered), but insertion order of a `defaultdict` depends on the iteration order of `pipeline.layer2b`. If `pipeline.layer2b` changes order across calls, the generated variable names `_shares_0`, `_shares_1`, … and `_dist_0`, `_dist_1`, … will shift, making generated code non-deterministic and breaking reproducible builds or snapshot tests.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `from collections import defaultdict` is imported inside the method body (a regression from the diff which had it at module-level). The variable name non-determinism (_dist_N, _shares_N) based on pipeline.layer2b insertion order is real, though DistributionalSpaceBuilder produces a stable order for a given dataset. Both concerns are factually correct.",
+      "severity_justification": "The deferred import is a style issue with no runtime cost. The variable numbering non-determinism only affects internal intermediate names (not final column names) and only manifests if field ordering changes across pipeline configurations — not across repeated calls with the same config.",
+      "category_justification": "Deferred import inside a method body (style regression) and implicit dependency on insertion order for generated intermediate variable names — both are code quality concerns with no direct behavioral impact for the current implementation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 349,
+      "end_line": 352,
+      "message": "The implementation for `TemporalOperator.REC` (recency) appears incorrect. It calculates the difference between the current `mob` and the maximum `mob` where the source column is not null over the entire history of the entity. However, `F.max` in a window function without `rowsBetween` or `rangeBetween` considers all rows in the partition up to the current row by default. To get the max over the whole history, `Window.unboundedPreceding` should be used. The correct expression should be `(F.col(\"mob\") - F.max(F.when({col_ref}.isNotNull(), F.col(\"mob\"))).over({base_window}.rowsBetween(Window.unboundedPreceding, Window.unboundedPreceding)))`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is factually incorrect. The current code's default window frame (rangeBetween(unboundedPreceding, currentRow) from orderBy without explicit frame) is correct for rolling recency — it finds the max non-null mob up to the current row. The suggested fix `rowsBetween(Window.unboundedPreceding, Window.unboundedPreceding)` is semantically broken: that frame only covers the single oldest row in the partition, not the whole history.",
+      "severity_justification": "The finding is incorrect — the current code's behavior is appropriate for recency, and the suggested fix would degrade the computation.",
+      "category_justification": "The finding makes a claim about correctness of a window function expression, but the claim itself is incorrect about PySpark window frame defaults.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 255,
+      "end_line": 255,
+      "message": "Division by zero is not properly handled for share calculation. The expression `F.when(tv != 0, cv / tv).otherwise(F.lit(0.0))` does not account for cases where `tv` (total value) might be null, which can happen if a group is empty. A null `tv` would result in the share being null. The condition should be `F.when((tv.isNotNull()) & (tv != 0), ...)` to ensure robustness.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim that null tv produces a null share is incorrect. In PySpark/Spark SQL, F.when(null_condition, value).otherwise(other) returns `other` when the condition is null (null is treated as false in WHEN clauses). So when tv is null, tv != 0 is null, which falls to .otherwise(F.lit(0.0)), producing 0.0. The suggested isNotNull() guard is redundant and does not change behavior.",
+      "severity_justification": "The finding is factually wrong — no actual robustness issue exists in the code for this specific concern.",
+      "category_justification": "The finding makes a claim about incorrect handling of null values in a PySpark expression, but the analysis of SQL/Spark null semantics is wrong.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 357,
+      "end_line": 357,
+      "message": "The implementation for `TemporalOperator.RATIO` is incorrect. It is implemented as `F.sum({col_ref}).over({frame_w})`, which is identical to the implementation for `TemporalOperator.SUM_U` and `SUM_P`. A ratio typically involves division, which is missing here.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: RATIO at line 351-352 produces `F.sum(col_ref).over(frame_w)` — byte-for-byte identical to SUM_U and SUM_P. RATIO is in _COMPOSED_OPERATORS (alongside MEDIA_ABS which correctly differs from other operators), uses composed_windows, and its name clearly implies division semantics. Having a separate enum member, contract entry, and composed-window assignment for an expression that is just an alias of SUM is almost certainly wrong.",
+      "severity_justification": "RATIO features silently produce sum values instead of ratio values with no runtime error, corrupting the semantics of features built with this operator.",
+      "category_justification": "A named operator with distinct implied semantics (ratio/division) generates identical code to sum operators, making its output semantically wrong.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 339,
+      "end_line": 342,
+      "message": "The generated code for `TemporalOperator.CREC` (growth rate) is susceptible to a division-by-zero error if the previous value is zero. The expression `(({col_ref} - {prev}) / F.when({prev} != 0, {prev}))` will result in `null` when `prev` is 0. This should be handled explicitly, for instance by returning `null` or a specific value like 0.0, depending on the desired semantics for growth from a zero base.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The expression F.when(prev != 0, prev) without .otherwise() already produces null when prev=0, and null / null propagates to null in Spark — no exception. The finding says to handle it by returning null, which is exactly what the code already does. The 'division-by-zero susceptibility' framing is incorrect: Spark does not throw on null denominators.",
+      "severity_justification": "The finding is factually wrong — the code already returns null for zero-base growth via null propagation, which is the behavior the finding recommends.",
+      "category_justification": "The finding makes an incorrect claim about runtime error susceptibility and misunderstands the null-propagation semantics of PySpark expressions.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 358,
+      "end_line": 358,
+      "message": "A fallback expression `{col_ref}.alias(\"{alias}\")` is returned for any unrecognized `TemporalOperator`. This default behavior can hide bugs or unimplemented operators by generating code that simply passes through the source column instead of performing a temporal calculation. It would be safer to raise a `ValueError` for unsupported operators to make such issues explicit.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 353: the method returns `col_ref.alias(alias)` as a silent passthrough fallback for unrecognized operators. _distributional_agg_expr in the same file raises ValueError for unsupported metrics at line 242 — direct precedent for explicit error handling in the analogous position. The fallback hides unimplemented operators by silently producing wrong (pass-through) feature values.",
+      "severity_justification": "All 14 current TemporalOperator values are explicitly handled, so the fallback is dead code today. The risk is future operators being silently ignored rather than caught, which is a real but low-probability robustness concern.",
+      "category_justification": "Silent fallback for unhandled enum variants masks missing implementations, inconsistent with the raise-on-unsupported pattern used elsewhere in the same class.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 196,
+      "end_line": 196,
+      "message": "In `build_layer2b`, the `total_col` name is constructed using the `agg_fn` (e.g., 'sum'), but the aggregation that produces it is `F.sum`. If a different aggregator is used for the per-category value (`agg_col`), the total will still be calculated with `F.sum`, which might not be the intended logic for all aggregators (e.g., for `avg`). This could lead to incorrect share calculations.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Distributional metrics require sum as denominator",
+      "severity_justification": "Distributional metrics (ENTROPY, HHI, DOMINANT_PROPORTION) for columns using AVG/MAX/MIN aggregators silently produce shares computed against a wrong total, yielding incorrect feature values with no runtime error.",
+      "category_justification": "The total used for share calculations is always F.sum regardless of the aggregator, producing wrong denominators and thus wrong distributional metrics for non-SUM aggregators.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 96,
+      "end_line": 98,
+      "message": "The `_spark_read` method does not handle table name sanitization, which could lead to SQL injection vulnerabilities when table names contain unexpected or malicious characters.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "_spark_read is dead code (never called anywhere per finding 8 / grep verification). Even if it were used, table names originate from FeatureStoreConfig fields set by the library author, not from external user input at runtime. The finding provides no concrete exploit path — it restates a generic string-interpolation injection concern without demonstrating how untrusted input reaches this code.",
+      "severity_justification": "The method is never called, making the risk zero in practice. Even if it were used, table names come from developer-controlled configuration, not runtime user input.",
+      "category_justification": "The finding makes a SQL injection claim about table name sanitization in a code generation helper.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 262,
+      "end_line": 270,
+      "message": "In `_distributional_agg_expr`, division operations in `ENTROPY` and `HHI` metrics do not check for potential division by zero errors consistently, which might cause runtime exceptions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The division in ENTROPY and HHI both use `share = F.when(tv != 0, cv/tv).otherwise(F.lit(0.0))` which explicitly guards against division by zero. No unguarded division exists. Furthermore, Spark does not throw runtime exceptions on numeric division by zero — it returns null or infinity. The finding is doubly incorrect.",
+      "severity_justification": "The finding is factually wrong — the guard exists and Spark's runtime behavior does not throw on division by zero.",
+      "category_justification": "The finding makes an incorrect claim about missing division-by-zero guards in specific expressions.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 88,
+      "end_line": 90,
+      "message": "The `_tbl` method directly concatenates strings to generate table names without validation or escaping, risking potential injection of invalid or malicious identifiers.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The table name components (output_schema, output_table_prefix) come from developer-controlled FeatureStoreConfig, not from runtime external/user input. There is no demonstrated exploit path — the concern is a generic 'sanitize string inputs' template alert without a concrete attacker-controlled input flowing to a dangerous sink.",
+      "severity_justification": "No real attack vector exists: the config values are set by the library's own users configuring their own pipeline, and the output is a code artifact they execute themselves.",
+      "category_justification": "The finding makes a string injection claim about identifier construction in generated code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 432,
+      "end_line": 452,
+      "message": "In `build_final_join`, left joins do not validate the existence or correctness of `layer2a`, `layer2b`, and `layer3` intermediate tables before attempting to join, which could cause runtime errors if these tables are missing or inaccessible.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "build_final_join is a code generator that emits a script string. The intermediate tables it references (layer2a, layer2b, layer3) are created by the preceding build_* steps in the same generated script. Validating their existence at code-generation time is not meaningful. The finding is a generic 'validate before use' suggestion that applies to any generated ETL pipeline and does not identify a concrete issue in this code.",
+      "severity_justification": "No real issue: tables are created by preceding steps in the same generated script, so they will exist when the final join runs during normal execution.",
+      "category_justification": "The finding is about runtime error handling for missing intermediate tables in a generated pipeline.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 213,
+      "end_line": 226,
+      "message": "In `build_layer2b`, the order of aggregation and joining operations assumes stability of input data and join keys, which could lead to undefined behavior or incorrect outputs if the order is not consistent or deterministic.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The generated code uses groupBy().agg() and join(on=[explicit_keys]) — set-based Spark operations that are correct regardless of input row order. The finding makes no concrete claim about what specific ordering assumption is violated or how it would produce incorrect output. It is a generic 'order might matter' warning that could apply to any Spark aggregation.",
+      "severity_justification": "The finding is too vague to identify a real issue — no concrete failure mode is described for this specific code.",
+      "category_justification": "The finding claims potential incorrect outputs due to ordering assumptions in aggregation/join operations.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 163,
+      "end_line": 165,
+      "message": "[python.lang.correctness.common-mistakes.string-concat-in-list.string-concat-in-list] Detected strings that are implicitly concatenated inside a list. Python will implicitly concatenate strings when not explicitly delimited. Was this supposed to be individual elements of the list?",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The three f-strings at lines 163-165 are intentionally concatenated into one list element — a preamble code block. snippets is joined with '\\n'.join(snippets), where each element is a multi-line code block. All other snippets.append() calls in the method use the same implicit concatenation pattern. Making them separate elements would add unwanted blank lines. The static analysis tool cannot distinguish intentional from accidental concatenation here.",
+      "severity_justification": "The code behaves exactly as intended — no actual bug exists.",
+      "category_justification": "The finding is a static analysis rule about implicit string concatenation in lists, flagging potential unintended behavior.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.correctness.common-mistakes.string-concat-in-list.string-concat-in-list"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 75,
+      "end_line": 75,
+      "message": "mob is periods with row_number cross joined against itself. Use this mob calculation in Snowflake as reference:\nCREATE OR REPLACE PROCEDURE SANDBOX_DS.SEGMENTACION.GENERAR_TABLA_MOB(\"DB_NAME\" VARCHAR, \"SCHEMA_NAME\" VARCHAR, \"TABLE_NAME\" VARCHAR, \"TIME_COLUMN\" VARCHAR, \"ID_COLUMNS\" ARRAY)\nRETURNS VARCHAR\nLANGUAGE SQL\nEXECUTE AS OWNER\nAS '\nDECLARE\n    fullY_qualified_table_name STRING;\n    fully_qualified_basic_table_name STRING;\n    mob_table STRING;\n    id_list_str STRING;\n    query_tabla_mob STRING;\nBEGIN\n    fullY_qualified_table_name := DB_NAME || ''.'' || SCHEMA_NAME || ''.'' || TABLE_NAME;\n    fully_qualified_basic_table_name := DB_NAME || ''.'' || SCHEMA_NAME || ''.'' || TABLE_NAME || ''_BASE_TABLE'';\n    mob_table := fullY_qualified_table_name || ''_TABLA_MOB'';\n\n    query_tabla_mob := ''CREATE OR REPLACE TEMPORARY TABLE '' || mob_table || '' AS \\\\n'' ||\n    ''WITH PERIODOS_UNICOS AS (\\\\n'' ||\n        ''\\\\tSELECT DISTINCT '' || TIME_COLUMN || ''\\\\n'' ||\n        ''\\\\tFROM '' || fullY_qualified_table_name || ''\\\\n'' ||\n        ''\\\\tORDER BY '' || TIME_COLUMN || ''\\\\n'' ||\n    ''),\\\\n'' ||\n    ''PERIODOS_ORDENADOS AS (\\\\n'' ||\n        ''\\\\tSELECT '' || TIME_COLUMN || '',\\\\n'' ||\n        ''\\\\tROW_NUMBER() OVER(ORDER BY '' || TIME_COLUMN || '') AS MOB\\\\n'' ||\n        ''\\\\tFROM PERIODOS_UNICOS\\\\n'' ||\n    '')\\\\n'' ||\n    ''SELECT\\\\n'' ||\n        ''\\\\tA.'' || TIME_COLUMN || '' AS '' || TIME_COLUMN || ''_ANALYSIS,\\\\n'' ||\n        ''\\\\tB.'' || TIME_COLUMN || '' AS '' || TIME_COLUMN || ''_RELATIVE,\\\\n'' ||\n        ''\\\\tB.MOB - A.MOB AS MOB\\\\n'' ||\n    ''FROM PERIODOS_ORDENADOS A\\\\n'' ||\n    ''LEFT JOIN PERIODOS_ORDENADOS B\\\\n'' ||\n    ''ON 1 = 1'';\n\n    EXECUTE IMMEDIATE query_tabla_mob;\n    RETURN query_tabla_mob;\nEND;\n';\n\nCALL SANDBOX_DS.SEGMENTACION.GENERAR_TABLA_MOB(\n    'SANDBOX_DS',                     -- DB_NAME\n    'SEGMENTACION',                   -- SCHEMA_NAME\n    'SILVER_VENTA_NETA_CORP',         -- TABLE_NAME\n    'PERIODO',                        -- TIME_COLUMN\n    ARRAY_CONSTRUCT('ID_PAIS', 'ID_CLIENTE_ORIGEN')  -- ID_COLUMNS\n);\n\n",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding provides a concrete reference SQL showing MOB should be period-self-join with signed offsets (mob=B.mob-A.mob, 0=current, negative=past). The current build_mob_table at line 75 produces entities×periods with absolute row_number mob — a fundamentally different structure. The diff version matched the reference; the Copilot suggestion changed it to an incompatible design. The finding correctly identifies this architectural discrepancy.",
+      "severity_justification": "The MOB table is the foundation of all temporal feature computation. A wrong structure (absolute row numbers vs. signed period offsets) means the temporal analysis semantics are wrong throughout Layer 3, silently producing incorrect features.",
+      "category_justification": "The MOB table implementation diverges from its reference design in structure and semantics, which fundamentally affects the correctness of temporal feature generation.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "Mirkiux",
+        "url": "https://github.com/Mirkiux/featkit/pull/17#discussion_r3090211877",
+        "created_at": "2026-04-16T01:01:51Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "de0187b0e5e781ca08ef7d7923e33cba6531c200"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 238,
+      "end_line": 239,
+      "message": "`MODE` is emitted as `F.first(F.col(\"{cat_col}\"), ignorenulls=True)`, which returns the first non-null categorical value in group order (typically arbitrary and dependent on shuffle) rather than the most frequent one. This will not compute the statistical mode requested by `DistributionalMetric.MODE`. Consider computing the per-category aggregate already on `_shares_{i}` and selecting the category with the maximum share (e.g., via an `argmax`-style pattern using a struct of `(share, category)` and `F.max`).",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims MODE is emitted as F.first(...), but the diff at the given SHA shows the MODE case uses F.max_by(F.col(\"{cat_col}\"), {cv}), which is an argmax pattern that correctly selects the most frequent category. The finding's factual claim is contradicted by the diff.",
+      "severity_justification": "If the claim were true (F.first instead of argmax), MODE would return an arbitrary category rather than the statistical mode, producing silently wrong features. High severity on the hypothetical, but the code is actually correct.",
+      "category_justification": "The finding is about incorrect computation of a statistical metric (statistical mode vs. arbitrary first value).",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 396,
+      "end_line": 410,
+      "message": "The override narrows the return type of `generate` from the parent's `FeatureStoreOutput` to `object`, which is a Liskov-violating widening of the declared return type and forces every caller to re-narrow with assertions/casts. Annotate the return as `FeatureStoreOutput` (importing it at module scope rather than inside the method) so the override is type-compatible with `AbstractCodeGenerator.generate`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The generate() override at line 396 is annotated '-> object' while the parent AbstractCodeGenerator.generate() returns FeatureStoreOutput. FeatureStoreOutput and PySparkOutput are already imported at module scope but are redundantly re-imported inside the method body. This is a real LSP / type-annotation violation that forces callers to use assert isinstance() re-narrowing.",
+      "severity_justification": "Runtime behavior is unaffected since the method actually returns a FeatureStoreOutput. The issue is purely a type-annotation violation with cosmetic/maintenance impact, though it does force defensive assertions at the call site.",
+      "category_justification": "The issue is about the method's declared return type in a public override, which is an API contract / type-compatibility concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/test_generators/test_pyspark.py",
+      "start_line": 274,
+      "end_line": 278,
+      "message": "The test `test_empty_layer2b_returns_comment` accepts the assertion via the disjunction `\"layer2b\" not in out.code or \"no distributional\" in out.code`. Because the current implementation returns `\"# --- Layer 2B: no distributional columns ---\\n\"` (which does contain the substring `\"layer2b\"` after lowercasing wouldn't matter — but matches `layer2b` literally? Actually it doesn't contain literal `layer2b`), the first disjunct holds and the second is never exercised. This makes the test pass even if the generator emitted no useful comment at all, weakening coverage. Consider asserting the specific expected behavior (e.g., that the code is exactly the no-op comment) rather than an \"or\" of two loose substring checks.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The implementation returns '# --- Layer 2B: no distributional columns ---\\n' which contains 'Layer 2B' (uppercase) not 'layer2b' (lowercase). So the first disjunct is always True, the second is never evaluated, and the test would pass even for an empty string, making it a trivially-passing assertion.",
+      "severity_justification": "This is a test quality issue — the test does not actually verify the expected output of the no-op path. Production behavior is unaffected, but the test provides false confidence.",
+      "category_justification": "The issue is specifically about a weak/tautological test assertion that fails to properly validate the code under test.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 72,
+      "end_line": 72,
+      "message": "`source_reference` is documented as either a fully qualified table name or a SQL string, but the generated PySpark always passes it to `spark.read.table(...)`. Pipelines configured with a SQL query source will generate code that fails at runtime instead of using `spark.sql(...)` or otherwise distinguishing table references from queries.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The AbstractDataset docstring documents 'SQL string' as a valid source_reference, but the PySpark generator always emits spark.read.table(src), which fails at Spark runtime for SQL queries. The claim is factually verifiable. The SQL generators also don't handle SQL string sources, suggesting this is a broader unresolved design gap that the new PySpark generator inherits without handling.",
+      "severity_justification": "No existing tests or usage patterns pass SQL queries as source_reference; all examples use table names. The documented 'SQL string' support appears aspirational across the whole codebase, making this a theoretical rather than practical failure mode.",
+      "category_justification": "The generated code would fail at runtime when source_reference is a SQL query, contradicting the documented API contract.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 102,
+      "end_line": 103,
+      "message": "Categorical values are interpolated directly into a generated Python string literal. The builder only rejects `__` in values, so an allowed value containing a quote or backslash will produce invalid or changed PySpark code; use a proper Python literal representation for the value.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "cat_val is interpolated as f'\"{cat_val}\"' with no escaping. CategoricalField.allowed_values has no validation against quote or backslash characters (only __ is rejected in field names). A value containing a double quote would produce a Python syntax error in the generated code; a backslash would produce incorrect escape sequences.",
+      "severity_justification": "The generated code will be syntactically invalid or semantically wrong for categorical values containing quotes or backslashes. While unusual values are rare in practice, it is an unguarded code-injection path in the code generator.",
+      "category_justification": "The issue causes the generated Python code to be syntactically invalid or semantically incorrect for certain input values, which is a logic/correctness bug in the code generator.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 238,
+      "end_line": 239,
+      "message": "`F.first(...)` after grouping is nondeterministic and does not compute the mode; it can return any category in the group rather than the category with the largest aggregated share. This makes the `MODE` distributional metric incorrect.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims MODE uses F.first(...), but the diff at the given SHA shows MODE emits F.max_by(F.col(\"{cat_col}\"), {cv}), which correctly selects the category with the maximum aggregate share. The factual premise of the finding is incorrect per the diff.",
+      "severity_justification": "If the claim were true, MODE would return an arbitrary category rather than the statistical mode, silently corrupting features. High severity on the hypothetical, but the code is correct per the diff.",
+      "category_justification": "The finding concerns incorrect computation of a statistical metric in the generated code.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 280,
+      "end_line": 284,
+      "message": "If `pipeline.layer3` is empty, `feat_list` is empty and this emits an extra comma after `\"mob\"` followed by another comma placeholder, producing invalid generated Python. This can happen when temporal operators are overridden to an empty/filtered set, so the empty-feature case needs explicit handling.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The diff at the given SHA shows build_layer3 has an explicit if/else on feat_exprs: when empty, it emits select(...).distinct() instead of groupBy().agg(...), so there is no dangling comma issue. The finding's premise that the empty case is unhandled contradicts the diff.",
+      "severity_justification": "If the claim were true, the generated code would be syntactically invalid Python whenever layer3 is empty. High hypothetical severity, but the code is correct per the diff.",
+      "category_justification": "The finding concerns a syntax error in the generated code for an edge case (empty feature list).",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/featkit/generators/pyspark/databricks.py",
+      "start_line": 396,
+      "end_line": 396,
+      "message": "This override widens the base method's return type from `FeatureStoreOutput` to `object`. With the repository's strict mypy configuration, that is an incompatible override and also degrades the public API type for callers using `PySparkCodeGenerator.generate()`. Keep the return annotation consistent with the base method.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the repo has strict = true in [tool.mypy]. The generate() override at line 396 is annotated -> object while the base class AbstractCodeGenerator.generate returns -> FeatureStoreOutput. Strict mypy flags covariant return-type violations in overrides, so this is a concrete type-check failure in addition to being an LSP violation.",
+      "severity_justification": "Runtime behavior is unaffected since the method actually returns a FeatureStoreOutput. The impact is a mypy CI failure and degraded type information for callers, but no functional bug.",
+      "category_justification": "The issue is about the declared return type of a public method override and its compatibility with the base class contract.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

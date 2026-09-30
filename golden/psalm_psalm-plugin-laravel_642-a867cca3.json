@@ -1,0 +1,311 @@
+{
+  "pr_key": "psalm_psalm-plugin-laravel_642-a867cca3",
+  "pr": {
+    "repo": "https://github.com/psalm/psalm-plugin-laravel",
+    "pr_number": 642,
+    "base": "9d7696b1edbe260325a1d129ecfeceb11dffd717",
+    "head": "a867cca3f7a1f9844445f89d1c0b005048fba9af"
+  },
+  "findings": [
+    {
+      "file": "src/Handlers/Magic/MethodForwardingHandler.php",
+      "start_line": 298,
+      "end_line": 308,
+      "message": "The method extractTemplateParamsFromCaller() appears to be dead code, as it is never called. The only potential callsite in getMethodReturnType() has a null check for getTemplateTypeParameters() which, if false, would call this method. However, the logic inside getMethodReturnType() for Path 2 (where this would be called) relies on template parameters being available. If they are not, ReturnTypeResolver::resolve() will return null anyway, making this fallback extraction logic redundant.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding incorrectly characterizes extractTemplateParamsFromCaller as dead code. It IS called at line 126 when getTemplateTypeParameters() returns null, and it independently reads template params from the node type provider (getNodeTypeProvider()->getType($stmt->var)) — a different source that can return non-null results in the __call path. The comment in the code explicitly explains this rationale.",
+      "severity_justification": "Even if the claim were true, it would be a minor maintainability issue; no behavioral bug involved.",
+      "category_justification": "The finding makes a factual claim about whether the method is dead code (reachability/behavior).",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Magic/MethodForwardingHandler.php",
+      "start_line": 185,
+      "end_line": 193,
+      "message": "The method 'isInDeclaringMethodIds' performs exception handling but does not distinguish between recoverable and critical errors. This may lead to unintentionally masking critical errors such as failures in 'classlike_storage_provider->get'. This could cause silent failures and debugging challenges.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The InvalidArgumentException caught here is the documented signal from Psalm's classlike_storage_provider->get() for 'class not found' — not a critical/unexpected error. Catching it and returning false is the established pattern used identically in ~10 other handlers in this codebase. The finding applies generic exception-handling advice without understanding the specific Psalm API semantics.",
+      "severity_justification": "Even if considered a concern, there is no real risk here; the exception is well-defined and the pattern is consistent across the entire codebase.",
+      "category_justification": "The finding is about exception handling and potential silent failures.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Magic/ReturnTypeResolver.php",
+      "start_line": 152,
+      "end_line": 174,
+      "message": "The method 'targetMethodReturnsSelf' does not account for methods that may have dynamic return types not explicitly stated in the declaring type. This could lead to incorrectly marking methods as not self-returning, resulting in type resolution errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is vague and unverifiable. In Psalm's static analysis context, 'dynamic return types' don't exist separately from declared types in ClassLikeStorage. The method's fallback (returning false/null) is safe — it lets Psalm resolve naturally. No specific Builder method is identified where detection would incorrectly fail.",
+      "severity_justification": "No concrete failure case is demonstrated, and the fallback behavior is safe even when detection misses a method.",
+      "category_justification": "The finding concerns incorrect type resolution behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Magic/ReturnTypeResolver.php",
+      "start_line": 118,
+      "end_line": 125,
+      "message": "Overreliance on caching in 'targetMethodReturnsSelf' without proper invalidation logic for changes in analyzed code could lead to inconsistent results in long-running Psalm processes or scenarios with dynamic code changes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The cache stores whether framework methods (Builder::where etc.) return self — data derived from static stub/source declarations that are immutable within any PHP process. The finding's concern about 'dynamic code changes' has no applicability here. The code already documents the immutability assumption, and initForRule() provides explicit invalidation for rule changes. No concrete failure scenario is demonstrated.",
+      "severity_justification": "Even if taken at face value, the data cached cannot realistically become stale in any actual Psalm execution scenario.",
+      "category_justification": "The finding concerns cache invalidation and potential for stale results.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Magic/MethodForwardingHandler.php",
+      "start_line": 270,
+      "end_line": 330,
+      "message": "In 'handleMixinInterception', using 'getType' from the NodeTypeProvider to infer the caller type assumes a constant type structure. Variance in type inference from earlier analysis phases could lead to incorrect type results if not adequately validated.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The code already validates all type assumptions defensively: null-checks Union, filters for TGenericObject, verifies class membership in source/search indexes. An unexpected type from the node provider causes the method to return null (safe fallback). The finding is a generic 'what if type inference is wrong' concern without a concrete failure scenario.",
+      "severity_justification": "No concrete failure path is demonstrated; the fallback is safe.",
+      "category_justification": "The finding concerns type resolution correctness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Magic/ForwardingRule.php",
+      "start_line": 42,
+      "end_line": 45,
+      "message": "The 'allSourceClasses' method in 'ForwardingRule' class assumes that 'additionalSourceClasses' is an appropriate union with 'sourceClass', but lacks validation or guards for duplicate entries which could lead to redundant operations in downstream consumers.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both downstream consumers handle duplicates safely: init() builds a map (idempotent on duplicates) and getClassLikeNames() explicitly calls array_unique(). No redundant or incorrect behavior results from duplicate entries. The finding is speculative and not supported by how the code actually operates.",
+      "severity_justification": "Even if duplicates could occur, the impact is negligible given the defensive downstream handling.",
+      "category_justification": "The concern is about defensive coding/validation in a value object, a minor code quality matter.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Magic/MethodForwardingHandler.php",
+      "start_line": 126,
+      "end_line": 135,
+      "message": "The 'init' method in 'MethodForwardingHandler' is a global mutable state for the handler. This could lead to potential runtime conflicts if multiple rules are initialized in the same context, particularly in a concurrent or modular setup.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Psalm is a single-threaded, single-process tool. PHP has no shared-memory concurrency. The singleton design is intentional (one rule per Psalm run, called once in Plugin.php) and documented. 'Concurrent or modular setup' is not applicable. The finding is generic boilerplate about static state without a concrete failure scenario.",
+      "severity_justification": "No realistic failure path exists given PHP's execution model and Psalm's single-process architecture.",
+      "category_justification": "The finding concerns concurrency/state management in a shared static context.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Magic/ReturnTypeResolver.php",
+      "start_line": 27,
+      "end_line": 36,
+      "message": "The singleton design of 'initForRule' in 'ReturnTypeResolver' relies on global shared state via static properties, which could create unintended side effects in multi-threaded or parallel execution environments.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Identical concern to Finding 7 applied to ReturnTypeResolver. PHP/Psalm is single-threaded and single-process; there is no multi-threaded or parallel execution environment where shared static state would cause concurrent modification. The singleton design is intentional and appropriate for Psalm's execution model.",
+      "severity_justification": "No realistic failure path exists in PHP's standard execution model.",
+      "category_justification": "The finding concerns thread safety and shared mutable state.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Type/tests/MagicForwardingHandlerTest.phpt",
+      "start_line": 31,
+      "end_line": 36,
+      "message": "In 'test_mixin_only_preserves_relation_type', the test relies on the method 'withoutGlobalScopes' being available with exact type preservation, but this is not validated against the actual method signature or schema in Builder, risking test brittleness.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The stub for withoutGlobalScopes has an explicit '@return self<TModel>' docblock, which drives the self-return detection correctly. The test is a real Psalm type check that validates end-to-end behavior, not an assumption. If the stub changes, the test fails appropriately. The finding incorrectly claims there's no validation against the actual signature.",
+      "severity_justification": "Even if the concern were valid, it would be a minor test robustness issue with no behavioral impact.",
+      "category_justification": "The finding is about test design and potential brittleness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Unit/Handlers/Magic/ForwardingRuleTest.php",
+      "start_line": 15,
+      "end_line": 28,
+      "message": "The 'allSourceClasses_includes_source_and_additional' test in 'ForwardingRuleTest' assumes that 'additionalSourceClasses' elements are valid class names, but does not validate this, which diminishes the test’s assurance in real-world scenarios.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test correctly verifies array-composition logic in allSourceClasses() using minimal fixtures. Class-existence validation is not the method's responsibility and belongs at the call site (Plugin.php), where Psalm static analysis enforces class-string types. Using fake strings 'App\\Sub1' etc. is standard unit test practice for isolating the logic under test.",
+      "severity_justification": "No behavioral or test correctness concern; the test accurately validates what it should.",
+      "category_justification": "The finding concerns test design and coverage quality.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Unit/Handlers/Magic/MethodForwardingHandlerTest.php",
+      "start_line": 32,
+      "end_line": 45,
+      "message": "The 'it_does_not_import_ProxyMethodReturnTypeProvider' test strictly checks the absence of 'ProxyMethodReturnTypeProvider' but does not validate whether the current implementation achieves comparable functionality, leaving a potential regression untested.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The PR includes MagicForwardingHandlerTest.phpt which comprehensively tests functional correctness with 12 type-level assertions. MethodForwardingHandlerTest.php is intentionally a narrow architectural constraint/regression guard against a specific performance anti-pattern, not a functional test. Separate concerns, separate tests.",
+      "severity_justification": "No testing gap exists; the finding misunderstands the role of this specific test.",
+      "category_justification": "The finding concerns test coverage and design.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Unit/Handlers/Magic/ReturnTypeResolverTest.php",
+      "start_line": 47,
+      "end_line": 55,
+      "message": "These tests assert that the result is \"not an instance of `Union`\", but the documented intent (per the test method names) is that `resolve()` returns `null`. Since `resolve()` is typed `?Union`, the only non-Union value it can return is `null`, but using `assertNotInstanceOf` is a weak way to express the assertion: it would also pass if a future refactor returned a non-Union object. Use `assertNull($result)` to actually verify the documented behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: lines 47-55 use `assertNotInstanceOf(Union::class, $result)` in two tests named `resolve_returns_null_when_...`. The return type is `?Union`, so the only non-Union return is `null`. `assertNull` would express the exact documented intent; `assertNotInstanceOf` is weaker and would pass for any non-Union value.",
+      "severity_justification": "A test weakness — the method is `?Union` so in practice only `null` is possible, making a spurious pass unlikely. No behavioral impact.",
+      "category_justification": "The issue is in the test assertion method choice, not in production code logic.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Type/tests/MagicForwardingHandlerTest.phpt",
+      "start_line": 119,
+      "end_line": 119,
+      "message": "This expected type does not match the handler's Path 2 return construction. `ReturnTypeResolver::resolve()` builds `new TGenericObject($sourceClass, $sourceTemplateParams)` only, so a QueryBuilder-only forwarded method like `limit()` should infer `HasOne<Phone, User>`, not `HasOne<Phone, User>&static`; as written this type test is expected to fail or assert the wrong contract.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ReturnTypeResolver::resolve() only constructs `new Union([new TGenericObject($sourceClass, $sourceTemplateParams)])` — no &static intersection. The test comment explicitly labels limit() as 'Path 2', yet its expected type HasOne<Phone,User>&static differs from the analogous Path 2 test for orderBy() which correctly expects HasOne<Phone,User>. The &static suffix is inconsistent with what the handler produces.",
+      "severity_justification": "An incorrect @psalm-check-type-exact assertion either causes the type test to fail (surfacing the bug) or — if Psalm somehow infers &static due to a different resolution path — the test is validating unintended behavior. Either way it represents a contract mismatch in the test suite.",
+      "category_justification": "The issue is a wrong expected type assertion in a type-level test, not a bug in the production handler logic itself.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Magic/MethodForwardingHandler.php",
+      "start_line": 173,
+      "end_line": 185,
+      "message": "The new MethodParamsProvider path is only covered by a successful `limit(10)` call in the type test; there is no negative assertion that an invalid forwarded argument is rejected. Please add a failing-argument type test for a QueryBuilder-only method so this parameter-forwarding behavior cannot silently regress while the return-type assertion still passes.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the only MethodParamsProvider exercise is `$r->limit(10)` — a valid call that only asserts the return type. There is no test passing an invalid argument to confirm Psalm raises an error when params are forwarded, which means a regression in param forwarding would be invisible as long as the return-type assertion still passes.",
+      "severity_justification": "The feature works for the happy path; the gap is in negative test coverage. No production behavior is broken, but a future regression in param validation could go undetected.",
+      "category_justification": "The issue is a missing negative/invalid-argument test case for the newly introduced MethodParamsProvider path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Magic/ForwardingRule.php",
+      "start_line": 18,
+      "end_line": 20,
+      "message": "This says the search classes are priority-ordered and that the first match wins, but `ReturnTypeResolver::targetMethodReturnsSelf()` continues scanning all search classes and returns true if any later class has a self-returning method with the same name. Either the resolver should stop at the first declaration or this contract should be changed so future forwarding rules do not rely on priority semantics that are not implemented.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ForwardingRule docblock states 'First match wins' for searchClasses. But targetMethodReturnsSelf() only breaks early on a positive (self-returning) match; it continues iterating if the first class has the method but it's non-self-returning. This violates the documented contract. getMethodParams() correctly implements first-match-wins by returning on the first non-null declaringId.",
+      "severity_justification": "In the current configuration [Builder, QueryBuilder], methods exist on exactly one class and their self-return status is consistent, so the bug doesn't manifest. But the contract mismatch is a real trap if the ForwardingRule is reused with overlapping search classes where the priority matters.",
+      "category_justification": "The issue is a discrepancy between documented contract and implementation — misleading documentation that could cause subtle bugs for future maintainers extending the forwarding rule.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

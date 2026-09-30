@@ -1,0 +1,411 @@
+{
+  "pr_key": "basecamp_basecamp-cli_415-f78f6fb8",
+  "pr": {
+    "repo": "https://github.com/basecamp/basecamp-cli",
+    "pr_number": 415,
+    "base": "4c6860be033f9f7b4ade38076ce00bcd976f85fa",
+    "head": "f78f6fb85d97397fbaeca5f1bbb8e514643e4cf1"
+  },
+  "findings": [
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 230,
+      "end_line": 241,
+      "message": "insertBreaksBetweenTextBlocks only inserts a TrixBreak between two adjacent TextBlock nodes. When a blockquote has a paragraph followed by a blank line and then a list or nested blockquote (e.g. `> para1\\n>\\n> - item`), no TrixBreak is emitted between them. The blank-line separator is missing from the HTML output, and the round-trip produces `> para1\\n> - item` instead of `> para1\\n>\\n> - item`. Confirmed by running code.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: insertBreaksBetweenTextBlocks only inserts TrixBreak when both child and next sibling are *ast.TextBlock. A blockquote containing a TextBlock followed by a List or nested Blockquote would not get a separator inserted, since those types are not *ast.TextBlock. No test covers this case.",
+      "severity_justification": "Causes round-trip fidelity loss for a plausible blockquote pattern (text paragraph + blank line + list), silently producing `> para1\n> - item` instead of `> para1\n>\n> - item`.",
+      "category_justification": "The function fails to emit the blank-line separator in a specific but valid blockquote structure, producing incorrect HTML output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 118,
+      "end_line": 118,
+      "message": "goldmark.WithRendererOptions(gmhtml.WithUnsafe()) disables URL-scheme sanitization in the default link and image renderers. With this option, [text](javascript:alert(1)) produces <a href=\"javascript:alert(1)\">text</a> and similarly for vbscript:, data:, and file: schemes. The trixRenderer overrides KindRawHTML and KindHTMLBlock so that raw-HTML passthrough (the other purpose of WithUnsafe) is already handled, but the URL-scheme bypass remains active and is not documented. Without this option, goldmark would emit an empty href for dangerous URLs.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: WithUnsafe() does bypass goldmark's URL-scheme sanitization for links/images, and trixRenderer does only override KindRawHTML/KindHTMLBlock. The finding correctly identifies the distinction. The behavior is undocumented and was identical in the old code (escapeAttr did not filter javascript: URLs either).",
+      "severity_justification": "Pre-existing behavior (old code also passed javascript: URLs through), content sent to Basecamp's API which is expected to sanitize HTML server-side, and requires an authenticated user as attacker. No concrete exploit path is demonstrated that bypasses server-side controls.",
+      "category_justification": "The finding identifies a specific mechanism by which dangerous URL schemes (javascript:, vbscript:) could pass through to rendered HTML output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 279,
+      "end_line": 302,
+      "message": "renderHTMLBlock joins all lines of an HTML block with a single space and wraps the result in a <p> tag (e.g. `<figure>\\n<img …>\\n</figure>` → `<p>&lt;figure&gt; &lt;img …&gt; &lt;/figure&gt;</p>`). Any HTML block whose opening tag is not in the reSafeTag set (e.g. <figure>, <table>, <details>, <header>) is treated this way. When HTMLToMarkdown later processes this output, reStripTags removes the HTML-escaped angle brackets and leaves only the raw text, permanently destroying the block structure. There is no recovery path.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The specific mechanism claimed — that reStripTags removes the HTML-escaped angle brackets — is factually incorrect. reStripTags only matches literal `<[^>]+>` patterns, not HTML entities like &lt;figure&gt;. The entities survive reStripTags intact and are restored by unescapeHTML, so the content IS preserved (just on one line with spaces). The finding misattributes the structure loss to reStripTags when it actually comes solely from renderHTMLBlock collapsing lines. The 'permanently destroying' and 'no recovery path' characterizations are also overstated.",
+      "severity_justification": "There is real structure loss (multiline HTML blocks collapse to single line with spaces), but content is preserved. The old code was actually worse (would have stripped the HTML tags entirely via reStripTags after they were emitted unescaped). Impact on common CLI usage is minimal since raw HTML blocks like <figure> are uncommon in CLI-composed content.",
+      "category_justification": "The finding concerns the behavioral correctness of renderHTMLBlock's handling of arbitrary HTML block elements.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 169,
+      "end_line": 197,
+      "message": "Phase 2 of trixTransformer.Transform inserts TrixBreak before any document-level child that has HasBlankPreviousLines()==true, correctly handling blank-line gaps at the top level. But inside blockquotes the transformer relies only on insertBreaksBetweenTextBlocks, which checks adjacent TextBlock pairs rather than HasBlankPreviousLines. This means a List or nested Blockquote that has HasBlankPreviousLines()==true (i.e. was preceded by a blank `>` line) never gets a TrixBreak before it, while an equivalent top-level block would. The two mechanisms are logically inconsistent and the blockquote-interior case silently drops blank-line separators.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both mechanisms are verified in the code. Phase 2 correctly uses HasBlankPreviousLines() for document-level nodes, but inside blockquotes the code uses insertBreaksBetweenTextBlocks which only handles TextBlock→TextBlock pairs. A List or Blockquote child of a blockquote that has HasBlankPreviousLines()==true never triggers a TrixBreak, creating a logical inconsistency between the two approaches.",
+      "severity_justification": "Same underlying bug as Finding 1 — blank-line separators before lists or nested blockquotes inside a blockquote are silently dropped, causing round-trip fidelity loss for a plausible input pattern.",
+      "category_justification": "The two-phase approach uses inconsistent mechanisms for the same logical operation (blank-line separation), causing incorrect HTML output for blockquote-interior blocks.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 200,
+      "end_line": 216,
+      "message": "replaceParagraphsWithTextBlocks creates a new ast.TextBlock with ast.NewTextBlock() and calls tb.SetLines(p.Lines()) but does not copy the HasBlankPreviousLines flag from the replaced Paragraph. The new TextBlock always has HasBlankPreviousLines()==false. Phase 2 reads this flag at the document level from original nodes, but any future fix that extends phase 2's blank-line-gap logic to blockquote children (to address the insertBreaksBetweenTextBlocks gap) would silently produce wrong results because the flag is lost during the paragraph→text-block replacement.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: replaceParagraphsWithTextBlocks calls ast.NewTextBlock() and tb.SetLines(p.Lines()) but never tb.SetBlankPreviousLines(p.HasBlankPreviousLines()). The SetBlankPreviousLines method exists on BaseBlock in goldmark v1.7.13. Phase 2 only iterates document-level nodes so it never currently reads the lost flag, making this a latent deficiency with no current behavioral impact.",
+      "severity_justification": "No current behavioral impact — the missing flag copy is only relevant if a future fix extends blank-line gap detection to blockquote interiors. The concern is real but speculative about hypothetical future code.",
+      "category_justification": "Incomplete node attribute copy during AST transformation creates a latent correctness trap for future modifications.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 264,
+      "end_line": 277,
+      "message": "renderRawHTML escapes all inline raw HTML nodes with util.EscapeHTML. Combined with the IsHTML() fast path, this means: (a) if the Markdown input contains a safe HTML tag (e.g. <em>), IsHTML returns true and the entire input passes through without any Markdown processing; (b) if the input doesn't trigger IsHTML but contains inline raw HTML (e.g. <span class=\"x\">), those tags are escaped to &lt;span …&gt;. There is no middle path where goldmark processes the Markdown and also passes through safe inline HTML tags. Inputs that mix Markdown and inline HTML are handled inconsistently depending on whether any safe tag appears anywhere in the text.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The core behavioral tension (renderRawHTML escapes inline HTML while IsHTML passes safe-tag inputs through entirely) is real and verifiable. However, the specific example `<span class=\"x\">` is factually wrong — span IS in reSafeTag and would trigger IsHTML, not reach renderRawHTML. A correct example would be `<abbr>` or `<kbd>`. The finding correctly identifies the mechanism but uses a wrong illustration.",
+      "severity_justification": "Pre-existing behavior (old convertInline also called escapeHTML on inline content). The inconsistency only manifests for inline HTML tags not in reSafeTag, which are uncommon in CLI-composed Markdown. Intentional security design to prevent HTML injection.",
+      "category_justification": "Describes an inconsistent handling path for Markdown inputs containing inline HTML depending on whether any safe tag is present.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 461,
+      "end_line": 495,
+      "message": "The blockquote conversion loop `for reBlockquote.MatchString(html) { html = reBlockquote.ReplaceAllStringFunc(html, convertBlockquote) }` rescans the entire html string on every iteration. For content with k nesting levels this is O(k * n) where n is the string length. More importantly, blockquoteInnerToMarkdown (called inside the loop) applies reCodeBlock before replaceBalancedListBlocks. If a blockquote's code block content contains unescaped `<ul>` or `<ol>` HTML tags (possible when processing HTML from non-Trix sources), replaceBalancedListBlocks will corrupt the markdown code fence by treating the list markup inside the fence as a real list.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both claims are verified. The O(k*n) performance issue is confirmed by the loop structure. The code block corruption is mechanically sound: convertCodeBlockHTML places raw code content into a code fence without escaping literal HTML tags, then replaceBalancedListBlocks would corrupt the result if actual <ul>/<ol> tags appear inside the code content. The same issue exists in the top-level HTMLToMarkdown path. The corruption only triggers with malformed HTML (unescaped tags in <code> blocks), but the mechanism is real.",
+      "severity_justification": "The corruption requires malformed HTML input where <ul>/<ol> appears literally (not entity-encoded) inside <code> content, which well-formed Basecamp API responses would never produce. The performance concern is O(k*n) which is negligible for typical CLI use (shallow nesting, small inputs).",
+      "category_justification": "The ordering of code block conversion before list replacement creates a corruption path for non-standard HTML inputs.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 112,
+      "end_line": 132,
+      "message": "mdConverter is declared as a package-level variable initialized with goldmark.New(). goldmark.New() sets up default block parsers including SetextHeadingParser (priority 100). The trixTransformer is registered as an ASTTransformer at priority 100. Goldmark sorts ASTTransformers by priority before applying them; if another transformer is added at the same priority in the future, the ordering between them is undefined (sort is not stable). Additionally, the trixTransformer walks and mutates the entire document AST (replacing paragraphs, inserting TrixBreak nodes) while goldmark's ast.Walk is still in progress for the same document—insertBreaksBetweenTextBlocks inserts nodes into a blockquote's child list while the outer Walk has not yet visited those children. This relies on goldmark's Walk using live NextSibling() calls rather than a pre-built traversal list, which is an implementation detail not part of any documented contract.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The core premise is factually wrong: SetextHeadingParser is in the BlockParsers registry (priority 100) while trixTransformer is in the entirely separate ASTTransformers registry (priority 100). These two registries have no interaction. The Walk mutation concern is valid but describes code that currently works correctly, and the 'implementation detail' it relies on (live sibling iteration) is the universal Go tree-walk idiom. No current bug exists.",
+      "severity_justification": "Even if the walk-mutation concern were accepted, the code produces correct output. The priority-collision concern is speculative (no other ASTTransformers are registered). No current behavioral issue.",
+      "category_justification": "The concern is about ordering guarantees and mutation-during-traversal fragility in the transformer infrastructure.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 95,
+      "end_line": 105,
+      "message": "The custom `escapedAtParser` for `\\@` mentions is subject to a regular expression denial of service (ReDoS) vulnerability. The logic to handle multiple backslashes (`if len(line) < 2 || line[0] != '\\\\' || line[1] != '@'`) is incorrect. A long sequence of backslashes followed by a non-`@` character will cause the parser to be re-triggered for each backslash, leading to quadratic complexity. For example, input with 50,000 backslashes (`\\\\...\\a`) causes a 25-second processing delay. This could be exploited by a malicious user to cause a denial of service. The logic should be corrected to properly consume backslashes or bail out early.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The quadratic complexity claim is factually incorrect. Goldmark's inline parser uses an escaped-flag mechanism that prevents triggering inline parsers on every consecutive backslash — only unescaped backslashes trigger it, so for N backslashes there are ~N/2 triggers. Each invocation is O(1) (PeekLine returns a precomputed slice reference). Total complexity is O(N) linear. The DoS framing is also inapplicable to a CLI tool where the user processes their own content.",
+      "severity_justification": "No actual quadratic behavior exists. Even if there were a performance concern, a CLI tool processing user-authored input has no multi-user DoS attack surface.",
+      "category_justification": "The finding is framed as a ReDoS / denial-of-service vulnerability.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext_test.go",
+      "start_line": 403,
+      "end_line": 403,
+      "message": "The test case `double backslash at` in `TestMarkdownToHTMLBackslashAtCounts` has an incorrect expectation. The input `\\\\@John` is expected to produce `<p>\\@John</p>`, but `goldmark`'s standard backslash escaping will process `\\\\` into a literal `\\` and then `\\@` into `@`. The correct output is `<p>@John</p>`. This indicates a misunderstanding of how the custom `escapedAtParser` interacts with the default backslash parser. The test should be corrected to reflect the actual behavior and ensure mention suppression works as intended.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test passes — the actual output of MarkdownToHTML(`\\\\@John`) is `<p>\\@John</p>` which matches the expected value. The finding misreads the input: `\\\\@John` is `\\` followed by `@John`, not `\\` followed by `\\@`. After goldmark processes `\\` into a literal backslash, the next character is `@` (no preceding backslash), so no second escape applies. The test expectation is correct.",
+      "severity_justification": "The finding's claim is factually wrong — the test passes. No real issue.",
+      "category_justification": "The finding asserts a test expectation is incorrect.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 560,
+      "end_line": 564,
+      "message": "In `convertCodeBlockHTML`, the code content is trimmed of a single trailing newline using `strings.TrimSuffix(codeMatch[1], \"\\n\")`. However, the `goldmark` renderer for fenced code blocks adds a trailing newline (`\\n`) to the `<code>` block's content. This mismatch means that when `HTMLToMarkdown` processes HTML generated by `MarkdownToHTML`, it will not strip this newline, causing a content mismatch in round-trip conversions (e.g., `code\\n` becomes `code`).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually incorrect. convertCodeBlockHTML uses strings.TrimSuffix(codeMatch[1], \"\\n\") which correctly strips the single trailing newline that goldmark's fenced code renderer adds. The round-trip tests TestHTMLToMarkdownCodeFenceNewline and TestEditLoopRoundTrip/code_fence both pass, confirming there is no mismatch.",
+      "severity_justification": "The finding describes a non-existent bug — the code correctly handles the trailing newline.",
+      "category_justification": "The finding incorrectly claims a round-trip fidelity issue in code block processing.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 579,
+      "end_line": 582,
+      "message": "The regex `reLIOpen` is compiled with `(?i)` for case-insensitivity, but its usage inside `extractListItems` relies on `hasPrefixFold` for case-insensitive checks on closing tags (`</li>`). This is inconsistent. For correctness and simplicity, all tag matching in `extractListItems` and `replaceBalancedListBlocks` should consistently use case-insensitive methods. Using `hasPrefixFold` for all tag comparisons would be more robust than relying on regex flags for some tags and manual folding for others.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Both reLIOpen (regex with (?i)) and hasPrefixFold are case-insensitive and work correctly. The uppercase-tags test passes. The different techniques for opening vs closing tags are a principled choice: opening tags need regex for attribute/boundary matching to prevent <link> matching <li>; closing tags have no attributes and hasPrefixFold suffices. No correctness gap exists.",
+      "severity_justification": "Both approaches work correctly; this is a style preference with no behavioral impact.",
+      "category_justification": "The finding is a code consistency/style observation with no functional consequence.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 488,
+      "end_line": 492,
+      "message": "In the MarkdownToHTML function, the error from mdConverter.Convert is ignored. This leads to silently falling back to wrapping the input in a paragraph instead of surfacing the error, potentially masking issues during conversion.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The error is not ignored — the code explicitly checks it with `if err := ...; err != nil` and branches to a fallback. The function signature returns only string so the error cannot be propagated. The fallback (HTML-escape + wrap in p) is a reasonable graceful degradation. The finding's factual premise is wrong.",
+      "severity_justification": "Goldmark Convert is unlikely to error in practice; even if it did, the fallback produces usable output. No user-visible issue.",
+      "category_justification": "The finding concerns error handling behavior in a conversion function.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 54,
+      "end_line": 54,
+      "message": "The regular expression reCodeSpan is still retained even though the hand-rolled Markdown-to-HTML pipeline has been replaced. This regex is no longer used and appears to be dead code.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "reCodeSpan is not dead code. It is used at line 1140 inside IsHTML() to strip backtick code spans before tag detection, as documented by the comment at line 29. The finding is factually wrong.",
+      "severity_justification": "No real issue — the regex is actively used.",
+      "category_justification": "The finding claims unused dead code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 218,
+      "end_line": 226,
+      "message": "The replaceBalancedListBlocks function improperly assumes all tags matched by reListOpen are top-level lists and indiscriminately converts them. Malformed or unexpected inputs could result in incorrect behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The function explicitly handles nesting via depth tracking and has an unclosed-tag fallback. The claim that it 'indiscriminately converts' or 'assumes all tags are top-level' is incorrect — nested lists are handled through depth increment/decrement. No specific failing input is identified; 'malformed inputs could cause incorrect behavior' is a generic statement applicable to any regex-based HTML parser.",
+      "severity_justification": "No concrete bug is demonstrated. The function handles the expected cases from Trix/Basecamp HTML and has explicit protection for unclosed tags.",
+      "category_justification": "The finding claims incorrect behavior for certain inputs.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 429,
+      "end_line": 443,
+      "message": "The extractListItems function may omit handling unmatched closing tags or invalid HTML structures. This could break conversion on corrupted or non-standard inputs.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is generic boilerplate — 'corrupted or non-standard inputs could break conversion' applies to virtually any regex/string-based HTML parser and names no specific input, failure mode, or code path. extractListItems handles unclosed <li> by simply stopping iteration when no more reLIOpen matches are found, and malformed nesting would result in truncated but not crashed output. No concrete failing case is demonstrated.",
+      "severity_justification": "No specific bug is identified. The function processes Trix/Basecamp-generated HTML which is well-formed in practice.",
+      "category_justification": "The finding claims potential incorrect behavior on malformed input.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 200,
+      "end_line": 203,
+      "message": "The replaceBalancedListBlocks function assumes <ul> and <ol> are balanced, but does not handle malformed nesting. This could result in missing or incorrect Markdown output for input HTML with imbalanced tags.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The function explicitly handles the unclosed-tag case: after the inner depth-tracking loop, `if depth > 0 { writeString(html[matchStart:]); break }` writes the original unmatched text and exits cleanly. The finding ignores this guard and makes the same generic 'malformed HTML could break things' claim as Finding 15/16 without identifying a specific input that produces incorrect output.",
+      "severity_justification": "No concrete failing input is demonstrated. The unclosed-tag fallback at the end of replaceBalancedListBlocks preserves original content on imbalanced input.",
+      "category_justification": "The finding claims potential incorrect behavior on malformed input.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 487,
+      "end_line": 489,
+      "message": "The blockquote conversion still relies on a lazy regex, so nested blockquotes that have sibling text before/after the nested block are converted incorrectly. For example, `<blockquote>outer<blockquote>inner</blockquote>tail</blockquote>` is first matched only through the inner closing tag, which leaves the inserted markdown adjacent to the remaining HTML and produces `> outer> inner...` instead of preserving the nesting and tail text. This should use balanced-tag parsing like the list conversion rather than repeated regex replacement.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified by running the exact code path: `<blockquote>outer<blockquote>inner</blockquote>tail</blockquote>` produces garbled output `> outer> inner\\n>\\n> tail` because the lazy regex first matches `<blockquote>outer<blockquote>inner</blockquote>`, causing the `outer` text and nested blockquote content to end up on the same line. The loop-based approach handles the pure nesting case but fails when bare text coexists with a nested blockquote in the same parent.",
+      "severity_justification": "Affects only the rare case where a blockquote contains both bare text and a nested blockquote element as siblings. Trix/Basecamp typically wraps blockquote content in <p> or <div> elements, making this pattern unlikely in practice. The existing tests for nested blockquotes (using only nested structure without sibling text) all pass.",
+      "category_justification": "Logic error in the blockquote regex loop: the lazy match peels off the wrong slice of the HTML when bare text appears alongside a nested blockquote, producing incorrect Markdown output.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext.go",
+      "start_line": 587,
+      "end_line": 590,
+      "message": "List items that contain paragraph tags are converted before the paragraph pass, so `<li><p>one</p><p>two</p></li>` becomes `- <p>one</p><p>two</p>` and the later global paragraph replacement turns the second paragraph into an unindented top-level paragraph. This loses the fact that the content belongs to the list item; normalize paragraph boundaries inside `formatListItem` before adding the list prefix/continuation indentation.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed by running the exact code path: `<ul><li><p>one</p><p>two</p></li></ul>` produces `- one\\n\\ntwo` (with `two` as a top-level paragraph) in both old and new code. The `extractListItems` / `formatListItem` pipeline only processes `<br>` tags, leaving `<p>` tags in the raw item content for the later global `reP.ReplaceAllString` pass which strips indentation context.",
+      "severity_justification": "Affects only list items that contain `<p>` wrapper tags, which Trix/Basecamp doesn't produce for simple list items. It would only surface from legacy or externally-authored HTML. The behavior is unchanged from the pre-PR code, limiting the practical impact of the PR.",
+      "category_justification": "Logic error: paragraph tags inside list items are not normalized before the global paragraph replacement pass, causing list item continuation content to lose its structural association with the list item.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/richtext/richtext_test.go",
+      "start_line": 154,
+      "end_line": 156,
+      "message": "This updated expectation now preserves a newline, but the test case name still says the lines are joined. That makes the test misleading when it fails; please rename it to reflect the new soft-line-break behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at lines 153-156: the test name says 'consecutive lines join into one paragraph' but the expected value was updated in this PR from `<p>Line one Line two</p>` (joined with space) to `<p>Line one\\nLine two</p>` (soft break preserved). The name now misrepresents the actual behavior being tested.",
+      "severity_justification": "Pure naming/documentation issue in a test — no behavioral impact, but it would mislead a developer reading a test failure.",
+      "category_justification": "Stale test name that no longer matches the updated expected behavior, reducing clarity when the test fails.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

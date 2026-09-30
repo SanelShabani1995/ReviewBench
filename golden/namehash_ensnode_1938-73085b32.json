@@ -1,0 +1,137 @@
+{
+  "pr_key": "namehash_ensnode_1938-73085b32",
+  "pr": {
+    "repo": "https://github.com/namehash/ensnode",
+    "pr_number": 1938,
+    "base": "d594a384de9dbd8e323c2ff55963acff5bd5d3ad",
+    "head": "73085b3296a7991cd1351e5cd010ebb6fab80cb3"
+  },
+  "findings": [
+    {
+      "file": "packages/ens-referrals/src/address.ts",
+      "start_line": 4,
+      "end_line": 7,
+      "message": "Renaming the exported `validateAddress` to `validateNormalizedAddress` is a breaking public API change. `src/index.ts` does `export * from './address'`, so `validateAddress` was part of the package's public surface. Any downstream consumer importing `validateAddress` from `@namehash/ens-referrals` will break at runtime. The changeset classifies this as `patch` and states 'No runtime behavior change', both of which are incorrect.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `src/index.ts` does `export * from './address'`, making `validateAddress` publicly exported. Renaming it to `validateNormalizedAddress` is a breaking API change that would break any downstream consumer importing the old name. The changeset marks this as `patch` and claims 'No runtime behavior change', both of which mischaracterize a semver-breaking rename.",
+      "severity_justification": "This is a public API breaking change that should bump the major version, not patch. However, the function is likely a narrow utility with limited external use, and TypeScript would catch the breakage at compile time for most consumers.",
+      "category_justification": "The issue is about the public API contract of the package — an exported function was renamed without a major version bump, breaking the published interface.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".changeset/every-areas-draw.md",
+      "start_line": 1,
+      "end_line": 5,
+      "message": "The changeset is marked as `patch` and claims 'No runtime behavior change', but the rename of the publicly exported `validateAddress` → `validateNormalizedAddress` is a breaking API change for any consumer of `@namehash/ens-referrals`. This should be at least a `minor` bump (or `major` under strict semver). The description also only mentions leaderboard map key types, omitting the function rename.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The changeset at the given SHA is confirmed to classify the change as `patch` and state 'No runtime behavior change', while `validateAddress` is publicly exported from the package via `export * from './address'` in `src/index.ts`. Renaming a publicly exported symbol is a breaking change requiring at minimum a `major` bump. The description also demonstrably omits mentioning the function rename.",
+      "severity_justification": "Incorrect semver classification on a public API breaking change could mislead consumers relying on version ranges. Medium rather than high because the function is a narrow validation utility with likely limited direct external use.",
+      "category_justification": "The issue is about incorrect versioning classification and incomplete description of a public API change in the changeset, which directly affects the package's published interface contract.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/ens-referrals/README.md",
+      "start_line": 161,
+      "end_line": 161,
+      "message": "`import type { Address } from 'enssdk'` was substituted for the previous `import type { Address } from 'viem'`. The README installation instructions tell users to run `npm install @namehash/ens-referrals viem`; `enssdk` is not listed as a peer dependency nor in the install command. End users following this example will need to install an undocumented package (`enssdk`) whose name gives no indication it is user-facing. The previous `viem` import was correct since viem is the declared peer dependency.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: README install command only mentions `viem`, `enssdk` is a regular dependency (not peer), and the example now tells users to import `Address` from `enssdk` — an internal workspace package not in the install instructions. The PR author themselves flagged doubt about this change. The previous `viem` import was correct since viem is the declared peer dependency and `enssdk`'s `Address` is just a re-export of `ViemAddress`.",
+      "severity_justification": "This is a documentation issue in a code example. Users would likely discover they need `enssdk` at compile time; the type is still the same underlying type. However, it is a concrete misleading change in public-facing docs.",
+      "category_justification": "The issue is in the README example code — an incorrect import source for a type used in user-facing documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/ens-referrals/src/api/types.ts",
+      "start_line": 75,
+      "end_line": 75,
+      "message": "`ReferrerMetricsEditionsRequest.referrer` is still typed as `Address` while the PR's stated goal is to use `NormalizedAddress` consistently across referral program logic. This leaves the migration incomplete and the file inconsistent with the updated `referrer-metrics.ts` and leaderboard types.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed at line 75: `ReferrerMetricsEditionsRequest.referrer` is still typed as `Address` while the PR migrated `ReferrerMetrics.referrer` and leaderboard map keys to `NormalizedAddress`. This is a real inconsistency. That said, `NormalizedAddress = Address` (same underlying type, deliberately not branded), so there is zero runtime or TypeScript compile-time impact — purely semantic.",
+      "severity_justification": "No runtime or type-checking impact since `NormalizedAddress` and `Address` are identical types. The inconsistency is purely semantic, but it is a genuine incompleteness in a PR that explicitly aims for consistent use of `NormalizedAddress`.",
+      "category_justification": "The issue is a semantic inconsistency in type usage — a partially completed migration that leaves one API type out of step with the stated goal of using `NormalizedAddress` consistently.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/ens-referrals/src/leaderboard-page.test.ts",
+      "start_line": 44,
+      "end_line": 44,
+      "message": "The map key type `NormalizedAddress` in `new Map<NormalizedAddress, AwardedReferrerMetricsPieSplit>()` does not match its value, which is a checksummed address `\"0x03c098d2bed4609e6ed9beb2c4877741f45f290d\"`. The key should be a lowercase address to conform to the `NormalizedAddress` type.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding incorrectly claims the map key `'0x03c098d2bed4609e6ed9beb2c4877741f45f290d'` is a checksummed address. Checksummed (EIP-55) addresses use mixed case. This address is entirely lowercase after `0x`, making it a valid `NormalizedAddress` by the package's definition (`NormalizedAddress` = lowercase EVM address). The finding's core factual claim is wrong.",
+      "severity_justification": "The claim is incorrect; there is no actual issue in the code.",
+      "category_justification": "The finding asserts a type mismatch between a map key value and `NormalizedAddress`, which is a correctness claim about the test data.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/ens-referrals/src/address.ts",
+      "start_line": 4,
+      "end_line": 4,
+      "message": "Feel free to have a look at `Unvalidated<T>` type from ENSNode SDK. It's a helper type that allows to distinguish unvalidated value from the validated one (even if they are technically the same runtime type).\n\n```suggestion\nexport const validateNormalizedAddress = (address: Unvalidated<NormalizedAddress>): void => {\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The suggested `Unvalidated<NormalizedAddress>` would be harmful. `Unvalidated<T> = DeepPartial<T>` maps over `keyof T`; for a string-primitive type like `NormalizedAddress` (`0x${string}`), this produces a mapped object type over string methods — not a string or address type. The suggestion would break the function signature, making it impossible to call with actual address strings. The `Unvalidated<T>` pattern is consistently used in this codebase only with complex object types, never string primitives. The finding is also vague and advisory rather than identifying a concrete bug.",
+      "severity_justification": "If applied, the suggestion would introduce a type error, but since it is framed as advisory the actual risk is low.",
+      "category_justification": "The suggestion proposes a type change that would produce an incorrect type for a string primitive, potentially breaking the function signature.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "tk-o",
+        "url": "https://github.com/namehash/ensnode/pull/1938#discussion_r3091518723",
+        "created_at": "2026-04-16T07:43:20Z",
+        "alignment": "remapped_unchanged",
+        "original_commit": "b17bea8c10856323660eea72997daf4cad8fb924",
+        "original_start_line": 4,
+        "original_end_line": 4
+      }
+    }
+  ]
+}

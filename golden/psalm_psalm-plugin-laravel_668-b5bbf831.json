@@ -1,0 +1,291 @@
+{
+  "pr_key": "psalm_psalm-plugin-laravel_668-b5bbf831",
+  "pr": {
+    "repo": "https://github.com/psalm/psalm-plugin-laravel",
+    "pr_number": 668,
+    "base": "379b56f488200652e3dd8a11792822fe174ddd06",
+    "head": "b5bbf831815009e4906eb69960364dc26102306c"
+  },
+  "findings": [
+    {
+      "file": "src/Plugin.php",
+      "start_line": 50,
+      "end_line": 50,
+      "message": "FacadeMapProvider::init() is called unconditionally regardless of whether findMissingViews is enabled (checked at line 60). It calls getFacadeRoot() on every registered facade, resolving singletons from the container as a side effect. Currently only MissingViewHandler consumes the map, so this work — and all associated container side effects — is wasted whenever findMissingViews is false. The call should be guarded by the same condition, or deferred to first use.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "FacadeMapProvider::init() is called unconditionally at plugin boot even when findMissingViews is false, and the only consumer of the map (MissingViewHandler) is guarded by that flag. The init resolves every registered facade via getFacadeRoot() — real work that is entirely wasted when the feature is disabled.",
+      "severity_justification": "This is a one-time startup cost, the app container is already booted so singletons are largely instantiated, and the overhead is bounded by the number of registered facades. No correctness or security impact.",
+      "category_justification": "Unnecessary computation during plugin initialization — the facade map is built even when no handler will consume it.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Providers/FacadeMapProvider.php",
+      "start_line": 60,
+      "end_line": 62,
+      "message": "The map is keyed by get_class($root) — the concrete runtime class, not the declared service class. If the container resolves a facade's underlying service to a subclass of the expected class (e.g., class CustomViewFactory extends Illuminate\\View\\Factory), the key becomes 'customviewfactory' and getFacadeClasses(Factory::class) returns []. The handler silently degrades to Factory-only coverage with no warning emitted. No parent-class traversal or warning is implemented for this case.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in code: get_class($root) gives the concrete runtime class, used as the map key. A subclass binding like CustomViewFactory extends Factory would produce key 'customviewfactory', making getFacadeClasses(Factory::class) return [] with no warning, silently losing facade coverage.",
+      "severity_justification": "This only affects projects that rebind a service to a subclass (uncommon), and the failure mode is silent degradation (facade calls not checked) rather than a crash or false positive. Factory direct calls still work.",
+      "category_justification": "The map lookup uses the wrong key in subclass-binding scenarios, producing incorrect (empty) results from getFacadeClasses() when a concrete subclass is bound.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Providers/FacadeMapProvider.php",
+      "start_line": 65,
+      "end_line": 72,
+      "message": "There is no deduplication when appending to $serviceToFacades[$key]. If two different alias keys in AliasLoader map to the same facade FQCN (e.g., both 'View' and 'ViewAlias' => Illuminate\\Support\\Facades\\View::class), the FQCN is appended twice. getClassLikeNames() then returns a list with duplicates, and Psalm's handler registration for duplicate class-like names is not guaranteed to be idempotent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Confirmed: no deduplication guard exists before self::$serviceToFacades[$key][] = $facadeClass or the alias append. If two alias entries share the same facade FQCN, it will appear twice in the returned list, potentially being passed as duplicate entries to Psalm's handler registration.",
+      "severity_justification": "Duplicate alias entries pointing to the same facade FQCN are uncommon in standard Laravel setups, and Psalm likely deduplicates class-name registrations internally. The worst plausible outcome is double handler invocation (emitting duplicate issues), not a crash.",
+      "category_justification": "The code produces a list with potential duplicate class-string entries due to missing deduplication, which could affect handler registration correctness.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Providers/FacadeMapProvider.php",
+      "start_line": 71,
+      "end_line": 72,
+      "message": "The /** @var class-string $alias */ assertion is unsound. $alias is the array key from array<string, class-string>, typed as plain string. The cast suppresses Psalm's type error without any runtime validation. A string key like '123Invalid' or a non-class-valid alias name would be silently accepted into the list. The assumption that every short alias key is a valid class-string is implicit and relies on generateAliasStubs() also accepting it, rather than being enforced here.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "While technically correct that the @var class-string assertion isn't runtime-validated, AliasLoader keys are by construction valid PHP class identifiers (used with class_alias()). The same unvalidated pattern appears in generateAliasStubs(). No concrete failure scenario exists — this is a generic 'unproven type assertion' observation, not a specific exploitable issue.",
+      "severity_justification": "Even if classified as a concern, the practical risk is negligible given the invariants of AliasLoader.",
+      "category_justification": "The finding is about type annotation soundness.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Providers/FacadeMapProvider.php",
+      "start_line": 41,
+      "end_line": 44,
+      "message": "The is_subclass_of() call is outside the try/catch that guards getFacadeRoot(). When called with a string class name and $autoload=true (the default), is_subclass_of() triggers class autoloading. If a custom autoloader throws a Throwable for a class in AliasLoader (e.g., an optional dependency's facade with a broken autoloader), the exception propagates out of init() unhandled. The outer catch in Plugin::__invoke would then disable the entire plugin, rather than just skipping that one facade.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: is_subclass_of() is outside the try/catch at lines 41-44, will trigger autoloading, and a Throwable from a broken autoloader would propagate out of init() to Plugin::__invoke's outer catch, disabling the whole plugin. The existing comment inside try acknowledges this same class of error for getFacadeRoot().",
+      "severity_justification": "The scenario requires a broken autoloader for a facade in AliasLoader, which is uncommon. When it does occur, the consequence (whole plugin disabled) is disproportionate but only affects static analysis output for that run — no production impact.",
+      "category_justification": "Error handling gap: an exception in is_subclass_of() bypasses the per-facade error recovery and disables the entire plugin rather than skipping the problematic facade.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Unit/Handlers/Views/MissingViewHandlerTest.php",
+      "start_line": 71,
+      "end_line": 77,
+      "message": "The test was weakened from asserting the exact return value ([Factory::class]) to only asserting that Factory::class is first and the list is non-empty. This means the test no longer catches regressions where getClassLikeNames() returns unexpected extra classes (e.g., due to a bug in FacadeMapProvider that leaks unrelated classes). The unit test comment says the type test verifies facade classes are included, but that test only verifies facade detection works, not that unexpected classes are absent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Since FacadeMapProvider is uninitialized in unit tests, getFacadeClasses() returns [] and getClassLikeNames() returns exactly [Factory::class]. The original strict assertSame([Factory::class], ...) would still pass — the weakening to assertNotEmpty + assertSame(Factory::class, $classNames[0]) was unnecessary and reduces regression coverage.",
+      "severity_justification": "Testing regression coverage concern only — no production behavior is affected. The loosened assertion could miss a future bug in FacadeMapProvider that leaks entries even when uninitialized, but this is an unlikely scenario.",
+      "category_justification": "The finding is specifically about a test assertion being unnecessarily weakened, reducing regression detection capability.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Providers/FacadeMapProvider.php",
+      "start_line": 31,
+      "end_line": 33,
+      "message": "The initialization of `$aliases` relies on `AliasLoader::getInstance()->getAliases()`. If `AliasLoader` is not fully initialized or its aliases are not yet set, this could lead to an incomplete alias map. This may result in handlers failing to register correctly for certain facades.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "FacadeMapProvider::init() is called after ApplicationProvider::bootApp() which fully bootstraps the app including RegisterFacades. The same AliasLoader::getInstance()->getAliases() call is already used in generateAliasStubs() before this PR. No concrete scenario is demonstrated where AliasLoader would be incomplete at this point.",
+      "severity_justification": "Even if classified as a concern, the execution ordering in Plugin::__invoke() ensures the app is fully booted before init() runs.",
+      "category_justification": "The finding is about potential incomplete initialization state.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Providers/FacadeMapProvider.php",
+      "start_line": 39,
+      "end_line": 43,
+      "message": "Exceptions are caught while invoking `getFacadeRoot` for facades but merely logged to debug output. This means critical errors (such as configuration or container issues) might silently bypass facade mapping, leading to potential runtime gaps in handler coverage.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The catch-and-continue behavior is intentional and explicitly commented: BindingResolutionException for unbound facades and Error for missing optional-package classes are both expected. Debug logging is appropriate. The finding doesn't identify a concrete scenario where a 'critical' error distinct from these expected cases would be silently missed — it restates a generic best practice against intentional lenient error handling.",
+      "severity_justification": "Even if considered a concern, promoting every unresolvable facade to a warning would produce noise for optional-package facades without improving correctness.",
+      "category_justification": "The finding is about error handling strategy in the facade resolution loop.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Plugin.php",
+      "start_line": 48,
+      "end_line": 49,
+      "message": "The call to `FacadeMapProvider::init` lacks robust error handling. If the initialization of the facade map fails (e.g., due to missing aliases or unhandled exceptions), it can disrupt the proper setup of handlers and lead to incorrect or incomplete plugin behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Plugin::__invoke() wraps the entire initialization sequence in a catch(\\Throwable) block that calls handleInternalError(). Any exception from FacadeMapProvider::init() is already caught. The finding doesn't identify a specific unhandled path — it's a generic 'add error handling' observation that applies equally to all other init calls in the same block.",
+      "severity_justification": "No actual unhandled failure path exists — the outer catch covers it.",
+      "category_justification": "The finding concerns error handling around initialization.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/Type/tests/MissingViewTest.phpt",
+      "start_line": 14,
+      "end_line": 40,
+      "message": "Tests for `View::make` methods assert only literal views but do not test for dynamic input scenarios (e.g., variable-based view names). This oversight could allow neglected edge cases to persist untested and unhandled.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Dynamic variable argument handling is already tested in MissingViewHandlerTest.php via method_skips_dynamic_variable_argument() and skips_dynamic_variable_argument(). The .phpt file is an integration/type test for Psalm error output — dynamic names produce no output so adding them there provides no additional assertions. The finding ignores the existing unit test coverage.",
+      "severity_justification": "Even if considered valid, the behaviour is already tested; this is a gap in a single test file, not an untested code path.",
+      "category_justification": "The finding is about test coverage in the new type test.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Views/MissingViewHandler.php",
+      "start_line": 178,
+      "end_line": 203,
+      "message": "The `viewFileExists` method directly accesses the filesystem repeatedly without caching or debouncing expensive operations like `file_exists`. This could cause significant performance degradation in large-scale applications with many views.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. viewFileExists() has explicit caching via self::$resolvedViews — the method checks the cache first (isset check) and only calls file_exists on a miss. The property docblock explicitly documents this as 'Cached view existence results to avoid repeated filesystem checks'.",
+      "severity_justification": "The caching already exists, so there is no actual performance issue.",
+      "category_justification": "The finding concerns filesystem access performance.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Handlers/Collections/CollectionFlattenHandler.php",
+      "start_line": 109,
+      "end_line": 128,
+      "message": "The `extractInnerValue` function does not handle cases where `TGenericObject`, `TArray`, or `TKeyedArray` may have unexpected or missing `type_params`. This could lead to type resolution exceptions or crashes for unsupported input types.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually incorrect. Both TGenericObject and TArray branches guard with count($atomic->type_params) >= 2 before indexing. TKeyedArray uses getGenericValueType() method call. No unguarded type_params access exists in extractInnerValue.",
+      "severity_justification": "No actual bug exists — the guards are present.",
+      "category_justification": "The finding is about potential out-of-bounds access on type_params.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Plugin.php",
+      "start_line": 47,
+      "end_line": 49,
+      "message": "This comment describes the map direction as facade → service, but FacadeMapProvider stores service class → facade/alias classes and handlers query it by service class. Please update the wording so future handlers do not misread how the provider is meant to be used.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The comment at line 46 reads 'Build facade → service class map' but FacadeMapProvider stores service class → list<facade/alias classes>, keyed by strtolower($serviceClass). The arrow direction is inverted. This is verified against both Plugin.php and FacadeMapProvider.php.",
+      "severity_justification": "Purely a documentation inaccuracy in a code comment; no behavioral impact, but could mislead future contributors adding handlers.",
+      "category_justification": "The finding is about a misleading inline code comment describing the wrong map direction.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Providers/FacadeMapProvider.php",
+      "start_line": 37,
+      "end_line": 40,
+      "message": "Facade FQCN support is derived only from AliasLoader entries. Fully-qualified facade calls such as Illuminate\\Support\\Facades\\View::make() are valid even when an application has no short alias configured for View, but in that setup the facade class will never be visited here and getFacadeClasses(Factory::class) will omit it. Include known/registered facade classes independently from root aliases, or otherwise avoid making FQCN facade registration depend on app.aliases.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is factually correct: FQCN facade class registration (e.g. Illuminate\\Support\\Facades\\View) depends entirely on AliasLoader entries. If an app has no alias mapping to that facade FQCN, getFacadeClasses() omits it and FQCN facade calls are not checked. Verified by tracing the init loop — $facadeClass is only processed when it appears as a value in AliasLoader::getAliases().",
+      "severity_justification": "Affects only apps that have removed standard facade aliases from app.aliases, which is unusual. The default Laravel config always includes these aliases, so the gap is an edge case rather than a common failure mode.",
+      "category_justification": "The handler silently fails to detect missing views for a valid code pattern (FQCN facade calls) when aliases aren't configured — a correctness gap in the coverage logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

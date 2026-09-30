@@ -1,0 +1,511 @@
+{
+  "pr_key": "rulecom_rule-io-sdk_40-550f7bc0",
+  "pr": {
+    "repo": "https://github.com/rulecom/rule-io-sdk",
+    "pr_number": 40,
+    "base": "fc84004ae8c148cc7c5eaf7e62789d96a35efa73",
+    "head": "550f7bc03fbc4e1760f9f4f4382cd612f7aeedf8"
+  },
+  "findings": [
+    {
+      "file": "src/types/api.ts",
+      "start_line": 978,
+      "end_line": 985,
+      "message": "RuleApiKey has all fields optional (id?, name?, key?) even though the API always returns them. This forces unnecessary optional chaining in all consumer code and defeats TypeScript's static guarantees. Fields like `id`, `name`, and `key` should be required, matching the pattern of RuleAccount (which has `id: number`). The `key` field is particularly important since it's the primary purpose of this type — consumers calling `result.data?.key` should not have to handle `undefined`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: RuleApiKey has all fields optional (id?, name?, key?, created_at?, updated_at?). Comparable types like RuleAccount and RuleAccountSimple mark id and name as required. The key field is the core value of an API key and the API always returns it, so making it optional forces unnecessary null checks on consumers and defeats TypeScript's guarantees.",
+      "severity_justification": "Doesn't affect runtime behavior since the optional chaining still works, but it weakens type safety for consumers of the SDK who need the key value.",
+      "category_justification": "This is about the public type contract of the SDK — field optionality in a public response type that consumers depend on.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 955,
+      "end_line": 957,
+      "message": "RuleBrandStyleManualRequest is being exported as a @deprecated type alias in the same PR that introduces it — it has never existed as a non-deprecated public API. Per the project's own rule (\"Every public export is a contract\"), this creates permanent API surface that must be maintained forever, but it was never useful to consumers. The backward-compat fiction doesn't hold because there was no prior published release using this type. It should not be exported.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified via git history: RuleBrandStyleManualRequest was introduced (9b89739), then deprecated and replaced by separate Create/Update types (18b5a6d), all within this PR at version 0.2.0. No release used the non-deprecated form, so the @deprecated export creates permanent API surface (per CLAUDE.md: 'Every public export is a contract') without ever being useful to consumers.",
+      "severity_justification": "The deprecated type is a harmless alias that doesn't break anything at runtime, but it needlessly pollutes the public API surface and must be maintained forever per the project's backward-compat rules.",
+      "category_justification": "This is about the public API contract — exporting an unnecessary deprecated type adds permanent maintenance obligation per the project's own rules.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.ts",
+      "start_line": 124,
+      "end_line": 124,
+      "message": "RuleBrandStyleManualRequest is re-exported from the public entry point despite being @deprecated from the moment it was introduced in this PR. Exporting a deprecated type with no prior usage creates unnecessary permanent API surface. See also src/types/api.ts:955-957.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: line 124 of src/index.ts re-exports RuleBrandStyleManualRequest which was @deprecated from the moment it was introduced in this PR (confirmed via git history — version stayed 0.2.0, type was never published non-deprecated). This is the same issue as Finding 2 viewed from the public entry point.",
+      "severity_justification": "Same as Finding 2 — no runtime impact, but adds permanent public API surface that must be maintained per the project's own backward-compat rules.",
+      "category_justification": "Concerns the public API contract via src/index.ts, the single public entry point for the SDK.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 916,
+      "end_line": 923,
+      "message": "The `fonts` array in RuleBrandStyleCreateRequest (and RuleBrandStyleUpdateRequest at line 940) requires `origin: RuleBrandStyleFontOrigin` (non-optional), but the response type RuleBrandStyleFont (line 842) has `origin?: RuleBrandStyleFontOrigin | null`. This asymmetry means that fonts returned by the API (which may have `origin: null` for system fonts) cannot be used directly in a subsequent update call — TypeScript will error because `origin` is required in the request but the value in hand is `undefined | null`. Either the request type should allow `origin` to be optional, or the response type should make it required.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: RuleBrandStyleFont.origin is `RuleBrandStyleFontOrigin | null | undefined` (optional), but both RuleBrandStyleCreateRequest and RuleBrandStyleUpdateRequest require `origin: RuleBrandStyleFontOrigin` (non-optional, non-nullable) in the fonts array. A read-modify-write pattern would fail TypeScript type checking since a value of `undefined | null` cannot be assigned to a required `RuleBrandStyleFontOrigin`.",
+      "severity_justification": "Breaks the common read-modify-write pattern at the TypeScript level, forcing consumers to add non-obvious workarounds (filtering or type assertions) to pass fetched font data back in update requests.",
+      "category_justification": "This is a type contract inconsistency between request and response types in the public SDK API — a mismatch that directly impedes idiomatic consumer usage.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1664,
+      "end_line": 1670,
+      "message": "listBrandStyles() accepts no pagination parameters, unlike every other list method in the SDK (listAutomails, listMessages, listTemplates, etc., all accept page/per_page via RulePaginationParams). If an account has many brand styles, there is no way to paginate through them. This inconsistency will become a breaking change to add later.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The 'every other list method' claim is factually incorrect — listAccounts() (added in a prior PR) also takes no pagination params. The inconsistency exists but is not unique to this PR. Additionally, there is no evidence in the codebase that the brand-styles or api-keys API endpoints support pagination; both represent finite, small collections where paginating-less list is common API design.",
+      "severity_justification": "Even if partially valid, brand styles and API keys are inherently small sets unlikely to require pagination, and this would be a minor design consideration.",
+      "category_justification": "Concerns public method signatures and API design consistency.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1807,
+      "end_line": 1813,
+      "message": "listApiKeys() accepts no pagination parameters, unlike other list methods in the SDK. If the Rule.io API supports pagination on this endpoint, callers have no way to control it. This inconsistency is also a breaking API change to fix after the fact.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same as Finding 5: listAccounts() also lacks pagination params (pre-existing), so the 'unlike other list methods' premise is not universally true. API keys are a small finite resource and there's no evidence in the codebase that the /api-keys endpoint supports pagination. The concern is speculative without API spec confirmation.",
+      "severity_justification": "API keys are a small resource set where unpaginated list is common design, and there's no demonstrated need for pagination here.",
+      "category_justification": "Concerns public method signature design and consistency with other SDK list methods.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 940,
+      "end_line": 947,
+      "message": "The `fonts` array in RuleBrandStyleUpdateRequest requires `origin: RuleBrandStyleFontOrigin` (non-optional), but the response type RuleBrandStyleFont has `origin?: RuleBrandStyleFontOrigin | null`. Same roundtrip asymmetry as in CreateRequest (line 916): a PATCH to partially update fonts using data fetched from the API would require manually adding `origin` even for fonts where the API returned it as null.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: RuleBrandStyleUpdateRequest.fonts[].origin is required (non-optional, non-nullable) at line 941, while RuleBrandStyleFont.origin is `RuleBrandStyleFontOrigin | null | undefined` (line 842). This is the same asymmetry as Finding 4, specifically for the update/PATCH request type. A consumer doing a read-modify-write PATCH would get a TypeScript error when passing fetched font data.",
+      "severity_justification": "Breaks the read-modify-write pattern at the TypeScript level for PATCH operations, which is the most natural use case for an update endpoint.",
+      "category_justification": "Type contract mismatch between response and request types in the public SDK API.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1761,
+      "end_line": 1769,
+      "message": "updateBrandStyle() does not handle 404 — it throws a RuleApiError if the brand style ID does not exist. This is inconsistent with getBrandStyle() which returns null on 404. A caller that fetched a brand style (possibly returning null) and then tries to update it using the same ID would get an exception rather than a consistent null-means-not-found semantic. Consider either returning null on 404 (consistent with the getter) or documenting that update throws where get would return null.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding correctly identifies that updateBrandStyle throws on 404 while getBrandStyle returns null, but this is the consistent pattern throughout the SDK: every other update method (updateAutomail, updateMessage, updateTemplate, updateDynamicSet, updateCampaign) also throws on 404 without null handling. Per CLAUDE.md SDK design rule: 'Methods that fetch a single resource return T | null (not throw on 404)' — this applies to getters only. updateBrandStyle correctly follows the established convention.",
+      "severity_justification": "The behavior is consistent with the rest of the SDK and the documented design principle differentiating fetch vs mutate methods.",
+      "category_justification": "Concerns method return type contracts in the public API.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1827,
+      "end_line": 1833,
+      "message": "The `updateApiKey` method uses `PUT`, but a `PUT` request typically implies a full replacement of the resource. The `RuleApiKeyUpdateRequest` only allows updating the `name` field, and the API probably uses `PATCH` for partial updates, consistent with `updateBrandStyle`. Using `PUT` here could unintentionally clear other fields on the API key resource if the backend strictly follows REST conventions for `PUT`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is speculative ('probably uses PATCH') with no supporting documentation. The repo's API reference doesn't cover the api-keys endpoint. The test explicitly asserts PUT. RuleApiKey only has one mutable field (name), so there is nothing else to accidentally clear even if the backend treats PUT as a full replacement. The claim is unverifiable from available context.",
+      "severity_justification": "Even if wrong, the practical risk is minimal since name is the only mutable field in the request type.",
+      "category_justification": "The concern is about using the wrong HTTP verb potentially causing data loss.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1726,
+      "end_line": 1735,
+      "message": "In `getBrandStyle`, the return type is `Promise<RuleBrandStyleResponse | null>`, which is a wrapper object. However, the `catch` block returns `null` directly, not a wrapper object. Callers expecting a `RuleBrandStyleResponse` object with a `data` property will get a `TypeError` when trying to access properties on `null`. The method should return `null` when an item is not found, but this type inconsistency is problematic. The JSDoc example also incorrectly accesses `.data` on a potentially null object without a check (`style.data?.colours`). A more consistent return type would be `Promise<RuleBrandStyle | null>` to align with the 404-handling behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified incorrect on all counts: (1) returning null from a method typed as Promise<RuleBrandStyleResponse | null> is valid — null is part of the union; (2) the JSDoc example does guard with `if (style)` before accessing .data; (3) the same Promise<RuleXxxResponse | null> pattern is used by every other getter in the SDK (getAutomail, getMessage, getTemplate, getCampaign). The suggested change to Promise<RuleBrandStyle | null> would be inconsistent with all other getters.",
+      "severity_justification": "The finding is factually wrong — no real issue exists.",
+      "category_justification": "The finding claims a type inconsistency / runtime error risk.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1729,
+      "end_line": 1729,
+      "message": "The `getBrandStyle` example code shows `console.log(style.data?.colours)`. Since the method returns `Promise<RuleBrandStyleResponse | null>`, `style` itself can be `null` if the brand style is not found (404). The example code will throw a `TypeError: Cannot read properties of null (reading 'data')` in that case. It should be `if (style) { console.log(style.data?.colours); }`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the JSDoc example at lines 1678-1682 already contains the null guard `if (style) { console.log(style.data?.colours); }`. The finding's claim that style is accessed without a null check is factually incorrect.",
+      "severity_justification": "Finding is wrong; no issue exists.",
+      "category_justification": "The finding concerns JSDoc example code correctness.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1649,
+      "end_line": 1657,
+      "message": "In the method `deleteBrandStyle`, it is mentioned that it throws a 403 error when deleting the last brand style, but there is no specific check for this in the implementation. This can lead to inconsistent error handling behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "No other delete method in the SDK (deleteAutomail, deleteMessage, deleteTemplate, deleteCampaign) handles specific error codes either. The 403 is already handled consistently: fetchV3 throws RuleApiError for any non-OK response, so callers get RuleApiError with statusCode 403, which is documented in the JSDoc. The test confirms this behavior. There is no inconsistency — it matches the existing pattern.",
+      "severity_justification": "No real issue; the behavior is consistent and documented.",
+      "category_justification": "The finding claims a behavioral inconsistency in error handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1632,
+      "end_line": 1640,
+      "message": "The `updateBrandStyle` method does not perform input validation to ensure the `request` body adheres to the expected schema, potentially leading to runtime errors or unexpected API responses.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "No other update method in the SDK (updateAutomail, updateMessage, updateTemplate, updateCampaign) performs runtime input validation. The SDK relies on TypeScript's static type system for schema enforcement. This is a generic 'add validation' suggestion that could be copy-pasted onto any method in the codebase — it identifies no specific issue with updateBrandStyle.",
+      "severity_justification": "Generic advice with no concrete issue identified.",
+      "category_justification": "The finding concerns runtime validation of input.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/client.test.ts",
+      "start_line": 1432,
+      "end_line": 1440,
+      "message": "The test case `should throw on 403 when deleting last brand style` does not verify the exact error message or status code returned by the `RuleApiError`, reducing the reliability of the test.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The pattern `.rejects.toThrow(RuleApiError)` without checking status code or message is used consistently throughout the test suite (listAccounts, createAccount, getAccount, deleteAccount, etc.). This is a generic 'improve test assertions' suggestion that applies equally to dozens of existing tests. No specific convention in this codebase requires status code verification for error tests.",
+      "severity_justification": "Generic advice that doesn't identify a real defect or meaningful coverage gap.",
+      "category_justification": "The finding concerns test assertion granularity.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/client.test.ts",
+      "start_line": 1448,
+      "end_line": 1456,
+      "message": "The test case `should throw RuleApiError on 424 (failed to fetch domain)` does not validate the `error` instance for its type and message thoroughly, which could be useful for debugging and detecting regressions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical in substance to Finding 14. The `.rejects.toThrow(RuleApiError)` pattern without further assertion is the established convention throughout the test suite. This generic 'add more assertions' suggestion applies equally to dozens of other tests and identifies no specific defect or convention violation.",
+      "severity_justification": "Generic advice with no concrete issue or regression risk identified.",
+      "category_justification": "The finding concerns test assertion completeness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 962,
+      "end_line": 973,
+      "message": "The `RuleBrandStyleUpdateRequest` definition does not enforce validation for the `name` field's length or content (e.g., max characters, disallowed characters), which could lead to API-side errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic advice that could apply to every string field in every request type in the SDK. TypeScript interfaces don't enforce runtime constraints, and no other request type in the codebase validates string length or content. The suggestion identifies no specific issue with RuleBrandStyleUpdateRequest beyond what applies universally.",
+      "severity_justification": "Generic boilerplate concern with no concrete defect identified.",
+      "category_justification": "The finding concerns input validation constraints.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1701,
+      "end_line": 1710,
+      "message": "In the `createApiKey` operation, there is no validation for the `name` field to ensure it adheres to the API's maximum length constraint (255 characters). This could lead to server-side validation errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Generic boilerplate concern identical to Findings 13 and 16. No other create/update method in the SDK validates string length at runtime — the SDK relies on TypeScript types and API-side validation. This could be copy-pasted onto any method accepting a string field across the entire codebase.",
+      "severity_justification": "Generic advice with no concrete defect identified.",
+      "category_justification": "The finding concerns runtime input validation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 1002,
+      "end_line": 1008,
+      "message": "The `RuleApiKeyCreateRequest` type does not strongly validate that the `name` property is a non-empty string, potentially leading to unclear errors if `name` is omitted or invalid.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic boilerplate applicable to every required string field in every request type in the SDK. TypeScript already enforces name is required and a string. No other request type validates non-empty strings at runtime. This is a template suggestion with no specific defect identified.",
+      "severity_justification": "Generic advice with no concrete defect.",
+      "category_justification": "The finding concerns input validation constraints on a type definition.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/client.test.ts",
+      "start_line": 1524,
+      "end_line": 1532,
+      "message": "In the test `should create an API key`, the validation of the generated API key value (field `key`) is missing, which reduces its completeness and the ability to detect unexpected behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the test at line 1628 already includes `expect(result.data?.key).toBe('ghi789')`, directly asserting the key field value. The finding's claim that key validation is missing is factually incorrect.",
+      "severity_justification": "Finding is wrong; no issue exists.",
+      "category_justification": "The finding concerns test assertion completeness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1807,
+      "end_line": 1809,
+      "message": "This uses `requestV3`, which logs the full parsed response when `debug` is enabled. `RuleApiKey` includes the secret `key` value and the new tests model list responses containing keys, so `listApiKeys()` can leak API keys into application logs; handle this endpoint like `getAccount()` does by omitting or redacting sensitive response bodies before logging.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `requestV3` calls `this.log('Response V3:', data)` dumping the full parsed body when debug is enabled. The new API key methods (`listApiKeys`, `createApiKey`, `updateApiKey`) all use `requestV3`, so the `key` field will appear in logs. `getAccount` explicitly avoids this by using `fetchV3` directly and logging a redacted message — a pattern the codebase already established for sensitive responses.",
+      "severity_justification": "Requires `debug: true` to trigger (opt-in, defaults to false), but debug logs routinely end up in log aggregators and monitoring systems. Leaking API key values — which are credentials — is a meaningful security risk when debug mode is active.",
+      "category_justification": "Credential leak: plaintext API key secrets can appear in application logs via the debug logging path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1825,
+      "end_line": 1829,
+      "message": "`createApiKey()` returns the newly generated secret key, but routing it through `requestV3` means the full response is logged whenever client debug mode is enabled. This can expose the new API key in logs; use a non-logging/redacted path for this response.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same mechanism as Finding 1, verified: `requestV3` calls `this.log('Response V3:', data)` which dumps the full parsed body including the `key` field. `createApiKey` uses `requestV3`, so the newly generated secret key will appear in debug logs. The `getAccount` precedent confirms the codebase recognizes this pattern as a security issue requiring a redacted logging path.",
+      "severity_justification": "Same as Finding 1 — requires opt-in `debug: true` but `createApiKey` is specifically the moment a new secret is generated and returned, making this the highest-risk moment for a credential to leak into logs.",
+      "category_justification": "Credential leak: a newly generated secret API key value is logged in plaintext when debug mode is active.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1821,
+      "end_line": 1822,
+      "message": "The example encourages printing the generated API key to stdout. Because this value is a secret credential, examples should avoid logging it directly to reduce the chance of leaking keys into terminal history or centralized logs.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The example does show `console.log(result.data?.key)` in a JSDoc `@example` block. However, this is documentation illustrating how to access the returned value — its purpose is to show API usage. The concern about logs and terminal history applies to production code, not to illustrative JSDoc snippets. The finding restates a general security principle without demonstrating a concrete risk, making it generic boilerplate.",
+      "severity_justification": "Even if considered a real issue, JSDoc examples have negligible security impact — they are not executed code, and their content does not appear in any runtime log or terminal output.",
+      "category_justification": "The finding is about the content of a JSDoc @example block, which is documentation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 914,
+      "end_line": 918,
+      "message": "The create and update brand-style request payload shapes duplicate the same nested `colours`, `links`, `fonts`, and `images` definitions. This makes future OpenAPI changes easy to apply to one request but miss the other; consider extracting shared input item types and composing the create/update request types so they stay in sync.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `RuleBrandStyleCreateRequest` and `RuleBrandStyleUpdateRequest` both contain identical inline type definitions for the `colours`, `links`, `fonts`, and `images` array elements. The nested font and image object shapes are duplicated verbatim across both interfaces. A change to one (e.g. a new field in a font entry) must be applied twice or drift occurs.",
+      "severity_justification": "The duplication is in type definitions only and doesn't affect runtime behavior. The drift risk is real but low-frequency — these types track an external OpenAPI spec that changes infrequently. Easy to miss when updating but won't cause immediate bugs.",
+      "category_justification": "DRY violation in type definitions — shared inline shapes should be extracted to named types and referenced from both interfaces.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 916,
+      "end_line": 923,
+      "message": "The new manual brand-style request supports custom font payloads, but the added tests never send a `fonts` entry (searched `tests/client.test.ts` and found no font coverage). Since custom font serialization is part of the new public API surface, add a test that verifies the expected font payload is sent unchanged.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The font field is indeed untested, but the underlying implementation is `body: JSON.stringify(request)` — no field-specific serialization logic exists for fonts vs any other field. The existing `createBrandStyleManually` test already exercises the identical code path with `colours`. A fonts-specific test would only verify that `JSON.stringify` includes font fields, which is not a meaningful gap given there is no custom serialization to validate.",
+      "severity_justification": "Even if classified as a gap, the risk of a bug in font serialization is negligible given it uses the same generic JSON.stringify path as all other fields.",
+      "category_justification": "The finding is about missing test coverage for a specific field in a new public API method.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 924,
+      "end_line": 927,
+      "message": "The new manual brand-style request supports base64 image payloads, but the added tests never send an `images` entry (searched `tests/client.test.ts` and found no image coverage). Add coverage for image serialization so regressions in this required OpenAPI shape are caught.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed no image tests exist. However, the implementation is simply `body: JSON.stringify(request)` — there is no special serialization logic for the `images` field distinct from other fields. The existing `createBrandStyleManually` test with `colours` exercises the identical code path. Adding an images test would only verify that `JSON.stringify` includes nested objects, which is not a meaningful regression risk given zero custom handling.",
+      "severity_justification": "No custom image serialization logic exists to regress. The gap has negligible practical risk.",
+      "category_justification": "The finding is about missing test coverage for a specific field in a new public API method.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

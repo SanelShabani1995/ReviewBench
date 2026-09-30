@@ -1,0 +1,431 @@
+{
+  "pr_key": "bndF1_wavely_198-38986612",
+  "pr": {
+    "repo": "https://github.com/bndF1/wavely",
+    "pr_number": 198,
+    "base": "b305300ad4809a5b311822dd784c0e1dee52fbdb",
+    "head": "389866126801ae4ffb733275783657282804432a"
+  },
+  "findings": [
+    {
+      "file": "src/app/core/services/audio.service.ts",
+      "start_line": 144,
+      "end_line": 150,
+      "message": "The playback rate is not reset when a live radio station starts. `store.play()` doesn't touch `playbackRate`, and the rate effect only fires when `store.playbackRate()` changes — not when the episode changes. `audio.load()` does not reset `audio.playbackRate` per the HTML spec. So if the user was at 1.5× or 2× on a podcast and then plays a radio station, the live stream plays at that distorted speed. The live-episode branch of the episode-change effect should reset `store.setPlaybackRate(1)` (or `this.audio.playbackRate = 1`) before calling `audio.load()`.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "HTML spec does reset to `defaultPlaybackRate` (`1`)",
+      "severity_justification": "Noticeable audio distortion for live streams after any non-1× playback session; the hidden speed-picker UI provides no recovery path, making it a genuine user-facing bug.",
+      "category_justification": "Logic error — the live-stream branch of the episode-change effect fails to reset playback rate to 1×.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/store/player/player.store.ts",
+      "start_line": 63,
+      "end_line": 65,
+      "message": "`skipForward` computes `Math.min(store.duration(), currentTime + 30)`. For live streams `store.duration()` is always 0 because `audio.duration` is `Infinity` and the `timeupdate` handler converts non-finite values to 0 (`isFinite(audio.duration) ? audio.duration : 0`). So `Math.min(0, currentTime + 30)` returns 0, setting `currentTime` to 0. The seek effect in AudioService then sees `|audio.currentTime - 0| > 1` and seeks the live audio element to position 0, which can disconnect or restart the stream. `skipBack` has the same problem: seeking to a negative-clamped position on a live stream has undefined behavior.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: skipForward computes Math.min(store.duration(), currentTime+30). For live streams, timeupdate converts Infinity to 0, so duration() is 0, and skipForward sets currentTime to 0. The seek effect then seeks audio to 0, potentially disconnecting the stream. In-app UI buttons are guarded with @if(!isLive), but MediaSession seekforward/seekbackward handlers (lines 185-190 of audio.service.ts) call store.skipForward/skipBack without any isLive guard, making lockscreen/notification controls able to trigger this.",
+      "severity_justification": "Can disrupt live radio playback via lockscreen/notification skip controls; not a data integrity issue but a meaningful UX regression for live streaming.",
+      "category_justification": "Logic error in skipForward when duration is 0 (live stream case), combined with unguarded MediaSession handlers.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/audio.service.ts",
+      "start_line": 185,
+      "end_line": 201,
+      "message": "Media Session `seekforward`, `seekbackward`, and `seekto` action handlers are registered unconditionally and remain active during live radio playback. When the user uses lockscreen/notification controls to skip while a live station is playing, these handlers call `store.skipForward()`, `store.skipBack()`, or `store.seek()`. Due to `store.duration() = 0` for live streams, `skipForward` resolves to position 0 (see the `skipForward` finding), and `seekto` with an arbitrary time will trigger the AudioService seek effect on the live element. The handlers should be no-ops (or nulled via `setActionHandler(type, null)`) when `activeEpisodeIsLive` is true.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: seekforward, seekbackward, and seekto MediaSession handlers are all registered once at startup with no live-stream guard. seekto calls store.seek(details.seekTime) unconditionally, which triggers the AudioService seek effect on the live audio element. The handlers are never cleared or no-op'd when activeEpisodeIsLive is true.",
+      "severity_justification": "Lockscreen/notification seek controls can disrupt live radio streams; the issue is real but requires the user to actively use media session controls and affects only the new live radio feature.",
+      "category_justification": "Unguarded media session action handlers cause incorrect seek operations on non-seekable live audio elements.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/radio-api.service.ts",
+      "start_line": 43,
+      "end_line": 50,
+      "message": "`getStationsByCountry` passes the country code both in the URL path (`/stations/bycountrycodeexact/ES`) and as a redundant `countrycode` query parameter. The `bycountrycodeexact` endpoint only consumes the path segment; the `countrycode` query param is for the `/stations/search` endpoint. While the API currently ignores the extra param, the two values could drift if the parameter is used for filtering in future API versions, and it signals a misunderstanding of the endpoint contract.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: getStationsByCountry sets .set('countrycode', countryCode.toUpperCase()) in HttpParams while also embedding the country code in the URL path /bycountrycodeexact/{CC}. The bycountrycodeexact endpoint uses the path segment; the countrycode query param is for /stations/search. The extra param is harmless today but is technically wrong per the API contract.",
+      "severity_justification": "No current behavioral impact — the API ignores the redundant param — but it reflects an incorrect understanding of the endpoint contract and could cause subtle issues if the API changes.",
+      "category_justification": "Incorrect use of the Radio Browser API endpoint contract — wrong parameter placement for the chosen endpoint.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/browse/browse.page.ts",
+      "start_line": 247,
+      "end_line": 249,
+      "message": "`registerClick` is fired immediately on tap, before the audio element has confirmed the stream loads. If the station's stream URL is broken (which `hidebroken=true` reduces but does not eliminate), a click is registered in Firestore and reported to the Radio Browser API even though no listening occurred. Per the Radio Browser ToS, clicks should only be registered when playback actually starts. The call should be deferred to the AudioService's `play` event handler, conditioned on `activeEpisodeIsLive`, or at minimum after `audio.play()` resolves.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: registerClick is called immediately on tap before any playback event in playStation(). The core concern is valid — clicks are reported to Radio Browser API before stream load is confirmed. However, the finding's claim that clicks are 'registered in Firestore' is factually incorrect; registerClick only makes an HTTP GET to the Radio Browser API with no Firestore involvement.",
+      "severity_justification": "hidebroken=true significantly reduces broken-stream cases; the consequence of a premature click is only slightly inflated stats in the third-party Radio Browser API, with no impact on user data or app behavior.",
+      "category_justification": "Premature API call before playback confirmation can generate false click registrations for streams that fail to load.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/radio-api.service.ts",
+      "start_line": 27,
+      "end_line": 27,
+      "message": "`releaseDate: new Date().toISOString()` is evaluated at call time, so every invocation of `radioStationToEpisode` for the same station produces an `Episode` object with a different `releaseDate`. Tapping a station twice creates two non-equal Episode objects. If any downstream code (caching, equality checks, deduplication) uses `releaseDate` as part of an identity check, this breaks idempotency. A sentinel value like `''` or a fixed epoch string (e.g. `'1970-01-01T00:00:00.000Z'`) would be stable and still satisfy the required `releaseDate: string` field.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "releaseDate is used only for display in two HTML templates. No equality checks, deduplication, caching, or identity logic in the codebase uses releaseDate — all episode identity is based on episode.id which is stable. The finding's stated harm condition ('if any downstream code uses releaseDate for identity') does not exist in this project, making the concern speculative rather than demonstrated.",
+      "severity_justification": "Even if the concern were valid, the impact would be limited to potential deduplication issues; no such logic exists here.",
+      "category_justification": "The finding is about volatile value generation affecting identity/equality, which is a correctness concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/player/mini-player/mini-player.component.html",
+      "start_line": 11,
+      "end_line": 12,
+      "message": "`[style.visibility]=\"store.currentEpisode()?.isLive ? 'hidden' : 'visible'\"` hides the progress bar visually but keeps it in the layout, leaving blank vertical space where the bar was. The full player correctly uses `@if (!isLive)` to remove the scrubber from the DOM entirely. For the mini-player the empty space is likely visible to users. Using `[style.display]=\"... ? 'none' : ''\"` or wrapping with `@if` would match the full-player approach and eliminate the gap.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: mini-player progress bar has height: 2px in SCSS, and visibility:hidden preserves that layout space, leaving a 2px blank gap for live streams. The full player correctly uses @if(!isLive) to remove elements from the DOM. The inconsistency is real and factually correct.",
+      "severity_justification": "The gap is only 2px, barely perceptible in a mobile UI, but is a genuine visual inconsistency with the full-player approach and could look slightly off on certain backgrounds.",
+      "category_justification": "Wrong CSS property for the intended behavior — visibility:hidden preserves layout space, causing an unintended gap that @if or display:none would not.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/browse/browse.page.ts",
+      "start_line": 147,
+      "end_line": 156,
+      "message": "The error handling in the `radioCountry$` pipeline catches errors from `getStationsByCountry` but then emits an empty array `of([] as RadioStation[])`. While this prevents the stream from dying, it also means the `isRadioLoading` signal is set to `false` and the `radioStations` signal is set to an empty array. The UI will then show a \"No stations found\" message instead of the intended error message because the `radioError` signal is not the last thing that determines the state. The `radioError` is set, but the subsequent emission of an empty array will likely cause the `@else if (radioStations().length === 0)` block in the template to be rendered, not the `@else if (radioError())` block.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The template evaluates @else if (radioError()) before @else if (radioStations().length === 0). After an error, radioError() is a truthy string so the error block renders and the empty-state block is never reached. The finding's claim that the empty-array emission causes the 'No stations found' block to render is factually incorrect.",
+      "severity_justification": "The finding describes a non-existent bug; there is no actual rendering issue.",
+      "category_justification": "The finding is about incorrect UI state rendering logic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/audio.service.ts",
+      "start_line": 313,
+      "end_line": 317,
+      "message": "The `play` event listener records a play in the history, but only if `!episode.isLive`. While this correctly prevents history logging for live streams, it introduces a potential bug for regular episodes. If a user starts playing an episode, pauses it, and then resumes, this event will fire again. The `historySync.recordPlay` method does not appear to have logic to prevent duplicate history entries for the same playback session, which could lead to a cluttered history with multiple entries for a single listening session.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "recordPlay uses setDoc with { merge: true } keyed by episodeId — it's an upsert, not an insert. Multiple calls for the same episode update a single document, not create duplicates. The finding's claim that recordPlay lacks duplicate prevention is factually incorrect. The play event handler behavior is also pre-existing; this PR only added the !episode.isLive guard.",
+      "severity_justification": "Even if the concern were valid, the upsert semantics prevent duplicate records in practice.",
+      "category_justification": "The finding incorrectly claims the history service lacks deduplication logic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/radio-api.service.spec.ts",
+      "start_line": 56,
+      "end_line": 63,
+      "message": "The test for `getStationsByCountry()` with a `limit` parameter only checks if `r.params.get('limit') === '10'`. It does not verify that other essential default parameters like `hidebroken`, `order`, and `reverse` are still present. This makes the test less robust, as a change that accidentally removes default parameters when a `limit` is specified would not be caught.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the 'uses the provided limit parameter' test only checks r.params.get('limit') === '10' and url inclusion. It does not assert that hidebroken, order, or reverse params are still present when a custom limit is supplied. A regression dropping those params for non-default-limit calls would not be caught.",
+      "severity_justification": "Minor test coverage gap; the implementation is simple enough that this regression is unlikely, but the assertion incompleteness is real.",
+      "category_justification": "The finding identifies an incomplete assertion in a unit test that weakens regression coverage.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/radio-api.service.spec.ts",
+      "start_line": 115,
+      "end_line": 124,
+      "message": "The `registerClick` error handling test asserts that the observable `completes`, but it does not check if an error is propagated to the subscriber's error handler. The service implementation uses `catchError(() => of(undefined))`, which means it completes without emitting a value and swallows the error. The test should not expect `completed` to be true without first checking that `error` is not called, and more importantly, the test name is misleading because it implies completion is the only success criteria. A better test would assert that `error` is not called and `complete` is.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`completed=true` proves no error — mutually exclusive terminal events",
+      "severity_justification": "The test correctly verifies the intended behavior implicitly; the improvement is about explicitness and clarity rather than fixing a real coverage gap.",
+      "category_justification": "Finding is about test assertion completeness and clarity.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/browse/browse.page.html",
+      "start_line": 194,
+      "end_line": 194,
+      "message": "The `error` event handler on the `img` tag for a radio station's favicon is setting the source to a static path `/default-artwork.svg`. In Angular, this can be problematic if the application is not served from the root of the domain, as the path is absolute from the domain root. It's safer to use a relative path or a path resolved by Angular's asset handling to avoid broken images if the base href changes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The app's base href is explicitly '/' in index.html. The /default-artwork.svg pattern is used 14+ times throughout the codebase as the established convention. The new code follows the same pattern as library.page, podcast-detail.page, episode-detail.page, and podcast-card. The finding is generic Angular advice that ignores the actual project configuration and convention.",
+      "severity_justification": "No actual risk in this deployment; base href is / and this is a pervasive pattern throughout the codebase.",
+      "category_justification": "The finding is about path resolution conventions, a code style concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/player/full-player/full-player.component.ts",
+      "start_line": 59,
+      "end_line": 61,
+      "message": "The `isLive` getter relies on `this.store.currentEpisode()`, which can be `null`. If `currentEpisode()` returns `null`, this code will throw a `TypeError` because it attempts to access the `isLive` property of `undefined`. This can happen when no episode is loaded in the player.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The getter uses optional chaining: this.store.currentEpisode()?.isLive === true. When currentEpisode() is null, ?.isLive returns undefined, and undefined === true is false — no TypeError is thrown. The finding incorrectly claims a null dereference exists when the code already guards against it with ?.",
+      "severity_justification": "The claim is factually wrong; the code is safe.",
+      "category_justification": "The finding is about a claimed null dereference error.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/audio.service.ts",
+      "start_line": 320,
+      "end_line": 320,
+      "message": "For consistency with the other handlers in this file, this guard should use `this.activeEpisodeIsLive` rather than reading `episode.isLive` from the store. The comment block above (and the matching change you just made for `timeupdate`/`pause`) explicitly documents that the store may already reflect the next episode while `audio.src` still plays the previous one — so the same potential race applies here. Using the cached `activeEpisodeIsLive` keeps all three handlers consistent and avoids reading a possibly stale field after a queue advance.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at line 320: the `play` event handler uses `episode.isLive` from the store rather than `this.activeEpisodeIsLive`. This is inconsistent with `pause`, `timeupdate`, and `ended` handlers which all use `activeEpisodeIsLive`. The file's own comments explicitly document this exact concern ('Use activeEpisodeIsLive (not store) — same race reason as timeupdate handler'). While `episode.id === episodeId` provides partial protection, it doesn't fully guard against the race described in the comments, and the pattern is intentionally inconsistent.",
+      "severity_justification": "The `episode.id === episodeId` guard provides partial protection — if the store advances to a new episode the IDs may differ and the block won't execute. However it is a real inconsistency with an explicitly documented design principle and could cause a history entry to be recorded for a live station if the guard happens to pass during a race.",
+      "category_justification": "This is a logic inconsistency in event handler guards — using a potentially stale store value instead of the intentionally cached `activeEpisodeIsLive`, which could cause incorrect behavior during episode queue advances.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/browse/browse.page.html",
+      "start_line": 194,
+      "end_line": 197,
+      "message": "The interpolated separators here render awkwardly when fields are missing. For example, if `bitrate` is 0/falsy you'll render `MP3 · pop,rock` (codec only, with the leading `·` from the tags branch), and if only `bitrate` is present you'll render `128 kbps ·` with a trailing separator. Consider building the meta string in the component (joining non-empty segments with `' · '`) rather than emitting each separator inline, so the formatting is always well-formed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The specific rendering examples in the finding are factually incorrect. When bitrate=0, the result is 'MP3 · pop,rock' which is correct and well-formed. The '128 kbps ·' trailing separator case only occurs if codec is an empty string, which the finding doesn't mention — it incorrectly implies it happens when tags is absent. The codec field is always rendered unconditionally, so it always appears between the bitrate block and the tags block.",
+      "severity_justification": "Even if codec can be empty string in rare API responses, this is a cosmetic rendering issue with no functional impact.",
+      "category_justification": "The finding makes claims about incorrect rendering behavior in the template.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/radio-api.service.ts",
+      "start_line": 53,
+      "end_line": 57,
+      "message": "`searchStations()` is documented as searching by name or tag, but it only sends the query as the `name` parameter. Stations that only match the requested tag will not be returned, so tag search behavior promised by this API is missing.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the JSDoc comment says 'Search stations by name or tag' but the implementation only sets the `name` parameter, not `tag`. The Radio Browser API `/stations/search` endpoint has separate `name` and `tag` parameters, so stations matching only by tag would not be returned. The claim is factually accurate.",
+      "severity_justification": "The method is currently unused in the application (only defined and tested), so there's no user-facing impact yet. However the doc/implementation mismatch would mislead any future caller expecting tag search to work.",
+      "category_justification": "The JSDoc promises behavior ('by name or tag') that the implementation does not deliver. This is a documentation/contract mismatch rather than a runtime bug since the method isn't called from UI code yet.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/browse/browse.page.ts",
+      "start_line": 102,
+      "end_line": 104,
+      "message": "`BrowsePage` now injects `RadioApiService` and calls it during construction, but the existing `browse.page.spec.ts` TestBed only provides `PodcastApiService`, `Router`, `CountryService`, and `ActionSheetController` and does not provide `HttpClient`/a `RadioApiService` mock. Creating the component in those tests will hit the real root service and fail with a missing `HttpClient` provider unless the spec is updated.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: browse.page.spec.ts does not provide RadioApiService, PlayerStore, or HttpClient. BrowsePage now injects both RadioApiService and PlayerStore in its constructor and immediately calls this.radioCountry$.next(), which triggers radioApi.getStationsByCountry(). Since RadioApiService is providedIn:'root' and uses inject(HttpClient), TestBed would throw NullInjectorError for HttpClient unless the spec is updated.",
+      "severity_justification": "This is a broken test suite — the existing browse page tests would fail after this PR lands unless the spec is updated to provide mocks for RadioApiService and PlayerStore. The PR description claims 279 tests passing, which contradicts this finding.",
+      "category_justification": "The finding identifies that existing unit tests break because the spec doesn't provide mocks for the new dependencies introduced by this PR.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/core/services/audio.service.ts",
+      "start_line": 88,
+      "end_line": 90,
+      "message": "The new live-stream branch skips saved-position restore, but there are no AudioService tests covering the live behavior that this PR relies on (skipping restore/progress/history writes). The existing audio spec only exercises formatting and media-session helpers, so regressions in this live-stream persistence logic would not be caught.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: audio.service.spec.ts only tests the static formatTime() method and media session helper methods. There are no tests for the wireEvents() handlers (timeupdate, pause, play, ended) or the episode-loading effect where the live-stream skipping logic (activeEpisodeIsLive guards) was added. The claim is factually accurate.",
+      "severity_justification": "The live-stream persistence logic (skipping progress saves, history writes, and position restore for live episodes) is the core correctness-critical behavior introduced by this PR, and it has zero test coverage. Regressions in these paths would be silently undetected.",
+      "category_justification": "The finding identifies a gap in test coverage for newly introduced behavior in AudioService.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/player/full-player/full-player.component.html",
+      "start_line": 12,
+      "end_line": 16,
+      "message": "The live-mode controls are only covered in the template, but the existing FullPlayerComponent spec does not assert that the speed button, scrubber, or skip buttons disappear and that the LIVE badge appears for `isLive` episodes. These are the primary user-facing behaviors introduced here, so regressions in the live UI would not be caught.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: full-player.component.spec.ts has no tests covering isLive behavior — no assertion that the LIVE badge appears, no assertion that speed button/scrubber/skip buttons are hidden when isLive is true, and no test for the isLive getter itself. The finding is factually correct.",
+      "severity_justification": "These are UI rendering concerns driven by template @if blocks — regressions would be visible in manual testing. The impact is lower than service-layer logic gaps, but it is still untested primary user-facing behavior from this PR.",
+      "category_justification": "The finding identifies missing test coverage for new live-mode UI behavior introduced by the PR.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/player/mini-player/mini-player.component.html",
+      "start_line": 8,
+      "end_line": 12,
+      "message": "The mini-player live behavior is not covered by the existing MiniPlayerComponent spec. There is no assertion that an `isLive` episode hides the progress bar, so this user-facing live-stream behavior can regress without a test failure.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: mini-player.component.spec.ts has no test covering the isLive behavior introduced by this PR. There is no assertion that the progress bar's visibility is 'hidden' when the current episode has isLive: true. The finding is factually correct.",
+      "severity_justification": "This is a UI-only concern (a CSS visibility toggle via inline style binding) that would be caught by manual testing. The impact of a regression is cosmetic — a progress bar visible on a live stream is undesirable but non-breaking.",
+      "category_justification": "Missing test coverage for new live-mode UI behavior introduced by this PR in the mini-player.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/features/browse/browse.page.html",
+      "start_line": 140,
+      "end_line": 145,
+      "message": "The PR/linked issue calls out station search as part of the live radio MVP, but this new Browse radio section only renders the country station list and retry states. `searchStations()` is not used anywhere in the app, so users have no way to search radio stations from the UI.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The factual claim that searchStations() is unused is correct, but the finding's core premise — 'The PR/linked issue calls out station search as part of the live radio MVP' — is unverifiable without issue #137 content. The PR description lists 'RadioApiService (search, by country, click tracking)' as a service capability, not a UI requirement. The search method is plausibly intentional forward-looking infrastructure, and no search UI is mentioned in the PR's listed changes.",
+      "severity_justification": "Even if the finding were correct, the impact is a missing feature rather than a bug — users can still browse radio stations by country, they just cannot search.",
+      "category_justification": "The concern is about a public service method that exists without a corresponding UI integration — a module boundary / dead code observation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

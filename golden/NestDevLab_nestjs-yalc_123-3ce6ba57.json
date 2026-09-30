@@ -1,0 +1,631 @@
+{
+  "pr_key": "NestDevLab_nestjs-yalc_123-3ce6ba57",
+  "pr": {
+    "repo": "https://github.com/NestDevLab/nestjs-yalc",
+    "pr_number": 123,
+    "base": "9b49dd800131e9746cdf9320011d23b544a2ea59",
+    "head": "3ce6ba5785304f07c0e5361347f8306404067d28"
+  },
+  "findings": [
+    {
+      "file": "examples/omnikernel-module/src/omni-external-ref.service.ts",
+      "start_line": 61,
+      "end_line": 91,
+      "message": "upsertExternalRef calls createEntity(input) without a guid when no existing record is found. OmniBaseEntity uses @PrimaryColumn('varchar') with no @Generated('uuid'), so the guid must be supplied by the caller. syncDocumentReference and syncCollectionReference never include a guid in their inputs, meaning every first-time upsert for a document or collection will fail at the DB level with a null primary key error.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "OmniBaseEntity uses @PrimaryColumn('varchar') with no @Generated decorator. GenericService.createEntity does not auto-generate any UUID. syncDocumentReference and syncCollectionReference spread OmniExternalRefSyncInput, which has no guid field, so any first-time upsert for a new entity will call createEntity without a primary key and fail at the DB level.",
+      "severity_justification": "Every first-time call to syncDocumentReference or syncCollectionReference will produce a DB null primary-key error, making the external-ref sync workflow completely broken for new records.",
+      "category_justification": "A logic error in the entity write path means valid-looking service calls silently omit the required primary key and fail at the database level.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-external-ref.service.ts",
+      "start_line": 61,
+      "end_line": 91,
+      "message": "upsertExternalRef uses a non-atomic read-then-write (TOCTOU) pattern: findByExternalIdentity followed by createEntity or updateEntity. Concurrent calls with the same (provider, externalId, account, container) identity will both observe 'no existing record' and both reach createEntity, creating duplicate records. There is no unique constraint on OmniExternalRefEntity to prevent this at the DB level.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "OmniExternalRefEntity has no unique constraint on (provider, externalId, account, container). upsertExternalRef does a plain findOne then conditionally creates or updates, with no transaction or ON CONFLICT handling, so concurrent calls with the same identity will both create a new record.",
+      "severity_justification": "A real concurrency bug that can silently create duplicate external-ref records, but requires concurrent callers with the same identity and only manifests when finding 1 (missing guid) is fixed first; the example module context also reduces immediate production risk.",
+      "category_justification": "This is a concurrency/fault-tolerance issue — a TOCTOU race in the write path with no DB-level safety net to prevent duplicates.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/base/omni-external-ref.entity.ts",
+      "start_line": 8,
+      "end_line": 31,
+      "message": "OmniExternalRefEntity has no @Unique constraint on (provider, externalId, account, container). The upsert semantics in OmniExternalRefService depend on this combination being unique, but without a DB-level constraint, duplicate external refs can accumulate from concurrent requests, retry logic, or any code that calls createEntity directly bypassing the service.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "OmniExternalRefEntity has no @Unique constraint on (provider, externalId, account, container) as confirmed by reading the entity file. The upsert logic in OmniExternalRefService relies on this tuple being unique, but any direct createEntity call or concurrent access can silently create duplicates without a DB-level guard.",
+      "severity_justification": "Missing DB constraint means the upsert invariant can be violated by concurrent requests or any caller that bypasses the service; duplicates would accumulate silently. Medium rather than high because this is an example module and requires either concurrency or direct-entity-access to trigger.",
+      "category_justification": "The entity definition is missing a constraint that is required by the service's correctness invariant, making the data model inconsistent with the intended semantics.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-relation-semantics.ts",
+      "start_line": 29,
+      "end_line": 52,
+      "message": "isAllowedOmniRelation is defined and tested but is never called from the relation write path. There is no OmniRelationService override and the omniRelationProvidersFactory uses the default GenericService. Any GraphQL client can create an OmniRelationEntity with any combination of source kind, target kind, and relation kind, completely bypassing the semantic constraints documented in the README and enforced by this function.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "isAllowedOmniRelation is only called from test files. omniRelationProvidersFactory uses the default GenericService with no providerClass override, so no OmniRelationService exists to call isAllowedOmniRelation at the write path. Relation semantic constraints are documented in the README and tested in isolation but are completely unenforced for actual writes.",
+      "severity_justification": "The semantic validation helper exists and is tested, but a GraphQL client can freely create relations that violate the documented constraints (e.g., document-to-collection contains, non-document DerivedFrom). This is an inconsistency between stated design intent and actual behavior, though it is an example module.",
+      "category_justification": "The code has a semantic validation function that is never wired into the write path, meaning documented invariants are not actually enforced, which is a correctness gap between intent and implementation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/base/omni-relation.entity.ts",
+      "start_line": 11,
+      "end_line": 41,
+      "message": "OmniRelationEntity has no unique constraint on (sourceRecordId, targetRecordId, kind). Without this, the same directed edge with the same kind can be inserted multiple times. Queries like OmniKernelQueryService.getCollectionMembers use a single find with targetRecord loaded, so duplicate relations will return the same member record multiple times, silently inflating results.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "OmniRelationEntity has no @Unique or @Index constraint on (sourceRecordId, targetRecordId, kind). getCollectionMembers returns relations.map(r => r.targetRecord) with no deduplication, so duplicate edges would silently inflate query results.",
+      "severity_justification": "Duplicate relation rows can accumulate silently and corrupt query results from getCollectionMembers and getDocumentCollections. Medium rather than high because it requires duplicate inserts to occur first (no uniqueness enforcement at the write path either), and the module is an example rather than production code.",
+      "category_justification": "A missing DB constraint means the data model cannot enforce a structural invariant, and the query layer has no deduplication to compensate, so result correctness depends entirely on callers never inserting duplicates.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-collection.service.ts",
+      "start_line": 28,
+      "end_line": 42,
+      "message": "updateEntity passes conditions through GenericService.mapEntityR2W, which creates a new OmniCollectionEntity() instance and copies the condition fields. Since OmniCollectionEntity has the class initializer 'kind = OmniCollectionKind.Collection', the WHERE clause sent to the DB becomes { guid, kind: 'collection' } even when only { guid } was passed. If a record in the DB has kind = null or any other value (e.g., from a migration or direct write), the UPDATE affects 0 rows while validateConditions found the record and the method silently returns the stale entity as if the update succeeded.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "mapEntityR2W(conditions) creates new OmniCollectionEntity() whose class field initializer sets kind='collection', then copies only the caller-supplied keys onto it. The resulting WHERE clause includes kind='collection' even though the caller only passed {guid}. validateConditions uses the raw conditions and succeeds, while the repositoryWrite.update silently affects 0 rows if the DB record has a different kind value, and the stale entity is returned.",
+      "severity_justification": "The scenario requires a collection record whose kind column is not 'collection', which cannot happen under normal service-layer writes (normalizeCollectionInput enforces this). Only direct DB writes, migrations, or bypassing the service trigger the bug. Silent failure is bad, but the preconditions are unusual in an example module.",
+      "category_justification": "A logic inconsistency between validateConditions (uses raw conditions) and the actual UPDATE (uses mapEntityR2W-enriched conditions) can cause silent no-op updates.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-document.service.ts",
+      "start_line": 28,
+      "end_line": 42,
+      "message": "Same silent update failure as OmniCollectionService: mapEntityR2W on conditions adds 'kind = document' to the WHERE clause from the class initializer. If a document record's kind column in the DB does not equal 'document', updateEntity silently updates 0 rows but returns the entity without error, giving the caller a false success indication.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "OmniDocumentEntity has 'kind: OmniDocumentKind = OmniDocumentKind.Document' as a class field initializer, identical to OmniCollectionEntity. mapEntityR2W(conditions) creates new OmniDocumentEntity() and the kind='document' default gets baked into the UPDATE WHERE clause, while validateConditions uses the raw conditions. Factually the same issue as Finding 6.",
+      "severity_justification": "Same as Finding 6: requires a document record with kind ≠ 'document' in the DB, which normalizeDocumentInput prevents under normal service-layer writes. The precondition is unusual in an example module.",
+      "category_justification": "Same logic inconsistency between validateConditions and the UPDATE WHERE clause caused by the class field initializer being absorbed into mapEntityR2W conditions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-record.resolver.ts",
+      "start_line": 11,
+      "end_line": 27,
+      "message": "omniRecordProvidersFactory wires the generic GenericService directly to OmniRecordEntity with OmniRecordCreateInput, which accepts kind as a free-form string (no enum constraint). A caller can create a record with kind='document' via this resolver, but since the underlying entity is OmniRecordEntity (not OmniDocumentEntity), TypeORM will not set the recordType STI discriminator column to 'document'. This creates ghost document-like records that won't be returned from OmniDocumentEntity queries but pollute the omni-record table.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "OmniRecordType.kind is a free-form @IsString() field with no enum restriction. A caller using the base resolver can create records with kind='document', but since OmniRecordEntity is used for insertion the TypeORM STI recordType discriminator won't be 'document', so those rows won't surface in OmniDocumentEntity queries while polluting the omni-record table.",
+      "severity_justification": "Creates silent data integrity corruption: rows that look like documents by kind but aren't queryable as OmniDocumentEntity, plus the same ghost-record risk applies to 'collection' and any other reserved kind value. Medium rather than high because it requires deliberate misuse and is an example module.",
+      "category_justification": "The DTO allows any kind string including reserved STI discriminator values, creating an inconsistent DB state that can't be recovered through the normal entity query paths.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omnikernel.module.ts",
+      "start_line": 54,
+      "end_line": 67,
+      "message": "The exports array spreads raw provider descriptor arrays from all omni*Providers.providers (FactoryProvider objects, not just tokens). It then also separately exports OmniKernelQueryService class token in addition to omniKernelQueryServiceProvider object. Exporting the same token twice (once via the provider object and once as a bare token) is redundant and could cause confusion, but more importantly the module does not export the TypeOrmModule.forFeature() import, meaning consuming modules cannot use the TypeORM repositories for OmniKernel entities directly without re-importing them.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "OmniKernelQueryService is exported twice: once via omniKernelQueryServiceProvider (a FactoryProvider whose provide field is OmniKernelQueryService) and once as a bare class token. TypeOrmModule.forFeature() is imported but not exported, so consuming modules can't directly inject OmniKernel repositories.",
+      "severity_justification": "The redundant double export is harmless in NestJS (it resolves to the same token). Not exporting TypeOrmModule is a real limitation but expected in encapsulated module design — consumers use the exported services. Neither issue affects runtime correctness of the module itself.",
+      "category_justification": "These are module wiring hygiene issues: redundant export entry and an architectural choice about whether repositories should be publicly accessible, not correctness bugs.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omnikernel.query.service.ts",
+      "start_line": 19,
+      "end_line": 37,
+      "message": "getCollectionMembers has an inferred return type of Promise<OmniRecordEntity[]> rather than an explicit Promise<OmniRecordEntity[]>. More critically, when relations are loaded with targetRecord: true, TypeORM may return null for targetRecord if the referenced record has been deleted (orphaned relation). The .map(relation => relation.targetRecord) does not filter nulls, so callers receive an array that may contain null entries typed as OmniRecordEntity, causing null pointer errors downstream.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getCollectionMembers does relations.map(r => r.targetRecord) with no null guard, while the sibling getDocumentCollections method explicitly filters with !!record. @ManyToOne has no onDelete cascade, so orphaned relation rows would cause TypeORM to return null for targetRecord, which then appears in the result array typed as OmniRecordEntity.",
+      "severity_justification": "Requires orphaned relation rows to manifest; in normal operation with FK constraints enforced this won't occur. Low rather than medium because the schema has no cascade-delete design, making orphaned rows an unlikely production scenario, though the inconsistency with getDocumentCollections is worth fixing.",
+      "category_justification": "Missing null guard produces a type-unsafe result that can cause null pointer errors downstream, and the inconsistency with the sibling method is a concrete logic defect.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/base/omni-external-ref.entity.ts",
+      "start_line": 14,
+      "end_line": 17,
+      "message": "The 'internalId' column is defined as 'varchar' with length 36, while 'internalType' allows for multiple values. This mismatch may pose an implicit data integrity risk by enabling collisions or unintentional mappings between entity types.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The (internalType, internalId) pair is the intentional composite lookup key — internalType is exactly what disambiguates the same ID across entity families. The finding identifies no concrete collision scenario, data path, or logic error. The vague 'may pose a risk' framing with no specific failure mode makes this a generic concern that could be copy-pasted onto any polymorphic reference schema.",
+      "severity_justification": "Even if one accepted the concern, UUID-keyed polymorphic references are standard practice and the design is working as intended; no actual risk is demonstrated.",
+      "category_justification": "The claim is about potential data integrity, though it fails to demonstrate any concrete issue.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-document.dto.ts",
+      "start_line": 146,
+      "end_line": 148,
+      "message": "The 'publishedAt' field allows nullable date values. However, null dates are not explicitly validated in the GraphQL layer, which may lead to unanticipated query results or validation ambiguities.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The field correctly uses @IsOptional() + @IsDate() + nullable: true, which is the standard class-validator/GraphQL pattern for optional dates. The finding states no concrete failure mode — 'unanticipated query results or validation ambiguities' is vague and could apply to any nullable optional field anywhere.",
+      "severity_justification": "No concrete issue demonstrated; nullable optional dates are standard and correctly annotated.",
+      "category_justification": "The claim is nominally about validation correctness but identifies no actual error.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-document.entity.ts",
+      "start_line": 24,
+      "end_line": 26,
+      "message": "The 'sourceUrl' field's maximum length is set to 2048 characters. This exceeds typical URL length recommendations and may be incompatible with some databases.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "2048 characters is a common and well-reasoned URL field length — it matches IE's historical limit and is widely used in web applications for storing URLs. The finding provides no concrete evidence of incompatibility with any specific database used in this project. The tests use SQLite which handles varchar(2048) without issue. This is a generic style preference, not a concrete bug.",
+      "severity_justification": "No actual compatibility problem demonstrated; 2048-char varchar is a standard URL storage choice.",
+      "category_justification": "At most a design preference about field sizing, not a correctness or compatibility issue.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omnikernel.query.service.ts",
+      "start_line": 61,
+      "end_line": 65,
+      "message": "The method 'getDocumentExternalRefs' constructs a runtime filter on 'provider'. The optional condition is not indexed dynamically, possibly impacting query performance on large datasets.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is generic — 'no index on an optional filter column may slow large datasets' could be copy-pasted onto any service method in any codebase. It identifies no concrete performance problem specific to this code, cites no expected data volume, and OmniExternalRefEntity has no indexes at all (not just on provider), making this observation apply equally to every column. This is an example module with no production data volume expectations.",
+      "severity_justification": "Speculative performance concern with no concrete threshold, dataset size, or measured impact. Example module with no production scale requirements.",
+      "category_justification": "The concern is nominally about query performance, though no concrete issue is demonstrated.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/__tests__/omni-collection.service.spec.ts",
+      "start_line": 23,
+      "end_line": 28,
+      "message": "The test 'forces the base record kind during createEntity' does not validate negative behavior when 'kind' is omitted, which would ensure service-side assertions aren't overly mutable.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a vague suggestion to add a negative test case, not a statement about a concrete defect. The existing test already covers the invariant: it passes kind='unexpected-kind' and asserts the service forces kind=OmniCollectionKind.Collection regardless. The 'kind omitted' scenario (undefined) is a subset of the same invariant and adds no new behavioral coverage. The phrasing 'overly mutable' is undefined and the concern is not actionable.",
+      "severity_justification": "No actual gap in test coverage demonstrated; the existing test already exercises the core normalization invariant.",
+      "category_justification": "The finding is about a missing test case, though it identifies no concrete untested failure path.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-relation-semantics.ts",
+      "start_line": 35,
+      "end_line": 55,
+      "message": "The 'isAllowedOmniRelation' function can benefit from a default behavior for unspecified 'relationKind', preventing silent failures in case of unrecognized input.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "isAllowedOmniRelation already has an explicit 'return false' after the switch statement as the default for unrecognized relationKind values. The spec test explicitly verifies this. The finding's premise that unrecognized input causes silent failures is factually incorrect.",
+      "severity_justification": "The claimed gap does not exist; the code already handles the scenario correctly.",
+      "category_justification": "The finding makes an incorrect factual claim about missing default behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/__tests__/omni-external-ref.service.spec.ts",
+      "start_line": 45,
+      "end_line": 49,
+      "message": "The test 'creates a new external ref when the identity does not exist' temporarily spies on 'createEntity'. To ensure complete test encapsulation, the mocked repository's insertion behavior should be independently verified.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test deliberately spies on createEntity and mocks its return value to isolate upsertExternalRef's branching logic — this is intentional and correct test design. The finding suggests independently verifying the repository's insert behavior, but that is the responsibility of a separate createEntity unit test, not this test. The suggestion amounts to a generic preference about test granularity with no concrete defect or coverage gap identified.",
+      "severity_justification": "No actual test defect, coverage gap, or incorrect assertion identified; purely a style preference about test layering.",
+      "category_justification": "The finding is about test design preference with no concrete failure path left uncovered.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-external-ref.service.ts",
+      "start_line": 72,
+      "end_line": 74,
+      "message": "No character trimming is applied for 'account' and 'container' fields in the 'findByExternalIdentity' function, leading to potential inconsistencies in lookup behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "provider and externalId are only checked for non-empty (after .trim()) but are not themselves trimmed before lookup or storage. account and container receive exactly the same treatment as provider/externalId at the findByExternalIdentity call site. No inconsistency exists and no concrete failure scenario is demonstrated.",
+      "severity_justification": "No actual bug or divergent behavior shown; generic whitespace-handling suggestion.",
+      "category_justification": "The finding makes a factually incorrect claim about inconsistent field treatment.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/__tests__/omnikernel.persistence.spec.ts",
+      "start_line": 54,
+      "end_line": 59,
+      "message": "The in-memory SQLite database does not enforce validations on enum fields such as 'collectionKind' in 'OmniCollectionEntity'. This undermines test accuracy for persistence layer constraints.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "While SQLite doesn't enforce TypeORM enum constraints at the DB level, the persistence spec never tests that invalid enum values are rejected — it tests STI record storage, roundtrip correctness, and relation loading using valid values. None of the existing test assertions are undermined by SQLite's lack of enum enforcement. This observation could be copy-pasted onto any SQLite-backed TypeORM test suite.",
+      "severity_justification": "No existing test assertion is incorrect or falsely passing due to SQLite's enum non-enforcement.",
+      "category_justification": "The concern is about test environment limitations and test coverage, though no concrete false-positive test result is demonstrated.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omnikernel.module.ts",
+      "start_line": 42,
+      "end_line": 52,
+      "message": "The TypeOrmModule imports multiple entities without modular scope restrictions, potentially leading to unintentional import side effects across unrelated modules.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "TypeOrmModule.forFeature() is scoped to the module by design in NestJS — it registers repositories only within OmniKernelModule's provider scope. Registering multiple entities in one forFeature() call is the standard pattern and does not leak to unrelated modules. The finding provides no concrete side effect, no specific affected module, and could be copy-pasted onto any NestJS module that registers more than one entity.",
+      "severity_justification": "No concrete side effect or unintended behavior demonstrated; this is the correct and standard NestJS TypeORM registration pattern.",
+      "category_justification": "Generic architectural concern with no specific code defect identified.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/tsconfig.dev.json",
+      "start_line": 1,
+      "end_line": 9,
+      "message": "For consistency with the existing example package (`examples/skeleton-module/tsconfig.dev.json`), this dev config should extend `../../tsconfig.dev.json` (which itself extends the root prod config) instead of `../../tsconfig.json` directly, and the `src/**/*.spec.ts`, `src/**/*.test.ts`, and `src/**/__tests__/**/*` entries are already covered by `src/**/*` so the list can be simplified.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both claims verified: (1) omnikernel tsconfig.dev.json extends ../../tsconfig.json while skeleton-module extends ../../tsconfig.dev.json — inconsistent with the established pattern and the parent tsconfig.json's exclude array includes *.spec.ts and *.test.ts which conflicts with the child trying to include them back; (2) src/**/* is a superset of the three more specific patterns, making them redundant.",
+      "severity_justification": "Configuration inconsistency that may interfere with TypeScript tooling picking up test files under the dev config, but has no runtime impact and tests run via the separate __tests__/tsconfig.json anyway.",
+      "category_justification": "Deviation from established convention in the existing skeleton-module peer example and redundant include entries — a build configuration consistency/style issue.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-document.entity.ts",
+      "start_line": 9,
+      "end_line": 9,
+      "message": "`OmniDocumentEntity.kind` is declared as `kind: OmniDocumentKind = OmniDocumentKind.Document` and shadows the parent `OmniRecordEntity.kind` property that owns the `@Column('varchar', { length: 64 })` decorator. Because no `@Column` decorator is reapplied here, the parent's column metadata is what TypeORM ultimately uses, but this shadow can be confusing to future maintainers — especially since the very similar `documentKind` column right below it is decorated. Consider either dropping the shadow and setting the default through `normalizeDocumentInput` exclusively, or explicitly reapplying `@Column` on the override so it is clear which definition wins. The same applies to `OmniCollectionEntity.kind`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: both OmniDocumentEntity and OmniCollectionEntity declare 'kind' without @Column, shadowing the parent's decorated property. The entity spec itself omits 'kind' from the expected entityColumns for OmniDocumentEntity, confirming TypeORM metadata stays on the parent. The immediately adjacent 'documentKind' has @Column, making the asymmetry concrete and potentially misleading.",
+      "severity_justification": "The code functions correctly — TypeORM uses the parent column metadata and the service enforces the right value at write time. The risk is purely a future-maintainer confusion/misread, not a runtime bug.",
+      "category_justification": "The issue is about code clarity and an inconsistent decoration pattern between sibling properties that could mislead future maintainers about TypeORM behavior.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tsconfig.json",
+      "start_line": 151,
+      "end_line": 156,
+      "message": "Two new path entries for `@nestjs-yalc/omnikernel-module` are appended after the catch-all `nestjs-yalc/*` entry, while every other module is grouped at the top of the `paths` block (api-strategy, app, skeleton-module, …). For consistency with the surrounding ordering, the omnikernel-module paths should be inserted in the existing list (e.g. next to the skeleton-module entries) instead of being placed after the `nestjs-yalc/*` types path.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: @nestjs-yalc/omnikernel-module paths are placed after the nestjs-yalc/* catch-all entries at lines 151-156, while all other @nestjs-yalc/* module paths including skeleton-module appear before those catch-all entries. The ordering inconsistency is real and code-specific.",
+      "severity_justification": "TypeScript path resolution is not order-dependent within the paths object, so there is no functional impact. This is purely a consistency/readability concern.",
+      "category_justification": "Ordering deviation from the established convention in the existing paths block — a code consistency issue with no behavioral effect.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-external-ref.service.ts",
+      "start_line": 30,
+      "end_line": 39,
+      "message": "Passing `null` directly in a TypeORM `where` object does not reliably mean `IS NULL` (in this TypeORM version null where values are skipped unless configured otherwise). Because `account`/`container` default to null here, a lookup for the unscoped identity can match a row with a non-null account or container; use an explicit null operator or omit these fields only when that is intended.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding incorrectly claims that null values in TypeORM where options are skipped. TypeORM 0.3.x (version 0.3.27 per package-lock.json) changed this from 0.2.x behavior: null in FindOptions.where generates IS NULL in the SQL query. Passing account: null, container: null correctly restricts the lookup to rows where those columns ARE NULL, which is the intended unscoped identity lookup behavior.",
+      "severity_justification": "If the premise were true, the upsert logic could match wrong rows and corrupt external ref data — a real data integrity concern. But the factual claim about TypeORM behavior is incorrect for 0.3.x.",
+      "category_justification": "The finding is about runtime query behavior — whether null values generate IS NULL or are silently skipped, which would affect which database rows are matched.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-external-ref.service.ts",
+      "start_line": 78,
+      "end_line": 82,
+      "message": "`input` can still contain `guid` because `OmniExternalRefUpsertInput` omits only the external/internal identity fields. When an existing row is found, passing the full input to `updateEntity` can update the existing row's primary key if the caller supplied a different guid, corrupting references to that row; strip immutable fields before updating or exclude them from the upsert input type.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The type claim is correct: OmniExternalRefUpsertInput does allow guid (it's in DeepPartial<OmniExternalRefEntity> and the Omit only removes provider/externalId/internalType/internalId). It is passed unfiltered to updateEntity. However, TypeORM 0.3.x skips primary key columns in update SET clauses and no current caller passes a guid, making this a type-safety gap rather than an immediately exploitable bug.",
+      "severity_justification": "TypeORM 0.3.x's update mechanism protects against primary key mutation, and no current caller passes guid. The risk is a type-design gap that could mislead future callers who extend this pattern, not an active bug.",
+      "category_justification": "The finding is about potential data corruption through an incorrect type definition that allows immutable fields in a mutable update input.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-external-ref.service.ts",
+      "start_line": 99,
+      "end_line": 107,
+      "message": "`syncCollectionReference` introduces collection-specific sync behavior, but the service tests only cover `syncDocumentReference`. Add a test that verifies this path sets `internalType` to `Collection` and forwards the provided internal id/input so a future change cannot silently regress collection sync.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the spec covers syncDocumentReference with an explicit test for internalType: Document, but syncCollectionReference (lines 99-107 of the service) has zero test coverage. The two methods are parallel in structure, so the omission is a concrete, code-specific gap.",
+      "severity_justification": "This is an example module, and syncCollectionReference is a thin delegating wrapper that only sets internalType to Collection. The logic is simple and structurally mirrors the tested document path, reducing the risk of a silent regression. But the coverage gap is real.",
+      "category_justification": "The finding identifies a missing test case for a specific public method of the service.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/todo/FEAT-omnikernel.md",
+      "start_line": 10,
+      "end_line": 14,
+      "message": "This still describes collections as future work, but the same plan and this PR now include `OmniCollectionEntity` and collection query/service wiring. Updating this wording avoids making the OmniKernel plan contradict the implemented current status below.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 12 says 'future collections or containers' in the What OmniKernel Is section, but the same document's Current Status section explicitly lists 'first organization and collection slice' as already completed in PR #123, and the PR adds OmniCollectionEntity, OmniCollectionService, collection resolver/DTOs, and query wiring. The wording directly contradicts the implemented state.",
+      "severity_justification": "This is a documentation inconsistency within a todo/plan file. It does not affect runtime behavior or tests, but it misleads readers about what has and hasn't been built.",
+      "category_justification": "The finding identifies a stale/contradictory description in a planning document where the 'future work' framing conflicts with the already-implemented state described elsewhere in the same file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-relation.resolver.ts",
+      "start_line": 22,
+      "end_line": 25,
+      "message": "The relation CRUD provider uses the generic service directly, so the exported `isAllowedOmniRelation` rules are never enforced on writes. A GraphQL caller can still create `contains` or `derived_from` edges that the semantics helper rejects, which makes the stored graph diverge from the documented relation invariants; add a relation service/write-path check before exposing these mutations.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: omni-relation.resolver.ts specifies no providerClass, there is no OmniRelationService file, and isAllowedOmniRelation is only referenced in omni-relation-semantics.ts and its test — never called on any write path. Document and collection resolvers both use custom services that enforce their invariants. The relation semantic rules are exported but orphaned from the write path.",
+      "severity_justification": "The PR's own stated principle is to enforce invariants at the write path, not just DTOs. The isAllowedOmniRelation utility is exported as part of the public API but is never called during writes, making the graph semantics documentation aspirational rather than enforced. In a reference module this is a meaningful design gap.",
+      "category_justification": "The documented invariants (which relation kinds are allowed between which record kinds) are not enforced at the write layer, so invalid relations can be persisted — a behavioral correctness issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/omni-record.dto.ts",
+      "start_line": 60,
+      "end_line": 63,
+      "message": "The generic record CRUD path accepts any `kind`, including reserved values such as `document` and `collection`, while the semantics helpers classify records solely by this field. That lets callers create plain `OmniRecordEntity` rows that masquerade as concrete documents/collections without the STI discriminator or subtype columns, which can break query helpers and relation rules; reserve those kinds or route them through the concrete services.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: OmniRecordCreateInput.kind is @IsString() with no enum restriction, accepting 'document' or 'collection'. The semantics helpers (isOmniDocumentRecordKind, isOmniCollectionRecordKind) check only the kind field. OmniKernelQueryService.getDocumentCollections filters by isOmniCollectionRecordKind(record.kind), so a plain record with kind='collection' passes the filter but has no STI discriminator or subtype columns, corrupting query results.",
+      "severity_justification": "This creates a concrete path to malformed data: plain records masquerade as concrete entity types in the query layer. For a reference module meant to demonstrate invariant enforcement, this gap undermines the stated design principles and can cause subtle bugs in getDocumentCollections/relation semantics.",
+      "category_justification": "The write path allows creating records whose kind values will be misinterpreted by the query/semantics layer, producing incorrect classification results — a behavioral correctness issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/base/omni-relation.entity.ts",
+      "start_line": 12,
+      "end_line": 20,
+      "message": "The query service looks up active relations by `sourceRecordId`/`kind`/`status` and by `targetRecordId`/`kind`/`status`, but this entity defines no indexes for either access pattern. Once relation rows grow, collection membership and inverse document-collection traversals will require table scans; add indexes matching these lookup predicates.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: OmniRelationEntity has no @Index decorators anywhere in the module. The query service makes exactly the access patterns described — (sourceRecordId, kind, status) and (targetRecordId, kind, status) — which would require full table scans without explicit composite indexes.",
+      "severity_justification": "This is an example module unlikely to hit scale, and SQLite (used in tests) handles small datasets trivially. The concern is valid as a best-practice gap in a reference implementation, but has no immediate functional impact.",
+      "category_justification": "Missing indexes on the exact columns used in the two primary query patterns of the query service — a classic performance/scalability concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/omnikernel-module/src/base/omni-external-ref.entity.ts",
+      "start_line": 15,
+      "end_line": 28,
+      "message": "External-reference lookups are performed by `(provider, externalId, account, container)` and by `(internalType, internalId, provider)`, but the entity has no indexes for those predicates. These sync/query paths will degrade to table scans as refs accumulate; define indexes for the lookup keys used by `OmniExternalRefService` and `OmniKernelQueryService`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: OmniExternalRefEntity has no @Index decorators. OmniExternalRefService.findByExternalIdentity queries by (provider, externalId, account, container) and findForInternalRecord queries by (internalType, internalId, provider) — exactly the unindexed predicates the finding identifies.",
+      "severity_justification": "Example module context reduces practical impact, and the upsert path calls findByExternalIdentity on every sync which makes the missing index more impactful than a one-off lookup, but still a reference implementation concern rather than a production bug.",
+      "category_justification": "Missing composite indexes on the exact column sets used by the two primary external-ref lookup methods, causing table scans as ref rows grow.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

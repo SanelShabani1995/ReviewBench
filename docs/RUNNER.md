@@ -1,6 +1,6 @@
 # Run your agent on the test set
 
-The test set, 25 pull requests in [`corpus/showcase`](../corpus/showcase/), is yours to iterate on. Two ways to run on them:
+The test set, 25 pull requests listed in [`corpus/test/test.json`](../corpus/test/test.json), is yours to iterate on. Two ways to run on them:
 
 ## Locally, without scoring
 
@@ -12,7 +12,7 @@ scripts/try-agent.sh my-reviewer:dev -e OPENAI_API_KEY       # all 25, passing a
 scripts/try-agent.sh my-reviewer:dev --set full              # the full set, all 219
 ```
 
-`--set full` reads the full set's manifest, [`corpus/manifest.json`](../corpus/manifest.json), which exists from launch.
+`--set full` reads the full set's manifest, [`corpus/manifest.json`](../corpus/manifest.json).
 
 It needs docker, git and jq, and fetches each pull request from GitHub. Findings land in `./findings/`. It stops at checking the format; it does not judge the findings.
 

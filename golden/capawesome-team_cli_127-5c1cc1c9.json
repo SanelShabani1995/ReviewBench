@@ -1,0 +1,271 @@
+{
+  "pr_key": "capawesome-team_cli_127-5c1cc1c9",
+  "pr": {
+    "repo": "https://github.com/capawesome-team/cli",
+    "pr_number": 127,
+    "base": "a03825128b8380f86dcf85e8d3507b3a41d9f775",
+    "head": "5c1cc1c9c9601f7bc5d05718dc5a875fa42ce76b"
+  },
+  "findings": [
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 354,
+      "end_line": 383,
+      "message": "If the deployment action throws an exception (e.g., the `appBuildsService.findOne()` call inside the deployment command fails, or `appDeploymentsService.create()` throws), the error propagates up and is caught by the build polling loop's catch block at line 381-384. That catch block logs 'Error polling build status' — a completely misleading message since the build already succeeded and the error originates from the deployment step. The deployment error should be caught and reported separately.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the deployment call is inside the polling loop's try block (around line 354-361). Any exception thrown by the deployment action propagates to the catch block which logs 'Error polling build status:' — a misleading message since the build succeeded and the failure is in the deployment step.",
+      "severity_justification": "Misleading error messages make post-failure debugging significantly harder. When a build succeeds but deployment fails, the 'Error polling build status' message will cause confusion about whether the build or deployment failed.",
+      "category_justification": "The issue is about error handling — exceptions from the deployment step are misattributed to the build polling phase, degrading fault diagnosis.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 340,
+      "end_line": 361,
+      "message": "Using `--json` together with `--channel` or `--destination` produces corrupted stdout output. Consola `info` and `success` messages are written to stdout (confirmed by runtime inspection). The JSON build object is printed to stdout on line 342, then the deployment command writes its own info/success messages ('Creating deployment...', 'Deployment ID:', etc.) also to stdout, making the combined output unparseable by any downstream JSON consumer. There is no guard preventing this combination.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified via consola 3.3.0 source: BasicReporter sends messages with level >= 2 (info=3, success=3, start=3) to stdout. JSON is printed via console.log, then the deployment action emits consola.info/success/start messages also to stdout. No guard prevents --json combined with --channel or --destination, making the combined stdout invalid JSON.",
+      "severity_justification": "Breaking the --json flag's machine-readable output contract affects scripting/automation consumers, though only when combining --json with the new --channel or --destination flags.",
+      "category_justification": "The --json flag's contract is violated: stdout is no longer valid JSON when combined with --channel/--destination, which is incorrect behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 354,
+      "end_line": 363,
+      "message": "For non-web platforms (Android/iOS), the deployment command's polling loop terminates by calling `process.exit(0)` or `process.exit(1)` internally. This means the `await deploymentCommand.action(...)` call at line 355 never resolves for those platforms — the process exits from within it. The `process.exit(0)` at line 363 is therefore unreachable dead code for all Android/iOS deployments. Only web deployments (where `shouldWait` is false and the action returns normally) reach that line. This implicit reliance on `process.exit()` inside an `await` makes control flow opaque and error handling inconsistent between platforms.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: for Android/iOS the deployment action's polling loop calls process.exit() on every terminal state with no break path, so await deploymentCommand.action(...) never resolves. The process.exit(0) immediately after the deployment call in builds/create.ts is unreachable dead code for those platforms. For web, shouldWait=false so the action does return normally.",
+      "severity_justification": "The process exits correctly in all cases — no functional bug. The issue is dead code and opaque implicit control flow that makes the code harder to reason about and maintain, but doesn't affect runtime behavior.",
+      "category_justification": "Dead code and implicit control-flow-via-process.exit across command boundaries is a code clarity and maintainability concern rather than a runtime correctness or reliability issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 168,
+      "end_line": 178,
+      "message": "The platform-specific validation for `--channel` (web only) and `--destination` (non-web only) is placed after the interactive platform-selection prompt. In non-interactive mode, if `--channel` is provided but `--platform` is omitted, the user gets the generic 'You must provide a platform when running in non-interactive environment' error rather than the more specific incompatibility message. The mutual-exclusivity and detached checks (lines 88-97) run before any prompting, but the platform-compatibility checks run after the platform is resolved, making error reporting inconsistent depending on how platform is supplied.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The ordering is factually described correctly, but the behavior is both correct and unavoidable: platform-specific validation inherently requires knowing the platform. The generic 'must provide platform' error when --platform is absent is accurate and actionable. No user is misled — they still know exactly what to fix. The 'inconsistency' is an inherent consequence of the validation dependency, not a real defect.",
+      "severity_justification": "Even if treated as a concern, it's a minor UX observation about error message specificity. No user data, behavior, or correctness is affected.",
+      "category_justification": "The finding concerns error message consistency and validation ordering, which is a code quality / UX concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 354,
+      "end_line": 360,
+      "message": "The deployment command is invoked by calling `.action()` directly on the imported command object, bypassing the CLI framework's option parsing and Zod schema validation that `processConfig` normally performs. While all required fields are supplied at runtime, this approach creates an undocumented coupling: any future addition of required (non-optional) fields to the deployment command's schema, or changes to how the framework pre-processes options, will silently fail rather than producing a validation error.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The direct .action() call genuinely bypasses Zod schema.parse() including transforms and defaults. While all deployment fields are currently optional strings with no transforms, and TypeScript would catch new required fields at compile time, any future addition of .default() or .coerce() to the deployment schema would silently not apply. The coupling is real and undocumented.",
+      "severity_justification": "Currently there is no behavioral impact since all fields are optional strings with no transforms. The risk is theoretical and TypeScript provides partial compile-time protection. It's a maintainability concern for future schema evolution rather than a current bug.",
+      "category_justification": "This is an architectural coupling concern — programmatically invoking a command by bypassing its normal invocation path creates an implicit contract that can silently drift as the command evolves.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 357,
+      "end_line": 362,
+      "message": "The call to the `apps:deployments:create` action passes `undefined` as the second argument. This argument is an options object that includes the `--detached` flag. By passing `undefined`, the `--detached` flag from the original `apps:builds:create` command is not forwarded. This prevents users from running a build and deploy in a fire-and-forget manner, which might be desired for CI/CD scripts. The `detached` flag from the original options should be passed through.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The second argument to .action() is positional args (TArgs), not an options object containing --detached. The deployment command defines no args, so undefined is correct. The --detached forwarding concern is also moot: lines 88-91 explicitly reject --detached combined with --channel/--destination, so options.detached is always falsy when the deployment call is reached.",
+      "severity_justification": "The finding is incorrect about the code structure, and the underlying concern it tries to raise is addressed by existing validation.",
+      "category_justification": "The finding makes incorrect claims about what the second argument represents and about the behavior of the --detached flag in this flow.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 84,
+      "end_line": 88,
+      "message": "The check for the '--detached' flag being incompatible with '--channel' or '--destination' is correct, but it stops further execution abruptly using process.exit(1). This usage should be replaced with throwing errors or properly structured error handling for better testability and maintainability.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "process.exit(1) is used 184 times across all command files as the universal, consistent error-handling convention in this codebase. The new code introduced by the PR follows this established pattern exactly. The finding is a generic best-practice suggestion that could be copy-pasted onto any CLI project without referencing anything specific to this code.",
+      "severity_justification": "Even if the suggestion had merit, it would be a pervasive refactoring concern across the entire codebase, not specific to this PR.",
+      "category_justification": "The concern is about testability and error-handling style, which is a maintainability matter.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 90,
+      "end_line": 94,
+      "message": "The validation that '--channel' and '--destination' flags cannot be used together is hardcoded with process.exit(1). A structured error approach would provide better consistency in handling errors down the line.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical concern to Finding 7: process.exit(1) is the established, universal error-handling pattern used 184 times across all command files. The new code is fully consistent with existing convention. The finding is a generic best-practice suggestion with no code-specific substance.",
+      "severity_justification": "No functional impact; this is a style preference that contradicts the codebase's own established convention.",
+      "category_justification": "Error handling style and structure concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 165,
+      "end_line": 169,
+      "message": "The validation for '--channel' to be used with only the 'web' platform correctly identifies the issue but stops execution using process.exit(1). Consider using an error-throwing mechanism to keep the code more predictable and test-friendly.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical concern to Findings 7 and 8: process.exit(1) is the established, universal error-handling pattern used 184 times across all command files in the codebase. The new code is fully consistent with this convention. The finding is a generic best-practice suggestion that could be applied verbatim to any of the 184 other process.exit(1) calls without modification.",
+      "severity_justification": "No functional impact; the suggestion contradicts the codebase's own established convention.",
+      "category_justification": "Error handling style concern with no behavioral impact.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 171,
+      "end_line": 175,
+      "message": "The validation for '--destination' flag to be limited to non-'web' platforms stops execution with process.exit(1). A more graceful error handling approach such as throwing an exception or a validation error message would improve the structure and testability.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same concern as Findings 7, 8, and 9: process.exit(1) is the universal error-handling pattern used 184 times across all command files. The new code is fully consistent with the established codebase convention. The finding is a generic best-practice suggestion with no code-specific substance that could be copy-pasted onto any of the other 184 process.exit(1) calls unchanged.",
+      "severity_justification": "No functional impact; the suggestion contradicts the codebase's own established convention.",
+      "category_justification": "Error handling style concern with no behavioral impact.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 350,
+      "end_line": 359,
+      "message": "The deployment action triggered for '--channel' or '--destination' directly uses dynamic import. While this ensures late-loading, it creates coupling and potential runtime errors. Consider abstracting this into a top-level or pre-resolved dependency injection.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is a generic 'prefer static import / dependency injection' suggestion with no concrete bug or behavioral issue. The 'potential runtime errors' claim doesn't distinguish the dynamic import from a static one. Dependency injection doesn't match the project's patterns. The actual simplification (use a static import) has minor merit but is sub-threshold and not what the finding recommends.",
+      "severity_justification": "No functional impact; the dynamic import works correctly and the path is verifiable at build time via TypeScript.",
+      "category_justification": "Concerns import style and code coupling, which are maintainability matters.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 324,
+      "end_line": 326,
+      "message": "The logic for handling terminal states duplicates process.exit calls unnecessarily. This duplication adds potential for inconsistent exit statuses or hard-to-follow error paths. Refactor to consolidate terminal state handling into a single structured exit routine.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The terminal state handling with multiple process.exit calls is a pre-existing pattern in this file and mirrors the identical structure in deployments/create.ts. The PR did not introduce this design. No inconsistent exit statuses exist: failures all exit with 1, success with 0. The finding is a generic refactoring suggestion that could apply to any polling loop in any CLI project.",
+      "severity_justification": "No functional issue exists — exit codes are consistent. This is purely a style/structure preference.",
+      "category_justification": "Concerns code structure and consolidation of exit calls, a maintainability preference.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/apps/builds/create.ts",
+      "start_line": 185,
+      "end_line": 187,
+      "message": "Setting a default '--type' based on the platform is useful but does not validate against the provided type list. While a later validation exists, this implicit assumption may lead to ignoring user input errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's claim is factually wrong: if the user provides a type, the if (!type) guard prevents the default from overwriting it, and the subsequent validation still runs and catches invalid user-provided types. The defaults themselves ('debug', 'simulator') are valid entries in their respective type lists. Additionally, this is pre-existing code not introduced by this PR.",
+      "severity_justification": "The described scenario (ignoring user input errors) does not actually occur in the code.",
+      "category_justification": "The finding makes an incorrect claim about validation logic behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

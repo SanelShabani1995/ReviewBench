@@ -1,0 +1,231 @@
+{
+  "pr_key": "dotnet_android_11084-ac02d09a",
+  "pr": {
+    "repo": "https://github.com/dotnet/android",
+    "pr_number": 11084,
+    "base": "e67a3fd36ca5e24b0007a170ea77037e4437f9d3",
+    "head": "ac02d09a29b6492b0e1a01b48f5fcb3efa561a6c"
+  },
+  "findings": [
+    {
+      "file": "src/Xamarin.Android.Build.Tasks/Tasks/PreTrimmingFixLegacyDesigner.cs",
+      "start_line": 62,
+      "end_line": 74,
+      "message": "When FixLegacyResourceDesignerStep.ProcessAssemblyDesigner() returns false because the designer assembly cannot be resolved (LoadDesigner() only logs at debug level), the library assembly is silently not written to the prelink directory. _PreTrimmingFixLegacyDesignerUpdateItems then won't swap it, so ILLink receives the original unrewritten assembly. Without the TrimmerRootDescriptor that this PR removes, ILLink may trim designer types that the unrewritten code depends on, causing wrong resource IDs at runtime. The failure should be treated as an error, or the root descriptor should be kept as a fallback.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified the code path: LoadDesigner() catches AssemblyResolutionException/FileNotFoundException and only logs at debug level (leaving designerAssembly=null). ProcessAssemblyDesigner() then returns false (also only debug-logging 'Not using _Microsoft.Android.Resource.Designer'), so no prelink copy is written. _PreTrimmingFixLegacyDesignerUpdateItems Exists() check then fails, passing the original unrewritten assembly to ILLink. This PR removes the TrimmerRootDescriptor that previously served as a safety net — without it, ILLink can now trim designer types that the unrewritten ldsfld instructions depend on, causing runtime failures.",
+      "severity_justification": "Silent failure leads to ILLink trimming types that unrewritten code depends on, causing wrong resource IDs or crashes at runtime in production apps. The removed TrimmerRootDescriptor was the previous fallback.",
+      "category_justification": "Describes a logic path where the pre-trimming rewrite silently fails but the PR also removed the fallback safety net (TrimmerRootDescriptor), leading to incorrect runtime behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Xamarin.Android.Build.Tasks/Microsoft.Android.Sdk/targets/Microsoft.Android.Sdk.TypeMap.LlvmIr.targets",
+      "start_line": 238,
+      "end_line": 244,
+      "message": "_CollectPreTrimmingAssemblies and _AddResourceDesignerToPublishFiles both declare AfterTargets=\"ComputeResolvedFilesToPublishList\" with no explicit ordering between them. If _CollectPreTrimmingAssemblies runs before _AddResourceDesignerToPublishFiles, the designer assembly won't be in @(_PreTrimmingAssembly), its directory won't be in the resolver's SearchDirectories, and FixLegacyResourceDesignerStep will silently fail to load the designer. This depends on MSBuild's evaluation order (currently safe due to import order, but not formally guaranteed). A DependsOnTargets=\"_AddResourceDesignerToPublishFiles\" should be added to _CollectPreTrimmingAssemblies.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: both _AddResourceDesignerToPublishFiles (from Resource.Designer.targets, imported at line 386) and _CollectPreTrimmingAssemblies (from TypeMap.LlvmIr.targets, imported at line 2880) have AfterTargets='ComputeResolvedFilesToPublishList' with no explicit ordering between them. Current correctness relies on import order, not a formal MSBuild guarantee. If _CollectPreTrimmingAssemblies ran first, the designer assembly would be absent from @(_PreTrimmingAssembly), causing LoadDesigner() to silently fail.",
+      "severity_justification": "Current import ordering happens to be correct, but there's no formal dependency — any import reorder or future refactoring could break the designer pre-processing silently, leading to ILLink trimming types that code depends on (runtime crashes).",
+      "category_justification": "MSBuild target ordering without explicit dependency is a build reliability concern — the pipeline may silently malfunction under certain orderings.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Xamarin.Android.Build.Tasks/MSBuild/Xamarin/Android/Xamarin.Android.Resource.Designer.targets",
+      "start_line": 235,
+      "end_line": 248,
+      "message": "The TrimmerRootDescriptor is removed unconditionally from _AddResourceDesignerToPublishFiles, which affects ALL TypeMap implementations (including TypeMap.Trimmable). The pre-trimming fix is only added to TypeMap.LlvmIr.targets. For projects using _AndroidTypeMapImplementation=trimmable (a valid supported configuration), the designer assembly types lose their root protection with no compensating rewrite step, potentially allowing ILLink to trim designer types that are still needed.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Confirmed: _AddResourceDesignerToPublishFiles unconditionally removes TrimmerRootDescriptor (in Resource.Designer.targets, imported regardless of TypeMap implementation), while the new pre-trimming fix targets are exclusively in TypeMap.LlvmIr.targets (not imported when _AndroidTypeMapImplementation=trimmable). For trimmable TypeMap + AndroidUseDesignerAssembly=True, the designer assembly loses its root protection with no compensating rewrite. trimmable TypeMap is a real tested configuration (TrimmableTypeMapBuildTests.cs).",
+      "severity_justification": "Silent regression: users of the trimmable TypeMap configuration (a supported, tested feature) will have ILLink trim designer types that unrewritten library assemblies still reference via ldsfld, causing wrong resource IDs or crashes at runtime.",
+      "category_justification": "Logic gap introduced by the PR: TrimmerRootDescriptor removed unconditionally but the replacement pre-trimming rewrite is gated behind a TypeMap implementation condition, leaving trimmable TypeMap users unprotected.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Xamarin.Android.Build.Tasks/Microsoft.Android.Sdk/targets/Microsoft.Android.Sdk.TypeMap.LlvmIr.targets",
+      "start_line": 249,
+      "end_line": 262,
+      "message": "_PreTrimmingFixLegacyDesigner uses a single stamp file as the incremental output for all input assemblies. When the task is skipped (stamp newer than all inputs), _PreTrimmingModifiedAssembly is not populated. _PreTrimmingFixLegacyDesignerUpdateItems compensates via Exists() checks, but if prelink/ files are stale from a previous build (e.g., an assembly was removed from the project), Exists() still finds them and substitutes the stale prelink copy. The _PreTrimmingSwappableItem filtering by Exists() doesn't detect removals — a deleted source assembly still has a prelink copy that gets injected into ResolvedFileToPublish.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "_PreTrimmingSwappableItem is seeded exclusively from @(ResolvedFileToPublish) via the Include attribute — it can only contain items already in that list. A removed assembly won't be in @(ResolvedFileToPublish), so the Exists() check can never inject it back. The stale prelink copy sits on disk but is never referenced. The specific mechanism described ('deleted source assembly gets injected') is factually incorrect.",
+      "severity_justification": "Even if the scenario were possible, it would be an incremental build artifact. But it's not possible given the code, making this a non-issue.",
+      "category_justification": "The finding concerns incremental build correctness and stale file handling.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Xamarin.Android.Build.Tasks/Tasks/PreTrimmingFixLegacyDesigner.cs",
+      "start_line": 75,
+      "end_line": 87,
+      "message": "When WriteSymbols=true, assembly.Write() writes a PDB alongside the DLL to OutputDirectory. Only the DLL path is added to ModifiedAssemblies and subsequently to FileWrites. The PDB files in the prelink directory are never tracked in FileWrites, so they will not be deleted on Clean unless the entire intermediate directory is wiped. This causes stale PDB files to accumulate in the prelink/ directory across incremental builds.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: assembly.Write(outputPath, WriterParameters{WriteSymbols=true}) writes a PDB at Path.ChangeExtension(outputPath, '.pdb'). Only the DLL path (outputPath) is added to modified/ModifiedAssemblies/FileWrites — not the PDB. The PDB in prelink/ is untracked and won't be deleted by MSBuild's incremental clean mechanism.",
+      "severity_justification": "Affects only debug-trimmed builds where assemblies carry symbols. PDB accumulation in the intermediate directory is benign — no correctness impact, and a full clean wipes the entire IntermediateOutputPath anyway. Impact is cosmetic: stale PDB files in prelink/ between incremental builds.",
+      "category_justification": "Untracked intermediate build artifact — an incremental build / clean reliability issue rather than a functional bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Xamarin.Android.Build.Tasks/Microsoft.Android.Sdk/targets/Microsoft.Android.Sdk.TypeMap.LlvmIr.targets",
+      "start_line": 274,
+      "end_line": 282,
+      "message": "_PreTrimmingFixLegacyDesignerUpdateItems replaces DLL items in ResolvedFileToPublish but does not add corresponding entries for any PDB files that were written to the prelink directory. The original PDB paths remain in ResolvedFileToPublish pointing to the original locations, while ILLink reads DLLs from prelink/ and looks for PDBs in the same directory. This mismatch is harmless if WriteSymbols writes PDBs to prelink/ (which it does), but the original PDB items in ResolvedFileToPublish become stale references to now-superseded symbol files.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: _PreTrimmingFixLegacyDesignerUpdateItems only swaps .dll items (Condition filters on Extension == '.dll'). Any .pdb entries in @(ResolvedFileToPublish) remain at original paths. Assembly.Write() writes the PDB to prelink/ (same dir as DLL), so ILLink finds the correct PDB, but @(ResolvedFileToPublish) PDB entries are now inconsistent — pointing to pre-rewrite symbol files for post-rewrite DLLs. ProcessAssemblies receives these as ResolvedSymbols, which could cause symbol mismatches for debug trimmed builds.",
+      "severity_justification": "The finding itself acknowledges ILLink is unaffected. Only debug trimmed builds with debug symbols are affected. The stale PDB reference primarily matters for debug symbol packaging fidelity, not for correctness of the trimmed app.",
+      "category_justification": "Inconsistency between swapped DLL paths and unswapped PDB paths in ResolvedFileToPublish — a correctness concern for debug symbol handling.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Xamarin.Android.Build.Tasks/Microsoft.Android.Sdk/targets/Microsoft.Android.Sdk.NativeAOT.targets",
+      "start_line": 268,
+      "end_line": 270,
+      "message": "_AndroidRunNativeCompile now depends on _PreTrimmingFixLegacyDesignerUpdateItems, which has the condition '$(PublishTrimmed)' == 'true' and '$(AndroidUseDesignerAssembly)' == 'True'. When either condition is false, the target is skipped and MSBuild treats it as satisfied, so NativeCompile still runs. However, the dependency is asymmetric: NativeAOT builds with PublishTrimmed=true but AndroidUseDesignerAssembly=False will satisfy the condition on _AndroidRunNativeCompile but skip all three pre-trimming targets, meaning NativeCompile correctly runs. This is fine, but the dependency should be documented — it's non-obvious that adding a pre-trimming dependency to a native compile target is correct.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding explicitly concludes 'This is fine' twice, identifying no actual bug or risk. The dependency is correct MSBuild behavior (skipped conditional targets are treated as satisfied), and NativeCompile runs correctly in all configurations. The request is purely for a comment explaining non-obvious-but-correct behavior — a stylistic documentation preference without a concrete harmful consequence.",
+      "severity_justification": "No functional issue identified; the finding itself says the behavior is correct. Purely cosmetic documentation gap.",
+      "category_justification": "The finding's only concrete suggestion is to add a comment explaining the non-obvious dependency relationship.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Xamarin.Android.Build.Tasks/Tasks/PreTrimmingFixLegacyDesigner.cs",
+      "start_line": 77,
+      "end_line": 84,
+      "message": "The modified assembly is written to disk, and then a new `TaskItem` is created from the output path. However, `item.CopyMetadataTo(outputItem)` copies all metadata, including `RelativePath`, from the original item. This is incorrect because the output assembly is now in `$(IntermediateOutputPath)prelink/`, not its original location. The `_PreTrimmingFixLegacyDesignerUpdateItems` target later relies on this incorrect `RelativePath` to find the original item to remove, which will fail. This will result in both the original and the modified assembly being included in `ResolvedFileToPublish`, leading to build errors or incorrect behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "_PreTrimmingFixLegacyDesignerUpdateItems does not use @(_PreTrimmingModifiedAssembly) at all — it independently operates on @(ResolvedFileToPublish) via a Exists()-based filename check. The RelativePath metadata on outputItem only flows into FileWrites (which uses ItemSpec, not RelativePath), so the wrong RelativePath has no functional effect. The described failure mechanism does not match the actual code.",
+      "severity_justification": "The finding describes a failure mode (both original and modified assembly in ResolvedFileToPublish) that cannot occur with the actual code structure.",
+      "category_justification": "The finding concerns potential duplicate entries in ResolvedFileToPublish — a build correctness concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Xamarin.Android.Build.Tasks/Microsoft.Android.Sdk/targets/Microsoft.Android.Sdk.TypeMap.LlvmIr.targets",
+      "start_line": 269,
+      "end_line": 272,
+      "message": "The `AfterTargets` for `_PreTrimmingFixLegacyDesignerUpdateItems` is set to `ComputeResolvedFilesToPublishList`, which is too early. This target is intended to swap items in the `ResolvedFileToPublish` list. However, other targets that also run `AfterTargets=\"ComputeResolvedFilesToPublishList\"` (like `_AndroidRunNativeCompile`) might run before this swap happens because MSBuild doesn't guarantee order for targets with the same `AfterTargets`. To ensure the swap happens before any other consuming targets, it should run `BeforeTargets` the next phase (e.g., `BeforeTargets=\"ILLink\"`).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "_AndroidRunNativeCompile has explicit DependsOnTargets='_PreTrimmingFixLegacyDesignerUpdateItems;NativeCompile', which is a hard MSBuild ordering guarantee. The finding's claim that it 'might run before this swap happens' is factually incorrect. ILLink also runs after all AfterTargets='ComputeResolvedFilesToPublishList' targets complete. No target in this codebase with the same AfterTargets consumes the swapped DLL paths without an explicit dependency.",
+      "severity_justification": "The described ordering risk doesn't exist due to the explicit DependsOnTargets chain already in the code.",
+      "category_justification": "The finding concerns MSBuild target execution ordering and build reliability.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Xamarin.Android.Build.Tasks/Tasks/PreTrimmingFixLegacyDesigner.cs",
+      "start_line": 56,
+      "end_line": 56,
+      "message": "The `DirectoryAssemblyResolver` is initialized with `loadDebugSymbols: true`, but the task doesn't use the debug symbols. `Mono.Cecil` will search for `.pdb` files next to the assemblies, which adds unnecessary file I/O. The symbols are only used when writing the assembly back if `assembly.MainModule.HasSymbols` is true, but they are not needed for the rewriting logic itself. This can be set to `false` for a minor performance improvement.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The suggested change (loadDebugSymbols: false) would break debug symbol preservation for debug trimmed builds. loadDebugSymbols=true causes ReadSymbols=true, which sets assembly.MainModule.HasSymbols=true, which controls WriteSymbols in the output — ensuring PDB files reach prelink/ for ILLink to use. Setting it to false would silently drop symbols from prelink assemblies in debug builds. The suggestion is harmful.",
+      "severity_justification": "Even as a FP, the underlying claim (symbols not needed for rewriting) is factually correct — they're needed for preservation, not for the rewrite logic. The impact of the suggestion being wrong is limited to debug trimmed builds.",
+      "category_justification": "The finding is a performance suggestion (reduce I/O by not loading symbols).",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Xamarin.Android.Build.Tasks/Microsoft.Android.Sdk/targets/Microsoft.Android.Sdk.TypeMap.LlvmIr.targets",
+      "start_line": 244,
+      "end_line": 251,
+      "message": "The `_PreTrimmingFixLegacyDesigner` target has `Inputs=\"@(_PreTrimmingAssembly)\"` but `Outputs` points to a single stamp file. This is incorrect for incremental builds. If any single input assembly changes, the entire task will re-run, processing all assemblies again. For correct incremental behavior, the `Outputs` should correspond to the transformed version of each input file (e.g., using metadata `%(Identity)` to create a unique output path per input).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The single-stamp pattern is correct MSBuild behavior and is used identically for _GenerateJavaStubs in the same file. When inputs change, the task reruns all assemblies and produces correct results — this is all-or-nothing incremental, not 'incorrect incremental.' The finding's characterization of the pattern as 'incorrect' is inaccurate. Per-file outputs would also be less efficient since the designer assembly and lookup table would need to be rebuilt per assembly invocation.",
+      "severity_justification": "No correctness issue. The concern is strictly about incremental rebuild efficiency — reprocessing all assemblies when one changes is a known, intentional trade-off of the single-stamp pattern.",
+      "category_justification": "The finding is about incremental build behavior and MSBuild target efficiency.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,773 @@
+{
+  "pr_key": "indice-co_Indice.Cryptography_18-5c0b52a3",
+  "pr": {
+    "repo": "https://github.com/indice-co/Indice.Cryptography",
+    "pr_number": 18,
+    "base": "315ff594f66bd3b716b4bb695e1d4cc9eb92de24",
+    "head": "5c0b52a39593b9f7439e84d5f493eb60a0abc1ca"
+  },
+  "findings": [
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/StringExtensions.cs",
+      "start_line": 33,
+      "end_line": 38,
+      "message": "`GetHexVal` only handles uppercase A–F hex digits. For lowercase a–f (e.g., 'a'=97), the formula `97 - 55 = 42` is returned instead of the correct 10, producing wrong byte values. `CertificateRevocationList.EncodeTbsCertList` calls `crl.AuthorizationKeyId?.HexToBytes()`, and the roundtrip test uses a lowercase key ID `\"77c2b8509a677676b12dc286d083a07ea67eba4b\"`, so the Authority Key Identifier extension in every generated CRL will carry incorrect bytes. The `AuthorityKeyIdentifierExtension.GetHexVal` was fixed in this PR to handle lowercase, but `StringExtensions.GetHexVal` was not.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: StringExtensions.GetHexVal uses `val - (val < 58 ? 48 : 55)` which produces wrong values for lowercase a-f (e.g., 'a'=97 → 97-55=42 instead of 10). AuthorityKeyIdentifierExtension.GetHexVal was fixed in this PR to `val - (val < 58 ? 48 : (val < 97 ? 55 : 87))`, but StringExtensions.GetHexVal was not updated. CertificateRevocationList.EncodeTbsCertList calls `crl.AuthorizationKeyId?.HexToBytes()` via StringExtensions, and the test data uses lowercase `\"77c2b8509a677676b12dc286d083a07ea67eba4b\"`, so every CRL produced with a lowercase key ID will have a corrupted Authority Key Identifier extension.",
+      "severity_justification": "Every generated CRL using a lowercase hex AuthorizationKeyId will embed the wrong Authority Key Identifier bytes, making the CRL fail certificate path validation or chain verification by relying parties.",
+      "category_justification": "This is a logic error in hex parsing that produces incorrect byte values, directly affecting the correctness of generated CRL extensions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificateRevocationList.cs",
+      "start_line": 135,
+      "end_line": 153,
+      "message": "`CertificateRevocationList.EffectiveDate`, `NextUpdate`, and `RevokedCertificate.RevocationDate` are typed as `DateTime`. When passed to `WriteTime(AsnWriter, DateTimeOffset)`, C# implicitly converts `DateTime` to `DateTimeOffset` using local timezone offset when `Kind=Unspecified`. This produces incorrect UTC times in the DER-encoded CRL. The fields should be `DateTimeOffset`, or the `WriteTime` signature should accept `DateTime` and explicitly use `DateTime.SpecifyKind(value, DateTimeKind.Utc)` before converting.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `CertificateRevocationList.RevocationDate` and `RevokedCertificate.RevocationDate` are typed as `DateTime`. EF Core returns SQL Server `datetime` columns with `Kind=Unspecified`. The implicit conversion of `Kind=Unspecified` DateTime to DateTimeOffset applies the local timezone offset, so on any non-UTC server the DER-encoded revocation dates in the CRL will be shifted by the server's UTC offset. `WriteTime` calls `WriteUtcTime(DateTimeOffset)` which always writes the UTC equivalent, so a 2024-01-01T12:00Z time stored and retrieved as Unspecified would be encoded as e.g. 2024-01-01T10:00Z on a UTC+2 server.",
+      "severity_justification": "Affects correctness of CRL revocation timestamps on non-UTC servers, which could cause certificate validation issues, but this is environment-dependent (UTC servers are unaffected).",
+      "category_justification": "Incorrect DateTime-to-DateTimeOffset conversion leads to wrong UTC time values being DER-encoded in the CRL.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificateRevocationList.cs",
+      "start_line": 176,
+      "end_line": 203,
+      "message": "`EncodeTbsCertList` always writes the extensions block (Authority Key Identifier and CRL Number) even when `crl.AuthorizationKeyId` is null. When null, `keyBytes` falls back to `Array.Empty<byte>()`, encoding an `AuthorityKeyIdentifier` extension with a zero-length `keyIdentifier` field. RFC 5280 §4.2.1.1 requires the key identifier to be non-empty; this will cause failures in conforming X.509 validators. The extensions block should be conditional on `AuthorizationKeyId` being non-null.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `AuthorizationKeyId` is declared `string?` (nullable). The extensions block (including AuthorityKeyIdentifier) is always written unconditionally. When `AuthorizationKeyId` is null, `keyBytes` falls back to `Array.Empty<byte>()`, encoding an AuthorityKeyIdentifier extension with a zero-length keyIdentifier field. RFC 5280 §5.2.1 requires the keyIdentifier to be non-empty when the extension is present. The fix should guard the extensions block (or at least the AKI extension) on `AuthorizationKeyId != null`.",
+      "severity_justification": "Produces a malformed CRL that strict RFC 5280 validators would reject, but only when `AuthorizationKeyId` is null — in the current usage (CertificateHandlers) it is populated, so real-world impact is limited.",
+      "category_justification": "Encoding an X.509 extension with an empty mandatory field violates the RFC 5280 specification and produces malformed DER output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/QualifiedCertificateStatementsExtension.cs",
+      "start_line": 117,
+      "end_line": 153,
+      "message": "When the outer ASN.1 tag is an OID (not a SEQUENCE), `qcSeq` is set to `mainSeq`. After `qcSeq.ReadObjectIdentifier()` consumes the OID from `mainSeq`, a subsequent call like `QcLimitValueStatement.Decode(qcSeq)` passes `mainSeq` which now points to the next QCStatement SEQUENCE — not the current statement's `statementInfo`. This means statements with statementInfo (QcLimitValue, QcRetentionPeriod, QcPds, QcType, Psd2) would parse the wrong data when the outer element is a bare OID. The fix is to ensure that when the outer tag is OID, `qcSeq` is not passed to Decode methods expecting statementInfo.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The logic flaw is real: when the outer tag is a bare OID, `qcSeq` aliases `mainSeq`, and decode methods for statements with statementInfo (QcLimitValue etc.) would read from the wrong position. However, in practice every QCStatement is always SEQUENCE-wrapped per spec, including those without statementInfo, and this library's own encoder always uses PushSequence. The flaw can only be triggered by malformed non-conformant input, making the actual risk negligible.",
+      "severity_justification": "The bug can only be triggered by malformed, non-conformant ASN.1 input; conformant QCStatement encodings always wrap each statement in a SEQUENCE. No standard-compliant input would reach the problematic branch for statements with statementInfo.",
+      "category_justification": "Logic error in the decoder — `qcSeq` aliases `mainSeq` in the bare-OID branch, which would cause statementInfo decodes to consume data from the wrong position.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/QualifiedCertificateStatementsExtension.cs",
+      "start_line": 325,
+      "end_line": 334,
+      "message": "`QcLimitValueStatement.Decode` casts the decoded `BigInteger amount` to `decimal` with `decimal value = (decimal)amount;`. This throws `OverflowException` when `amount` is outside the range of `decimal` (~7.9×10²⁸). A conformant certificate with a very large limit value would cause an unhandled exception during extension decode, which propagates out of `CopyFrom` and makes the extension unusable. The cast should be wrapped in a checked conversion with a fallback or explicit range check.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The cast `(decimal)amount` where `amount` is `BigInteger` does throw `OverflowException` for values outside the decimal range (~±7.9×10²⁸). This would propagate up and cause the entire QCStatements extension to fail to decode. The finding is factually correct about the code behavior.",
+      "severity_justification": "While technically correct, `QcLimitValue` encodes monetary transaction limits in PSD2 certificates which are always reasonable amounts — no real-world certificate would have a limit near ±7.9×10²⁸, making this an entirely theoretical overflow risk in practice.",
+      "category_justification": "The unchecked BigInteger-to-decimal cast is a potential arithmetic overflow that could cause an unhandled exception during extension decoding.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificateRevocationList.cs",
+      "start_line": 410,
+      "end_line": 414,
+      "message": "`crl.CrlNumber = (int)crlNumReader.ReadInteger()` performs an unchecked cast from `BigInteger` to `int`. RFC 5280 §5.2.3 specifies CRLNumber is an unbound INTEGER. A CRL with a number larger than `int.MaxValue` (perfectly valid in practice for high-volume CAs) will throw `OverflowException` during decode inside the silent `catch {}` block, silently leaving `CrlNumber` at 0 with no diagnostic. The field should be `long` or `BigInteger`, or the cast should be range-checked.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `CrlNumber` is `int`, and `(int)crlNumReader.ReadInteger()` performs an unchecked BigInteger-to-int cast. RFC 5280 §5.2.3 specifies CRLNumber as an unbound INTEGER. A value exceeding `int.MaxValue` causes `OverflowException` silently caught, leaving `CrlNumber` at 0 with no diagnostic. The field should be `long` or `BigInteger`. The encode side at line 203 also uses `int` so the write path shares the same limitation.",
+      "severity_justification": "While technically a spec violation and a silent failure, CRL numbers exceeding int.MaxValue (~2.1 billion) are extremely unlikely in practice — requiring billions of CRL revisions by a single CA. The silent catch also prevents crashes, just yields 0 as the CRL number which is an incorrect but non-fatal value.",
+      "category_justification": "Unchecked narrowing cast from BigInteger to int with silent error suppression produces incorrect CRL number values for large integers, violating the RFC 5280 spec which defines CRLNumber as an unbounded INTEGER.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificateRevocationList.cs",
+      "start_line": 220,
+      "end_line": 260,
+      "message": "The heuristic in `DecodeTbsCertList` for distinguishing a raw TBSCertList from a signed CertificateList checks whether the first inner element is an INTEGER. A version-1 TBSCertList (version field absent) starts with AlgorithmIdentifier (a SEQUENCE), not an INTEGER. This causes the decoder to enter the signed-CRL path and read the AlgorithmIdentifier SEQUENCE as if it were the TBSCertList body, completely misinterpreting the structure. Real-world CRLs loaded via `Load()` that are version-1 will fail to decode correctly.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: the heuristic checks for INTEGER first inner tag (v2 TBSCertList) then SEQUENCE (treats as signed CRL). A raw v1 TBSCertList (version field absent) starts with AlgorithmIdentifier (SEQUENCE), so it's misidentified as a signed CRL, causing the AlgorithmIdentifier to be read as the TBSCertList body. The logic flaw is real.",
+      "severity_justification": "The failure only affects raw v1 TBSCertList input to `Load()`. This library always generates v2 CRLs, real-world CRL distribution uses signed CertificateList (which decodes correctly), and v1 CRLs are practically obsolete in modern PKI. The scenario is extremely unlikely in practice.",
+      "category_justification": "The decoding heuristic incorrectly identifies v1 TBSCertList as a signed CRL, causing complete misinterpretation of the structure.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography.AspNetCore/Features/CertificateApi.cs",
+      "start_line": 21,
+      "end_line": 24,
+      "message": "`.WithOpenApi()` is guarded by `#if NET8_0`, so it is only invoked when the library is compiled for `net8.0`. On `net9.0` and `net10.0` targets (both now included in `TargetFrameworks`), the certificate endpoints are registered without any OpenAPI metadata. The `Microsoft.AspNetCore.OpenApi` package is referenced for all three targets, so `WithOpenApi()` is available on all of them — the `#if` guard silently drops API documentation for net9+ consumers.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `#if NET8_0` is exact-match, not `NET8_0_OR_GREATER`. `Microsoft.AspNetCore.OpenApi` is referenced for all three TFMs, so `.WithOpenApi()` is available on net9.0 and net10.0 but silently excluded. The sample still uses Swashbuckle, which relies on `.WithOpenApi()` metadata, so net9+ consumers using Swashbuckle would get endpoints without OpenAPI documentation.",
+      "severity_justification": "Affects only API documentation metadata (OpenAPI/Swagger), not runtime behavior. Endpoints remain functional — consumers just lose Swashbuckle documentation on net9+ targets.",
+      "category_justification": "The overly-narrow `#if NET8_0` guard (vs `NET8_0_OR_GREATER`) causes inconsistent behavior across the supported TFMs, dropping OpenAPI metadata silently on net9+.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/QualifiedCertificateStatementsExtension.cs",
+      "start_line": 288,
+      "end_line": 304,
+      "message": "`QcLimitValueStatement.Encode` no longer truncates the currency code to 3 characters. The prior implementation used `currenyCode.Substring(0, 3)`. RFC 3739 and ETSI EN 319 412-5 specify the alphabetic `Iso4217CurrencyCode` as `PrintableString SIZE(3)`. Passing any string longer than 3 characters produces an ASN.1 constraint violation that strict X.509 validators will reject. The encode path should validate or truncate to exactly 3 characters.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified via git history: commit 146c8c1 used `currenyCode.Substring(0, 3)` to enforce the 3-char constraint. The new implementation writes `monetaryValue.CurrencyCode` directly without any validation. This drops a previously explicit constraint required by RFC 3739 `PrintableString SIZE(3)`. If a caller passes a currency code longer than 3 characters, the resulting ASN.1 violates the constraint and strict validators will reject the certificate.",
+      "severity_justification": "ISO 4217 alphabetic currency codes are always exactly 3 characters in practice, so a caller providing a code longer than 3 chars would be making a usage error. The real-world risk is very low, but the constraint was previously actively enforced and should be validated or at least documented.",
+      "category_justification": "Removal of a length constraint that was explicitly enforced in the previous implementation, violating the ETSI/RFC 3739 ASN.1 specification for Iso4217CurrencyCode.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificateRevocationList.cs",
+      "start_line": 363,
+      "end_line": 370,
+      "message": "`ReadEnumeratedValue(typeof(RevokedCertificate.CRLReasonCode))` returns a boxed `object` that is then cast to `CRLReasonCode`. `CRLReasonCode` is declared as `: byte`, but `AsnReader.ReadEnumeratedValue(Type)` returns a boxed `int` (or the enum's full underlying representation). An unbox from `object` (holding an `int`-backed value) to a `byte`-backed enum will throw `InvalidCastException` at runtime on .NET, causing reason-code parsing to silently fail inside the surrounding `catch {}`. The enum's underlying type should be `int`, or the cast should unbox to the correct type.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim that `ReadEnumeratedValue(Type)` returns a boxed `int` is factually incorrect. The method calls `Enum.ToObject(enumType, rawValue)` internally, which returns an instance of `CRLReasonCode` (not `int`). The cast `(CRLReasonCode)enumValue` where `enumValue` is `Enum` with runtime type `CRLReasonCode` is a narrowing reference conversion, not an int-unboxing, and it succeeds. The byte-backed underlying type does not affect this. No `InvalidCastException` occurs.",
+      "severity_justification": "The code works correctly as written; the finding describes a non-existent failure mode.",
+      "category_justification": "The finding incorrectly claims a type cast failure that does not actually occur in .NET.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/AuthorityInformationAccessExtension.cs",
+      "start_line": 150,
+      "end_line": 150,
+      "message": "The `continue` statement within the `while (sequenceReader.HasData)` loop will cause the loop to proceed to the next item in the sequence without adding the current `AccessDescription` to the `descriptions` list. If `int.TryParse` fails, the partially parsed description is silently discarded, which might hide issues with malformed OIDs. It would be better to either throw an exception or log a warning when an unparsable OID is encountered.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding correctly describes that `continue` skips malformed entries, but this is standard defensive forward-compatible ASN.1 parsing behavior. A failure in `int.TryParse(oidParts[^1], ...)` can only occur with corrupt OIDs (all standard PKIX OID components are integers). The `ReadSequence()` has already fully consumed the entry's bytes so the loop state is correct. The suggestion to 'throw or log' is generic best-practice advice not tied to a specific exploitable issue in this codebase.",
+      "severity_justification": "Even if triggered, only means an unusual/future access method is silently skipped rather than breaking the whole extension decode.",
+      "category_justification": "The finding is a style/defensive coding suggestion about error handling visibility, not a correctness bug.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificateRevocationList.cs",
+      "start_line": 286,
+      "end_line": 395,
+      "message": "The CRL issuer name decoding logic has multiple `try-catch` blocks that silently swallow exceptions. This can lead to incomplete or incorrect issuer information being parsed without any indication of an error. For example, if parsing one of the Relative Distinguished Names (RDNs) fails, the loop continues, potentially missing parts of the issuer's identity. It would be more robust to log these errors or handle them in a way that doesn't silently discard parts of the data.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding correctly describes the silent catch blocks but offers only generic advice ('log errors or handle them'). This is a standard defensive forward-compatible ASN.1 parsing pattern for issuer name fields. The suggestion is boilerplate that could be copy-pasted onto any code with empty catch blocks without modification. It does not identify a specific bug, concrete failure mode, or incorrect behavior — only a logging/observability preference.",
+      "severity_justification": "Even if exceptions are silently swallowed, CRL issuer name fields are non-critical for revocation validation — the AKI and signature are the structural components that matter.",
+      "category_justification": "The finding is a generic error-handling observability recommendation, not a correctness bug.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/Validation/Psd2ClientCertificateValidator.cs",
+      "start_line": 56,
+      "end_line": 56,
+      "message": "A potential `NullReferenceException` exists. If `qcStatements.Psd2Type` is `null`, accessing `qcStatements.Psd2Type.Roles` will throw an exception. The preceding line at 54 checks `!qcStatements.Psd2Type.Roles.Any()`, but this code is inside an `else` block where `qcStatements` is not null, but `Psd2Type` on it can be.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. Line 56 reads `if (qcStatements?.Psd2Type?.Roles == null || !qcStatements.Psd2Type.Roles.Any())`. Due to C# short-circuit evaluation of `||`, the right-side `!qcStatements.Psd2Type.Roles.Any()` is only reached when the left side is false — i.e., when `Roles` is confirmed non-null, which also guarantees `Psd2Type` is non-null. The PR actually fixed the original unsafe access; the new code is correct.",
+      "severity_justification": "No actual bug exists — the code is safe due to null-conditional operators and short-circuit evaluation.",
+      "category_justification": "The finding incorrectly identifies a null-safety issue that does not exist in the code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CRLDistributionPointsExtension.cs",
+      "start_line": 118,
+      "end_line": 121,
+      "message": "The loop condition `while (mainSeqReader.HasData)` seems correct, but the use of a context-specific tag with value 0 (`new Asn1Tag(TagClass.ContextSpecific, 0)`) is repeated. It would be clearer to define this tag once as a constant and reuse it.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding correctly observes that `new Asn1Tag(TagClass.ContextSpecific, 0)` appears multiple times in the Decode method, and suggests defining it as a constant. This is a pure style/readability suggestion — 'define a repeated value as a constant' — that could be copy-pasted onto any codebase with repeated literal values without modification. It identifies no bug, no correctness issue, and no inconsistency with local conventions. It is generic best-practice advice without substance beyond the general DRY principle.",
+      "severity_justification": "Purely cosmetic with no behavioral impact.",
+      "category_justification": "A style suggestion to extract a repeated inline value into a named constant, which is a generic refactoring recommendation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/AuthorityKeyIdentifierExtension.cs",
+      "start_line": 115,
+      "end_line": 115,
+      "message": "The `GetHexVal` method does not handle lowercase hexadecimal characters ('a' through 'f') correctly. It only considers uppercase 'A'-'F'. The expression `val - (val < 58 ? 48 : 55)` will produce incorrect results for lowercase hex characters. A more robust implementation would handle both cases or normalize the input to uppercase first.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually incorrect about the current code. The `GetHexVal` in `AuthorityKeyIdentifierExtension.cs` at the reviewed SHA uses `val - (val < 58 ? 48 : (val < 97 ? 55 : 87))`, which correctly handles digits, uppercase A-F, and lowercase a-f. The PR explicitly fixed this method. The finding describes the old pre-PR formula, not the current one.",
+      "severity_justification": "The code is correct as written; the described bug does not exist in this file at this SHA.",
+      "category_justification": "The finding incorrectly claims a hex parsing bug that was already fixed by this PR.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/QualifiedCertificateStatementsExtension.cs",
+      "start_line": 395,
+      "end_line": 395,
+      "message": "In `QcLimitValueStatement.Decode`, the `exponent` is read from the ASN.1 sequence but is then used to scale the `amount` in a loop. A more efficient way to apply the exponent is to use `decimal.Multiply` or `decimal.Divide` with `Math.Pow(10, Math.Abs(exponent))`, or to construct the decimal from its raw parts if performance is critical.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding suggests using `Math.Pow(10, Math.Abs(exponent))` or `decimal.Multiply` instead of a loop for applying the exponent. This is a generic performance micro-optimization suggestion with no demonstrated impact — monetary limit values in PSD2 certificates have small exponents (typically -2 to 0), so the loop runs at most a handful of iterations. The suggestion to use `Math.Pow` would actually be less precise (introduces floating-point) than the current integer-loop approach. The finding does not identify a bug or a real performance concern, only a stylistic preference.",
+      "severity_justification": "No real performance issue exists — exponents in practice are tiny (1–3 iterations), and the suggested `Math.Pow` approach would introduce floating-point imprecision that the current loop deliberately avoids.",
+      "category_justification": "The finding is a micro-optimization suggestion about the loop-based exponent scaling.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/CertificateManager.cs",
+      "start_line": 427,
+      "end_line": 427,
+      "message": "The `store.Close()` call is outside of a `finally` block. If `store.Add(imported)` throws an exception, the store will not be closed, which could lead to resource leaks. The `using` statement for `store` correctly handles this for .NET Core, but for full framework targets where `X509Store` might not implement `IDisposable` in the same way, it's safer to ensure cleanup.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code wraps `X509Store` in a `using` block, which guarantees `Dispose()` (which internally calls `Close()`) is invoked even if `store.Add()` throws. The finding's concern about .NET Framework `IDisposable` behavior is irrelevant — the project targets only net8.0/net9.0/net10.0 where `X509Store.Dispose()` reliably calls `Close()`. The explicit `store.Close()` inside the `using` is redundant but the resource management is already correct.",
+      "severity_justification": "No actual resource leak — the `using` statement handles cleanup correctly on all supported targets.",
+      "category_justification": "The finding is about resource management/cleanup, though the concern is factually wrong given the `using` block.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/CertificateManager.cs",
+      "start_line": 545,
+      "end_line": 545,
+      "message": "The `store.Close()` call is outside a `finally` block. If an exception occurs after `store.Open()` but before `store.Close()`, for example in `store.Add()`, the store will remain open. This could lead to resource leaks. It is safer to wrap the store operations in a `try...finally` block or use a `using` statement if `X509Store` is disposable on all target frameworks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `store.Close()` at line 545 is inside a `using (var store = new X509Store(...))` block (visible at line 521). The `using` statement guarantees `store.Dispose()` (which calls `Close()`) on all exit paths including exceptions and the early `return` at line 527. The finding's concern is factually wrong — cleanup is already handled. The explicit `store.Close()` is redundant within the `using` block but causes no resource leak.",
+      "severity_justification": "No actual resource leak exists; the `using` statement correctly handles all exit paths.",
+      "category_justification": "The finding concerns resource management/cleanup, but the concern is invalid given the `using` block already in place.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/X509CertificateLoader.net8.cs",
+      "start_line": 21,
+      "end_line": 24,
+      "message": "The PEM detection logic is naïve and only checks for the first 5 characters being '-'. This could lead to false positives if the byte array happens to start with `-----` but is not a valid PEM string. `X509Certificate2.CreateFromPem` would then fail. A more robust check would be to look for the full `-----BEGIN` header.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code checks only for 5 dashes but the comment explicitly says 'PEM begins with -----BEGIN'. The check is less specific than documented. While no realistic certificate format starts with `-----` except PEM, the inconsistency between the comment and implementation is a real (if minor) correctness gap. Checking for `-----BEGIN` would be more robust and match the stated intent.",
+      "severity_justification": "In practice, no valid certificate/DER/PKCS#12 data starts with 5 dashes, so false positives are essentially impossible. If one occurred, `CreateFromPem` would throw a clear exception rather than silently misbehave.",
+      "category_justification": "The PEM detection heuristic implements less than what its own comment describes, creating a subtle inconsistency between intent and implementation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/AuthorityInformationAccessExtension.cs",
+      "start_line": 71,
+      "end_line": 77,
+      "message": "The exception handling in DecodeExtension does not provide context on the failure during AuthorityInformationAccess extension decoding, which can make debugging difficult. Consider logging the raw input or further differentiating errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `DecodeExtension` method already throws `new InvalidOperationException(\"Failed to decode AuthorityInformationAccess extension.\", ex)` preserving the original exception as inner exception. This provides clear context about what failed. The suggestion to 'log raw input or differentiate errors' is generic advice that could be pasted onto any catch block in any codebase without modification — it does not identify a specific debugging gap or concrete problem.",
+      "severity_justification": "The existing error handling is functionally adequate — it preserves the exception chain with a descriptive message.",
+      "category_justification": "Generic observability/debugging advice without identifying a specific code issue.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificateManager.cs",
+      "start_line": 486,
+      "end_line": 487,
+      "message": "The method TrustCertificate creates a certificate devoid of its private key and proceeds without verifying private key access errors, potentially leading to silent failures in scenarios requiring private key access.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding misunderstands the intent. `TrustCertificate` is explicitly designed to add only the public certificate to the OS trust store — the code comment says 'Strip certificate of the private key if any.' Trust store operations have no use for the private key; including it would be incorrect. There is no scenario within this method that requires private key access, so no silent failure can occur from the intentional stripping.",
+      "severity_justification": "No actual issue exists — the behavior is correct and intentional for the method's purpose.",
+      "category_justification": "The finding incorrectly characterizes intentional design (stripping private key for trust store addition) as a potential silent failure.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/AuthorityKeyIdentifierExtension.cs",
+      "start_line": 92,
+      "end_line": 96,
+      "message": "DecodeExtension relies on Try-Catch blocks for parsing AuthorityKeyIdentifier raw data but does not provide meaningful context if decoding fails. This can make troubleshooting issues with invalid data harder.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The catch block throws `new InvalidOperationException(\"Failed to decode AuthorityKeyIdentifier extension.\", ex)`, which wraps the original exception as inner exception and includes a descriptive message identifying which extension failed. This provides meaningful context. The finding's suggestion about 'meaningful context' is generic advice that could be applied to any try-catch in any codebase without modification.",
+      "severity_justification": "The existing error handling is adequate — it preserves the original exception chain with a descriptive message.",
+      "category_justification": "Generic observability suggestion without identifying a specific debugging gap in the actual code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/Indice.Cryptography.Host/appsettings.json",
+      "start_line": 15,
+      "end_line": 15,
+      "message": "The HttpSignatures:PfxName path reference has been changed to a relative path, which can cause runtime issues if the App_Data directory is missing in deployment scenarios.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The value `\"./App_Data/certs/xxxxxxxx.pfx\"` is a clearly-marked placeholder in a sample application that must be replaced before any deployment. The old value `\"xxxxxxxx.pfx\"` was equally unusable at runtime. The concern about a missing directory applies identically to both; the change doesn't introduce new risk. The finding describes a deployment concern inherent to all placeholder configuration, not a specific new issue introduced by this PR.",
+      "severity_justification": "This is a sample project with obvious placeholder values; no production code is affected.",
+      "category_justification": "The finding concerns a runtime deployment risk from a missing directory, but applies to placeholder sample configuration.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificateRevocationList.cs",
+      "start_line": 370,
+      "end_line": 440,
+      "message": "The DecodeTbsCertList method only partially validates extensions. Malformed extensions could silently be skipped leading to unexpected behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding states that malformed extensions are silently skipped, which is factually correct — there are catch blocks that skip unparseable extensions. However, this is standard defensive ASN.1 parsing behavior for forward-compatible CRL processing, and the finding offers only the generic suggestion that 'malformed extensions could silently be skipped leading to unexpected behavior' without identifying a specific failure mode, concrete input, or downstream behavior that is actually affected. The same comment could be applied to any lenient ASN.1 parser in any codebase.",
+      "severity_justification": "Silently skipping unknown/malformed extensions is standard practice in X.509 processing; the critical fields (revoked serial numbers, dates, signatures) are not affected by extension parsing failures.",
+      "category_justification": "Generic observability/robustness suggestion about silent error handling without identifying a specific bug or exploitable condition.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/Indice.Cryptography.Tests/CertificateTests.cs",
+      "start_line": 96,
+      "end_line": 96,
+      "message": "[csharp.lang.security.filesystem.unsafe-path-combine.unsafe-path-combine] String argument revocationListFile is used to read or write data from a file via Path.Combine without direct sanitization via Path.GetFileName. If the path is user-supplied data this can lead to path traversal.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `revocationListFile` parameter value comes exclusively from `[InlineData(\"xuzt3PU9F_w.crl\")]` — a compile-time constant test attribute. There is no user-supplied input involved. This is a boilerplate static analysis alert that pattern-matched `Path.Combine` with a string argument without recognizing it as a hardcoded test fixture value. No exploitable path traversal vulnerability exists.",
+      "severity_justification": "No actual vulnerability — the 'input' is a compile-time constant in a test, not user-controlled data.",
+      "category_justification": "The finding is a security claim (path traversal) from a static analysis tool, though it is a false positive.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "csharp.lang.security.filesystem.unsafe-path-combine.unsafe-path-combine"
+      }
+    },
+    {
+      "file": "test/Indice.Cryptography.Tests/CertificateTests.cs",
+      "start_line": 222,
+      "end_line": 224,
+      "message": "The `CertificateRevocationList_Roundtrip_CreateEncodeDecodeValidate` test acknowledges that `AuthorizationKeyId` does not roundtrip correctly (\"encoding has some complexities with context-specific tags\") and asserts only that it is non-empty rather than equal to the input. This indicates that the AKI extension encode/decode (Oid_AuthorityKey) is not actually being verified by the test. Given that this PR rewrites the entire ASN.1 layer, this property should roundtrip exactly; otherwise consumers of `CertificateRevocationList.AuthorizationKeyId` after load will receive a different value than was written. Please either fix the encode/decode so the assertion can be `Assert.Equal`, or document the known-incorrect behavior.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test at lines 222-224 explicitly acknowledges the issue with a comment about 'encoding has some complexities with context-specific tags' and uses `Assert.NotEmpty` instead of `Assert.Equal`. Additionally, the encode path uses lowercase hex input while the decode path uses `X2` (uppercase), meaning a strict equality check would fail regardless. This is a known gap in the roundtrip verification for a critical field.",
+      "severity_justification": "The `AuthorizationKeyId` is a security-relevant field (Authority Key Identifier) in the CRL. If it doesn't roundtrip correctly, consumers loading a CRL will receive a different value than was written, potentially causing validation failures in certificate chain verification workflows. The test gap means this bug could go undetected.",
+      "category_justification": "The finding is about inadequate test assertions — the test explicitly weakens the assertion for `AuthorizationKeyId` to hide a known encode/decode issue, leaving a correctness bug unverified.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CRLDistributionPointsExtension.cs",
+      "start_line": 158,
+      "end_line": 171,
+      "message": "`CRLDistributionPoints.Encode` always writes a ReasonFlags BIT STRING whenever `point.Reason.HasValue`, even when the value is `ReasonFlags.Unused` (bit position 0). Per RFC 5280 §4.2.1.13, bit 0 in ReasonFlags is named `unused` and is not intended to be set; encoding `Unused` produces a BIT STRING with bit 0 set, which conveys the opposite of the intent (i.e. it asserts the \"unused\" flag). Consider skipping encoding when `Reason == ReasonFlags.Unused`, or omit `Unused` from the enum entirely.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The encode path at lines 158-171 fires whenever `point.Reason.HasValue`. With `ReasonFlags.Unused = 0`, `bitPosition = 0`, `reasonBytes[0] = 0x80`, and unusedBits = 7, producing a BIT STRING with bit 0 set — the RFC 5280 `unused(0)` flag. This encodes a semantically invalid reasons field. The `Reason` property is nullable so `null` is the right 'no reason' sentinel; `Unused` is a named enum value that should not be blindly encoded.",
+      "severity_justification": "In practice callers are unlikely to explicitly set `Reason = ReasonFlags.Unused` since the field is nullable and `null` is the natural 'absent' value. The bug only manifests in the unusual case where `Unused` is explicitly assigned, making it an edge-case correctness issue.",
+      "category_justification": "Encoding `Unused = 0` produces an RFC 5280-invalid BIT STRING — wrong runtime behavior for a specific input value, not a style or reliability issue.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificatePoliciesExtension.cs",
+      "start_line": 204,
+      "end_line": 227,
+      "message": "`UserNotice` decoding (lines 204–227) always tries to read the optional `noticeRef` as a SEQUENCE then the optional `explicitText` as a UTF8String. Per RFC 3280 §4.2.1.5, both fields are OPTIONAL and `DisplayText` is a CHOICE between `IA5String`, `VisibleString`, `BMPString`, and `UTF8String`. The current code will throw if a real-world certificate uses, e.g., a `VisibleString` or `BMPString` for `explicitText`, or if `noticeRef` is absent but `explicitText` is encoded as a different string type. The encoding side (lines 138–162) has a symmetric issue: it only ever writes `UTF8String`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the decode at lines 204-227 calls `ReadCharacterString(UniversalTagNumber.UTF8String)` unconditionally for both `Organization` and `explicitText` fields. RFC 3280 §4.2.1.5 defines `DisplayText` as a CHOICE of IA5String/VisibleString/BMPString/UTF8String — using any non-UTF8String type would cause an AsnContentException. The encoding side also only writes UTF8String, creating asymmetry with the spec.",
+      "severity_justification": "The codebase targets PSD2/QWAC certificate creation and the UserNotice qualifier is rare in practice; the code correctly handles the self-encoded case (UTF8String roundtrip). The issue only manifests when parsing externally-generated certificates using other CHOICE variants, which is an uncommon scenario for this library's use case.",
+      "category_justification": "The code fails to handle all valid ASN.1 encodings of DisplayText as defined by RFC 3280, causing runtime exceptions when encountering non-UTF8String variants.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/Indice.Cryptography.Tests/CertificateTests.cs",
+      "start_line": 94,
+      "end_line": 96,
+      "message": "The previously-parameterized `Import_CRL` test lost one of its two test cases (`http://crls.pki.goog/gts1c3/zdATt0Ex_Fk.crl`) when moving from HTTP-fetched to file-based fixtures. Only one CRL fixture (`xuzt3PU9F_w.crl`) is bundled. Since this PR rewrites the CRL parser, consider committing both CRL fixtures (or even more real-world samples) to keep — or improve — the original parsing coverage.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: data directory contains only one CRL fixture, the test has a single InlineData case, and the assertion is `Assert.True(true)` — a no-op. This is genuinely inadequate test coverage for a PR that rewrites the full CRL ASN.1 encode/decode layer.",
+      "severity_justification": "The roundtrip test (`CertificateRevocationList_Roundtrip_CreateEncodeDecodeValidate`) provides some coverage. The `Import_CRL` gap is real but not blocking — it's a coverage improvement opportunity rather than a missing safety net for critical behavior.",
+      "category_justification": "The finding is about insufficient real-world test fixtures and a trivially weak assertion in an existing test, which is a test coverage/quality issue.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/Validation/Psd2ClientCertificateValidator.cs",
+      "start_line": 48,
+      "end_line": 52,
+      "message": "The original `Psd2ClientCertificateValidator` had a bug in the conditional `(int)qcStatements!.Type < 0 && 3 < (int)qcStatements.Type` (an `&&` that is always false), so the validation message was effectively dead code. The new replacement uses `Enum.IsDefined`, but `QcTypeIdentifiers` now has a `None = 0` value (added in this PR). `Enum.IsDefined` will return `true` for `None`, so the `|| qcStatements.Type == QcTypeIdentifiers.None` exclusion is required and correct. However, the surrounding `if (type.HasValue && type.Value != qcStatements!.Type)` block means this `None` check is only reached when `type` is null. When the caller passes `type == null` and the certificate has `Type == None`, validation will now correctly fail — please make sure existing callers that previously relied on the broken validation still behave as intended.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The original condition was provably always-false (a && b where a requires value < 0 and b requires value > 3). The new code is logically correct. The behavioral change is real: callers passing type=null with a certificate having Type=None now get a validation error that was previously silently swallowed. The finding correctly identifies this as a deliberate but potentially breaking behavior change.",
+      "severity_justification": "The original code was a clear bug — the type validation was dead code. The new behavior is correct per the PSD2 spec (a certificate with Type=None is invalid). The behavioral change only affects certificates that should already be rejected, so the impact on well-formed usage is nil.",
+      "category_justification": "The finding centers on a logic error in the original code (always-false condition) and the behavioral implications of fixing it — a correctness concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CABForumOrganizationIdentifierExtension.cs",
+      "start_line": 73,
+      "end_line": 79,
+      "message": "The ASN.1 syntax makes `schemeIdentifier` optional, so encoding a missing value as an explicit NULL changes the sequence shape and produces non-conformant data. It also prevents decoding standard encodings where the optional field is omitted entirely (the first PrintableString would be the country, but this decoder treats it as the scheme). Omit the element when it is absent and make the decoder distinguish the 2-element and 3-element forms.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: EncodeOrganizationIdentifier writes an ASN.1 NULL when SchemeIdentifier is null (lines 73-75), which is non-conformant. The BR defines registrationSchemeIdentifier as a required PrintableString. Writing NULL corrupts the sequence structure for any external parser. The decoder only handles the self-encoded NULL case, so any standard-conformant certificate where the field is properly absent (or has a different structure) would be misread.",
+      "severity_justification": "Real-world certificates encoded by third parties would fail to decode, and self-encoded certificates with null SchemeIdentifier produce non-conformant DER that other ASN.1 parsers/validators would reject. This could cause interoperability failures in certificate chain validation for PSD2 use cases.",
+      "category_justification": "The code produces non-conformant ASN.1 encoding (NULL instead of either required PrintableString or omitted OPTIONAL element), causing both encoding spec violations and decode failures for external inputs.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificateRevocationList.cs",
+      "start_line": 348,
+      "end_line": 349,
+      "message": "`nextUpdate` is optional in the X.509 TBSCertList structure, but the decoder always reads a second time value. A valid CRL that omits `nextUpdate` will cause the following revokedCertificates sequence or extensions tag to be parsed as a time and fail extraction. Check the next tag for UTCTime/GeneralizedTime before reading this field.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `ReadTime` is called unconditionally at line 349 with no preceding tag check. If nextUpdate is absent (valid per RFC 5280 §5.1.2.5 OPTIONAL), ReadTime falls through to its error-throw path when it encounters the next non-time tag (SEQUENCE or context-specific). The fix requires peeking the tag before calling ReadTime for this optional field.",
+      "severity_justification": "RFC 5280 §5.1.2.5 marks nextUpdate OPTIONAL, but virtually all real-world CRL issuers include it. The code this PR introduces for internal CRL generation always writes nextUpdate. Impact is limited to parsing externally-generated CRLs from rare issuers that omit the field.",
+      "category_justification": "The decoder unconditionally reads an optional field without guarding against its absence, causing a runtime exception for conformant but unusual CRL encodings.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificateRevocationList.cs",
+      "start_line": 475,
+      "end_line": 477,
+      "message": "`Load` stores the entire input blob in `_rawTbsCertList`, but `SignAndSerialize` later assumes that field contains only the TBSCertList bytes and signs it directly. Loading an already signed CRL and then calling `SignAndSerialize` will therefore sign the full signed CRL wrapper and emit an invalid nested structure. Extract and store the inner TBSCertList bytes when the input is a signed CRL, or prevent re-signing loaded signed data.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `Load` stores the full input blob in `_rawTbsCertList` via the internal constructor. `SignAndSerialize` signs those bytes and wraps them as TBSCertList. When the input is a signed CRL (the documented use case for `Load`), this produces a doubly-wrapped invalid structure. The bug is silent — no exception is thrown.",
+      "severity_justification": "The Load+SignAndSerialize combination is an unusual API usage pattern; the documented workflow is Load→Extract (decode) or new CertificateRevocationListSequence(crl)→SignAndSerialize (encode). But the API permits the broken path and produces silently invalid output, which is a real issue if anyone attempts re-signing a loaded CRL.",
+      "category_justification": "The bug causes SignAndSerialize to produce an invalid nested CRL structure when called on a loaded (already-signed) CRL — wrong runtime behavior for a specific but valid API usage pattern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/QualifiedCertificateStatementsExtension.cs",
+      "start_line": 375,
+      "end_line": 378,
+      "message": "`language` is a mandatory field of `PdsLocation` (the file's ASN.1 comment lists `url` and `language` without OPTIONAL), but the encoder now omits it when the property is null or empty. That produces a non-conformant QcPds statement and may fail in decoders that expect the two-element sequence. Validate that `Language` is present instead of silently omitting it.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the encoder at lines 375-378 omits `language` when null/empty. ETSI EN 319 412-5 defines PdsLocation with both `url` and `language` as required fields (no OPTIONAL). Producing a 1-element sequence when a 2-element sequence is required makes the certificate non-conformant and may cause rejection by eIDAS-compliant validators.",
+      "severity_justification": "QcPds statements with missing language would fail validation in strict ETSI-conformant systems. PSD2/eIDAS certificate creation is the primary use case of this library, so non-conformant output in that domain is a meaningful defect even if the decoder tolerates it.",
+      "category_justification": "The encoder silently produces spec-violating output when Language is null, which is an incorrect encoding relative to the ETSI EN 319 412-5 standard.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/QualifiedCertificateStatementsExtension.cs",
+      "start_line": 322,
+      "end_line": 324,
+      "message": "The MonetaryValue currency is an ASN.1 CHOICE: either an alphabetic PrintableString or a numeric INTEGER. This decoder now always reads a PrintableString, so valid QC statements that use the numeric ISO 4217 form will throw instead of decoding. Peek the tag and handle INTEGER as well.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: RFC 3739 §3.2.5 defines Iso4217CurrencyCode as a CHOICE between alphabetic PrintableString and numeric INTEGER. The decoder at line 323 unconditionally calls ReadCharacterString(PrintableString), which throws AsnContentException for numeric-encoded currency. This is introduced by the new decoder in this PR.",
+      "severity_justification": "RFC 3739 marks the alphabetic form as 'Recommended' and it is used in virtually all real-world QC certificates. The numeric form is uncommon in modern ETSI/PSD2 certificates. Self-encoded certificates always roundtrip correctly. Impact is limited to parsing rare externally-generated certificates using the numeric form.",
+      "category_justification": "The decoder fails to handle a valid ASN.1 CHOICE variant as defined by the governing RFC, causing runtime exceptions for conformant but uncommon encodings.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/CertificateRevocationList.cs",
+      "start_line": 147,
+      "end_line": 149,
+      "message": "Parsing the hex serial number directly into `BigInteger` can produce a negative value when the high bit is set (for example serials starting with 8–F), because the hex parser uses two's-complement semantics. X.509 certificate serial numbers must be positive, so these CRLs can be encoded with invalid negative serial numbers. Parse the hex bytes as an unsigned big-endian integer or prepend a leading 00 before writing.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: BigInteger.Parse with AllowHexSpecifier uses two's-complement, making any hex string starting with 8-F (high bit set) parse as negative. The test fixture uses 'fedcba9876543210' which starts with 'F' and would encode as a negative DER INTEGER — invalid for an X.509 serial number. The fix requires using Convert.FromHexString + new BigInteger(bytes, isUnsigned:true, isBigEndian:true).",
+      "severity_justification": "CRLs generated for certificates whose serial numbers start with hex 8-F (a common case) would have invalid negative serial numbers in the encoded CRL. This would cause interoperability failures with compliant ASN.1 parsers and could break revocation checking for those certificates.",
+      "category_justification": "Incorrect BigInteger parsing semantics produce invalid negative serial numbers in the DER-encoded CRL, violating RFC 5280 §4.1.2.2.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/Indice.Cryptography.Tests/CertificateTests.cs",
+      "start_line": 221,
+      "end_line": 224,
+      "message": "This new round-trip test no longer verifies that `AuthorizationKeyId` survives encode/decode unchanged; it only checks that some value is present. Since the PR changes the CRL authority-key encoding/decoding, this assertion would not catch truncation, byte-order, or wrong-key regressions in that behavior. The test should assert the expected key ID exactly once the encoder/decoder handles the field.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same code confirmed in Finding 1 investigation: lines 221-224 use Assert.NotEmpty with an explicit comment 'encoding has some complexities with context-specific tags — for now just check it's not empty.' The AuthorizationKeyId roundtrip is not verified with Assert.Equal, meaning truncation, byte-order, or key-mismatch regressions in the rewritten AKI encode/decode would go undetected.",
+      "severity_justification": "AuthorizationKeyId is a security-relevant field used for certificate chain validation. Undetected regressions in its encoding/decoding could produce CRLs where the AKI doesn't match the issuer's SKI, breaking revocation checking.",
+      "category_justification": "The finding identifies a weak test assertion that does not verify the actual correctness of the encode/decode for a specific field, leaving a behavioral gap in test coverage.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Indice.Cryptography/X509Certificates/QualifiedCertificateStatementsExtension.cs",
+      "start_line": 628,
+      "end_line": 630,
+      "message": "This changed PSD2 decoding from tolerant parsing (`Parse(..., false)` in the previous implementation) to strict parsing. Certificates whose NCAId does not match the local regex will now fail to decode the entire QC statements extension instead of preserving the raw identifier, which can reject real-world certificates that the library previously handled. Keep the non-throwing parse path here unless the caller explicitly wants validation.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: line 630 calls NCAId.Parse(ncaIdStr) with default throwOnError=true. A FormatException for any non-matching NCAId propagates to the outer catch and fails the entire QC statements extension decode. The NCAId API explicitly provides a tolerant non-throwing path (throwOnError: false) that returns the raw text — appropriate for decode contexts where the input is external certificate data.",
+      "severity_justification": "Real-world PSD2 certificates from some EU NCAs may have NCAId formats that don't exactly match the regex. Failing to decode the entire QC statements extension for such certificates is a regression that could break validation workflows for real certificates the library previously handled.",
+      "category_justification": "Using strict (throwing) parsing in a decode path where tolerant parsing is appropriate causes silent regressions for valid-but-non-conformant external inputs.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

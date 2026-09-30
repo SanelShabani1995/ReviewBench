@@ -1,0 +1,691 @@
+{
+  "pr_key": "Pushedskydiver_chief-clancy_216-6baec2ab",
+  "pr": {
+    "repo": "https://github.com/Pushedskydiver/chief-clancy",
+    "pr_number": 216,
+    "base": "a77f2542ee0d6e041810e373dfed09e8e6ffe696",
+    "head": "6baec2abdca4d6b74b716ee677e88a03a1e63060"
+  },
+  "findings": [
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 518,
+      "end_line": 518,
+      "message": "When `--ticket {KEY}` is provided and the plan file has no `**Source:**` header, the workflow silently skips Step 4c entirely (line 518) without checking for the `--ticket` override first. The flag is explicitly documented at line 596 as the solution 'when the brief Source field is missing,' but the missing-Source code path never reaches the key override. An LLM following this spec would silently discard the user's explicit `--ticket` argument with no error or log entry.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 518 states 'Step 4c skips silently and continues to Step 7' with no conditional check for `--ticket`. Line 596 explicitly documents `--ticket` as the fix 'when the brief Source field is missing' — but the missing-Source code path exits before reaching the flag override logic. The two sections directly contradict each other, and an LLM following the spec would silently discard the `--ticket` argument in this case.",
+      "severity_justification": "The `--ticket` flag is explicitly advertised as the solution for a missing Source header, but it is silently ignored in that exact scenario. Users who supply `--ticket` to work around a missing Source will see a local-only approval with no push and no error, with no indication their flag was discarded.",
+      "category_justification": "Logic error in the workflow spec: the missing-Source branch unconditionally skips without consulting the `--ticket` override, contradicting the documented behavior of that flag.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 396,
+      "end_line": 396,
+      "message": "The retry contract promises 'auditing tools see one approval row in `.clancy/progress.txt`, even if 4c was attempted multiple times,' but Step 7's local mode block (line 1512-1515) unconditionally appends a `LOCAL_APPROVE_PLAN` row with no retry guard. On EEXIST+`--push` reruns, Step 7 executes and writes a duplicate `LOCAL_APPROVE_PLAN` entry for every retry, directly contradicting the stated invariant.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The diff version of the EEXIST section explicitly adds a 'per invocation' paragraph stating 'every retry appends a fresh LOCAL_APPROVE_PLAN row' — which is consistent with Step 7's unconditional append. The 'one approval row' text the finding quotes exists only in the checked-out file, not in the diff's `+` lines. Per instructions, the diff takes precedence for the specific lines under review, so the claimed invariant contradiction is not present in the diff version.",
+      "severity_justification": "If the 'one approval row' text were authoritative, it would create a genuine spec inconsistency that could mislead downstream audit tooling. But the diff version resolves this by explicitly documenting multi-row behavior.",
+      "category_justification": "The finding is about a logical contradiction between a stated invariant and actual runtime behavior in the workflow spec.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 538,
+      "end_line": 538,
+      "message": "The `BOARD_PUSH_SKIPPED_NO_TICKET` row is described as written 'after the existing `LOCAL_APPROVE_PLAN | {stem} | sha256={...}` row from Step 7's local-mode log block.' But Step 4c runs before Step 7; Step 7 writes `LOCAL_APPROVE_PLAN` (line 1512-1515). The skip row will physically appear before `LOCAL_APPROVE_PLAN` in `progress.txt`, not after. The same ordering contradiction applies to `LOCAL_APPROVE_PLAN_PUSH` at line 742-745. The audit trail ordering the spec promises is impossible given the step execution sequence.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The diff version of the skip-no-ticket branch explicitly uses '(without writing to `.clancy/progress.txt` yet)' with 'The row Step 7 will write on its behalf' — deferring the write to Step 7, which correctly places the row after LOCAL_APPROVE_PLAN. The ordering contradiction exists only in the checked-out file (which has the immediate-write language), not in the diff's version of the text. Per instructions, the diff takes precedence for these specific lines.",
+      "severity_justification": "If the ordering spec were followed as written in the checkout (immediate write in Step 4c), the BOARD_PUSH_SKIPPED_NO_TICKET row would appear before LOCAL_APPROVE_PLAN in progress.txt, breaking the stated two-row ordering invariant that downstream audit tooling relies on.",
+      "category_justification": "The finding is about a logical ordering contradiction in the workflow spec between when Step 4c writes its rows vs. when Step 7 writes LOCAL_APPROVE_PLAN.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 524,
+      "end_line": 524,
+      "message": "The bracketed-key detection regex `^\\[(#?\\d+|[A-Z][A-Z0-9]*-\\d+)\\]\\s+.+$` cannot match Notion source values. Notion keys are 32/36 lowercase hex chars (e.g. `[abc123def456abc123def456abc12345] Page title`), which match neither `#?\\d+` nor `[A-Z][A-Z0-9]*-\\d+`. They always fall through to the 'file-path' bucket, logging `BOARD_PUSH_SKIPPED_NO_TICKET`. Notion users in standalone+board mode can never auto-detect their ticket — `--ticket` is always required — but this limitation is not documented anywhere.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The diff's version of line 524 explicitly adds Notion key patterns to the bracketed-key regex (notion-[a-f0-9]{8}, [a-f0-9]{32}, 36-char UUID form), fully addressing the gap the finding describes. The finding is accurate about the checkout's simpler regex but not about the diff's version of that line, which is what should be trusted per instructions.",
+      "severity_justification": "If the simpler checkout regex were authoritative, Notion users would silently get BOARD_PUSH_SKIPPED_NO_TICKET on every auto-detect attempt with no documented workaround — a meaningful functional gap.",
+      "category_justification": "The finding is about a regex failing to match valid Notion key formats, causing Notion users to silently miss board push functionality.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 493,
+      "end_line": 496,
+      "message": "The first run-condition gate says Step 4c only runs 'when Step 4a wrote a marker successfully.' On the EEXIST+`--push` retry path, Step 4a explicitly does not write a marker (the existing one is preserved). The gate's prose contradicts the retry path behaviour described two paragraphs above it: the retry path is meant to fall through to Step 4c even though Step 4a did not write a marker. An LLM reading gate 1 literally would skip Step 4c on retries.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Gate 1's body at line 493 explicitly states 'The retry path — EEXIST with --push set — falls through to Step 4c instead of stopping.' An LLM reading the full gate text (not just the heading) gets the correct behavior for retries. The heading 'Step 4a wrote a marker successfully' is slightly imprecise, but the in-body carve-out resolves the ambiguity immediately — the claimed contradiction doesn't exist for a careful reader.",
+      "severity_justification": "The heading is slightly imprecise but the body makes the retry behavior explicit in the same gate block. No real risk of an LLM mishandling retries since the carve-out is immediately adjacent.",
+      "category_justification": "At most a minor clarity/precision issue in the gate heading wording; the diff correctly improves this to 'A local approval marker exists for this stem' but the checkout is not functionally wrong.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 583,
+      "end_line": 586,
+      "message": "The key-mismatch path (which fails before any network request is made) logs `BOARD_PUSH_FAILED | key-mismatch:{KEY}`. This token is semantically wrong: no push was attempted, yet the log entry is indistinguishable from an actual push failure at the `BOARD_PUSH_FAILED` level. Downstream audit tooling that counts push failures or calculates retry rates would incorrectly include pure validation errors. The disambiguation contract at line 784 patches around this but doesn't fix the root naming issue.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Documented deliberate choice, already mitigated at line 784",
+      "severity_justification": "The disambiguation contract (key-mismatch: prefix in the reason field) enables downstream tooling to distinguish the cases, and no actual push tooling exists yet. The naming is suboptimal but workable with the documented contract.",
+      "category_justification": "This is a token naming/semantic design issue in the workflow spec — the token name misleads about what actually happened (validation failure vs. push failure), affecting auditability and future tooling.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 493,
+      "end_line": 496,
+      "message": "When `--push` is explicitly passed by the user but board credentials are absent, Step 4c silently skips with no warning, no log token, and no stdout note (line 496 'skip Step 4c silently'). A user who runs `/clancy:approve-plan {stem} --push` in standalone mode (e.g. after accidentally deleting `.clancy/.env`) gets zero feedback that the explicit push request was dropped.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the spec explicitly says 'no warning, no log token, no stdout note' when gate 2 (credentials) fails, with no conditional check for whether --push was passed. The decision matrix logs LOCAL_ONLY for afk-without-push (a deliberate skip), but has no equivalent token for an explicit --push being silently dropped due to missing credentials. The user's explicit instruction is silently discarded.",
+      "severity_justification": "A user who explicitly requests a push (--push flag) and gets no feedback when the push silently doesn't happen will be confused and may incorrectly believe the push succeeded. This is worse than the afk-without-push case, which is at least logged.",
+      "category_justification": "The spec's silence handling is incorrect for the --push case: an explicit user instruction is silently dropped rather than warned about, violating the principle of least surprise and contradicting the detailed logging provided for other skip paths.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/workflows.test.ts",
+      "start_line": 1214,
+      "end_line": 1221,
+      "message": "The test for missing `**Source:**` header handling only checks that the workflow says 'skip silently' — it does not assert that a `--ticket` override bypasses the silent-skip path. This means the spec bug (line 518 of approve-plan.md: `--ticket` is silently discarded when Source is missing) passes all tests undetected.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the test at lines 1214-1221 only asserts presence of 'missing Source' language and 'skip' — it doesn't assert that --ticket bypasses the silent-skip when Source is absent. No other test in the file covers this combination. The spec bug from Finding 1 (--ticket silently discarded on missing Source) would pass all tests undetected.",
+      "severity_justification": "This is a test coverage gap that allows a pre-existing spec bug (Finding 1) to pass undetected. Low severity on its own since it's a documentation/spec test, not a runtime test — but it fails to guard the --ticket override semantics for a user-facing scenario.",
+      "category_justification": "The finding is specifically about a missing test assertion that would detect the --ticket bypass behavior for the missing-Source path.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 286,
+      "end_line": 296,
+      "message": "The documentation for the `--afk` without `--push` case states that the `--ticket` flag is ignored. However, this could lead to unexpected behavior if a user provides `--ticket` expecting it to be used. A better approach would be to treat the combination of `--afk` and `--ticket` without `--push` as a command-line validation error and exit immediately. This would prevent the user from thinking their `--ticket` override was respected when it was silently ignored.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The spec at line 627 explicitly documents this as intentional: '--ticket is ignored in the --afk without --push cell... This is documented behaviour, not a silent quirk.' The behavior is also not silent — LOCAL_ONLY is logged to progress.txt. The finding proposes a design alternative (error on --afk --ticket without --push) that conflicts with the documented contract. It also references wrong line numbers (286-296 contain Notion lookup logic, not the decision matrix).",
+      "severity_justification": "Even if one preferred the error-out approach, the current behavior is explicitly documented and logged via LOCAL_ONLY. A user reading the docs would understand the semantics.",
+      "category_justification": "This is a design preference suggestion about argument validation behavior, not a correctness issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 156,
+      "end_line": 159,
+      "message": "In the case where an inline-quoted or file-path Source is found, the workflow logs `BOARD_PUSH_SKIPPED_NO_TICKET`. If the `--push` flag was provided by the user, this behavior could be surprising as they explicitly requested a push. It would be better to treat this as an error condition when `--push` is present, informing the user that the source format is not pushable and that they should use `--ticket` to specify a ticket key.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The skip-no-ticket branch is not silent: it logs BOARD_PUSH_SKIPPED_NO_TICKET to progress.txt and shows 'Note: source is {source_format} — no pushable ticket. Local marker only.' in the success block. The finding mischaracterizes the behavior and references wrong line numbers (156-159 are Jira transport code). The suggestion is a design preference that conflicts with the spec's documented best-effort/never-exit-non-zero contract.",
+      "severity_justification": "The behavior provides user-visible feedback via an info note and a log token. The UX concern is minor and the spec's chosen approach is internally consistent.",
+      "category_justification": "This is a design preference about error vs. inform-and-continue semantics — a generic best-practice suggestion rather than a concrete defect.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 204,
+      "end_line": 211,
+      "message": "When a key/board mismatch error occurs, a `BOARD_PUSH_FAILED` message is logged to `progress.txt` before continuing to Step 7. Step 7 also logs a `LOCAL_APPROVE_PLAN` message. This results in two log entries for an approval that failed to push. However, since the push is considered part of the approval process in this flow, it would be more appropriate to log the failure and then stop, rather than logging a success message for the local approval in Step 7. This would make the audit trail in `progress.txt` less ambiguous.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The spec explicitly designs LOCAL_APPROVE_PLAN to always be written when the marker succeeds, because the plan IS approved regardless of Step 4c outcome. The finding's premise ('push is part of the approval process') directly contradicts the spec's architecture ('Step 4c is best-effort, local state is authoritative'). Stopping at Step 4c failure would incorrectly omit the approval audit entry for a plan that was genuinely approved. Line references (204-211) are also wrong.",
+      "severity_justification": "The two-row design is an explicit intentional choice. The finding's proposed alternative would make the audit trail less accurate by omitting the LOCAL_APPROVE_PLAN entry for successfully approved plans.",
+      "category_justification": "This is a design preference about audit trail semantics that conflicts with the documented intentional architecture.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 78,
+      "end_line": 86,
+      "message": "The retry mechanism for a failed push relies on re-running the command with `--push`. The workflow specifies that this skips Step 4b (updating the brief marker). However, if the initial approval failed during Step 4b (e.g., due to a file permission issue after the approval marker was written), a retry with `--push` would not re-attempt to update the brief marker, leaving it in an inconsistent state. The retry logic should consider re-running Step 4b if it did not complete successfully during the initial approval.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The retry path's assumption 'The brief marker was already updated on the original approval' is incorrect when Step 4b failed on the first run — Step 4b is explicitly best-effort and its failure doesn't prevent Step 4a's marker from being written. The retry unconditionally skips Step 4b with no way to check whether it previously succeeded. Line references (78-86) are wrong (the retry logic is at ~390-397), but the substance is correct.",
+      "severity_justification": "Step 4b failure produces a visible warning on the original run. The inconsistency only affects brief display metadata, not the authoritative .approved marker. A workaround (delete marker + re-approve) exists. Real but minor edge case.",
+      "category_justification": "The retry logic makes an incorrect assumption about Step 4b's prior success state, which can leave the brief marker in an inconsistent state with no way to fix it via --push retry alone.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 144,
+      "end_line": 147,
+      "message": "The logic for handling a missing `**Source:**` header states that it skips silently. However, if a user provides the `--push` flag, they are explicitly requesting a push. In this scenario, silently skipping can be confusing. It would be better to error out and inform the user that the `**Source:**` header is missing and they should use `--ticket` to specify a ticket.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 518 unconditionally specifies 'no warning, no log token, no stdout note' for missing Source regardless of whether --push was passed. Unlike the skip-no-ticket branch which shows an info note, this path is completely silent. A user with an explicit --push request and no Source header gets zero feedback, and the --ticket workaround (documented at line 596 as the fix for missing Source) is never surfaced.",
+      "severity_justification": "When --push is explicit, a completely silent skip with no pointer to --ticket is a meaningful UX failure — worse than the skip-no-ticket path which at least shows an info note. The user has no way to know their request was dropped.",
+      "category_justification": "The silent-skip behavior when --push is explicitly set contradicts the user's expressed intent and provides no actionable feedback, making the spec's behavior wrong for this input combination.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 349,
+      "end_line": 352,
+      "message": "For Azure DevOps, comments are specified to use HTML. The conversion instructions suggest wrapping complex elements in `<pre>` tags. This will result in poor formatting for users of Azure DevOps, as markdown sections like tables or lists will be rendered as a single block of preformatted text. While a full markdown-to-HTML conversion might be complex, the current fallback is suboptimal and will lead to a degraded user experience on that platform.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The <pre> fallback is pre-existing in plan.md (line 976) and was duplicated byte-for-byte into approve-plan.md by this PR's drift-prevention mechanism. The spec provides explicit HTML conversion rules for all common elements (headings, lists, tables, bold, code); <pre> is last-resort only. Wrong line references (349-352 vs 708). The finding is a generic quality preference applicable to any spec using HTML fallbacks.",
+      "severity_justification": "Most plan content elements have explicit HTML conversion rules. The <pre> fallback only applies to genuinely complex elements not covered by the explicit rules.",
+      "category_justification": "Generic UX quality observation about HTML conversion fallback quality — no concrete broken scenario identified.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 382,
+      "end_line": 382,
+      "message": "The documentation for posting a comment to Notion mentions a 2000-character limit per `rich_text` block. However, it also suggests that for better readability, the plan could be split into multiple `rich_text` blocks with annotations for headings. This contradicts the primary instruction of using a single `text` block with the full plan as plain text. This guidance is ambiguous and should be clarified to provide a single, clear strategy for handling Notion's limitations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The guidance uses 'consider splitting' (advisory) vs. 'if the plan exceeds 2000 characters, split' (mandatory) — these are different tiers of guidance, not contradictions. An LLM reading 'consider' understands it as optional. The default (single block), optional enhancement (split for readability), and mandatory constraint (2000-char limit) are layered guidance with clear semantics. Wrong line reference (382 vs 734-736). Also pre-existing in plan.md, duplicated verbatim.",
+      "severity_justification": "Minor documentation clarity issue at most — the 'consider' language clearly marks the readability suggestion as optional, and the 2000-char split is mandatory. No real ambiguity for an LLM following the spec.",
+      "category_justification": "This is a documentation clarity observation about layered guidance, not a correctness or behavior issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 282,
+      "end_line": 282,
+      "message": "The decision matrix cell for 'Interactive + `--push`' indicates that `--ticket` overrides auto-detection. However, the cell for 'Interactive + `--ticket` only' also implies that the override wins. This makes the 'Interactive + `--push`' cell's mention of `--ticket` redundant. To simplify, the matrix could describe the behavior of `--ticket` orthogonally, stating that if present, it always overrides the auto-detected source, rather than repeating this logic in multiple cells.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The decision matrix deliberately enumerates all six cells explicitly to avoid ambiguity — a common pattern in workflow specs for LLM agents where completeness prevents misinterpretation. The 'redundancy' the finding identifies is intentional: each cell is self-contained so an LLM reading any single cell has complete information. Line 282 is also unrelated (Notion query logic); the decision matrix is at lines 610-628. The suggestion to describe --ticket 'orthogonally' is a documentation style preference, not a defect.",
+      "severity_justification": "The alleged redundancy has no behavioral impact — the spec is correct and complete. Reorganizing the matrix as suggested could actually reduce clarity for LLM consumers that benefit from fully-specified cells.",
+      "category_justification": "This is a documentation style preference about matrix layout — suggesting orthogonal vs. cell-by-cell description of flag behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 307,
+      "end_line": 307,
+      "message": "A drift-prevention test is mentioned to ensure the duplicated `curl` blocks for posting comments do not diverge. This test is implemented in `workflows.test.ts`. While this is a good measure, it's a runtime check within the test suite. A more robust solution would be to use a pre-build script or a lint rule to enforce this synchronization, preventing divergent code from being committed in the first place.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The test already runs as part of the documented pre-push gate (pnpm test in the quality suite). Wrong line reference (307 vs 633). The suggestion to use a pre-build script or lint rule is a generic 'shift-left' preference without identifying a concrete gap — the test-based approach IS the pre-push gate in this project's workflow.",
+      "severity_justification": "No actual defect or gap identified — the drift check runs in the pre-push quality suite and in CI, providing adequate protection.",
+      "category_justification": "Generic engineering process preference about when to run checks (build-time vs test-time), not a correctness issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/commands/approve-plan.md",
+      "start_line": 17,
+      "end_line": 21,
+      "message": "Description for the `--ticket` flag states that it is ignored in `--afk` mode without `--push`. However, no explicit test or guard ensures `--ticket` is ignored in this specific scenario, which might lead to unintended behavior under some conditions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "A test at line 1435 of workflows.test.ts explicitly checks that the spec documents '--ticket is ignored under --afk-without-push'. The finding's core claim ('no explicit test or guard ensures') is factually wrong. The 'unintended behavior' concern is also vague — this is a markdown workflow spec, not runtime code, so there's no runtime guard to add.",
+      "severity_justification": "The finding is incorrect about the absence of a test; the test exists. No actual gap.",
+      "category_justification": "The finding is about test coverage — and gets the fact wrong by missing the existing test.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 408,
+      "end_line": 420,
+      "message": "EEXIST handling in Step 4a lacks adequate documentation or coverage for what would happen if multiple `--push` retries are attempted simultaneously on systems that do not prevent racing updates to the approved marker file.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The --push retry path explicitly does not write to the approved marker file ('The marker is not re-written'). The finding's premise of 'racing updates to the approved marker file' is factually wrong — the marker is read-only in the retry path. The spec already documents the single-user concurrency assumption at line 469. Wrong line references (408-420 vs retry logic at ~390-397).",
+      "severity_justification": "The actual risk from concurrent --push retries is duplicate board comments, not marker file corruption. Minor edge case given the single-user assumption.",
+      "category_justification": "The finding is about concurrency safety but makes an incorrect claim about which resource would be affected.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/workflows.test.ts",
+      "start_line": 863,
+      "end_line": 870,
+      "message": "While there is test coverage to verify progression from Step 4a to Step 4c, there is no specific unit test to ensure fallback routing from Step 4c to Step 7 in the absence of credentials or writable `.env` configuration.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Tests at lines 1121-1136 explicitly cover the credential-gate fallback: line 1121 verifies Step 4c gates on board credentials (.clancy/.env check), and lines 1129-1136 verify Step 4c 'skips silently when either gate fails and continues to Step 7'. The finding's claim that no such test exists is factually wrong. Wrong line reference (863-870 is the 4a→4c routing test, not the credential gate).",
+      "severity_justification": "No actual gap — the coverage exists. The finding incorrectly identifies missing tests.",
+      "category_justification": "The finding is about test coverage and is factually incorrect about the presence of existing tests.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/plan.md",
+      "start_line": 898,
+      "end_line": 910,
+      "message": "Drift prevention bytes in `plan.md` are assumed to match `approve-plan.md`. Addressing mismatches solely with byte equality might not detect semantic or structural differences introduced accidentally.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Byte equality (strict string equality via toBe) is the strictest possible check — if two regions are byte-equal they are character-for-character identical and cannot have any semantic or structural differences. The finding's concern that byte equality 'might not detect semantic or structural differences' is logically inverted: byte equality catches all differences, including semantic ones. Any difference in structure, content, or meaning would produce different bytes.",
+      "severity_justification": "The finding is factually incorrect about what byte equality guarantees — it's a misunderstanding of the comparison mechanism, not a real gap.",
+      "category_justification": "The finding is about the adequacy of the drift-prevention test's comparison mechanism.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/workflows.test.ts",
+      "start_line": 1006,
+      "end_line": 1010,
+      "message": "Testing attributes specific to Notion tokenizing 2000-char distinct rich_text blocks only logs informational implications through `push`. No backend retry verification behaviors appear earlier.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is unverifiable — it applies integration-test expectations ('backend retry verification') to a spec-content test suite that only verifies markdown prose. The 2000-char Notion block split is documented in the spec. Testing actual Notion API retry behavior is outside the scope of this test file and this PR. The finding is too vague to identify a concrete defect.",
+      "severity_justification": "No concrete defect identified. The concern, if any, is about missing integration tests for Notion API behavior — which is out of scope for this PR and test file.",
+      "category_justification": "The finding is about test coverage for Notion-specific runtime behavior, misapplied to a spec-content verification test suite.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".changeset/phase-c-pr-9-board-push.md",
+      "start_line": 14,
+      "end_line": 14,
+      "message": "The changelog documents the failure progress row as `BOARD_PUSH_FAILED | {stem} | ...`, but the workflow and tests define progress rows as `{stem} | BOARD_PUSH_FAILED | ...`. This inconsistent column order can mislead users or downstream tooling that relies on the documented audit format.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The changeset at line 14 documents the failure row as `BOARD_PUSH_FAILED | {stem} | {http_status_or_error_class}` (token first), while approve-plan.md lines 586, 779 and the explicit column convention statement at line 750 all use `{stem} | BOARD_PUSH_FAILED | {detail}` (stem first). The inconsistency is factually verified.",
+      "severity_justification": "The changeset is a changelog entry, not executable code. No downstream tooling reads the changeset file, but it is misleading documentation that contradicts the actual format.",
+      "category_justification": "The inconsistency is in a changelog/changeset file describing the audit row format, not in the workflow or test logic itself.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 504,
+      "end_line": 504,
+      "message": "There are missing spaces around the inline code spans in this sentence, which renders as `` `**Source:**`header`` and `at`.clancy...` instead of readable prose.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 504 of approve-plan.md reads: 'read the `**Source:**`header line directly from the local plan file at`.clancy/plans/{stem}.md`' — there is no space between the closing backtick of the Source inline code span and the word 'header', and no space between 'at' and the opening backtick of the path inline code span. This is a factual formatting error verified by reading the file.",
+      "severity_justification": "This is a markdown rendering issue in a workflow documentation file. It makes the sentence harder to read but does not affect behavior or correctness of the workflow logic.",
+      "category_justification": "The issue is a formatting/readability defect in a markdown documentation file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 559,
+      "end_line": 559,
+      "message": "This new GitHub validation is stricter than the existing approve-plan ticket-key validation, which accepts either `#\\d+` or a bare number for GitHub keys. As a result, a key form that works for the normal board transport flow (for example `50`) will hard-error when used with `--ticket`, even though both paths target the same configured board.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "At the SHA, the Step 4c validation table (line 559) uses `^#\\d+$` for GitHub (requires `#` prefix), while the existing ticket-key validation (line 102) explicitly accepts 'bare number'. The bracket parser (line 524) also uses `#?\\d+` accepting both forms. A Source like `[50] My issue` would extract `50`, which passes the bracket parser but hard-errors against `^#\\d+$`.",
+      "severity_justification": "Users with GitHub Source values stored as bare numbers will get an unexpected hard-error from Step 4c even though the same key form works in the main board transport flow, creating a confusing inconsistency.",
+      "category_justification": "The validation regex in Step 4c is inconsistent with the established acceptance criteria for GitHub keys in the same workflow file, causing legitimate key forms to be rejected.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 562,
+      "end_line": 562,
+      "message": "Shortcut validation here only allows bare numeric IDs, but Step 2's existing board-ticket validation for approve-plan accepts either a prefixed Shortcut key (`[A-Za-z]{1,5}-\\d+`, such as `SC-123`) or a bare number. That makes `--ticket SC-123` fail in Step 4c even though the same key shape is accepted by the normal Shortcut approve flow.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "At the SHA, the Step 4c validation table (line 562) uses `^\\d+$` for Shortcut (bare numbers only), while the existing ticket-key validation (line 102) explicitly accepts both `[A-Za-z]{1,5}-\\d+` (e.g. `SC-123`) and bare numbers. A `--ticket SC-123` argument would hard-error against `^\\d+$` even though the same key form is accepted by the normal board transport flow.",
+      "severity_justification": "Users with prefixed Shortcut keys such as SC-123 in their Source field or passed via --ticket will get an unexpected hard-error from Step 4c even though the same key form is accepted by the normal board transport flow, creating a confusing inconsistency.",
+      "category_justification": "The Step 4c Shortcut regex is inconsistent with the established acceptance criteria for Shortcut keys elsewhere in the same workflow file, causing valid key forms to be rejected.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 563,
+      "end_line": 563,
+      "message": "The Notion regex omits the `notion-[a-f0-9]{8}` short key form that Step 2 already accepts for approve-plan ticket keys. This makes `--ticket notion-abcdef12` valid in the existing board transport path but a hard error in the new Step 4c push path.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The Step 4c validation table (line 563) uses `^[0-9a-f]{32}$|^[0-9a-f-]{36}$` for Notion, omitting the `notion-[a-f0-9]{8}` short key form. The existing Step 2 validation (line 107) explicitly includes 'notion-[a-f0-9]{8} short key'. A `--ticket notion-abcdef12` or bracketed Source `[notion-ab12cd34] title` would hard-error in Step 4c even though accepted by the normal board transport flow.",
+      "severity_justification": "Notion short keys are a documented and accepted form in the existing flow; rejecting them with a hard-error in Step 4c creates a confusing inconsistency for users who stored their Source as a short Notion key.",
+      "category_justification": "The Step 4c Notion regex is inconsistent with the established acceptance criteria for Notion keys elsewhere in the same workflow file, causing a valid key form to be rejected.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 558,
+      "end_line": 558,
+      "message": "Jira ticket keys are treated as case-insensitive in the existing approve-plan resolution flow, but this new Step 4c regex only accepts uppercase keys. A lower-case override such as `proj-123` would be accepted by the normal board path and then rejected here, so the new flag surface is inconsistent with the command's established key handling.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The Step 4c Jira regex (line 558) is `^[A-Z][A-Z0-9]+-\\d+$` (uppercase only), while the existing Step 2 validation (lines 100-103) is explicitly 'case-insensitive' and accepts `[A-Za-z][A-Za-z0-9]+-\\d+` with example `proj-123`. A `--ticket proj-123` would be accepted by the normal board transport flow but hard-error in Step 4c.",
+      "severity_justification": "The case-insensitive contract is explicitly documented in the existing flow; users passing lowercase Jira keys via --ticket get an unexpected hard-error that contradicts established command behaviour.",
+      "category_justification": "The Step 4c Jira regex is inconsistent with the established case-insensitive acceptance criteria for Jira keys elsewhere in the same workflow file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 560,
+      "end_line": 560,
+      "message": "Linear keys are accepted case-insensitively by the existing Step 2 board-ticket validation, but this Step 4c regex requires uppercase. That makes a lower-case key that works in the normal approve-plan board flow fail when supplied through `--ticket`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The Step 4c Linear regex (line 560) is `^[A-Z]+-\\d+$` (uppercase only), while the existing Step 2 validation (line 104) accepts `[A-Za-z]{1,10}-\\d+` with example `eng-42`. A `--ticket eng-42` is accepted by the normal board transport flow but hard-errors in Step 4c.",
+      "severity_justification": "The case-insensitive contract is explicitly documented in the existing flow; users passing lowercase Linear keys via --ticket get an unexpected hard-error that contradicts established command behaviour.",
+      "category_justification": "The Step 4c Linear regex is inconsistent with the established case-insensitive acceptance criteria for Linear keys elsewhere in the same workflow file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 530,
+      "end_line": 532,
+      "message": "The skip-no-ticket branch is unconditional for inline-quoted or file-path Sources, but the decision matrix says `--ticket KEY` overrides Source auto-detect and should be validated/pushed. With a file-path Source plus `--push --ticket KEY`, the workflow currently contains conflicting instructions: skip as no-ticket here versus push using the override below.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The 'Parse the Source value' section unconditionally routes inline-quoted and file-path Sources to the skip-no-ticket branch with no check for a `--ticket` override. The decision matrix says `--ticket KEY` 'overrides Source auto-detect' with 'Override wins over auto-detect' — implying the override should apply when Source auto-detect returns a non-pushable format. With `--push --ticket PROJ-123` and a file-path Source, the two sections give conflicting instructions.",
+      "severity_justification": "An LLM agent following these instructions would handle the `--push --ticket KEY` + non-bracketed Source combination inconsistently, making the --ticket flag effectively useless for the exact case (missing/wrong Source) it is documented to handle.",
+      "category_justification": "The workflow contains conflicting instructions for a valid user scenario, resulting in undefined or incorrect behavior for the --ticket override flag.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 621,
+      "end_line": 625,
+      "message": "Because Source parsing and skip handling are described before the decision matrix, an `--afk` run without `--push` can hit the missing/non-pushable Source skip paths before reaching the `LOCAL_ONLY` cell. That contradicts the documented audit contract on lines 621-625, where every `--afk` without `--push` run should log `LOCAL_ONLY` regardless of Source contents.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The Source parsing and skip-no-ticket branch (logging `BOARD_PUSH_SKIPPED_NO_TICKET`) appear before the decision matrix in document order, with no flag pre-check. For `--afk` without `--push` + non-bracketed Source, an agent following the document in order would log `BOARD_PUSH_SKIPPED_NO_TICKET` before reaching the decision matrix's `LOCAL_ONLY` cell, violating the documented audit contract at lines 621-625 that every `--afk` without `--push` run logs `LOCAL_ONLY`.",
+      "severity_justification": "The audit trail inconsistency means downstream tooling searching for `LOCAL_ONLY` to identify deliberate local-only runs would miss cases where Source happened to be non-bracketed, breaking the audit contract the spec explicitly mandates.",
+      "category_justification": "The document ordering creates conflicting execution paths for a valid flag combination, producing incorrect audit output that contradicts the specification.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 390,
+      "end_line": 394,
+      "message": "The `EEXIST + --push` retry path skips the marker write without validating that the existing marker's `sha256=` still matches the current plan file. If the plan was edited after the original approval, this path can push unapproved/stale plan content to the board while preserving the old approval marker. The retry should verify the existing marker hash before entering Step 4c, or block and require re-approval on mismatch.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The EEXIST + --push retry path (lines 390-394) preserves the original marker's sha256= unchanged but falls through to Step 4c, which reads and pushes the current plan file content. If the plan was edited after approval, Step 4c posts modified content to the board while the marker still carries the old hash. No hash verification is performed before entering Step 4c on the retry path.",
+      "severity_justification": "A user who edits their plan after approval then uses --push to retry a failed board push will silently publish modified unapproved content to the board while the approval marker reflects the original hash, a data integrity issue on a visible-to-others surface.",
+      "category_justification": "The retry path skips a necessary integrity check, allowing content that was not approved at the time of push to be published to the board under the guise of an approved plan.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 671,
+      "end_line": 671,
+      "message": "The PR description says the board comment payload includes the full plan content plus a one-line approval header, but Step 4c only instructs posting the plan as-is and there is no approval-header instruction elsewhere in the workflow. That means implementations following this workflow will omit the advertised approval context from the board comment.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The PR description's locked spec decision #4 states the comment payload is 'full plan content + one-line approval header', but the Step 4c curl blocks (e.g. line 668, 671, 681, 718) only instruct posting `<markdown plan>` with no approval header. No approval header format or instruction exists anywhere in Step 4c. Agents following the workflow will omit the approval header the spec mandates.",
+      "severity_justification": "The omission means the board comment lacks the advertised approval context, but the plan content itself is still posted. It is a documentation/spec gap rather than a blocking functional failure.",
+      "category_justification": "The workflow spec is incomplete relative to a locked design decision stated in the PR description — a missing instruction rather than a logic error in existing instructions.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/plan/src/workflows/approve-plan.md",
+      "start_line": 754,
+      "end_line": 760,
+      "message": "The failure semantics require logging the literal HTTP status for non-2xx responses, but the six curl snippets above all use plain `curl -s` without capturing `%{http_code}` or making non-2xx responses distinguishable from successful responses. Without adding status capture to the transport instructions, an implementation cannot reliably populate `{http_status_or_error_class}` and may treat a 4xx/5xx body as a successful push.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "All six Step 4c curl snippets use bare `curl -s` with no --fail, -w \"%{http_code}\", or status capture. The failure semantics section (lines 754-787) requires logging the literal numeric HTTP status code for non-2xx responses, but the curl templates provide no mechanism to capture it. An agent following the templates cannot reliably distinguish a 4xx/5xx response or extract the numeric status code without platform-specific body parsing.",
+      "severity_justification": "Without explicit status capture instructions, agents may log incorrect failure reasons or treat error responses as successes, undermining the detailed failure-logging contract the spec mandates.",
+      "category_justification": "The curl transport instructions are incomplete relative to the failure-logging requirements defined in the same Step 4c section, creating a gap that results in unreliable failure classification.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

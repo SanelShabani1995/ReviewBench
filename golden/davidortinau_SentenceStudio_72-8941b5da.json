@@ -1,0 +1,491 @@
+{
+  "pr_key": "davidortinau_SentenceStudio_72-8941b5da",
+  "pr": {
+    "repo": "https://github.com/davidortinau/SentenceStudio",
+    "pr_number": 72,
+    "base": "b488d228ceeea1c29d5d54591a4b5c8ba9790712",
+    "head": "8941b5da55823d738d340cad6a429021318d8211"
+  },
+  "findings": [
+    {
+      "file": "src/SentenceStudio.Web/Program.cs",
+      "start_line": 51,
+      "end_line": 54,
+      "message": "Authentication middleware is registered but never enforced on the CoreSync endpoint. `UseAuthentication()` and `UseAuthorization()` run before `UseCoreSyncHttpServer()`, but no `RequireAuthorization()` policy is applied to the sync middleware. Any client — authenticated or not — can reach the sync endpoint. The PR's stated goal of protecting the sync channel is not achieved server-side.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in Program.cs: UseAuthentication/UseAuthorization are called but no RequireAuthorization() is applied to UseCoreSyncHttpServer(). The RequireSyncReadWrite policy is defined but never enforced. The decision doc acknowledges this as intentional/deferred, but the finding correctly identifies that the sync endpoint is unprotected even in production Entra ID mode.",
+      "severity_justification": "In production (Auth:UseEntraId=true) the sync endpoint accepts unauthenticated requests despite having a policy defined. This is a real auth enforcement gap, though it is explicitly documented as deferred future work rather than an oversight.",
+      "category_justification": "The issue is unenforced authorization on a sync endpoint — authenticated tokens are validated when present but unauthenticated requests are not rejected, meaning the auth protection is nominal rather than enforced.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/SentenceStudio.Api.Tests/Infrastructure/JwtBearerApiFactory.cs",
+      "start_line": 16,
+      "end_line": 35,
+      "message": "The factory uses `UseEnvironment(\"Testing\")` but never sets `Auth:UseEntraId=true` in configuration. There is no `appsettings.Testing.json`, so `Auth:UseEntraId` defaults to `false` (from appsettings.Development.json). `Program.cs` therefore registers `DevAuthHandler`; the factory then layers JWT Bearer on top. The `if (useEntraId)` branch — including `AddMicrosoftIdentityWebApi()` — is never exercised by these tests. If the Entra ID code path in Program.cs is broken, all `JwtBearerAuthTests` tests would still pass.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: no appsettings.Testing.json exists, no base appsettings.json in the API project, and JwtBearerApiFactory never overrides Auth:UseEntraId. With UseEnvironment('Testing'), appsettings.Development.json is not loaded, so Auth:UseEntraId defaults to false, the DevAuthHandler else-branch is taken, and AddMicrosoftIdentityWebApi() is never called. The JWT tests validate a custom JWT handler registered post-hoc, not the production Entra ID path.",
+      "severity_justification": "This is a test coverage gap — the AddMicrosoftIdentityWebApi() integration path is untested. The JWT validation logic itself is exercised via the test-local handler. The risk is that Entra-specific behavior (tenant validation, scope checking) diverges silently, but there is no runtime impact.",
+      "category_justification": "The issue is a testing infrastructure gap: the factory does not configure the host to activate the production Entra ID code path, so tests targeting that path never actually exercise it.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.AppHost/AppHost.cs",
+      "start_line": 27,
+      "end_line": 27,
+      "message": "The `web` project registration has no `Auth__UseEntraId` or `AzureAd__*` environment variables. The API project receives all five AzureAd env vars but the CoreSync Web server receives none. Enabling Entra ID for the sync server via AppHost is impossible without modifying source code, and if the Web project is ever deployed through AppHost in production, it cannot be switched to real token validation.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in AppHost.cs: the api project gets Auth__UseEntraId and four AzureAd__ vars; the web project has no environment variables configured. Auth:UseEntraId will always default to false for the Web project when run through AppHost, making production Entra ID mode unreachable via the orchestrator.",
+      "severity_justification": "The PR's stated goal of protecting the sync channel via Entra ID cannot be activated through AppHost without a code change. In a production deployment using AppHost, the sync server is permanently stuck in DevAuthHandler mode. Not immediately harmful since enforcement is deferred anyway, but it's an incomplete wiring that blocks future enforcement.",
+      "category_justification": "The omission means the Web server's auth configuration is unmanageable via AppHost, creating a configuration gap that would prevent correct deployment behavior when enforcement is actually needed.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.AppHost/AppHost.cs",
+      "start_line": 21,
+      "end_line": 21,
+      "message": "`Auth__UseEntraId` is hardcoded to `\"false\"` for the API project via a literal `WithEnvironment` call. Enabling Entra ID auth in production requires a source code change; there is no parameter, secret, or configuration mechanism to flip this to `true` without modifying AppHost.cs. This effectively prevents production deployment of the Entra ID auth path.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Auth__UseEntraId is hardcoded to 'false' in AppHost.cs line 21, set via commit ffaebd4 before this PR. The code is exactly as described. However, AppHost.cs was not modified by this PR and the issue predates it.",
+      "severity_justification": "Aspire AppHost is a local dev orchestrator, not a production deployment path. The hardcoded 'false' is a configuration smell that prevents toggling Entra ID through Aspire locally, but production deployments set env vars through the hosting platform independently. The claim that it 'effectively prevents production deployment' is overstated.",
+      "category_justification": "The hardcoded toggle creates a configuration inflexibility that blocks activating the auth code path through the Aspire orchestrator without a source change — a deployment/operational concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Auth/TenantContextMiddleware.cs",
+      "start_line": 36,
+      "end_line": 38,
+      "message": "Email is looked up via `ClaimTypes.Email` (the long SOAP URI `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress`) first. Microsoft.Identity.Web 2+ defaults `MapInboundClaims = false`, meaning Entra ID JWT tokens keep their original short claim names. The `\"email\"` claim from a real Entra ID token is stored as `\"email\"`, not as `ClaimTypes.Email`, so the primary lookup always misses and the value silently falls back to `preferred_username`. Tests don't catch this because `TestJwtGenerator` adds a `ClaimTypes.Email` claim directly rather than an `\"email\"` short-name claim.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: TenantContextMiddleware uses ClaimTypes.Email (long URI) as primary email lookup. Microsoft.Identity.Web 3.8.2 sets MapInboundClaims=false, so Entra ID JWT 'email' claim is stored as 'email' (short), not ClaimTypes.Email. The primary lookup always misses and falls through to preferred_username. TestJwtGenerator (new in this PR) adds ClaimTypes.Email which matches the broken lookup and masks the bug.",
+      "severity_justification": "Email will always be wrong (preferred_username instead of actual email) for real Entra ID tokens in production. The fallback is graceful but incorrect data is silently returned. The new tests in this PR make the issue harder to discover.",
+      "category_justification": "The email extraction logic produces wrong data in production due to claim name mismatch between the middleware lookup (long URI) and how Microsoft.Identity.Web stores claims (short name).",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Auth/TenantContextMiddleware.cs",
+      "start_line": 31,
+      "end_line": 34,
+      "message": "`DisplayName` falls back to `preferred_username` if the `\"name\"` claim is absent. In Entra ID, `preferred_username` is the user's UPN/email (e.g. `alice@contoso.com`), not a human-readable display name. If the token omits the `\"name\"` claim (valid per spec), `DisplayName` will be set to an email address. The same `preferred_username` value also populates `Email`, so both fields show the same email string — likely incorrect UX behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Factually correct: if 'name' claim is absent, DisplayName falls to preferred_username; and per Finding 5's email mapping bug, Email also falls to preferred_username, making both fields identical. The code and logic are as described.",
+      "severity_justification": "The 'name' claim is nearly always present in Entra ID delegated user tokens. The fallback is documented as intentional in the code comment. The 'both fields identical' scenario requires both the name claim being absent AND the email mapping bug (Finding 5) to trigger simultaneously. Limited real-world impact in the app's actual auth flow.",
+      "category_justification": "The DisplayName field could incorrectly show an email/UPN string when the name claim is absent, and may duplicate the Email field value — both are data correctness issues.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Web/Auth/DevAuthHandler.cs",
+      "start_line": 25,
+      "end_line": 40,
+      "message": "`DevAuthHandler.HandleAuthenticateAsync()` returns `AuthenticateResult.Success()` unconditionally for every request with no environment guard. If `Auth:UseEntraId` is accidentally false in any deployed environment — missing env var, wrong config override — the handler silently authenticates every request as `dev-user` with full access. This should at minimum verify it is running in a non-production environment.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: DevAuthHandler.HandleAuthenticateAsync() has no environment check — unconditionally returns AuthenticateResult.Success(). The only gate is the Auth:UseEntraId flag which defaults to false if unset. A missing env var in production silently activates the handler and auto-authenticates all requests.",
+      "severity_justification": "A fail-open auth design where the default (missing env var) activates a bypass handler is a real security concern. For the API, DevAuthHandler + RequireAuthorization() means any unauthenticated request would succeed in a misconfigured production deployment. The Web's CoreSync endpoint isn't enforced anyway so the incremental risk there is smaller, but the pattern is dangerous.",
+      "category_justification": "Missing environment guard on a dev-bypass auth handler creates a fail-open misconfiguration risk that could expose all protected API endpoints to unauthenticated access in production.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/SentenceStudio.Api.Tests/Infrastructure/TestJwtGenerator.cs",
+      "start_line": 37,
+      "end_line": 40,
+      "message": "Generated tokens include both Entra ID claims (`\"tid\"`, `\"oid\"`) and DevAuthHandler claims (`\"tenant_id\"`, `ClaimTypes.NameIdentifier`) set to the same value. The claim-priority logic in `TenantContextMiddleware` (Entra ID claims take precedence) can never be tested with these tokens — any regression in priority order would be invisible. Tests like `API_ExtractsTenantContext` are not actually verifying that Entra ID claims take precedence over Dev claims.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: TestJwtGenerator sets 'tid'='tenant_id' and 'oid'=ClaimTypes.NameIdentifier to the same values. The TenantContextMiddleware priority chain (Entra ID first) cannot be exercised since both fallback and primary claims resolve identically. Swapping the order would not change any test result.",
+      "severity_justification": "A priority regression in TenantContextMiddleware would be undetected by tests, but it also couldn't break production: real Entra ID tokens only carry 'tid'/'oid', and DevAuthHandler identities only carry 'tenant_id'/NameIdentifier — the two sets never coexist in production. The risk of an undetected harmful regression is very low.",
+      "category_justification": "The test generator creates tokens with overlapping claim values that prevent verifying the claim-priority logic it purports to test.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Web/Auth/DevAuthHandler.cs",
+      "start_line": 28,
+      "end_line": 28,
+      "message": "The claims added by `DevAuthHandler` for the Web project do not match the claims added by the corresponding handler in the Api project. `user_id` is used here, but the `TenantContextMiddleware` in the Api project expects `oid` or `ClaimTypes.NameIdentifier`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The two DevAuthHandler implementations are identical — both include ClaimTypes.NameIdentifier, tenant_id, user_id, ClaimTypes.Name, and ClaimTypes.Email with the same values. The finding's claim that the Web handler 'does not match' the API handler is factually wrong.",
+      "severity_justification": "The finding is incorrect, so no real issue exists. Even if there were a mismatch, TenantContextMiddleware finds ClaimTypes.NameIdentifier as its fallback, which both handlers provide.",
+      "category_justification": "The finding alleges a claim-set mismatch between two implementations, which is a correctness concern — but the mismatch does not exist.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Program.cs",
+      "start_line": 38,
+      "end_line": 52,
+      "message": "Authorization policies defined (e.g., 'RequireSyncReadWrite') are not applied to any endpoints, leaving them potentially less secure if a future developer assumes that scope checking is enforced by default.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: RequireUserRead, RequireUserWrite, RequireAiAccess, RequireSyncReadWrite are defined in AddAuthorization() but grep shows zero calls to RequireAuthorization(\"policyName\") in Program.cs. All endpoint authorization uses the parameterless form — scope checking is never enforced. The defined policies are dead code.",
+      "severity_justification": "Named scope policies that are defined but never applied create a false impression of security. Any developer who sees the policy definitions would assume scope enforcement is active. In production with UseEntraId=true, all API endpoints accept any valid token regardless of scopes.",
+      "category_justification": "Defined authorization policies (scope requirements) that are never applied to endpoints means scope-based access control is completely missing despite appearing to be configured.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/SentenceStudio.Api.Tests/JwtBearerAuthTests.cs",
+      "start_line": 29,
+      "end_line": 48,
+      "message": "Tests for rejecting unauthenticated or invalid token requests do not validate the intended API response body (e.g., error description) to ensure proper error message consistency.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic advice that could apply to any test asserting error status codes. The finding identifies no specific missing contract, no existing documentation of expected error response shape, and no discrepancy between actual and expected behavior. The exact same comment could be posted on any API integration test project without modification.",
+      "severity_justification": "Even if accepted as valid, adding response body assertions for 401 responses is cosmetic test hygiene with no impact on correctness or security.",
+      "category_justification": "The finding is about test coverage depth — whether error response bodies should also be asserted in addition to status codes.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Program.cs",
+      "start_line": 65,
+      "end_line": 69,
+      "message": "The 'bootstrap' endpoint uses RequireAuthorization() but does not verify enforcement of fine-grained scopes or roles to restrict access, which may expose sensitive details.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The endpoint returns the authenticated caller's own identity claims — not sensitive cross-user data. The finding's line numbers are wrong (100-108, not 65-69). The scope-enforcement concern is a generic restatement of the same issue in Finding 10. No specific data exposure path or concrete vulnerability is identified.",
+      "severity_justification": "Bootstrap returning caller's own claims behind RequireAuthorization() is expected behavior. The generic scope-enforcement concern has negligible impact beyond what Finding 10 already covers.",
+      "category_justification": "The finding frames it as a potential data exposure risk due to missing scope enforcement on a protected endpoint.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Auth/TenantContextMiddleware.cs",
+      "start_line": 19,
+      "end_line": 43,
+      "message": "The TenantContextMiddleware prioritizes Entra ID claims over DevAuthHandler claims without validation or logging, which may lead to misidentification or debugging challenges when claims are missing or mismatched.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic advice that could apply to any middleware with a silent fallback claim chain. No specific misidentification scenario or concrete failure mode is identified. The code has an explanatory comment describing the dual-path design, the fallback chain is straightforward null-coalescing, and the file is not modified by this PR.",
+      "severity_justification": "Even taken at face value, adding logging to claim extraction is a minor observability improvement with no correctness impact.",
+      "category_justification": "The suggestion is about adding logging/validation to improve debuggability — a maintainability/observability concern rather than a functional issue.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/SentenceStudio.Api.Tests/JwtBearerAuthTests.cs",
+      "start_line": 49,
+      "end_line": 72,
+      "message": "The API tests primarily validate HTTP status codes but do not assert on the exact claims or roles present in the user's context after authentication, missing deeper validation of claim propagation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims tests do not assert on claims after authentication, but API_ExtractsTenantContext in the same class explicitly asserts TenantId, UserId, DisplayName, and Email from the BootstrapResponse. Claim propagation is tested. The referenced tests (lines 49-72) are correctly scoped to accept/reject behavior.",
+      "severity_justification": "The finding is incorrect — the concern it raises is already addressed in the same test class.",
+      "category_justification": "The finding is about test coverage depth and what assertions the tests make.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/SentenceStudio.Api.Tests/JwtBearerAuthTests.cs",
+      "start_line": 110,
+      "end_line": 123,
+      "message": "Test 'API_PlansEndpointWorksWithValidToken' assumes successful authentication allows all plans to be generated, but it does not validate output integrity or authorization scope beyond accepting the token.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic advice that could apply to any HTTP integration test asserting only a status code. The test's declared purpose is to verify that a valid JWT allows access to the plans endpoint. 'Does not validate output integrity or authorization scope' is boilerplate that names no specific bug, missing assertion, or violated contract.",
+      "severity_justification": "Even if accepted, adding response body assertions to an access-verification test is a minor coverage nicety with no correctness or security impact.",
+      "category_justification": "The finding is about test assertion depth — whether the test should also validate the response body beyond the status code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Web/Auth/DevAuthHandler.cs",
+      "start_line": 24,
+      "end_line": 39,
+      "message": "The hardcoded 'tenant_id' and 'user_id' in DevAuthHandler make it difficult to test multi-tenant scenarios locally, potentially leading to false positives in integration tests.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "DevAuthHandler is intentionally a single-identity dev bypass — multi-tenant scenarios use JwtBearerApiFactory with TestJwtGenerator which supports custom tenantId/userId. No concrete false positive scenario is demonstrated. The finding could apply to any hardcoded dev stub and names no specific test that produces incorrect results.",
+      "severity_justification": "Even if accepted, the concern is about local dev convenience, not correctness or security. Multi-tenant testing is already supported via the JWT Bearer factory path.",
+      "category_justification": "The finding is about test flexibility — whether the dev auth stub should support configurable identities for multi-tenant test scenarios.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Program.cs",
+      "start_line": 104,
+      "end_line": 127,
+      "message": "The AI chat endpoint accepts inputs without performing strict content validation or size checks, increasing the risk of handling unexpected payloads or denial-of-service attacks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic security advisory applicable to any authenticated API endpoint accepting string input to an LLM. No concrete exploit path is demonstrated. The endpoint requires authentication. The finding uses hedged 'increasing the risk' language with no specific size threshold, content type constraint, or local convention being violated. Completely unrelated to the PR.",
+      "severity_justification": "Even if taken seriously, input size limiting on an authenticated endpoint is a hardening measure with low urgency, not an active vulnerability.",
+      "category_justification": "The finding frames this as a security and denial-of-service risk from missing input validation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/SentenceStudio.Api.Tests/Infrastructure/DevAuthApiFactory.cs",
+      "start_line": 11,
+      "end_line": 11,
+      "message": "The test factories reference `WebApplicationFactory<Program>`, but the API's `Program.cs` uses top-level statements without an exposed entry-point type. The auto-generated `Program` class is `internal`, and there is no `public partial class Program { }` declaration at the end of `Program.cs` nor an `[assembly: InternalsVisibleTo(\"SentenceStudio.Api.Tests\")]` attribute. As a result, the test project will not compile (it cannot resolve `Program` from outside the API assembly). Either add `public partial class Program { }` to `Program.cs` or expose internals to the test project.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: SentenceStudio.Api/Program.cs uses top-level statements with no 'public partial class Program {}' declaration and no 'InternalsVisibleTo' attribute anywhere in the API project. Both test factories (DevAuthApiFactory and JwtBearerApiFactory) inherit from WebApplicationFactory<Program>, but Program is internal to the API assembly, making the test project fail to compile.",
+      "severity_justification": "The entire test project will not compile without this fix — the tests added by this PR are completely non-functional as written.",
+      "category_justification": "The issue is specifically in the test infrastructure: the test factories cannot reference the API's internal Program type, preventing the test project from compiling.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/SentenceStudio.Api.Tests/Infrastructure/JwtBearerApiFactory.cs",
+      "start_line": 14,
+      "end_line": 14,
+      "message": "Same issue as in `DevAuthApiFactory.cs`: `WebApplicationFactory<Program>` cannot reference the API's implicit top-level `Program` class because it is internal and there is no `public partial class Program { }` shim or `InternalsVisibleTo` attribute in the `SentenceStudio.Api` project. The tests will fail to compile until the entry point is made accessible to the test assembly.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same root cause as Finding 1, verified in the same investigation: no 'public partial class Program {}' or InternalsVisibleTo exists in SentenceStudio.Api, and JwtBearerApiFactory also uses WebApplicationFactory<Program>. This is a duplicate of Finding 1 on a different file/line but the same underlying issue.",
+      "severity_justification": "Same compile-time blocker as Finding 1 — the test project cannot compile without access to the internal Program type.",
+      "category_justification": "Test infrastructure issue preventing the test project from compiling.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/SentenceStudio.Api.Tests/Infrastructure/JwtBearerApiFactory.cs",
+      "start_line": 14,
+      "end_line": 14,
+      "message": "These test factories reference the API's top-level `Program` type from a separate assembly, but the API project does not expose a `public partial class Program` or `InternalsVisibleTo` for the test assembly. The generated top-level `Program` class is internal, so the new test project will not compile until the entry point is made visible to tests.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical claim to Findings 1 and 2, already verified: no 'public partial class Program {}' or InternalsVisibleTo in SentenceStudio.Api, and JwtBearerApiFactory uses WebApplicationFactory<Program>. This is a third finding about the same root cause.",
+      "severity_justification": "Same compile-time blocker — the test project cannot compile without access to the internal Program type.",
+      "category_justification": "Test infrastructure issue preventing the test project from compiling.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/SentenceStudio.Api.Tests/Infrastructure/DevAuthApiFactory.cs",
+      "start_line": 11,
+      "end_line": 11,
+      "message": "This factory also references the API's top-level `Program` type from a separate test assembly. Because the API project does not currently expose a public `Program` entry point or grant `InternalsVisibleTo`, this new test project will fail to compile when resolving `WebApplicationFactory<Program>`.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same root cause as Findings 1-3, already verified: no 'public partial class Program {}' or InternalsVisibleTo in SentenceStudio.Api, and DevAuthApiFactory uses WebApplicationFactory<Program>. This is a fourth finding about the same underlying issue on the same file/line as Finding 1.",
+      "severity_justification": "Same compile-time blocker — the test project cannot compile without access to the internal Program type.",
+      "category_justification": "Test infrastructure issue preventing the test project from compiling.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Program.cs",
+      "start_line": 30,
+      "end_line": 35,
+      "message": "Because `GetValue<bool>` returns `false` when `Auth:UseEntraId` is absent, any non-development deployment that misses this setting silently enables `DevAuthHandler`, which authenticates every request as `dev-user`. This should fail closed outside local development rather than defaulting to the dev scheme.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: GetValue<bool> returns false when 'Auth:UseEntraId' is absent, activating DevAuthHandler which authenticates all requests as dev-user. There is no base appsettings.json with a safe production default. The finding targets SentenceStudio.Api/Program.cs which is pre-existing, but the same fail-open pattern is also introduced in SentenceStudio.Web/Program.cs by this PR.",
+      "severity_justification": "A misconfigured production deployment silently bypasses all authentication, granting every request a valid dev-user identity with no error or warning.",
+      "category_justification": "The issue is a fail-open authentication default that could grant unauthenticated access to production endpoints if a config key is missing.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Web/Program.cs",
+      "start_line": 20,
+      "end_line": 36,
+      "message": "Because a missing `Auth:UseEntraId` value defaults to `false`, the Web/CoreSync server will silently run `DevAuthHandler` in any misconfigured non-development deployment, authenticating every sync request as `dev-user`. The production path should fail closed or restrict the dev handler to development environments only.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: SentenceStudio.Web/Program.cs (introduced by this PR) uses GetValue<bool>('Auth:UseEntraId') which returns false when absent, activating DevAuthHandler. There is no base appsettings.json with a safe default, and unlike the API project, the AppHost does not even explicitly set Auth__UseEntraId for the Web project. A misconfigured deployment silently authenticates all sync requests as dev-user.",
+      "severity_justification": "A production deployment missing this config key silently bypasses all authentication on the CoreSync sync channel, granting full sync access as dev-user with no error or warning.",
+      "category_justification": "Fail-open authentication default that grants unauthenticated access to the sync server if a configuration key is missing in a non-development deployment.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/SentenceStudio.Api.Tests/SentenceStudio.Api.Tests.csproj",
+      "start_line": 1,
+      "end_line": 4,
+      "message": "This new test project is not wired into the repository's test execution. The existing workflow explicitly restores/builds/runs only `tests/SentenceStudio.UnitTests/SentenceStudio.UnitTests.csproj`, and there is no solution file referencing this project, so these auth tests will not run in CI unless the workflow (or a solution/test aggregation) is updated.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the CI workflow (test.yml) explicitly targets only SentenceStudio.UnitTests.csproj for restore/build/test steps, and the solution file SentenceStudio.sln has no entry for SentenceStudio.Api.Tests. The new test project is unreachable from both CI and solution-level test runs.",
+      "severity_justification": "The auth tests are dead code from a CI perspective — they add no regression protection and any breakage they cover will go undetected. Fixable by adding the project to the solution and updating the workflow, but not a runtime defect.",
+      "category_justification": "The issue is that a newly added test project is not integrated into the CI test execution pipeline or the solution file, rendering it inert.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

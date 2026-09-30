@@ -1,0 +1,651 @@
+{
+  "pr_key": "kutanti_litmusai_67-48e73983",
+  "pr": {
+    "repo": "https://github.com/kutanti/litmusai",
+    "pr_number": 67,
+    "base": "8d3aac3ea03aa726497d05b48d37df4d1e797bef",
+    "head": "48e739834ed4780252d4e86ec0114b594ca21d8a"
+  },
+  "findings": [
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 240,
+      "end_line": 246,
+      "message": "Completeness is calculated as `min(1.0, len(output.strip()) / 50)`, meaning any output of 50 characters or more receives a perfect completeness score of 1.0, regardless of correctness. A short, correct answer like '42' scores completeness=0.04, while a 50-char garbage response scores 1.0. This dimension carries 20% of the overall weight, so it heavily penalises tests designed to expect concise responses and rewards verbosity.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed in scoring/__init__.py lines 240-246: completeness = min(1.0, len(output.strip()) / 50). A 2-character correct answer scores 0.04 while any 50+ char response scores 1.0. DEFAULT_WEIGHTS gives completeness 0.20 weight, so this significantly penalizes concise correct answers.",
+      "severity_justification": "The heuristic systematically misrepresents completeness — correct concise answers are penalized while verbose/garbage responses are rewarded — skewing the 'overall' composite score which is the key user-facing metric.",
+      "category_justification": "The completeness dimension produces factually wrong scores for the common case of short, correct answers (e.g. numeric results), creating misleading quality assessments.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 222,
+      "end_line": 224,
+      "message": "All `not_contains` assertions are unconditionally routed to `safety_scores`, but `not_contains` is commonly used for correctness checks (e.g. 'output should not say error', 'should not say I don't know'). Misclassifying these as safety assertions inflates the safety dimension and deflates correctness for any test that uses `not_contains` for logical correctness rather than safety.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed at lines 222-224: all not_contains/notcontains assertions go to safety_scores unconditionally. The assertion class is used for both safety (don't say 'hack') and correctness ('should not say I don't know') purposes. The code even has a comment acknowledging the ambiguity ('NotContains can indicate safety or correctness') but always routes to safety.",
+      "severity_justification": "This systematically misclassifies correctness-oriented not_contains assertions as safety assertions, inflating safety and deflating correctness scores for any test using not_contains for non-safety purposes. Since correctness has 4x the weight of safety, this meaningfully distorts the overall score.",
+      "category_justification": "The routing logic produces wrong dimension scores for not_contains assertions used in correctness contexts, giving misleading quality metrics.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 277,
+      "end_line": 279,
+      "message": "When no `not_contains` assertions are present, safety defaults to 1.0. Since the vast majority of test cases have no safety-related assertions, nearly every non-safety test gets an artificial 10% boost to its overall score from a dimension that has no real data. This makes the overall score misleadingly high and makes the safety dimension meaningless in non-safety suites.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at lines 277-278: safety defaults to 1.0 when no safety assertions exist, with detail string 'No safety assertions'. This means virtually every non-safety test gets a free 10% contribution to overall score from a dimension with no real data, making the overall score systematically inflated for non-safety suites.",
+      "severity_justification": "The default inflates overall scores for all non-safety tests by up to 10% (the safety weight), creating a misleading metric. It also makes the safety dimension uninformative in non-safety suites. However, it's a consistent design choice (cost also defaults to 1.0 when zero) and users can inspect the 'No safety assertions' detail string.",
+      "category_justification": "The scoring produces a misleadingly inflated overall score by treating absence of safety assertions as a perfect safety score rather than as missing data.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 254,
+      "end_line": 257,
+      "message": "When no format assertions exist, format defaults to `1.0 if correctness >= 0.5 else 0.5`. A fully failing test still gets format=0.5 (contributing 5% to overall), and a passing test gets format=1.0. This means format is a phantom dimension for the majority of test cases, producing synthetic scores that do not reflect any actual format check.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at lines 255-257: fmt = 1.0 if correctness >= 0.5 else 0.5 when no format assertions are present. Most tests have no format assertions, so format is a synthetic score derived from correctness — never below 0.5 — contributing a guaranteed boost to overall for all tests, even completely failing ones.",
+      "severity_justification": "The format dimension (10% weight) is meaningless for the majority of tests that lack format assertions, and never falls below 0.5, systematically inflating overall scores. It also makes the format dimension uninterpretable to users who see it in reports.",
+      "category_justification": "The format scoring produces synthetic, non-data-backed scores that inflate the overall quality metric rather than reflecting actual format validation results.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 265,
+      "end_line": 268,
+      "message": "When no semantic or LLM-grade assertions exist, relevance defaults to `correctness`. The PR's table shows correctness at 40% and relevance at 10%, but in practice correctness gets up to 50% effective weight (plus indirect contribution via the format fallback) without disclosing this to the user. The dimension breakdown is presented as independent signals when they silently share the same underlying value.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at lines 266-268: relevance = correctness when no semantic/LLM-grade assertions exist, labeled 'Inferred from correctness'. Combined with the format fallback (1.0 if correctness >= 0.5), correctness effectively drives multiple 'independent' dimensions for most tests, giving it a higher effective weight than the advertised 40% without disclosure beyond a detail string.",
+      "severity_justification": "The dimension breakdown is presented to users as 7 independent quality signals, but for typical tests without semantic/LLM assertions, relevance is just a copy of correctness. This makes the radar chart and dimension table misleading — users cannot trust the apparent signal separation.",
+      "category_justification": "The dimensions are presented as independent measurements but silently share the same underlying value, making the multi-dimensional scoring system misleading for its primary purpose.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 55,
+      "end_line": 67,
+      "message": "`DimensionBudget.score_latency` returns 1.0 for any `actual_ms <= latency_ms`, including 0.0. `AgentResponse.latency_ms` defaults to 0.0, so a response where latency was never measured (e.g. a cached mock or a failed call where elapsed time wasn't recorded) silently receives a perfect latency score. There is no way to distinguish 'genuinely fast' from 'latency not recorded'.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: AgentResponse.latency_ms defaults to 0.0, and score_latency returns 1.0 for any value <= latency_ms (2000ms default). Unlike cost (which has an explicit `if cost_val > 0` guard setting 'No cost data'), latency has no such guard — a mock response with latency_ms=0 silently scores 1.0 with detail '0ms (budget: 2000ms)'. Several tests in test_dimensions.py create AgentResponse without latency_ms and this applies.",
+      "severity_justification": "In production the runner always measures elapsed time, so this mainly affects mocked tests. The impact is only a 5% weight dimension, and the detail string does show '0ms' which hints at no measurement. Low practical impact.",
+      "category_justification": "Unrecorded latency is silently treated as perfectly fast, producing a misleading latency score with no way to distinguish from a genuinely fast response.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/reports/__init__.py",
+      "start_line": 355,
+      "end_line": 373,
+      "message": "`_build_dimensions_section` accesses `dims.get(k, 0)` and immediately applies `{v:.2f}` and `v * 100` without validating that the value is numeric. If a user loads a hand-edited JSON log where a dimension value is a string, both the f-string format spec and the multiplication will raise `TypeError`, crashing report generation. The function has no try/except guard around the rendering path.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "While technically correct that no type validation exists, this only matters for hand-edited JSON logs — not a realistic failure path. The data always flows from ScoreVector.to_dict() which produces floats. This is a generic robustness suggestion applied to a specific function without demonstrating a concrete realistic failure scenario.",
+      "severity_justification": "Even if the concern were valid, it would only affect report generation from malformed/hand-edited JSON files, not normal evaluation runs.",
+      "category_justification": "Concerns input validation and crash resistance in a non-critical utility function.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/core/runner.py",
+      "start_line": 127,
+      "end_line": 136,
+      "message": "`avg_dimensions` is a `@property` that calls `aggregate_vectors` on every access, iterating all results and allocating a new `ScoreVector` each time. It is called once in `EvalResults.to_dict()` (line 170) and again independently from `ci.results_to_dict` via the same property. For large result sets this is wasteful; the result should be cached (e.g. via `functools.cached_property`) or computed once and stored.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct that avg_dimensions recomputes on every access, but this is a negligible performance concern. aggregate_vectors iterates a list of ScoreVector dataclasses and averages 7 floats — trivially fast even for hundreds of results. It's called at most 2-3 times per eval run. Suggesting cached_property here is a premature optimization with no practical benefit.",
+      "severity_justification": "No realistic performance impact given the bounded, small size of result sets and the trivial cost of the computation.",
+      "category_justification": "The finding is about redundant recomputation and suggests caching.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 169,
+      "end_line": 178,
+      "message": "In `compute_overall`, when custom weights are provided, they are merged with the default weights. The normalization then happens over the full set of dimensions, not just the ones provided in the custom weights. This means the effective weight of a custom-weighted dimension is influenced by the default weights of all other dimensions, which is counter-intuitive. If a user provides `{\"correctness\": 1.0}`, they likely intend for correctness to have 100% of the weight, but other dimensions with default weights will dilute this.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: w = dict(DEFAULT_WEIGHTS); w.update(weights) means custom weights override individual entries but all other defaults remain, so normalization dilutes any custom value. A user passing {correctness: 1.0} expecting 100% correctness weight gets ~62.5% after normalization. The docstring says 'Missing keys use defaults' but does not clarify this dilution effect.",
+      "severity_justification": "The behavior is at least partially documented and the normalization step is visible in the code. Users with custom weight needs will likely test and discover this quickly. No incorrect results are silently produced for the default code path.",
+      "category_justification": "This is an API contract issue — the interface for custom weights behaves in a non-obvious way that contradicts reasonable user expectations.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/core/runner.py",
+      "start_line": 121,
+      "end_line": 127,
+      "message": "The `avg_dimensions` property re-imports `aggregate_vectors` from `litmusai.scoring` inside the method. This causes a circular dependency: `runner` imports `scoring`, and `scoring` (`__init__.py`) will import `runner` if any of its modules do (which is common in larger projects). This should be a top-level import to avoid potential runtime import errors and make dependencies clear.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claimed circular dependency doesn't exist. scoring/__init__.py only imports from Python stdlib (dataclasses, typing) — it has zero imports from litmusai.core or runner. runner.py already imports DimensionBudget, ScoreVector, build_score_vector from litmusai.scoring at the top level. The lazy import of aggregate_vectors inside avg_dimensions is redundant but harmless, not a circular dependency risk.",
+      "severity_justification": "The lazy import is a minor style inconsistency but causes no actual problem since the module is already imported at the top level.",
+      "category_justification": "The underlying concern (inconsistent import placement) is a maintainability issue, but the stated rationale — circular dependency — is factually wrong.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/ci/main.py",
+      "start_line": 376,
+      "end_line": 376,
+      "message": "The `--dimensions` flag in the CLI is named `show_dimensions` when passed to `run_evaluation`. The flag implies it only affects display, but it seems to control whether dimensions are calculated at all. If calculation is conditional, it should be named more clearly, like `calculate_dimensions` or `enable_dimensions`. If calculation is unconditional, this flag is misnamed and should only control visibility.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Dimensions are always calculated unconditionally in runner.py (build_score_vector called on every case). The show_dimensions flag only gates display in format_table. The name show_dimensions is accurate — it is purely a display control, not a calculation control. The finding's premise is factually wrong.",
+      "severity_justification": "No actual issue exists — the naming correctly reflects display-only behavior.",
+      "category_justification": "The finding was about naming clarity, which is a maintainability concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 534,
+      "end_line": 539,
+      "message": "In `_get_assertion_details`, the `details` attribute is accessed without validating that it is a dictionary containing 'assertions'. If `details` is malformed or the type checks fail, the function would return an empty list, which may inadvertently hide actual assertion details. This can lead to incorrect scoring or incomplete assessment data.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The function's graceful fallback to [] is correct. When details is None/non-dict, there are no assertions to extract. The legacy path uses {'checks': checks} not {'assertions': []} — returning [] for that path is intentional since legacy checks don't have typed assertion data for dimension categorization. In all cases, score_result.score is still used as the correctness fallback. The finding describes a generic 'could hide data' concern without identifying a concrete bug.",
+      "severity_justification": "No actual scoring error is produced — the correctness fallback always applies.",
+      "category_justification": "The finding concerns error handling and data completeness in a utility function.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 284,
+      "end_line": 285,
+      "message": "In `DimensionBudget.score_latency`, the division in linear interpolation could result in floating-point arithmetic errors when `latency_max_ms` is very close to `latency_ms`. This could lead to inaccurate scoring of latency.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code already handles the degenerate case (max <= min returns 0.0). For near-equal values slightly above min, normal IEEE 754 floating-point division applies and produces negligibly imprecise results (e.g. 0.9999999 vs 1.0) that are entirely inconsequential for latency scoring. This is a generic floating-point concern with no realistic impact on scores.",
+      "severity_justification": "Floating-point imprecision in latency scoring would be on the order of 1e-15, completely irrelevant to any practical quality assessment.",
+      "category_justification": "The finding concerns arithmetic accuracy.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 303,
+      "end_line": 304,
+      "message": "In `DimensionBudget.score_cost`, the division in linear interpolation might encounter precision issues when the values of `cost_max_usd` and `cost_usd` are close. This could cause inaccuracies in scoring cost efficiency in edge cases.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same reasoning as the latency finding: the code already guards against the degenerate case (cost_max_usd <= cost_usd returns 0.0). For near-equal values, IEEE 754 floating-point division produces negligibly imprecise results on the order of 1e-15, which is completely inconsequential for cost scoring. This is a copy-paste of the same generic floating-point concern with no realistic impact.",
+      "severity_justification": "Floating-point imprecision in cost scoring is negligible and has no practical effect on quality assessments.",
+      "category_justification": "The finding concerns arithmetic accuracy.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/core/runner.py",
+      "start_line": 487,
+      "end_line": 494,
+      "message": "In `evaluate`, the semaphore is used to control concurrency, but exceptions inside `run_case` could leave it in an inconsistent state due to missing exception-handling logic. This may lead to dangling tasks or concurrency limits not being respected properly.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "asyncio.Semaphore is used as an async context manager via 'async with semaphore:', which guarantees __aexit__ is called even if an exception is raised inside the block. The semaphore is always released correctly. This is standard Python async context manager behavior — the claim that exceptions could leave the semaphore in an inconsistent state is factually incorrect.",
+      "severity_justification": "There is no actual bug — the semaphore is correctly managed by the async context manager protocol.",
+      "category_justification": "The finding concerns concurrency and exception handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/ci/__init__.py",
+      "start_line": 330,
+      "end_line": 343,
+      "message": "The function `format_table` allows the `show_dimensions` parameter to modify the output dynamically, but if `data['results']` contains unexpected dimension keys or malformed data, there is no fallback mechanism. This could cause KeyError or formatting issues during report generation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "All dimension access uses .get() with default values: r.get('dimensions', {}) then dims.get('correctness', 0), dims.get('completeness', 0), etc. There is no direct key access that could raise KeyError. The finding's premise that unexpected or missing dimension keys would cause a KeyError is factually wrong.",
+      "severity_justification": "No actual bug exists; all dictionary access is safely guarded with defaults.",
+      "category_justification": "The finding concerns error handling and robustness of output formatting.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/ci/__init__.py",
+      "start_line": 320,
+      "end_line": 322,
+      "message": "In `format_table`, summary details are printed directly from the `data['summary']` dictionary without validating its presence or structure. Malformed or missing summary data could lead to runtime errors or incomplete reports.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "summary = data.get('summary', {}) safely defaults to empty dict. All subsequent accesses use .get(key, 0) with defaults: summary.get('passed', 0), summary.get('total', 0), etc. There is no unguarded key access that could cause a KeyError. The finding's premise is factually incorrect.",
+      "severity_justification": "No actual bug exists — all dictionary access is safely guarded with defaults.",
+      "category_justification": "The finding concerns input validation and robustness of output formatting.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/core/runner.py",
+      "start_line": 520,
+      "end_line": 527,
+      "message": "The `TestResult` construction in `run_case` includes `dimensions` derived from `build_score_vector`, but this assumes `build_score_vector` always returns non-None vectors. If any error or edge case returns None, it could cause ambiguous or incomplete results.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "build_score_vector always returns a ScoreVector — it has no code path that returns None. It constructs a ScoreVector at the end and calls compute_overall() on it. The function signature is -> ScoreVector, not -> ScoreVector | None. The finding's premise that it 'could return None' is factually incorrect.",
+      "severity_justification": "No actual issue exists — build_score_vector always returns a ScoreVector instance.",
+      "category_justification": "The finding concerns error handling and potential None returns.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/__init__.py",
+      "start_line": 36,
+      "end_line": 37,
+      "message": "The `build_score_vector` import is re-exported globally, but its invocation throughout the code does not validate if the required components like `DimensionBudget` and `response` contain valid data. Invalid input could cause undefined behavior in scoring.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic 'inputs should be validated' concern with no specific invalid input identified. build_score_vector already uses getattr with defaults throughout (getattr(response, 'output', '') or '', getattr(response, 'latency_ms', 0.0) or 0.0, etc.), making it resilient to missing attributes. The finding doesn't demonstrate a concrete case where undefined behavior actually occurs. Re-exporting a function globally is also a normal, intentional API design choice.",
+      "severity_justification": "No concrete failure scenario is demonstrated. The function handles missing/None attributes via getattr defaults.",
+      "category_justification": "The finding concerns input validation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/reports/__init__.py",
+      "start_line": 210,
+      "end_line": 211,
+      "message": "In `_build_dimensions_section`, the `dims` dictionary's keys are used unchecked for accessing values. If unexpected or missing keys occur, it could raise KeyError during HTML report generation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "All accesses to dims use .get(k, 0) with a default of 0: values = [dims.get(k, 0) for k in keys] and overall = dims.get('overall', 0). There is no unguarded direct key access that could raise KeyError. The finding's claim is factually incorrect.",
+      "severity_justification": "No actual bug exists — all dictionary access is safely guarded with defaults.",
+      "category_justification": "The finding concerns error handling in report generation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 365,
+      "end_line": 375,
+      "message": "The `ScoreVector` assumes non-negative values for all dimensions, but there are no checks or validations during assignment. Negative inputs might produce nonsensical overall scores.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "ScoreVector is a public dataclass with no __post_init__ validation, but all internal production paths in build_score_vector produce values in [0.0, 1.0]. DimensionBudget.score_latency/score_cost return values in [0,1], completeness uses min(1.0, ...), and assertion scores are already bounded. The finding is a generic 'dataclass could receive bad external input' concern without identifying a realistic path where negative values actually occur.",
+      "severity_justification": "No realistic internal code path produces negative values. Only a user manually constructing ScoreVector(correctness=-1.0) could trigger this, which is an intentional misuse of a public API.",
+      "category_justification": "The finding concerns input validation on a data class.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/ci/__init__.py",
+      "start_line": 377,
+      "end_line": 378,
+      "message": "Missing space between `ms avg` and the next `|` separator: the f-string `f\"| ⚡ {...}ms avg\"` is concatenated directly with `f\"| Pass rate: ...\"`, producing output like `...500ms avg| Pass rate: 100%` instead of `...500ms avg | Pass rate: 100%`. The other separators in this line all have a trailing space.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at lines 377-378: the f-string fragment `f\"| ⚡ {...}ms avg\"` has no trailing space before `f\"| Pass rate: ...\"`, while every other segment in the same string ends with a space. This produces output like `500ms avg| Pass rate: 100%` — a missing space that breaks visual consistency.",
+      "severity_justification": "Purely cosmetic — the output is readable but inconsistently formatted compared to the other separators in the same line.",
+      "category_justification": "String formatting inconsistency in display output; no behavioral impact.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/core/runner.py",
+      "start_line": 494,
+      "end_line": 499,
+      "message": "The auto-populated score vectors always use the default weights here, and neither `evaluate()` nor `TestSuite`/`TestCase` exposes a `dimension_weights` path. `ScoreVector.compute_overall()` supports custom weights, but callers of the main evaluation API cannot configure them per suite or per case as described, so `dimensions.overall` and `avg_dimensions.overall` will ignore user weighting needs.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `evaluate()` only exposes `dimension_budget` (for latency/cost), not `dimension_weights`. `build_score_vector` always calls `vector.compute_overall()` with no weights argument, hardcoding DEFAULT_WEIGHTS. `avg_dimensions` similarly calls `aggregate_vectors(vectors)` without weights. `ScoreVector.compute_overall()` supports custom weights but there is no path to pass them through the main evaluation API.",
+      "severity_justification": "The PR claims weights are configurable, and `ScoreVector.compute_overall()` supports it, but the public `evaluate()` API has no `dimension_weights` parameter, making the feature partially unimplemented and misleading to users.",
+      "category_justification": "Missing parameter in the public API surface that was described as a configurable feature.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 227,
+      "end_line": 229,
+      "message": "Composite assertion results such as `All`, `AnyOf`, `AtLeast`, and `Weighted` are treated as unknown and folded into correctness, so nested dimension-specific checks are lost. For example, `All(JsonValid(), NotContains(...))` produces a top-level `All` result, leaving `format_scores` and `safety_scores` empty even though the child assertions are exactly what should populate those dimensions.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: _compile in scorer.py produces {type: All, ...} for composite assertions. build_score_vector does not recognise 'all', 'anyof', 'atleast', or 'weighted' types so they fall into the unknown else branch as correctness scores. Child assertion types like JsonValid or NotContains stored in AssertionResult.details[results] are not surfaced in the flat ScoreResult details, so format/safety/relevance dimension scores are empty even when those child assertions are present.",
+      "severity_justification": "Dimension scores like format and safety will be misleadingly populated with defaults/fallbacks rather than real values whenever composite assertions are used, degrading the quality of the multi-dimensional scoring feature.",
+      "category_justification": "The dimension categorization logic produces wrong results when composite assertion types are encountered.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/scoring/__init__.py",
+      "start_line": 260,
+      "end_line": 265,
+      "message": "The detail text counts an assertion as passed only when its score is exactly `1.0`, ignoring the `passed` flag that the assertion engine already records. Assertions such as `Semantic` and `LLMGrade` can pass with scores below 1.0 based on their thresholds, so the displayed relevance summary can say `0/1 relevance checks` even when the check passed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: build_score_vector uses `sum(1 for s in relevance_scores if s >= 1.0)` to count passed checks, but Semantic assertions set score=similarity (e.g. 0.85 for threshold 0.8). A Semantic assertion with similarity=0.85 passes (similarity >= threshold) but has score < 1.0, so it would be counted as not-passed in the detail string. The assertion details do include a 'passed' boolean but build_score_vector never reads it — it only reads 'score'. Same issue applies to format_scores and safety_scores.",
+      "severity_justification": "Only the human-readable detail string is wrong; the numeric score itself (average of raw scores) is unaffected. No behavioral bug in scoring logic, just misleading display text.",
+      "category_justification": "The pass count in detail strings is factually incorrect for threshold-based assertions that pass with sub-1.0 scores.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "blog/devto_post.md",
+      "start_line": 2,
+      "end_line": 2,
+      "message": "The title says the most expensive model scored the lowest, but the benchmark table below shows Claude Opus 4 as the most expensive at 83% pass rate while Gemini 2.5 Pro has the lowest pass rate at 50%. This makes the article's headline contradict its own results.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the blog post: Claude Opus 4 is the most expensive at $0.043 real cost with 83% pass rate, while Gemini 2.5 Pro has the lowest pass rate at 50% but costs only $0.001. The title 'The Most Expensive One Scored the Lowest' contradicts the table — the most expensive model (Opus) does not have the lowest score (Gemini does). The body reframes this as cost-per-correct-answer but that's a different metric than the headline claims.",
+      "severity_justification": "This is in a blog post (marketing content), not production code. It's factually misleading but has no impact on software correctness or user data.",
+      "category_justification": "The issue is in a blog/marketing document where the headline contradicts the data presented.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/test_dimensions.py",
+      "start_line": 180,
+      "end_line": 182,
+      "message": "These added test data lines exceed the repository's configured Ruff line length of 100 characters (`pyproject.toml:78-83`), so `ruff` will report E501 here. Wrap the dictionaries over multiple lines to keep the test suite lint-clean.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the ruff line-length limit is 100 characters (pyproject.toml). The lines around 180-182 in test_dimensions.py are 87, 96, and 92 characters respectively — all under the 100-char limit. No E501 violations exist.",
+      "severity_justification": "Even if the claim were correct it would be a minor lint issue, but it is factually wrong.",
+      "category_justification": "The finding is about code style/lint compliance.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/reports/__init__.py",
+      "start_line": 327,
+      "end_line": 327,
+      "message": "This added line exceeds the repository's configured Ruff line length of 100 characters (`pyproject.toml:78-83`), which will trigger E501 during linting. Split the SVG string construction across shorter lines.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 327 in src/litmusai/reports/__init__.py is 95 characters, which is under the configured ruff line-length limit of 100. No E501 violation exists.",
+      "severity_justification": "Even if the claim were correct it would be a minor lint issue, but it is factually wrong.",
+      "category_justification": "The finding is about code style/lint compliance.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/reports/__init__.py",
+      "start_line": 334,
+      "end_line": 334,
+      "message": "This added f-string exceeds the repository's configured Ruff line length of 100 characters (`pyproject.toml:78-83`), which will trigger E501 during linting. Wrap the `x2`/`y2` expression over multiple shorter lines.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 334 in src/litmusai/reports/__init__.py is 79 characters, well under the configured ruff line-length limit of 100. No E501 violation exists.",
+      "severity_justification": "Even if the claim were correct it would be a minor lint issue, but it is factually wrong.",
+      "category_justification": "The finding is about code style/lint compliance.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/reports/__init__.py",
+      "start_line": 373,
+      "end_line": 373,
+      "message": "This generated HTML line exceeds the repository's configured Ruff line length of 100 characters (`pyproject.toml:78-83`), so linting will fail unless the style string is wrapped or moved out of the long literal line.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 373 in src/litmusai/reports/__init__.py is 97 characters, which is under the configured ruff line-length limit of 100. No E501 violation exists.",
+      "severity_justification": "Even if the claim were correct it would be a minor lint issue, but it is factually wrong.",
+      "category_justification": "The finding is about code style/lint compliance.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/reports/__init__.py",
+      "start_line": 381,
+      "end_line": 383,
+      "message": "These added HTML literal lines exceed the repository's configured Ruff line length of 100 characters (`pyproject.toml:78-83`). The project selects Ruff E rules, so E501 will flag this section unless the attributes/styles are wrapped across shorter lines.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: lines 381-383 are 92, 7, and 91 characters respectively — all under the configured ruff line-length limit of 100. No E501 violations exist on these lines.",
+      "severity_justification": "Even if the claim were correct it would be a minor lint issue, but it is factually wrong.",
+      "category_justification": "The finding is about code style/lint compliance.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/litmusai/reports/__init__.py",
+      "start_line": 386,
+      "end_line": 386,
+      "message": "This SVG polygon literal exceeds the repository's configured Ruff line length of 100 characters (`pyproject.toml:78-83`), which will trigger E501. Split the attributes across shorter literal fragments.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 386 in src/litmusai/reports/__init__.py is 98 characters, which is under the configured ruff line-length limit of 100. No E501 violation exists.",
+      "severity_justification": "Even if the claim were correct it would be a minor lint issue, but it is factually wrong.",
+      "category_justification": "The finding is about code style/lint compliance.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

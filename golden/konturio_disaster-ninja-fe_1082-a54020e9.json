@@ -1,0 +1,111 @@
+{
+  "pr_key": "konturio_disaster-ninja-fe_1082-a54020e9",
+  "pr": {
+    "repo": "https://github.com/konturio/disaster-ninja-fe",
+    "pr_number": 1082,
+    "base": "62514588e0b4024cfa3ca6417505cb728c7f0fe6",
+    "head": "a54020e9cfa29fe786d81752434b88bb39cd52f4"
+  },
+  "findings": [
+    {
+      "file": "src/core/draw_tools/configs/modifyLayer.ts",
+      "start_line": 19,
+      "end_line": 19,
+      "message": "lineWidthUnits: 'pixels' is placed only inside _subLayerProps.guides, but LocalEditableGeojsonLayer.renderLayers() (line 36) creates a geojson sub-layer for the actual drawn features by reading this.props.lineWidthUnits from the outer layer props. Since modifyDeckLayerConfig never sets lineWidthUnits at the top level, the geojson sub-layer defaults to 'meters', meaning the drawn geometry lines in modify mode still use meter-based widths and remain invisible on high-DPI mobile screens. The fix should also set lineWidthUnits: 'pixels' at the top level of modifyDeckLayerConfig (alongside id, type, mode, etc.) to affect the drawn data layer, not just the guides.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: LocalEditableGeojsonLayer.renderLayers() explicitly passes lineWidthUnits: this.props.lineWidthUnits to the GeoJsonLayer for drawn features. modifyDeckLayerConfig only sets lineWidthUnits: 'pixels' inside _subLayerProps.guides, not at the top level. The drawn geometry lines in modify mode will still default to 'meters', leaving the original mobile visibility bug partially unfixed.",
+      "severity_justification": "The PR aims to fix line visibility on mobile, but the modify mode's actual drawn geometry lines still use meter-based widths, meaning the fix is incomplete for that mode's primary rendered content.",
+      "category_justification": "The fix doesn't fully achieve its stated goal — modify mode drawn lines remain using meter-based widths despite the intent to use pixel units for mobile visibility.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/map_ruler/renderers/MapRulerRenderer.ts",
+      "start_line": 61,
+      "end_line": 69,
+      "message": "The 'lineWidthUnits: pixels' setting is redundantly repeated in similar configurations across multiple files/classes. Consider refactoring or centralizing the configuration to avoid future inconsistencies and improve maintainability.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is a generic DRY suggestion without identifying an actual inconsistency or providing a concrete refactoring path. The configs are intentionally different (different layer types, colors, widths, feature areas), and centralizing a single boolean-equivalent string value across cross-feature boundaries would introduce coupling with minimal benefit.",
+      "severity_justification": "Even if valid, duplicating a single simple string value across 4 config objects is trivial with negligible drift risk.",
+      "category_justification": "The concern is about code duplication and potential for future inconsistency.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/draw_tools/configs/modifyLayer.ts",
+      "start_line": 18,
+      "end_line": 32,
+      "message": "The definition for 'geojson' sub-layer sets 'getFillColor' and 'getLineColor' properties but involves dynamic value assignment without validation. There could be missing coverage for invalid property inputs or cases where 'geometry.type' is null.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The accessors already use optional chaining for safe null/undefined access. Returning null for Point geometry is intentional (Points are icon-rendered). There is no concrete unhandled case demonstrated — this is generic speculation about possible missing validation.",
+      "severity_justification": "Even if taken at face value, the optional chaining already handles the null cases raised, and no actual runtime failure path is demonstrated.",
+      "category_justification": "The finding alleges missing validation/coverage for invalid inputs, which is a correctness concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/draw_tools/configs/drawPolyLayer.ts",
+      "start_line": 9,
+      "end_line": 32,
+      "message": "The 'drawPolyDeckLayerConfig' does not validate essential expected behaviors such as enforcing restrictions (e.g., minimum dimensions or invalid values when toggling 'lineWidthUnits') before rendering.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic claim about missing validation with no concrete bug demonstrated. drawPolyDeckLayerConfig is a static configuration object passed to deck.gl/nebula.gl — it is not a function that processes user input requiring validation. lineWidthUnits accepts only 'pixels' or 'meters' as deck.gl enum values, and the config sets a fixed string constant, not a dynamic/toggled value. The finding does not identify any actual invalid state or runtime failure path.",
+      "severity_justification": "No concrete issue is identified; the claim is entirely speculative and does not correspond to any real defect in the code.",
+      "category_justification": "The finding alleges missing validation/enforcement before rendering, which is a correctness concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/core/draw_tools/configs/drawLine.ts",
+      "start_line": 5,
+      "end_line": 32,
+      "message": "'drawLineDeckLayerConfig' lacks checks or defaults upon rendering where missing attributes might fail downstream appearance logic, especially the 'depthTest' Boolean behavior's consistency on cross-device performance differences.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic, speculative claim with no concrete bug demonstrated. drawLineDeckLayerConfig is a static configuration object with depthTest: false explicitly set — there is no missing attribute or dynamic toggling. The 'cross-device performance differences' of depthTest is a known, intentional deck.gl pattern (disabling z-buffer for 2D map overlays) used consistently across all layer configs in this codebase. No specific failure path or inconsistency is identified.",
+      "severity_justification": "No concrete issue is identified; the finding is entirely speculative boilerplate about possible missing checks.",
+      "category_justification": "The finding alleges missing checks or defaults that could fail downstream rendering logic.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

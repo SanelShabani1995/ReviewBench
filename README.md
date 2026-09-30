@@ -7,11 +7,11 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
 
 ## What is in the Repository?
 
-- **[The test set: 25 tasks](corpus/showcase/).** The selected pull
+- **[The test set: 25 tasks](corpus/test/).** The selected pull
   requests come from 25 repositories and span a broad range of languages,
   repository sizes, change sizes, finding categories, and severities.
-- **[The full set: 219 tasks](corpus/).** Every pull request the
-  leaderboard runs on, with its golden findings.
+- **[The full set: 219 tasks](corpus/manifest.json).** Every pull request the
+  leaderboard runs on, with its corresponding findings in [`golden/`](golden/).
 - **[Benchmark documentation](docs/METHODOLOGY.md).** How the corpus was
   built, how findings are labeled, and how agents are judged and scored.
 - **[Everything a reviewer vendor needs](#run-your-code-review-agent-on-reviewbench).**
@@ -21,6 +21,8 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
 - **[The classifier prompt and supporting script](scripts/classifier/prompts.ts).**
   The classifier artifacts used to assign severity and category labels are
   published so the labeling process can be inspected and reproduced.
+
+The full corpus manifest and all golden findings are public.
 
 ### Test Set Distribution
 

@@ -1,0 +1,431 @@
+{
+  "pr_key": "CLJunge_REFW.Umbra_88-600fa7cb",
+  "pr": {
+    "repo": "https://github.com/CLJunge/REFW.Umbra",
+    "pr_number": 88,
+    "base": "94e5bca2ce5588c41b8ff352c7e1d002825400d0",
+    "head": "600fa7cbebe28b1deadca0788144d86950a66e1c"
+  },
+  "findings": [
+    {
+      "file": "Umbra/Config/Transfer/SettingsExchangePersistence.cs",
+      "start_line": 30,
+      "end_line": 58,
+      "message": "Export silently swallows all IO exceptions (disk full, permissions, etc.) inside the catch block and returns void, giving callers no indication of failure. SettingsStore.Export also returns void, so ConfigTransferFeature.ExecuteExportToPath always returns true when the path has a .json extension regardless of whether the file was actually written. The UI then shows 'Export completed successfully' for a failed export.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "SettingsExchangePersistence.Export catches all exceptions and swallows them (void return), SettingsStore.Export also returns void, and ExecuteExportToPath always returns true after calling _store.Export (the outer catch is unreachable since inner exceptions are already swallowed). The UI RecordStatus call uses this true return to show 'Export completed successfully' regardless of actual write success.",
+      "severity_justification": "Users receive false positive success feedback for failed exports (disk full, permission denied, etc.), which could cause data loss scenarios where users believe their config was saved when it wasn't. Mitigated slightly by the log output.",
+      "category_justification": "The issue is a logic error where the return value of the export operation does not correctly reflect whether the export succeeded, leading to incorrect UI feedback.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/UI/Config/ConfigSection.cs",
+      "start_line": 231,
+      "end_line": 247,
+      "message": "DrawTransferFeature composes the ImGui tree-node label as $\"{transferFeature.SectionLabel}##{_sectionId}.Transfer\" without sanitizing or warning on SectionLabel. If ConfigTransferOptions.SectionLabel contains '##', ImGui treats that first occurrence as the label/ID separator and the intended disambiguation suffix becomes invisible, breaking ImGui's stable-state mechanism. PluginPanelDrawPipeline correctly calls PluginPanelTreeNodeLabels.Sanitize and WarnIfInvalid for outer sections but this internal transfer section skips both. The PR description claims this was added but the code doesn't implement it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "DrawTransferFeature in ConfigSection.cs composes the label as `${transferFeature.SectionLabel}##{_sectionId}.Transfer` without calling PluginPanelTreeNodeLabels.Sanitize or WarnIfInvalid, despite the PR description explicitly claiming both were added. PluginPanel.cs calls WarnIfInvalid and PluginPanelDrawPipeline.cs calls Sanitize for outer sections, establishing a clear convention that this internal transfer section skips.",
+      "severity_justification": "The default SectionLabel is 'Import/Export' which does not contain '##', so normal usage is unaffected. Only developers who pass a custom SectionLabel containing '##' would hit this issue, resulting in truncated visible label and broken ImGui stable-state IDs.",
+      "category_justification": "The bug causes incorrect ImGui tree-node ID composition when SectionLabel contains '##', breaking ImGui's stable-state mechanism — a logic/rendering correctness issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/UI/Config/ConfigSection.cs",
+      "start_line": 199,
+      "end_line": 205,
+      "message": "When _transferFeature is null, the condition on line 204 evaluates null?.Placement != ConfigTransferPlacement.BeforeConfig as true (null is not equal to BeforeConfig), so DrawTransferFeature() is called unnecessarily on every frame. DrawTransferFeature returns early via its own null check, so behavior is correct, but the intent of 'draw transfer if non-null AND placement is after' is not expressed by this pattern. Should be guarded with a non-null check first.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "When _transferFeature is null, `_transferFeature?.Placement != ConfigTransferPlacement.BeforeConfig` yields `null != BeforeConfig` which is true, so DrawTransferFeature() is called and immediately returns via its null guard. The claim is factually correct.",
+      "severity_justification": "The extra call is a no-op due to the early null check in DrawTransferFeature, so there is no behavioral difference. This is purely a code clarity issue with negligible performance impact.",
+      "category_justification": "The issue is about expressing intent clearly — the null case silently triggers a superfluous call. No correctness or performance problem exists.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/Config/Transfer/SettingsExchangePersistence.cs",
+      "start_line": 198,
+      "end_line": 225,
+      "message": "The envelopeRoot parameter in ImportValues is always null at both call sites (line 116 passes null, and line 111 also passes null). The if (envelopeRoot.HasValue) block at line 213 is therefore dead code that can never execute. It redundantly re-extracts schemaId and schemaVersion that were already extracted by the caller and passed as direct parameters. This dead code also hides a potential JsonElement lifetime hazard: the outer JsonDocument would already be out of scope if this code were ever reached via a different path.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Both call sites of ImportValues pass `envelopeRoot: null` explicitly (verified at lines 106 and 115-116). The `if (envelopeRoot.HasValue)` block at line 213 can never execute, making it dead code. The schemaId/schemaVersion re-extraction inside that block is redundant as they are already extracted by the caller and passed as direct parameters.",
+      "severity_justification": "Dead code has no runtime impact — behavior is unchanged. The JsonElement lifetime hazard mentioned is theoretical since the code path is unreachable. The main concern is maintainability and the misleading suggestion that envelopeRoot could ever be non-null.",
+      "category_justification": "Dead code that can never execute, redundant re-extraction of already-computed values, and an unused parameter all constitute a code clarity/maintainability issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/Config/Transfer/SettingsImportReport.cs",
+      "start_line": 46,
+      "end_line": 46,
+      "message": "SettingsImportReport.Saved uses public set; while every other property in the class uses init;. This means any caller holding a reference to the returned report can freely mutate Saved after the fact, e.g. setting it to true even though no save occurred. The asymmetry arises because Save() is called after the report is constructed in SettingsStore.Import; a cleaner design would construct the report after the conditional save so Saved can be set via init.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "SettingsImportReport.Saved uses `public set;` while all nine other properties use `init;`. Verified in SettingsImportReport.cs line 46. SettingsStore.Import constructs the report via SettingsExchangePersistence.Import then mutates `report.Saved = true` after the conditional Save() call (line 122), confirming why the asymmetry exists and that external callers can also mutate it.",
+      "severity_justification": "The practical risk is low — callers would have to deliberately mutate Saved to cause misleading state, and the report is a short-lived return value. The design inconsistency is real but unlikely to cause bugs in practice.",
+      "category_justification": "The issue is about the public API shape of a return type — inconsistent mutability (set vs init) on a report object that should be immutable after construction.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/UI/Config/Transfer/ConfigTransferFeature.cs",
+      "start_line": 91,
+      "end_line": 102,
+      "message": "Dispose calls _sidecarSaveController.Flush() explicitly, then _sidecarSaveController.Dispose() which internally calls Flush() again, then _sidecarStore.Save() for a third time. DeferredSaveController.Dispose already calls Flush which calls store.Save, making the explicit _sidecarStore.Save() on line 99 redundant. At minimum this results in two unnecessary disk writes on every feature teardown.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Dispose calls Flush() (which unconditionally calls _store.Save()), then Dispose() on the controller (which calls Flush() again, another _store.Save()), then explicitly calls _sidecarStore.Save() a third time. DeferredSaveController.Flush() does not gate on _anyPending, confirming three disk writes occur on every teardown.",
+      "severity_justification": "This only happens during teardown, not in a hot path. Three disk writes instead of one on shutdown is wasteful but not harmful. The extra logging lines from the redundant flushes could be mildly confusing.",
+      "category_justification": "The issue causes unnecessary duplicate disk writes due to redundant Flush/Save calls on teardown.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/Config/ParameterJsonReader.cs",
+      "start_line": 75,
+      "end_line": 81,
+      "message": "TryConvert returns false with the error 'JSON value kind String is not compatible with EnumTypeName' when ConvertElement returns null for an unrecognized enum member name. The real failure is that the string doesn't match any enum member, but the error message implies a kind mismatch. The ConvertString helper already logs a separate warning about the unrecognized enum value but returns null; TryConvert then surfaces a misleading rejection message to the import report, making it harder for users to diagnose import failures involving renamed enum members.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: when ConvertString returns null for an unrecognized enum name, TryConvert produces failureReason of 'JSON value kind String is not compatible with EnumTypeName' — factually incorrect since String is the correct kind for enum types; the problem is the value content. The accurate diagnostic only appears in the separate Logger.Warning call, not in the import report Issues list.",
+      "severity_justification": "Behavior is correct (value is rejected), and the accurate reason does appear in the log. The misleading message only affects the import report Issues list used by developers debugging import failures, not end-user functionality.",
+      "category_justification": "The error message is factually incorrect — it claims a kind incompatibility when the kind is correct and the problem is the value content, making it a correctness issue in diagnostic output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/UI/Config/Drawers/WindowsConfigTransferFilePicker.cs",
+      "start_line": 20,
+      "end_line": 22,
+      "message": "TryPickPath silently returns false on non-Windows platforms without any user-visible feedback. The default ConfigTransferDrawer() constructor always creates a WindowsConfigTransferFilePicker, so on non-Windows hosts the Browse button produces no result and no message. If cross-platform hosting is possible, users will conclude the feature is broken. At minimum a platform check should be surfaced to the draw layer to show appropriate feedback or disable the button.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The project is a REFramework (Windows-only game modding framework) support library with an explicit REFramework.NET dependency and PlatformTarget x64. Cross-platform hosting is architecturally impossible — the library runs exclusively on Windows. The concern about non-Windows silent failure is inapplicable to this codebase.",
+      "severity_justification": "Even if classified TP, the risk is negligible since the platform guard can never trigger in the actual deployment environment.",
+      "category_justification": "The finding concerns a platform-specific code path that silently returns false, which would be a reliability concern in a cross-platform context.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/Config/Transfer/SettingsExchangePersistence.cs",
+      "start_line": 235,
+      "end_line": 242,
+      "message": "The method uses `envelopeRoot.Value` but does not check if `envelopeRoot` has a value before using it. If `isLegacyDocument` is `false`, `envelopeRoot` will be `null`, leading to a `NullReferenceException` when `root` is accessed. The check should happen before `envelopeRoot.Value` is used.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at line 213 has `if (envelopeRoot.HasValue)` explicitly guarding the use of `envelopeRoot.Value` on line 215. The finding claims there is no null check before using `.Value`, but the check is clearly present. No NullReferenceException is possible here.",
+      "severity_justification": "If the claim were true, a NullReferenceException on every non-legacy import would be a critical bug, but the claim is false.",
+      "category_justification": "The finding alleges a missing null guard that would cause a NullReferenceException, which would be a correctness/runtime error.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/UI/Config/Transfer/ConfigTransferFeature.cs",
+      "start_line": 141,
+      "end_line": 142,
+      "message": "The `ImportFromPath` wrapper invokes `ExecuteImportFromPath` and discards the resulting `bool`, which means when this method is wired up through `ImportConfig` (a `Parameter<Action>`), the success/failure status is silently dropped and never surfaced through the drawer's `RecordStatus` pipeline. The drawer-driven path (via `ExecuteTransferActionCallback`) does record status, but any external consumer invoking the `Action` parameter directly (including the tests in `ConfigTransferFeatureTests`) will not. Consider documenting this asymmetry or routing the `Action` path through the same status-recording flow so callers get consistent behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: `ImportFromPath()` at line 141 calls `_ = ExecuteImportFromPath()` discarding the bool, so invocations via the public `ImportConfig`/`ExportConfig` `Parameter<Action>` never trigger `RecordStatus` in the drawer. The UI path passes `ExecuteImportFromPath` directly as `ExecuteTransferActionCallback` and does call `RecordStatus`. The asymmetry is real and verifiable.",
+      "severity_justification": "Practical impact is negligible: status recording is only meaningful within the drawer's frame render loop, so external callers invoking the Action parameter directly wouldn't see status feedback regardless. The asymmetry is a documentation/consistency concern rather than a functional bug.",
+      "category_justification": "The issue is a design consistency gap between two code paths rather than a correctness or reliability bug — the same underlying operation behaves differently depending on which entry point is used, without documentation explaining the intent.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/UI/Panel/Abstractions/IPanelSection.cs",
+      "start_line": 36,
+      "end_line": 45,
+      "message": "Renaming the public `IPanelSection` members is a breaking API change with a silent failure mode: existing external section implementations that still expose `TreeNodeLabel`/`TreeNodeDefaultOpen` will continue to compile because these new interface members have defaults, but their labels/default-open settings will no longer be read. Consider preserving the old members as aliases or otherwise providing a compatibility path.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: commit 11f1b0d (part of this PR) renamed `TreeNodeLabel`→`SectionLabel` and `TreeNodeDefaultOpen`→`ExpandedByDefault` in the public `IPanelSection` interface. The new members have default implementations, so external classes that previously implemented only the old names still compile cleanly but are silently ignored by PluginPanel, which now reads only the new names.",
+      "severity_justification": "A silent breakage of existing external `IPanelSection` implementations — their custom section labels and default-open states stop being honored without any compile error or warning. Impact depends on how many external consumers implement the interface directly rather than subclassing the provided concrete types.",
+      "category_justification": "The issue is a breaking change to a public interface contract: member renaming with default impls creates a silent compatibility hazard for external consumers.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/Config/Attributes/UmbraRootNodeAttribute.cs",
+      "start_line": 12,
+      "end_line": 24,
+      "message": "Renaming the public attribute constructor parameter and property breaks consumers using `[UmbraRootNode(defaultOpen: true)]` or reading `DefaultOpen`. Because attributes are commonly used with named arguments, this should preserve the old name/property as a compatibility alias or be treated as an explicit breaking change.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed via git history: commit 11f1b0d (part of this PR) renamed the attribute constructor parameter from `defaultOpen` to `expandedByDefault` and the property from `DefaultOpen` to `ExpandedByDefault`. External consumers using named argument syntax `[UmbraRootNode(defaultOpen: true)]` or accessing `.DefaultOpen` will get compile errors.",
+      "severity_justification": "It's a compile-time breaking change (not silent), but it still requires external consumers to update every usage site. For a library targeting plugin developers, this is a meaningful source compatibility break.",
+      "category_justification": "Renaming a public attribute's constructor parameter and property is a source-level breaking change to the public API contract.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/Config/Transfer/SettingsExchangePersistence.cs",
+      "start_line": 142,
+      "end_line": 151,
+      "message": "This treats any flat legacy file containing one of the envelope property names (`formatVersion`, `schemaId`, `schemaVersion`, or `values`) as a malformed versioned document. A valid legacy config can naturally have a parameter key like `values` (property `Values` with no prefix or an override), so the advertised legacy flat-file import path would fail instead of importing it. Only classify as an envelope when the complete envelope shape is present, or fall back to legacy import when it is not.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The TryGetEnvelopeValues logic at lines 146-151 classifies any file containing even one of the four envelope keys as a malformed envelope rather than falling through to legacy import. A legacy flat JSON with a parameter key named exactly `values` (possible for any config type with no [UmbraPrefix] and a `Values` property, since Combine(\"\", \"values\")=\"values\") would fail import with a misleading error instead of being treated as a legacy document.",
+      "severity_justification": "Produces a silent import failure with a misleading error for valid legacy configs that happen to have one of these four parameter keys. Configs without [UmbraPrefix] are a documented valid usage pattern in the test suite, making the collision realistic.",
+      "category_justification": "The detection heuristic incorrectly misclassifies valid legacy documents as malformed envelopes, causing the advertised legacy import path to fail.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/Config/SettingsStore.cs",
+      "start_line": 121,
+      "end_line": 122,
+      "message": "`Save()` does not report whether persistence actually happened: the persistence layer catches write failures, and the coordinator can also suppress saves after an unrecoverable load failure. Setting `report.Saved = true` unconditionally after calling `Save()` can therefore tell callers that an import was persisted when the runtime config file was not updated.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `SettingsStorePersistenceCoordinator.Save()` silently no-ops when `_saveBlocked=true` (set after unrecoverable load failures), and `SettingsPersistence.Save` catches all write exceptions without rethrowing. Both `Save()` callers are void-returning with no success signal, yet `report.Saved = true` is unconditionally set at lines 121-122, producing an inaccurate report when the file was not actually written.",
+      "severity_justification": "Callers using `report.Saved` to determine whether an import was durably persisted (e.g. to decide whether to retry or warn users) receive a false positive. The save-blocked path is an error-recovery scenario, making the misinformation most likely when the store is already in a degraded state.",
+      "category_justification": "The `Saved` field in the import report is explicitly meant to convey whether persistence occurred; unconditionally setting it to true when the write may have been silently skipped or failed is a factual incorrectness in the returned data.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/Config/Abstractions/ISettingsStore.cs",
+      "start_line": 42,
+      "end_line": 60,
+      "message": "Adding required members to the public `ISettingsStore<TConfig>` interface is a source/binary breaking change for any external implementation of the interface. If this API is meant to remain compatible, consider adding these operations through a separate transfer-specific interface (as this PR already introduces) or providing default interface implementations.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: commit 574a016 (part of this PR) added `Export(string)` and `Import(string, SettingsImportOptions?)` to the public `ISettingsStore<TConfig>` interface without default implementations. External classes implementing the interface will get CS0535 compile errors. The PR's own test stub required adding these members. The PR simultaneously introduces `IConfigTransferStore` (also public) with the same two operations, which would have been a non-breaking home for them.",
+      "severity_justification": "Compile-time breaking change for all external implementations of `ISettingsStore<TConfig>`. Fails loudly rather than silently, but forces every external implementor to add these methods regardless of whether they need transfer functionality.",
+      "category_justification": "Adding abstract members to a public interface is a source and binary breaking change to the public API contract; the finding is about interface design and the separation of concerns between `ISettingsStore` and `IConfigTransferStore`.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/UI/Config/ConfigSection.cs",
+      "start_line": 52,
+      "end_line": 54,
+      "message": "Renaming public constructor parameters breaks callers that use named arguments such as `treeNodeLabel:` or `treeNodeDefaultOpen:`. Since these constructors are part of the public API, consider preserving overloads with the old parameter names or documenting this as a breaking change.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed via commit 11f1b0d (part of this PR): the public ConfigSection<TConfig> constructors had named parameters `treeNodeLabel` and `treeNodeDefaultOpen` renamed to `sectionLabel` and `expandedByDefault`. External callers using named argument syntax (e.g. `treeNodeLabel: \"My Section\"`) will get CS1739 compile errors.",
+      "severity_justification": "Compile-time breaking change for any external caller using named arguments. Affects a public class with commonly used constructor parameters. Fails loudly but requires all call sites to be updated.",
+      "category_justification": "Renaming public constructor parameters in a public class is a source-level breaking change to the public API contract; callers using named-argument syntax must be updated.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/UI/LiveState/LiveStateSection.cs",
+      "start_line": 51,
+      "end_line": 58,
+      "message": "Renaming public constructor parameters breaks callers that use named arguments such as `treeNodeLabel:` or `treeNodeDefaultOpen:`. Since these constructors are part of the public API, consider preserving overloads with the old parameter names or documenting this as a breaking change.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed via commit 11f1b0d (part of this PR): the public LiveStateSection<T> constructor had named parameters `treeNodeLabel` and `treeNodeDefaultOpen` renamed to `sectionLabel` and `expandedByDefault`. The class is `public sealed` with a `public` constructor, so any external caller using named argument syntax will get CS1739 compile errors.",
+      "severity_justification": "Same as Finding 7 — a compile-time breaking change for external callers using named arguments on a public constructor. Affects a second public class in the same library.",
+      "category_justification": "Renaming public constructor parameters on a public class is a source-level breaking change; named-argument callers must update all call sites.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/UI/Config/Transfer/ConfigTransferFeature.cs",
+      "start_line": 133,
+      "end_line": 134,
+      "message": "This helper name still uses the old `TreeNodeLabel` terminology while the option/property it resolves is now `SectionLabel`. That inconsistency makes the new transfer API harder to follow; consider renaming it to match the public option name.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `ResolveTreeNodeLabel(string? treeNodeLabel)` at line 133 uses old terminology. Commit 11f1b0d updated the call site and property to `SectionLabel` but missed renaming the helper method itself and its parameter. The test file also still uses the old name (`ConfigTransferFeature.ResolveTreeNodeLabel(...)`).",
+      "severity_justification": "Internal method only — no public API impact. The inconsistency is a minor readability concern that makes the codebase harder to follow but has no behavioral or compatibility consequences.",
+      "category_justification": "Pure naming inconsistency: one internal helper method retained old terminology while the rest of the feature was renamed, reducing code clarity.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra.UnitTests/UI/Config/Transfer/ConfigTransferFeatureTests.cs",
+      "start_line": 15,
+      "end_line": 17,
+      "message": "This test uses a Windows-style path but CI runs on `ubuntu-latest`; on Unix, `Path.GetDirectoryName(@\"C:\\temp\\config.json\")` does not treat backslashes as directory separators, so the production method returns the fallback filename rather than this expected Windows sibling path. Use platform-native paths (for example, `Path.Combine`) or gate Windows-specific expectations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The specific test at lines 15-17 (ResolveSidecarFilePath_WithoutOverride_DerivesSiblingTransferFile) coincidentally passes on Linux: Path.GetFileNameWithoutExtension also treats backslashes as non-separators, so it returns `\"C:\\temp\\config\"` as the whole filename, producing sidecarFileName = `\"C:\\temp\\config-transfer.json\"`, which equals the expected value. The finding's predicted failure does not occur for this test. A genuine Linux failure exists in the ResolveFallbackBrowseDirectory_WithoutOverride test (line 31), but that is not what the finding references.",
+      "severity_justification": "Even if the concern were valid, it would only affect unit tests on Linux CI, not production behavior.",
+      "category_justification": "The finding is about test portability across platforms (Linux CI).",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra.UnitTests/UI/Config/Transfer/ConfigTransferFeatureTests.cs",
+      "start_line": 31,
+      "end_line": 33,
+      "message": "This Windows-style path expectation is platform-dependent. The repository runs tests on Ubuntu, where backslashes are not path separators, so `Path.GetDirectoryName` will not return `C:\\temp` for this input. Use a path built with `Path.Combine`/`Path.DirectorySeparatorChar` or make the assertion conditional on Windows.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: on Linux, Path.GetDirectoryName(@\"C:\\temp\\config.json\") returns empty string (backslashes not treated as separators), causing ResolveFallbackBrowseDirectory to return null. The assertion Assert.AreEqual(@\"C:\\temp\", null) fails. CI runs on ubuntu-latest (verified in workflow files).",
+      "severity_justification": "This is a genuine test failure on the project's own CI platform (ubuntu-latest), meaning the test suite currently reports false failures or is never actually run. Introduces noise that can mask real regressions.",
+      "category_justification": "A platform-specific test assertion that fails on Linux CI — a cross-platform test portability issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Umbra/Config/Transfer/SettingsExchangePersistence.cs",
+      "start_line": 142,
+      "end_line": 145,
+      "message": "Envelope detection is case-sensitive even though the serializer options are configured with `PropertyNameCaseInsensitive = true`. A document with `FormatVersion`/`SchemaId`/`SchemaVersion`/`Values` will be treated as a legacy flat file instead of an envelope, causing its payload to be ignored or misreported. Use case-insensitive property lookup here if envelope documents are intended to follow the configured JSON options.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: TryGetProperty at lines 142-145 performs case-sensitive matching on JsonElement; _jsonOptions (with PropertyNameCaseInsensitive=true) is only passed to JsonSerializer.Serialize in the export path and never to JsonDocument.Parse. A document with PascalCase envelope keys (e.g., FormatVersion/SchemaId) would not be detected as an envelope and would be silently imported as a legacy flat file.",
+      "severity_justification": "All documents produced by Umbra's own Export() use camelCase (via JsonNamingPolicy.CamelCase), so this only affects manually created or third-party-tool-produced documents. The failure mode (treating as legacy flat file) is wrong but not catastrophic.",
+      "category_justification": "The envelope detection silently misclassifies structurally valid documents that differ only in property-name casing, producing incorrect import behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

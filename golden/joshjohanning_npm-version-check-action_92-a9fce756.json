@@ -1,0 +1,371 @@
+{
+  "pr_key": "joshjohanning_npm-version-check-action_92-a9fce756",
+  "pr": {
+    "repo": "https://github.com/joshjohanning/npm-version-check-action",
+    "pr_number": 92,
+    "base": "07b04f0ea37de3f7ef1856351823972176766903",
+    "head": "a9fce75678bb88cbbaabf793b8e7bd89abc100fb"
+  },
+  "findings": [
+    {
+      "file": "src/index.js",
+      "start_line": 917,
+      "end_line": 922,
+      "message": "detectNodeRuntimeChange returns { changed: true, baseVersion: null, headVersion: null } on any non-404 API error (rate limit, 403, 500). In run() at lines 1496 and 1502 this produces error messages like 'Node.js Actions runtime changed from nodenull to nodenull', and the action fails PRs with a requirement for a major version bump when the runtime may not have actually changed. A transient API error becomes a false positive that blocks legitimate merges.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: detectNodeRuntimeChange catches all non-404 errors and returns { changed: true, baseVersion: null, headVersion: null }. In run() at ~line 1494, runtimeChange.changed === true triggers both a misleading 'nodenull -> nodenull' log and, if isMajorVersionBump returns false, core.setFailed with the same null-interpolated message — blocking the merge. This is introduced by this PR's switch to getFileAtRef which rethrows non-404 errors.",
+      "severity_justification": "Transient API errors (rate limits, 5xx) on a single getContent call cause the action to fail PRs with a misleading error. It blocks legitimate merges but only under specific conditions: action.yml must be in the diff, and the PR must not be a major version bump.",
+      "category_justification": "Logic error: error-handling path produces incorrect behavior (false positive runtime change detection) that fails valid PRs.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 1307,
+      "end_line": 1314,
+      "message": "detectNodeRuntimeChange is called twice when action.yml is in the PR diff and skipFilesCheck is false: once here as an 'early check' to set hasRuntimeChange, and again at line 1485-1492 after version comparison to enforce the major-bump requirement. Both calls fetch action.yml content at base and head refs via repos.getContent, making 4 redundant API calls total. The result of the early check is also not reused by the late check.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: detectNodeRuntimeChange is called twice — once at ~line 1307 (early check, only .changed used) and again at ~line 1485 (enforcement). Both calls fetch action.yml content at base and head refs via repos.getContent (2 calls each), resulting in 4 API calls instead of 2 when action.yml is in the diff. The early result is discarded rather than passed to the enforcement block.",
+      "severity_justification": "Redundant API calls have negligible practical impact — it's 2 extra getContent calls per action run. GitHub API rate limits are generous enough that this won't cause problems in normal usage. The code works correctly despite the inefficiency.",
+      "category_justification": "Duplicate API calls that fetch the same data twice with the first result discarded rather than reused.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 248,
+      "end_line": 265,
+      "message": "When a non-skipped commit's SHA returns 404 from getFilesForCommit, that function returns [] silently (only a warning is logged). Those files are absent from filesFromNonSkippedCommits, so prDiffFiles.filter() at line 265 excludes them from changedFiles. If a file in the PR diff was touched only by a commit whose getCommit returns 404, the version check for that file is silently skipped — a false negative.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: getFilesForCommit returns [] on 404 without throwing. In applySkipKeywordFilter, the outer try/catch only catches thrown exceptions. A 404 on a non-skipped commit silently contributes [] to filesFromNonSkippedCommits, causing prDiffFiles.filter() to exclude files that were only touched by that commit — producing a false negative that silently skips the version check.",
+      "severity_justification": "False negatives on version checking are a real correctness concern — the action's primary purpose is to enforce version bumps. The scenario (404 on a commit returned by listCommits) is an edge case, but fork PRs or race conditions could trigger it, and the failure mode is silent.",
+      "category_justification": "Logic flaw: the 404 silent-return path bypasses the safety fallback, causing files to be incorrectly excluded from version checking.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 252,
+      "end_line": 265,
+      "message": "GitHub's repos.getCommit endpoint returns at most 300 files per commit. For non-skipped commits that touch more than 300 files, getFilesForCommit returns a silently truncated list. Files beyond the 300-file limit are absent from filesFromNonSkippedCommits and are then filtered out of changedFiles at line 265, creating silent false negatives in the skip-keyword filter for large commits.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The GitHub repos.getCommit API returns at most 300 files per commit. The code in getFilesForCommit (line ~162) does no truncation detection or handling. Files beyond the 300-file cap are silently absent from filesFromNonSkippedCommits, causing prDiffFiles.filter() to exclude them — a false negative in the skip-keyword filter path. No safeguard exists in the codebase.",
+      "severity_justification": "Requires the unusual combination of: the skip-keyword filter being active, a non-skipped commit touching 300+ files, and the affected files being exclusively in that commit. Normal NPM package PRs rarely have commits touching 300+ files. The failure mode is silent but the scenario is edge-case.",
+      "category_justification": "Silent data truncation from an API limit causes incorrect filtering logic — files are excluded from the version check when they should be included.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 1294,
+      "end_line": 1342,
+      "message": "hasPackageDependencyChanges is called twice when commits are skipped: once at line 1294 with the full PR diff files, and again at lines 1335-1339 with the filtered files after skip-keyword processing. Each call independently fetches package.json and package-lock.json at both refs via repos.getContent (up to 4 API calls per invocation), doubling the API call cost and increasing rate-limit exposure without any caching.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: hasPackageDependencyChanges is called at line 1294 with full changedFiles and again at line 1335 with filtered changedFiles (only when skippedCommits > 0). Each call independently issues up to 4 repos.getContent calls (package.json and package-lock.json at base and head refs) with no caching. The finding is factually correct.",
+      "severity_justification": "The duplication only occurs in the skip-keyword path when commits are actually skipped. Maximum overhead is 4 extra repos.getContent calls, well within GitHub's 5000/hr rate limit. The content fetched is small. No practical rate-limit risk in normal usage.",
+      "category_justification": "Redundant API calls fetching the same file content twice without caching, increasing latency and rate-limit exposure unnecessarily.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 1288,
+      "end_line": 1289,
+      "message": "When prNumber is falsy (undefined), changedFiles silently becomes [] instead of failing explicitly. This causes hasRegularChanges, hasPackageDepChanges, and hasRuntimeChange to all be false, so the version check is skipped with 'no relevant files' messaging — a silent false negative. For a PR event where the number should always be present, this should fail with an informative error rather than silently passing.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: at line 1289, if prNumber is falsy, changedFiles becomes [] silently. Since the action already confirmed eventName === 'pull_request' at line 1255, a missing PR number is unexpected and should be treated as an error. Instead the action silently exits with 'no relevant files' messaging — a false negative. This is a real code path introduced by this PR's switch to getPRDiffFiles which now requires prNumber.",
+      "severity_justification": "In practice, pull_request.number is always present in GitHub Actions PR event payloads per the webhook spec, so this scenario is essentially unreachable in production. The risk is limited to malformed payloads or test environments.",
+      "category_justification": "Silent false negative: missing required data (prNumber) causes the version check to be silently skipped rather than failing with an actionable error.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 184,
+      "end_line": 192,
+      "message": "getPRDiffFiles propagates errors without any fallback. If pulls.listFiles fails (rate limit, network error, 404), the error bubbles to run()'s outer catch and calls core.setFailed, completely failing the action. By contrast, getFilesForCommit returns [] on 404 and applySkipKeywordFilter falls back to prDiffFiles on any non-404 error. The inconsistent error handling means a transient API failure on the primary file-detection call hard-fails the action rather than applying a conservative fallback.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: getPRDiffFiles has no error handling and propagates errors to run()'s outer catch at line 1519, which calls core.setFailed. A transient rate-limit or network error on pulls.listFiles hard-fails the action with a generic message. The inconsistency with other error handlers (getFilesForCommit returning [] on 404, applySkipKeywordFilter falling back on non-404 errors) is real and factually correct.",
+      "severity_justification": "Transient API failures (rate limits, 5xx) are uncommon but not impossible. Hard-failing vs. degrading gracefully is a design tradeoff — hard-failing on inability to determine changed files is a defensible choice since there's no meaningful fallback data available. Impact limited to transient API error scenarios.",
+      "category_justification": "Inconsistent error handling for API calls: a transient failure on the primary file-detection call causes action failure rather than graceful degradation, risking blocked PRs on transient infrastructure issues.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 898,
+      "end_line": 922,
+      "message": "detectNodeRuntimeChange no longer validates baseRef and headRef with sanitizeSHA before using them. The old code called sanitizeSHA on both refs. While the SHAs now go to the GitHub API rather than a git CLI command (removing the shell injection risk), passing a malformed SHA (e.g., from a crafted payload) results in an opaque API error that is then caught and returns { changed: true }, triggering the false-positive major-bump requirement described in the other finding, rather than a clear validation error.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The security concern (shell injection via malformed SHA) is moot since SHAs now go to the GitHub API, not shell commands. The SHAs come from github.context.payload.pull_request?.base/head?.sha, set by GitHub's trusted runner infrastructure, not user input. The inconsistent validation (getFilesForCommit validates, getFileAtRef doesn't) is real but the consequence described (false-positive via API error catch) is already fully captured by Finding #1 about detectNodeRuntimeChange's error handler returning { changed: true }.",
+      "severity_justification": "No exploitable security risk — the SHAs are from GitHub's trusted infrastructure and go to the API not a shell. The validation inconsistency is cosmetic given the threat model.",
+      "category_justification": "The finding frames this as a security/validation concern about missing SHA sanitization.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 322,
+      "end_line": 322,
+      "message": "The function `getFilesForCommit` suppresses 404 errors but re-throws other errors. If any of the parallel `getFilesForCommit` calls in `applySkipKeywordFilter` fail with a non-404 error (e.g., rate limiting), `Promise.all` will reject, and the error will be caught, causing a fallback to using the full PR diff. However, if all API calls fail with non-404 errors, all promises will reject and `applySkipKeywordFilter` will throw an unhandled rejection because the `try...catch` block only surrounds the `Promise.all` calls within the loop, not the initial `getCommitsWithMessages` or the loop structure itself. A non-404 error in `getCommitsWithMessages` would also cause an unhandled rejection.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect on both claims. getCommitsWithMessages has its own try/catch that catches ALL errors and returns [] (not an unhandled rejection). The try/catch in applySkipKeywordFilter wraps the entire for loop, not just individual Promise.all calls — so any non-404 error from getFilesForCommit propagates through Promise.all and is caught, triggering the prDiffFiles fallback. The error handling is correct.",
+      "severity_justification": "The finding describes a bug that doesn't actually exist in the code.",
+      "category_justification": "The finding concerns error handling and unhandled rejections in async code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 686,
+      "end_line": 686,
+      "message": "The `headRef` is derived from `context.payload.pull_request?.head?.sha || context.sha`. The `context.sha` is the SHA of the merge commit when the event is `pull_request`, which is not a commit in the PR branch. Using this as a fallback for `headRef` could lead to incorrect file contents being fetched if `pull_request.head.sha` is not available for some reason, as `repos.getContent` would be called with the merge commit's SHA instead of the actual head of the branch.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Factually correct: context.sha for pull_request events is the merge commit SHA, not the PR branch head. The fallback `|| context.sha` at lines 592, 1305, and 1482 would produce incorrect getContent calls if pull_request.head.sha were absent. The code should either assert the value is present or use a clearly correct fallback. The finding correctly identifies wrong fallback logic.",
+      "severity_justification": "In practice, pull_request.head.sha is always present for PR events, making this fallback unreachable under normal GitHub Actions conditions. The incorrect fallback would only be used in malformed payload scenarios.",
+      "category_justification": "Wrong fallback value: context.sha is the merge commit SHA for PR events, not the branch head, making the fallback semantically incorrect even if rarely triggered.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 1056,
+      "end_line": 1056,
+      "message": "The `token` input is trimmed using `(core.getInput('token') || process.env.GITHUB_TOKEN || '').trim()`. However, the empty string check `if (!token)` is performed after trimming. If a user provides a token consisting only of whitespace, `trim()` will convert it to an empty string, causing the action to fail with a \"token is required\" error, which could be confusing. It would be better to check for an empty or whitespace-only token before attempting to use it.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code correctly trims then checks: whitespace-only tokens are normalized to '' and caught by the !token guard, producing the right failure behavior. The finding's suggestion to 'check before using it' is exactly what the code already does. A whitespace-only GitHub token is not a valid credential regardless, and the error message is accurate. The scenario is essentially unreachable with real GitHub Actions secrets.",
+      "severity_justification": "Even if the scenario were triggered, the user gets a clear error and the action correctly refuses to proceed with an unusable token.",
+      "category_justification": "The finding frames this as incorrect behavior, but the code is handling the case correctly.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 204,
+      "end_line": 204,
+      "message": "In `getCommitsWithMessages`, if the `octokit.paginate` call for `pulls.listCommits` fails, the error is caught and a warning is logged, but the function returns an empty array. The caller, `applySkipKeywordFilter`, then receives an empty commit list and incorrectly concludes there are no commits to analyze, which results in `prDiffFiles` being returned unmodified. This means that if `listCommits` fails, the `skip-version-keyword` is silently ignored, which could lead to version checks being skipped when they should not be. The error should probably be propagated or handled more explicitly.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's stated consequence is backwards. When getCommitsWithMessages fails and returns [], applySkipKeywordFilter returns prDiffFiles with skippedCommits:0, the re-evaluation block in run() is not entered, and the version check RUNS with all original files — not skipped. The conservative fallback (run check with all files) is the correct approach, and a warning is logged.",
+      "severity_justification": "The stated bug (version checks being skipped) does not occur. The actual behavior is that skip-keyword is not honored on API failure, which is a minor concern since the fallback is conservative.",
+      "category_justification": "The finding makes an incorrect claim about the direction of the failure mode in the code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "action.yml",
+      "start_line": 29,
+      "end_line": 30,
+      "message": "The 'include-dev-dependencies' option is described to skip package-lock.json analysis for devDev-only changes, potentially ignoring changes these transitively cause in production dependencies. It might need clarity on whether it expects changes impacting transpiled artifacts downstream.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is vague and non-actionable — 'might need clarity' without identifying a specific inaccuracy. The action.yml description is reasonably clear. The 'transpiled artifacts downstream' concern is tangential to what this input does. The code already handles transitive production dependency analysis. This reads as generic auto-generated commentary that could apply to any boolean configuration option.",
+      "severity_justification": "No concrete documentation error or user-facing confusion is demonstrated.",
+      "category_justification": "The finding concerns the clarity of an action input description in action.yml.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 1653,
+      "end_line": 1673,
+      "message": "When parsing the 'action.yml' file's 'runs.using' field, the algorithm skips lines that appear like headings. Mixed multiline YAML permits nested blocks confusing parser intercepts corrections could mess runtime comparison outputs. To reach firm robustness relpulative YAML injector rules any runtime comprehension passthrough xmls files problematic meta-tags detected difficult parsing ahead.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is incoherent gibberish — 'relpulative YAML injector rules any runtime comprehension passthrough xmls files problematic meta-tags detected difficult parsing ahead' is not a meaningful claim. It cannot be verified against any specific code behavior and makes no actionable point. Even the intelligible portion ('algorithm skips lines that appear like headings') references the correct behavior of the parseNodeRuntime function stopping at top-level YAML keys. This is clearly auto-generated noise.",
+      "severity_justification": "The finding contains no verifiable claim about actual code behavior.",
+      "category_justification": "The finding nominally concerns YAML parsing logic.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 353,
+      "end_line": 353,
+      "message": "`repos.getContent` does not always return base64 file contents for large files; package-lock.json files over the Contents API inline-content limit can come back with empty/non-base64 content. Decoding that as UTF-8 can make base and head look identical (or empty), causing dependency changes in large lockfiles to be missed. This should request raw/blob content or validate the returned encoding/content before treating it as a successful read.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: GitHub's Contents API returns `content: ''` (empty string, not null) for files over 1 MB. The `data.content == null` guard in `getFileAtRef` does not catch this case ('' == null is false). Both base and head large lockfiles decode to empty string ''. In `hasPackageDependencyChanges`, `if (baseRaw && headRaw)` is false (empty strings are falsy) and `else if (baseRaw !== headRaw)` is also false (both equal ''), so changes are silently skipped. Large package-lock.json files (>1 MB, common in big projects) would cause the action to miss real dependency changes.",
+      "severity_justification": "Affects repos with package-lock.json over 1 MB (common in large projects), causing the action to silently skip dependency change detection and potentially allow unversioned releases to pass CI. A missed version bump check is a meaningful functional regression.",
+      "category_justification": "The code produces incorrect results (false negatives on dependency change detection) for a well-defined class of inputs (files over 1 MB returned by GitHub Contents API).",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 185,
+      "end_line": 190,
+      "message": "`pulls.listFiles` is capped by the GitHub API for very large pull requests, but this helper treats the paginated result as complete. If a PR exceeds that cap, relevant files beyond the API limit may be omitted and the action can incorrectly skip the version check; add limit detection/fallback or fail conservatively when the file list may be truncated.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "GitHub's pulls.listFiles API has a hard 3000-file cap that octokit.paginate cannot bypass — this is a real API constraint. The code at getPRDiffFiles (lines 185-190) treats the paginated result as complete with no check for truncation. If relevant files (package.json, etc.) exceeded position 3000, the version check would silently skip. The claim is factually correct and code-specific.",
+      "severity_justification": "For an npm version-check action, PRs with >3000 files are essentially non-existent in practice, and the relevant files (package.json, package-lock.json, action.yml) would virtually always appear well within the first 3000 entries. The risk is real but negligible for this use case.",
+      "category_justification": "The code can produce incorrect results (silently skipping the version check) when the PR file list is truncated by the API cap, which is a logic correctness issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 264,
+      "end_line": 265,
+      "message": "This per-file intersection can still be polluted by commits from previously merged PRs, which is the scenario this PR is trying to fix. If an old non-skipped commit in `pulls.listCommits` touched a file and the current PR's net diff for that same file comes only from a skipped commit, `filesFromNonSkippedCommits.has(f)` keeps the file and the skip keyword is ignored. The skip filtering needs to avoid attributing PR diff files to non-skipped commits that are already present in the base history.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The scenario is factually correct and verified by tracing: a non-skipped polluting commit from a previously-merged PR that touched the same file as a skip-keyworded commit will cause filesFromNonSkippedCommits to include that file, making the skip keyword ineffective. The code keeps the file in the filtered result even though all current-PR changes to it were in a skip-keyworded commit.",
+      "severity_justification": "The scenario requires a specific confluence of conditions: a polluting commit from a previously-merged PR, touching the exact same file as a skip-keyworded commit, with a net diff present. This is a niche edge case affecting only the skip keyword feature (not the primary version check path), and the feature is a developer convenience with a documented workaround. The behavior also pre-dates this PR.",
+      "category_justification": "The skip keyword filter produces incorrect results (file not excluded as intended) in a specific but verifiable scenario, constituting a logic correctness issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.js",
+      "start_line": 1274,
+      "end_line": 1274,
+      "message": "Using `context.repo` for all subsequent API lookups means head-side content and per-commit file requests are made against the base repository. For pull requests from forks, `pull_request.head.sha` and its commits belong to the fork repository, so these calls can 404; in skip filtering, those 404s become empty file lists and can incorrectly filter out all non-skipped changes. The head-side lookups need to use `payload.pull_request.head.repo` (or another ref valid in the base repo).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding's core premise is incorrect. GitHub creates refs/pull/{n}/head in the BASE repository for every open PR, making fork commits accessible via the base repo's API. The code already calls pulls.listCommits against the base repo to get fork commit SHAs — if those SHAs were inaccessible, that call itself would be broken. The subsequent repos.getCommit and repos.getContent calls with those same SHAs against the same base repo work by the same mechanism. The claimed 404 behavior for fork PRs does not occur in practice.",
+      "severity_justification": "Even if the premise were correct, the code has conservative 404 fallbacks in getFilesForCommit (returns empty array) and applySkipKeywordFilter (falls back to full PR diff on errors), limiting the blast radius.",
+      "category_justification": "The finding asserts incorrect runtime behavior (404 errors) for a specific code path, which is a correctness-class claim.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

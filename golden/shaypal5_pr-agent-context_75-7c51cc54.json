@@ -1,0 +1,351 @@
+{
+  "pr_key": "shaypal5_pr-agent-context_75-7c51cc54",
+  "pr": {
+    "repo": "https://github.com/shaypal5/pr-agent-context",
+    "pr_number": 75,
+    "base": "a1024c89f97abe95af0537d3a83f5ce54a207993",
+    "head": "7c51cc54400b8a4b62b118c3d196a611f38a9e1d"
+  },
+  "findings": [
+    {
+      "file": "src/pr_agent_context/github/workflow_jobs.py",
+      "start_line": 228,
+      "end_line": 234,
+      "message": "`_extract_grouped_step_name` only detects log groups whose header contains the substring `\"##[group]Run \"`. GitHub Actions sets the group header to exactly the step's `name:` attribute — no automatic \"Run \" prefix is added. Steps with descriptive names that don't start with \"Run \" (e.g., `name: mypy`, `name: ruff`, `name: pytest`) produce headers like `\"##[group]mypy\"` which are never matched, so `include_failed_step_output=True` silently falls back to the excerpt for the majority of real-world named steps. Only auto-named steps (where GitHub generates \"Run <cmd>\" as the default name) or steps explicitly prefixed with \"Run \" will ever extract step output.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding's core premise is wrong. GitHub Actions runner DOES prepend 'Run ' to the group header for `run:` steps — producing `##[group]Run <step_name>` — which is exactly what `_extract_grouped_step_name` targets. All fixture logs in the repo confirm this: `##[group]Run pytest`, `##[group]Run pre-commit`. `_normalize_step_name` also strips 'run ' from API-returned step names, ensuring matching. Steps named `mypy`, `pytest`, etc. in the YAML produce `##[group]Run mypy`, `##[group]Run pytest` in logs and match correctly.",
+      "severity_justification": "If the claim were true it would be a significant silent degradation of the feature, but it is factually incorrect, so the severity is moot.",
+      "category_justification": "The finding asserts behavioral incorrectness in the step-name extraction logic.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/github/workflow_jobs.py",
+      "start_line": 213,
+      "end_line": 213,
+      "message": "`line.strip() == \"##[endgroup]\"` only matches bare endgroup lines. The `##[group]` markers in the fixture logs carry a timestamp prefix (`\"2026-03-07T10:00:00Z ##[group]Run pytest\"`), and if GitHub's runner also emits `##[endgroup]` with a timestamp prefix in some versions, this equality check silently fails. The step block then runs until the next `##[group]Run ` start or EOF, causing it to capture output from subsequent steps. Using `\"##[endgroup]\" in line` (the same substring strategy used for `##[group]`) would be more robust.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is purely speculative. All test data in the repo (both fixture files and inline test strings) shows `##[endgroup]` appears bare without a timestamp prefix, while `##[group]` lines carry timestamps. This matches actual GitHub Actions runner behavior where endgroup is a raw workflow command not routed through the timestamped log formatter. The equality check `line.strip() == '##[endgroup]'` is correct for real logs.",
+      "severity_justification": "Even if the hypothetical versioned behavior existed, the impact would only be wider step block capture — no data loss or security issue.",
+      "category_justification": "The finding is about potential incorrect behavior in log line parsing.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/github/workflow_jobs.py",
+      "start_line": 52,
+      "end_line": 96,
+      "message": "`parse_failed_jobs` and `collect_failed_jobs` were not updated to accept or propagate `include_failed_step_output` / `max_failed_step_output_lines`. Any caller of these public functions gets `FailingCheck` objects with `failed_step_output_lines=[]` and `failed_step_output_step=None` regardless of config, so the feature is unavailable through this code path. The model now carries the new fields but the older collection functions never populate them.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: `collect_failed_jobs` and `parse_failed_jobs` were not updated to accept or propagate `include_failed_step_output`/`max_failed_step_output_lines`. They only appear in test code within this repo and not in the main service path, but they are public functions that could be called externally or reused internally. Any caller gets `FailingCheck` objects with the new fields empty regardless of config, creating an inconsistent public API surface.",
+      "severity_justification": "The main workflow feature path (`collect_failing_checks` → `_normalize_actions_job`) is fully functional. These functions are not used in the service layer and only appear in tests. The gap is an API inconsistency rather than a user-facing bug.",
+      "category_justification": "The issue is about incomplete propagation of new parameters through a public function API surface, not a runtime logic error in the primary path.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/github/failing_checks.py",
+      "start_line": 824,
+      "end_line": 828,
+      "message": "`trim_log_excerpt_lines` is called unconditionally even when `include_failed_step_output=True` and a step match was found. The resulting `excerpt_lines` value is stored in the model but is never rendered when `failed_step_output_lines` is non-empty (render.py prefers the step output). This is wasted computation on every matched job log. `trim_log_excerpt_lines` should only be called when `failed_step_output_lines` is empty (or not at all, relying on the model default).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: `trim_log_excerpt_lines` is called unconditionally in `_normalize_actions_job`. When `failed_step_output_lines` is non-empty, render.py always prefers it over `excerpt_lines`, so the trim computation is wasted in that case. The code could short-circuit with `if not failed_step_output_lines` around the call.",
+      "severity_justification": "The waste is purely in-memory string processing on already-loaded log data — no extra API calls, no functional bug. The fallback logic is correct. This is a minor efficiency issue with negligible real-world impact.",
+      "category_justification": "The finding is about unnecessary computation — calling `trim_log_excerpt_lines` when its result will not be used.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/github/failing_checks.py",
+      "start_line": 803,
+      "end_line": 803,
+      "message": "`log_bytes = b\"\"` is a dead variable. It is overwritten by `client.request_bytes(...)` inside the try block and then immediately consumed by `extract_log_text(log_bytes)`. After that single call it is never read again. The initialization to `b\"\"` and the separate assignment are left-over artefacts from the refactoring and should be removed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`log_bytes = b\"\"` is initialized on line 803, immediately overwritten inside the `try` block by `client.request_bytes(...)`, consumed by `extract_log_text(log_bytes)`, and never referenced again. The upfront initialization is a dead assignment with no functional purpose — a leftover from the refactoring that split the chained call into separate assignments.",
+      "severity_justification": "Purely cosmetic dead variable with zero behavioral impact. No bug, no logic error.",
+      "category_justification": "Dead variable initialization — a readability/cleanup issue with no functional consequence.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/github/workflow_jobs.py",
+      "start_line": 185,
+      "end_line": 191,
+      "message": "`extract_failed_step_output_lines` returns the output of the **first** failed step (in API order) that has exactly one matching log block. When multiple steps fail, only the first one is extracted and later ones are silently ignored. In CI chains where a compile or setup step fails first and cascades, this is correct; but when the first failing step is infrastructure noise and the second is the informative test failure, the less-useful output is returned with no way for the caller to know other failed steps were skipped.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: the function iterates `failed_steps` and returns immediately on the first uniquely-matched step block, discarding any remaining failed steps. When multiple steps fail, only the first matched one is surfaced. The caller receives no indication that other failed steps exist and were skipped.",
+      "severity_justification": "This is a design trade-off, not a correctness bug. The feature is opt-in, the first-fail heuristic is reasonable for the common cascading case, and the fallback excerpt behavior still fires. The 'infrastructure noise first' scenario is a realistic but minority case that reduces context quality without causing functional failure.",
+      "category_justification": "The function's selection logic produces a result that may not be the most informative available, which is a behavioral correctness concern in certain real-world CI patterns.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/prompt/render.py",
+      "start_line": 634,
+      "end_line": 638,
+      "message": "When `failed_step_output_lines` is used, `max_lines` is set to `len(preferred_output_lines)` — effectively no line-count cap — so `truncate_lines` can only truncate via the `max_chars` budget. If the step output is very large (up to `max_failed_step_output_lines=500` lines) but each line is short, the full 500 lines pass through untouched and are included in the rendered prompt. The existing `DEFAULT_FAILURE_EXCERPT_MAX_LINES=40` line cap that applies to the excerpt path is intentionally bypassed here, but the interaction with `max_failed_step_output_lines` (collection-side cap) and the char budget alone may still allow unexpectedly large blocks to appear in the output.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: the excerpt path applies `DEFAULT_FAILURE_EXCERPT_MAX_LINES=40`, but the failed step output path sets `max_lines=len(preferred_output_lines)`, leaving only the 2600-char budget as protection. With short-line content (e.g. stacktraces), hundreds of lines can pass through. The behavior is intentional and tested, but the finding correctly identifies that the char budget alone may be insufficient for edge-case short-line logs.",
+      "severity_justification": "The feature is opt-in, the char budget provides meaningful protection for typical log content, and any prompt bloat only affects AI context quality rather than correctness or security. The `max_failed_step_output_lines` config is also user-tunable.",
+      "category_justification": "The concern is about unexpected output size in an edge case — a behavioral design issue rather than maintainability or performance.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/github/workflow_jobs.py",
+      "start_line": 139,
+      "end_line": 141,
+      "message": "When extracting a failed step's output, if the matched step block is larger than `max_lines`, it is truncated from the beginning. This behavior is inconsistent with `trim_log_excerpt_lines`, which truncates from the end, preserving the most recent and relevant log lines around an error. It also differs from the rendering logic in `truncate_lines`, which trims from the end.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding correctly identifies that `trimmed_step_lines[:max_lines]` keeps the head (dropping tail including error markers), while `trim_log_excerpt_lines`'s no-anchor fallback uses `lines[-max_lines:]` (preserving the tail/error context). This is a real inconsistency. However, the claim about inconsistency with `truncate_lines` is incorrect — `truncate_lines` also starts with `lines[:max_lines]` and is consistent with `[:max_lines]`, not different.",
+      "severity_justification": "The default `max_failed_step_output_lines=500` is very generous; most step logs are shorter, so truncation rarely triggers. The practical impact only surfaces when users set a tight cap. Also render-time `truncate_lines` has the same head-keeping behavior. The issue affects output quality at edge cases rather than correctness.",
+      "category_justification": "The inconsistency in truncation direction between collection-side and excerpt functions could cause less useful output (missing error context at tail) in edge cases.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/github/workflow_jobs.py",
+      "start_line": 125,
+      "end_line": 126,
+      "message": "When extracting `normalized_lookup` in `extract_failed_step_output_lines`, step blocks are grouped without validating their completeness. If the failure log for a step isn't completely captured, this might impact the accurate representation of failed step outputs.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code already handles incomplete step blocks: `_group_step_blocks` appends any open block at EOF with whatever lines were collected. This is correct behavior — partial log content is still accurate, just potentially truncated. The finding offers no concrete failure scenario; 'might impact accurate representation' is vague speculation. There is no inaccuracy introduced by including incomplete blocks.",
+      "severity_justification": "Even if taken at face value, the concern is about potential incompleteness in an opt-in feature that returns context to an AI model, not a data correctness or security issue.",
+      "category_justification": "The finding is about potentially incorrect data representation in log extraction.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/constants.py",
+      "start_line": 106,
+      "end_line": 107,
+      "message": "Defaults for `DEFAULT_MAX_FAILED_STEP_OUTPUT_LINES` and similar parameters (like `DEFAULT_MAX_LOG_LINES_PER_JOB`) should validate against the system's memory or performance constraints, especially as these lines are manipulated in memory. No clear safeguards are present.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is generic boilerplate advice that could apply to any configurable integer constant in any codebase. The values (500 lines, 80 lines) represent in-memory string collections — 500 log lines at typical CI output lengths is tens of kilobytes, well within normal constraints for a GitHub Actions process. No specific failure mode, memory threshold, or scenario is identified.",
+      "severity_justification": "There is no realistic memory or performance risk from these default values in a CI tool processing log text.",
+      "category_justification": "The finding concerns memory/performance constraints on configuration defaults.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/github/failing_checks.py",
+      "start_line": 128,
+      "end_line": 129,
+      "message": "Log fetching within `_normalize_actions_job` might fail due to intermittent network issues or quota limits. Currently, failure cases are logged but not retried, which could result in incomplete `FailedCheck` outputs.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim that 'failure cases are logged' is factually wrong — the `except GitHubApiError` block silently sets `excerpt_lines = []` with no logging. The no-retry behavior is pre-existing (not introduced by this PR) and intentional for optional context fetching. The overall advice ('add retry logic to network calls') is generic boilerplate applicable to any HTTP call in any codebase.",
+      "severity_justification": "Log fetching is optional context; silently continuing without logs is appropriate behavior. No data integrity or security issue.",
+      "category_justification": "The finding is about retry logic and error handling for network calls.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/github/failing_checks.py",
+      "start_line": 130,
+      "end_line": 138,
+      "message": "When handling logs in `_normalize_actions_job`, both `excerpt_lines` and `failed_step_output_lines` are eagerly parsed without clear conditional guards against overly large log sizes. This could lead to memory bloat or performance degradation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Both processing paths have explicit `max_lines` caps (`max_failed_step_output_lines` and `max_log_lines_per_job`). The intermediate `log_lines` is just `splitlines()` of already-fetched bytes — no additional memory amplification. The finding ignores the existing size guards and makes no concrete claim about what threshold would be problematic. This is generic boilerplate applicable to any string-processing code.",
+      "severity_justification": "No realistic memory or performance risk given GitHub's log size limits and the existing `max_lines` caps on all outputs.",
+      "category_justification": "The finding is about memory usage and performance of in-memory log parsing.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/test_render.py",
+      "start_line": 1227,
+      "end_line": 1238,
+      "message": "Test `test_render_failing_check_prefers_failed_step_output_over_excerpt` assumes `failed_step_output_lines` are always sufficient for rendering. However, no failure scenario validating fallback to `excerpt_lines` under logical ambiguity is exercised.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`test_render_failing_check_uses_excerpt_defaults_when_failed_step_output_absent` (line 1266) directly tests the fallback to `excerpt_lines` when `failed_step_output_lines` is absent, asserting 'Excerpt:' appears and excerpt content is rendered. The finding's claim that this is untested is factually incorrect.",
+      "severity_justification": "The scenario is already tested; no coverage gap exists.",
+      "category_justification": "The finding is about missing test coverage for a fallback scenario.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/github/workflow_jobs.py",
+      "start_line": 275,
+      "end_line": 277,
+      "message": "Helper `_normalize_step_name` may not properly handle steps with leading or trailing encoded spaces, leading to normalization mismatches between actual and retrieved logs in certain configurations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is speculative and vague. 'Encoded spaces' is undefined — step names come from GitHub API JSON and log text, both plain Unicode strings with no encoding that would introduce %20, non-breaking spaces, or other non-standard whitespace. _normalize_step_name correctly handles all standard whitespace via strip() and split(). No concrete example or evidence is provided to show this is a real-world scenario.",
+      "severity_justification": "Entirely hypothetical edge case with no realistic trigger path from GitHub Actions data.",
+      "category_justification": "The finding is about potential normalization mismatch in string processing.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/pr_agent_context/github/failing_checks.py",
+      "start_line": 47,
+      "end_line": 50,
+      "message": "This signature is invalid Python because parameters with defaults are placed before required parameters (`check_settle_timeout_seconds` and `check_settle_poll_interval_seconds`). Importing this module will raise a `SyntaxError`, so the package and tests cannot run until the new optional parameters are moved after the required ones or the required parameters also receive defaults.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims placing optional params before required ones causes a SyntaxError, but the function uses `*` after `client`, making all subsequent parameters keyword-only. Python's 'non-default argument follows default argument' rule only applies to positional parameters; keyword-only parameters can be interleaved in any order. The module compiles and imports without error.",
+      "severity_justification": "If the claim were true, it would be a build-breaking error — but it is false.",
+      "category_justification": "The finding makes a factually incorrect claim about Python syntax rules.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/test_workflow_jobs.py",
+      "start_line": 228,
+      "end_line": 228,
+      "message": "This assertion line exceeds the repository's configured 100-character line length (`pyproject.toml` sets `line-length = 100` with Ruff `E` rules enabled), so linting will flag it. Please wrap the expected tuple/list across multiple lines.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Line 228 is 92 characters long (verified by measuring with awk), which is within the configured 100-character line-length limit in pyproject.toml. Ruff E501 would not flag this line.",
+      "severity_justification": "Even if true, this would be a minor style issue with no behavioral impact.",
+      "category_justification": "The finding concerns code style and line length compliance.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/test_render.py",
+      "start_line": 1294,
+      "end_line": 1294,
+      "message": "This new test line exceeds the repository's configured 100-character line length (`pyproject.toml` line 41 with Ruff `E` rules enabled). Please wrap the list comprehension across multiple lines so linting remains clean.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Line 1294 of test_render.py is 96 characters long, which is within the 100-character line-length limit configured in pyproject.toml. Ruff E501 would not flag this line.",
+      "severity_justification": "Even if true, this would be a minor style issue with no behavioral impact.",
+      "category_justification": "The finding concerns code style and line length compliance.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

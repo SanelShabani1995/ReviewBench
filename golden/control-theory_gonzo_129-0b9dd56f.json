@@ -1,0 +1,511 @@
+{
+  "pr_key": "control-theory_gonzo_129-0b9dd56f",
+  "pr": {
+    "repo": "https://github.com/control-theory/gonzo",
+    "pr_number": 129,
+    "base": "6870fd9ba13616da10d7f6aa091c16b1aaed39ac",
+    "head": "0b9dd56fd231a64414a353ac62328a18eadbc72d"
+  },
+  "findings": [
+    {
+      "file": "internal/engine/engine.go",
+      "start_line": 706,
+      "end_line": 711,
+      "message": "Data race: `QuerySummary` manually calls `e.mu.RUnlock()` on line 706 (not deferred), then calls `generateStatisticalSummary` which accesses `e.drain3All` (line 1307), `e.statsStartTime` (line 1313), `e.allLogEntries` (line 1314), and `e.maxLogBuffer` (line 1314) without holding any lock. Concurrent `Ingest()` calls hold the write lock and mutate `e.drain3All` via `AddLogMessage` and `e.allLogEntries`. Since `Drain3Manager` has no internal mutex (confirmed in drain3_manager.go), this is a concrete data race that the race detector would flag.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: QuerySummary explicitly calls e.mu.RUnlock() (not deferred) before calling generateStatisticalSummary. Inside generateStatisticalSummary, the code accesses e.drain3All.GetTopPatterns(), e.allLogEntries, e.statsStartTime, and e.maxLogBuffer without holding any lock. Drain3Manager has no internal mutex (confirmed in drain3_manager.go — no sync import, no mutex field). Concurrent Ingest() calls hold e.mu.Lock() and call e.drain3All.AddLogMessage() which mutates drain3All state. This is a concrete data race.",
+      "severity_justification": "Data races in Go produce undefined behavior and can cause crashes, corrupted state, or silent incorrect results. The race detector would flag this. It affects the summary endpoint which reads from shared mutable state concurrently with the ingestion path.",
+      "category_justification": "This is a concurrency/data race issue — a classic reliability concern involving unsynchronized access to shared mutable state across goroutines.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/releases/releases.go",
+      "start_line": 99,
+      "end_line": 106,
+      "message": "Data race: `GetReleases()` has a `time.After(2 * time.Second)` fallback path (line 104) that reads `f.releases` without any synchronization guarantee. The background goroutine in `FetchInBackground` writes `f.releases = releases` (line 93) before closing `done`. Go's memory model provides a happens-before relationship only via the channel close, which applies to the `<-f.done` case (line 102) but not to the timeout path. If the HTTP response arrives between 2 and 5 seconds (within the 5s client timeout), the goroutine's slice-header write and the timeout read race concurrently with no synchronization.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: FetchInBackground writes f.releases = releases (line 93) before closing f.done (deferred line 49). GetReleases() has two select cases: the <-f.done case is safe via channel close happens-before, but the timeout case reads f.releases without any synchronization guarantee. If the HTTP response arrives between t=2s and t=5s, the goroutine's write and the timeout read race concurrently — a real data race by Go's memory model.",
+      "severity_justification": "Real data race that the Go race detector would flag. Practical impact is limited: the concurrent window is narrow (t=2s to t=5s), and the result of a partial read would likely be nil (same as if timeout fired before write). But slice-header writes are not atomic — a torn read is theoretically possible.",
+      "category_justification": "Concurrent access to shared mutable state without synchronization — a classic concurrency/reliability issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/web/server.go",
+      "start_line": 171,
+      "end_line": 180,
+      "message": "`Access-Control-Allow-Origin: *` combined with WebSocket `InsecureSkipVerify: true` (websocket.go line 87) allows any webpage the user visits to make cross-origin requests and open WebSocket connections to http://localhost:5718. A malicious page can call `/api/logs`, `/api/patterns`, `/api/top-attributes`, etc. to exfiltrate potentially sensitive log data (credentials, PII, API tokens appearing in logs). The CORS origin should be restricted to the specific localhost origin rather than a wildcard.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: CORS middleware sets Access-Control-Allow-Origin: * (server.go:173) and WebSocket uses InsecureSkipVerify: true (websocket.go:87), which in nhooyr.io/websocket skips origin checking. Combined, any webpage the user visits can fetch REST endpoints and open WebSocket connections to localhost:5718. The comment 'Allow any origin (localhost only)' shows the developer intended restriction but didn't implement it. Concrete attack path exists.",
+      "severity_justification": "Real cross-origin localhost attack vector that could exfiltrate log data potentially containing credentials/tokens. Severity is medium rather than high because: (1) the server binds to 127.0.0.1 only, (2) modern browsers implement Private Network Access mitigations for public→localhost, and (3) impact depends on whether logs contain sensitive data.",
+      "category_justification": "Cross-origin resource sharing misconfiguration that allows unauthorized cross-origin access to a local service exposing potentially sensitive log data.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/src/pages/LogViewerPage.tsx",
+      "start_line": 63,
+      "end_line": 63,
+      "message": "Multi-severity filter is broken: when more than one severity is selected, `severityParam` is built by joining the values with commas (e.g., `'ERROR,WARN'`) and sent as a single `severity` query parameter. The backend `parseFilters` in api.go reads it as one string and `filterEntries` in engine.go performs `strings.EqualFold(entry.Severity, *filters.Severity)` — an exact match. `strings.EqualFold('ERROR', 'ERROR,WARN')` is false, so every log entry is filtered out when multiple severities are selected. The backend needs to split the value on commas to support multi-select.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed across three files: the frontend joins multiple selected severities with commas (LogViewerPage.tsx:62), parseFilters stores the raw comma-joined string in filters.Severity (api.go:212-213), and filterEntries uses strings.EqualFold for an exact string match (engine.go:1025-1026). Selecting two or more severities produces a joined string that never matches any individual entry.Severity, so all entries are filtered out silently.",
+      "severity_justification": "The multi-severity filter feature is completely broken — selecting more than one severity returns empty results instead of the union. This is a user-facing bug that makes a core UI feature non-functional, but it doesn't corrupt data or prevent single-severity filtering from working.",
+      "category_justification": "Logic error: the multi-select severity filter produces incorrect results (empty) instead of the expected union of matching entries.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/web/server.go",
+      "start_line": 89,
+      "end_line": 100,
+      "message": "Server startup detection relies on a 100ms `time.After` heuristic. If `ListenAndServe` returns an error after that window (e.g., address-already-in-use detected late on a loaded system), the error is silently dropped: `errChan` has capacity 1 so the goroutine does not leak, but the error is never observed and `Start` returns nil indicating success. The web dashboard then silently does not work. The standard fix is to bind a `net.Listener` before launching the serve goroutine so bind failures are synchronous and always surfaced.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: errChan capacity 1 prevents goroutine leak, but after the select exits via the 100ms timeout case, errChan is never read again — any post-100ms ListenAndServe error is silently dropped, and Start returns nil. Caller only logs on non-nil return, so failure is fully silent. The architectural fragility is real. The specific EADDRINUSE-after-100ms scenario is unlikely since net.Listen is synchronous, but the general pattern (errors after the window are lost) is a valid concern.",
+      "severity_justification": "The pattern is fragile but in practice EADDRINUSE and other bind-time errors are detected by net.Listen synchronously (microseconds), well within the 100ms window. Post-100ms server failures are very rare. The consequence (silent web dashboard failure) is annoying but not data-corrupting or security-impacting. The net.Listener fix is strictly better but the practical risk is low.",
+      "category_justification": "Error handling issue: a timing-dependent code path silently discards errors, making failure modes harder to diagnose.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/web/api.go",
+      "start_line": 224,
+      "end_line": 233,
+      "message": "`handleReleases` calls `s.relFetcher.GetReleases()` which blocks for up to 2 seconds waiting for the background GitHub API fetch to complete. The HTTP request context (`r.Context()`) is never checked, so if the client disconnects the goroutine still blocks for the full 2-second timeout. The `GetReleases` implementation should accept a context and select on it alongside `f.done` and the timeout, or `handleReleases` should use `GetReleasesNonBlocking` instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: handleReleases discards the request with _ *http.Request, so r.Context() is inaccessible. GetReleases() blocks for up to 2 seconds via time.After with no context parameter. Client disconnects don't cancel the wait. GetReleasesNonBlocking() is already available as a clean fix.",
+      "severity_justification": "Real issue but minimal practical impact: the server is localhost-only, the endpoint is called infrequently (once per page load for a What's New modal), and a 2-second goroutine hold per disconnected client is trivial. No data corruption or security risk.",
+      "category_justification": "Graceful degradation issue: the handler ignores client disconnect signals, holding a goroutine for the full 2-second timeout unnecessarily.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/src/api/websocket.ts",
+      "start_line": 28,
+      "end_line": 29,
+      "message": "`disconnect()` closes the socket, but the `onclose` handler always schedules a reconnect. When a component using `useWebSocket` unmounts (or React StrictMode runs the effect cleanup), the closed socket can reconnect in the background and continue calling handlers after the hook is gone. Track an intentional shutdown or clear the `onclose` handler before closing so cleanup actually stops the connection.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the code: `disconnect()` clears the reconnectTimer synchronously, but `onclose` fires asynchronously after the function returns, finds `reconnectTimer === null`, and schedules a new reconnect via `scheduleReconnect()`. The `useWebSocket` hook returns `disconnect` as the cleanup function, so unmounting a component doesn't actually stop the connection.",
+      "severity_justification": "Causes background WebSocket connections to persist after component unmount, leaking connections and triggering state updates on dead component instances. Worsened by React StrictMode's double-invoke of effects. Not data-corrupting, but a real resource/lifecycle bug.",
+      "category_justification": "Resource leak and lifecycle management issue — the connection isn't properly torn down on cleanup, leading to persistent background reconnection loops.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "Makefile",
+      "start_line": 107,
+      "end_line": 107,
+      "message": "`release` depends on `cross-build`, but this target only creates a placeholder `web/dist/index.html` instead of running `web-build`. Release archives built through the existing release path will therefore embed a blank dashboard even though the binary still starts the web server and the docs advertise the Dstl8 Lite UI. Build the web assets before cross-compiling or explicitly make this a TUI-only target separate from release.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the Makefile: `release` depends on `cross-build` which depends on `ensure-web-dist` (creates stub HTML). The `clean` step removes `web/dist`, and no `web-build` step runs during the release path. Release binaries ship with placeholder web assets despite the web server starting and docs advertising the UI.",
+      "severity_justification": "Releases built via `make release` will ship binaries with a non-functional web dashboard (just a blank HTML page), even though the web server starts and docs advertise the feature. Users downloading a release build get a broken web UI.",
+      "category_justification": "Build system configuration issue — the release pipeline produces an incorrect artifact (binary without the advertised web dashboard assets).",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/web/websocket.go",
+      "start_line": 86,
+      "end_line": 88,
+      "message": "The WebSocket endpoint accepts every Origin. Even though the server binds to localhost, browsers can open WebSockets to localhost from arbitrary websites, so a malicious page can subscribe to live dashboard updates. Validate the `Origin` header against the dashboard/dev origins instead of disabling origin checks.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `InsecureSkipVerify: true` disables origin checking in the WebSocket accept, and CORS also allows `*`. Any web page the user visits can open a WebSocket to ws://localhost:5718/ws and receive live log data. The server binds to 127.0.0.1 but that doesn't prevent browser-originated cross-site requests to localhost.",
+      "severity_justification": "Real vulnerability enabling cross-site log data exfiltration, but impact is limited: requires the attacker to get the user to visit a malicious page while Gonzo is running; the server is localhost-only; and this is a developer/ops tool where the threat model is accordingly lower. Worth fixing but not blocking.",
+      "category_justification": "Cross-site WebSocket hijacking — origin validation is disabled, allowing arbitrary websites to subscribe to sensitive log stream data served from localhost.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/src/pages/StreamDetailsPage.tsx",
+      "start_line": 36,
+      "end_line": 36,
+      "message": "This treats a selected stream dimension as a free-text search, so the detail page can include unrelated logs that merely contain the same value in the message/raw line and can miss exact dimension filtering semantics. The backend already has dimension-specific filters, but the client only sends `search`; pass the selected `dimensionType`/`dimensionValue` as an exact dimension filter instead of reusing full-text search.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `const search = dimensionValue` is passed as full-text `search` to all data-fetching panels. The backend filters by substring match across message, rawline, and all attribute values — not exact dimension matching. The backend InsightsFilters struct has dimension-specific fields (Namespaces, Pods, etc.) but they're not wired in parseFilters, so fixing this requires changes on both sides.",
+      "severity_justification": "Causes the stream detail page to show incorrect data — unrelated logs matching the dimension value as a substring, and missing logs where the dimension value doesn't appear in the text. Core feature correctness issue.",
+      "category_justification": "Logic error: the page uses free-text search as a proxy for dimension-specific filtering, producing wrong results for the stream detail view.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/web/api.go",
+      "start_line": 206,
+      "end_line": 210,
+      "message": "This parser handles only `group_by`/`search`/`severity`/`limit` and omits the dimension query parameters (`hosts`, `services`, `namespaces`, `pods`, etc.) that `InsightsFilters` supports. The HTTP API therefore cannot perform exact stream/dimension filtering and clients are forced onto imprecise full-text search. Parse those parameters into the corresponding filter slices.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `parseFilters` only handles 6 parameters and leaves all 7 dimension-specific fields on `InsightsFilters` (`Namespaces`, `Pods`, `Hosts`, `Services`, `Environments`, `Clusters`, `Deployments`) always nil. The engine fully implements dimension filtering via `matchesDimensionFilter`, but it's unreachable through the HTTP API.",
+      "severity_justification": "The HTTP API cannot perform exact dimension filtering despite the engine fully supporting it. This is the root cause for clients being forced onto imprecise full-text search, affecting correctness of any stream/dimension-scoped view.",
+      "category_justification": "A gap between the declared API capability (InsightsFilters struct with dimension fields) and the actual HTTP interface (parseFilters ignores those fields), making the public API contract incomplete.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/src/pages/SourcesPage.tsx",
+      "start_line": 50,
+      "end_line": 53,
+      "message": "Every dimension value is marked active whenever there is at least one active stream anywhere. That makes inactive hosts/pods/services show a green active dot as long as any stream is active, which misrepresents source health. The active state should be derived per dimension value or omitted if the API does not provide enough information.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `active: activeStreams.size > 0` at line ~51 applies a global 'any stream is active' boolean to every dimension value. The `activeStreams` Set is never used to check membership for individual dimension values. All hosts/pods/services show green active dot as long as any stream is active.",
+      "severity_justification": "This is a UI correctness issue that misrepresents per-dimension activity status in the Sources page. In an ops/monitoring tool this is misleading, but it doesn't affect data correctness or core functionality. No data loss or security impact.",
+      "category_justification": "Logic error in the active-state derivation: a global condition is applied per-item, causing all dimension values to show incorrect status.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/src/pages/WorkspacesPage.tsx",
+      "start_line": 103,
+      "end_line": 105,
+      "message": "The workspace sparkline is generated with `Math.random()` on every render, so it changes arbitrarily on each status refresh and does not represent log activity. This makes the dashboard show misleading data; derive the sparkline from real metrics or render a static placeholder that is clearly not data-driven.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `Math.random()` is called inline inside the render function with no memoization. The page polls `fetchStatus` every 5 seconds, re-rendering with new random bar heights each cycle. The sparkline looks like an activity chart but shows arbitrary random data.",
+      "severity_justification": "In a monitoring/ops dashboard, a visualization that looks like real activity data but is actually random is actively misleading. Users may observe 'trends' or 'spikes' in the sparkline that have no basis in actual log activity. The `severity-history` API endpoint exists and could provide real data.",
+      "category_justification": "The sparkline purports to show log activity but renders random values, misrepresenting the actual data state to the user.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/embed.go",
+      "start_line": 5,
+      "end_line": 6,
+      "message": "`//go:embed all:dist` fails compilation when `web/dist` is absent, and `web/dist` is gitignored/not present in a fresh checkout. That means standard commands like `go test ./...` or `go build ./cmd/gonzo` break unless a Makefile target first creates a stub or builds the frontend. Include a checked-in placeholder, use a generated-assets build tag, or otherwise make the Go package compile from a clean checkout.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `//go:embed all:dist` in web/embed.go requires web/dist to exist; web/dist is gitignored and absent in the checkout. Running `go build`, `go test`, or `go vet` directly from a fresh clone fails at compilation. The Makefile `ensure-web-dist` workaround only helps when using `make` targets.",
+      "severity_justification": "Breaks standard Go toolchain commands (go build, go test, go vet, go install) from a fresh checkout with no warning. Affects every developer, CI pipeline using raw go commands, and any tool that invokes the Go toolchain directly (IDE, language server, linters). A core reliability issue for a Go project.",
+      "category_justification": "Build configuration issue that makes the project uncompilable from a clean checkout via standard Go toolchain commands.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 73,
+      "end_line": 73,
+      "message": "This claims the embedded dashboard has no external dependencies, but the web CSS imports Google Fonts at runtime. In offline or restricted environments the dashboard will make an external request and may render differently/fail to load the font, so the documentation should either remove this claim or the font should be bundled locally.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: README line 73 claims 'no external dependencies' but index.css line 1 has a runtime @import to fonts.googleapis.com. Vite does not inline external CSS imports, so the built bundle makes a live HTTP request to Google's CDN.",
+      "severity_justification": "The inaccuracy is real but impact is limited: the dashboard degrades gracefully to system fonts rather than breaking. The privacy/offline concern is legitimate but doesn't affect core functionality. A documentation fix or font self-hosting would resolve it.",
+      "category_justification": "The README makes a factually incorrect claim about the binary having no external dependencies, contradicted by a runtime font import in the frontend code.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "cmd/gonzo/app.go",
+      "start_line": 124,
+      "end_line": 126,
+      "message": "When the current version is `dev`/empty or version checks are disabled, the fetcher is still passed to the web server but `FetchInBackground` is never called, so its `done` channel never closes. Each `/api/releases` request then blocks for the full 2-second timeout in `GetReleases`. Either pass `nil` in this case or mark the fetcher as completed when releases are intentionally disabled.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `relFetcher` is always non-nil (NewFetcher always returns a value), `FetchInBackground` is conditionally skipped for dev/empty version or disabled version checks, and `GetReleases()` blocks for 2 seconds waiting on an unclosed `done` channel. The nil-guard in `handleReleases` does not protect against this.",
+      "severity_justification": "Every `/api/releases` request hangs for 2 full seconds in dev mode and when version checks are disabled — common scenarios during development and CI. Causes noticeable UI lag in the dashboard on each page load that calls this endpoint.",
+      "category_justification": "Blocking behavior causes HTTP request latency of 2 seconds in common configurations due to an unclosed channel that should signal completion.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/engine/streams.go",
+      "start_line": 22,
+      "end_line": 23,
+      "message": "This inactive path is never wired into the readers (the only repository reference is this definition), so streams created by ingestion remain active forever after a file/stdin source stops producing logs. The web dashboard's active stream/source counts and health badges will therefore be stale unless callers invoke this when inputs finish or activity is derived from `LastSeen`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `MarkStreamInactive` is defined but never called anywhere in the codebase. All streams are initialized with `Active: true` and nothing ever sets `Active = false`. The frontend uses `s.active` to render health badges, active stream counts, and healthy/inactive indicators — all of which will be permanently stale.",
+      "severity_justification": "Streams show as permanently active in the dashboard even after file/stdin sources finish, making the status indicators misleading. Not a data correctness or security issue — purely a UI staleness problem that affects operational visibility.",
+      "category_justification": "Dead code in the stream lifecycle: the inactive-marking method exists but is never wired to actual stream termination events, leaving the active state permanently wrong after sources stop.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/src/components/panels/LogViewer.tsx",
+      "start_line": 48,
+      "end_line": 51,
+      "message": "The early return also runs when `combinedSearch` changes, so changing the filter while auto-scroll is paused does not refetch or update the visible logs despite the comment saying search changes should still fetch. Track the previous search separately or split refresh-key updates from search/filter updates so paused mode only suppresses live refreshes.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the effect at lines 48-51 guards with `if (!autoScrollRef.current && !loading) return` regardless of which dependency triggered it. When auto-scroll is paused and `combinedSearch` changes, the effect fires but exits immediately — contradicting the comment that says search changes should still fetch. The code has no mechanism to distinguish the triggering dependency.",
+      "severity_justification": "When auto-scroll is paused (a common user action when reading logs), changing the search filter silently shows stale results that don't match the filter. Users get misleading feedback — the filter appears applied but the data doesn't update. Core log-viewer interaction is broken in paused mode.",
+      "category_justification": "Logic error: the early-return guard is too broad, suppressing fetches that should happen (search changes) alongside those that shouldn't (live refreshes). The comment documents the intended behavior which the code fails to implement.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/src/pages/WorkspacesPage.tsx",
+      "start_line": 77,
+      "end_line": 78,
+      "message": "This clickable card is a plain `div`, so keyboard users cannot focus or activate it and assistive tech does not know it is interactive. Use a button/link semantics (or add the appropriate role, tabIndex, and keyboard handlers) for the workspace navigation action.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the workspace card at line 78 is a `<div onClick={onOpenWorkspace}>` with no role, tabIndex, or keyboard handlers. It is the primary interactive navigation element on the workspaces page and is inaccessible to keyboard and assistive tech users.",
+      "severity_justification": "Real a11y violation on a primary navigation element, but this is a localhost developer/ops tool where the keyboard-only/AT user population is small. Functionally all content is still accessible via mouse. Low but non-zero impact.",
+      "category_justification": "An interactive element uses div semantics instead of button/link, making it unfocusable and invisible to assistive technologies.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/src/pages/SourcesPage.tsx",
+      "start_line": 206,
+      "end_line": 208,
+      "message": "The expandable source row is implemented as a clickable `div`, which is not focusable or operable from the keyboard and does not expose its expanded/collapsed state to assistive technologies. Use a button with `aria-expanded`/`aria-controls` or add equivalent keyboard and ARIA support.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the expandable source row at line 206 is a `<div onClick=...>` with no role, tabIndex, aria-expanded, aria-controls, or keyboard handlers. It controls expand/collapse state that is completely inaccessible to keyboard users and opaque to assistive technologies.",
+      "severity_justification": "Real a11y violation on an interactive disclosure widget in a localhost developer/ops tool. Same rationale as the workspace card finding — technically correct but limited impact given the tool's audience.",
+      "category_justification": "An interactive disclosure/accordion element uses div semantics with no ARIA state or keyboard support, making it inaccessible to keyboard and AT users.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/src/pages/SourcesPage.tsx",
+      "start_line": 315,
+      "end_line": 319,
+      "message": "These dimension entries are clickable `div`s, so they cannot be focused or opened with the keyboard. Since they navigate to a detail page, render them as buttons/links or add equivalent role, tabIndex, and keyboard activation handling.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: dimension value entries at lines 313-319 are `<div onClick=...>` elements that trigger navigation via `onOpenStream`. No role, tabIndex, or keyboard handlers are present. Same inaccessible pattern as the workspace card and source row findings.",
+      "severity_justification": "Same rationale as findings 13 and 14 — real a11y violation on a navigation element in a localhost developer tool with a limited AT user population. Low but valid.",
+      "category_justification": "Interactive navigation elements rendered as divs without keyboard or ARIA support, inaccessible to keyboard-only and assistive technology users.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/src/components/layout/AppHeader.tsx",
+      "start_line": 20,
+      "end_line": 20,
+      "message": "The logo is clickable but rendered as a `span`, so it is not keyboard focusable and has no button/link semantics. Use a button/link for this navigation action or add equivalent keyboard and ARIA support.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the logo at line 20 is a `<span onClick={onLogoClick}>` with no role, tabIndex, or keyboard handlers. When `onLogoClick` is provided it acts as a navigation trigger but is unfocusable and semantically invisible to assistive technologies.",
+      "severity_justification": "Real a11y violation on a navigation element in a localhost developer tool. Same class of issue as findings 13-15, low impact given the tool's audience.",
+      "category_justification": "Interactive navigation element uses span semantics without keyboard or ARIA support.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "flake.nix",
+      "start_line": 25,
+      "end_line": 29,
+      "message": "The Nix package now builds a binary with a stub `index.html`, so users who install via the flake get a running web server with an empty dashboard instead of the Dstl8 Lite UI described by the PR. Build the Vite assets in the derivation (or disable the web feature for this package) rather than embedding a placeholder.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: `flake.nix` preBuild creates a stub `index.html` with empty HTML body. The comment explicitly acknowledges this. Users installing via the flake get a binary that starts the web server but serves a blank page despite the docs advertising the full Dstl8 Lite UI.",
+      "severity_justification": "Nix is a primary distribution/installation mechanism for this project. Users who install via the flake get a non-functional web dashboard while the binary still starts the web server and docs advertise the UI. A user-visible regression for anyone using the Nix distribution path.",
+      "category_justification": "Build/packaging configuration issue: the Nix derivation produces an incorrect artifact (binary without the advertised web dashboard assets), making a key feature non-functional for Nix users.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "cmd/gonzo/app.go",
+      "start_line": 174,
+      "end_line": 175,
+      "message": "This warning is never visible because `runApp` redirects the standard logger to `io.Discard` before starting the web server. If the port is already in use or the server fails, the UI still advertises the `d` shortcut but users get no indication why the dashboard cannot open. Surface this through the TUI/status state or return a visible startup warning.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `log.SetOutput(io.Discard)` is called at line 48 early in `runApp`, before the web server start at line 174. The `log.Printf` warning on server start failure therefore produces no output. The error is silently swallowed with no fallback notification mechanism.",
+      "severity_justification": "If the web port is taken, users get a silently broken web dashboard with no diagnostic. The TUI still advertises the 'd' shortcut, so users will try to open the dashboard, see nothing, and have no way to diagnose why. A common operational scenario (port conflict) produces zero user-visible feedback.",
+      "category_justification": "Error handling failure: a server startup error is silently discarded because the logger was redirected to io.Discard earlier in the same function, leaving users with no indication of the failure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "web/src/pages/HeatmapPage.tsx",
+      "start_line": 187,
+      "end_line": 188,
+      "message": "This page is labeled “Severity Heatmap,” but it fetches `/sentiment` data and uses sentiment bands such as Critical/Poor/Positive. The mismatch makes the UI misleading and conflicts with the documented Sentiment Heatmap feature; rename the page/empty state or switch the data source to actual severity heatmap data.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: page title is 'Severity Heatmap' and empty state says 'severity heatmap', but the page fetches `/api/sentiment` and renders sentiment bands (Critical/Poor/Positive with float scores). The README correctly calls this a 'Sentiment heatmap'. A separate severity heatmap API (`/api/heatmap`) exists but is unused here.",
+      "severity_justification": "UI labeling mismatch that misrepresents the data shown — users expect severity distribution (INFO/WARN/ERROR) but see sentiment scores. Confusing but not data-corrupting. The dashboard remains functional; it's a naming and documentation consistency issue.",
+      "category_justification": "The page title and empty-state copy misidentify the data type being visualized, creating a disconnect between what's labeled and what's shown.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

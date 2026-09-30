@@ -1,0 +1,391 @@
+{
+  "pr_key": "heyitsaamir_teamscli_31-ec0e9d9a",
+  "pr": {
+    "repo": "https://github.com/heyitsaamir/teamscli",
+    "pr_number": 31,
+    "base": "e06b7f24444a75a36acd28fbaab3a3f08b33abce",
+    "head": "ec0e9d9a60bff66e8b28af4656803836c22001dd"
+  },
+  "findings": [
+    {
+      "file": "src/commands/app/auth/sso/list.ts",
+      "start_line": 86,
+      "end_line": 100,
+      "message": "The interactive `select` prompt (line 86) is inside the outer try-catch (lines 35–100). If the user presses Ctrl-C, `@inquirer/prompts` throws `ExitPromptError`. That exception is caught by the catch block at line 98, which calls `spinner.error()` and rethrows as `CliError('API_ERROR', ...)`. By the time `wrapAction` sees it, it's no longer an `ExitPromptError`, so the `process.exit(0)` fast-path is bypassed and `handleError` prints 'Failed to list SSO connections' before exiting with code 1. A plain user cancellation is misreported as a failure.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the actual file: the `select` prompt at line 86 is inside the outer try-catch (lines 35-99). ExitPromptError thrown by Ctrl-C is caught, spinner.error() is called, then it is rethrown as CliError('API_ERROR'). wrapAction checks for `error.name === 'ExitPromptError'` as its fast-path; a CliError does not match, so handleError() is called, printing 'Failed to list SSO connections' and exiting with code 1. The fast-path introduced by this PR is defeated by the inner catch.",
+      "severity_justification": "User-facing UX issue — cancellation is misreported as a failure with exit code 1 instead of clean exit — but causes no data loss, incorrect behavior, or security concern.",
+      "category_justification": "The wrong exit code and error message are produced for a legitimate user action (Ctrl-C cancellation), which contradicts the intended behavior of wrapAction's ExitPromptError fast-path.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/apps/basic-info.ts",
+      "start_line": 67,
+      "end_line": 67,
+      "message": "`logger.info(pc.red(...))` routes an error message ('Unknown field: ...') to stdout. Error output should use `logger.error` so it goes to stderr, keeping stdout clean for scripted consumers.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the committed file at ec0e9d9a: line 67 uses `logger.info(pc.red(...))` for an error condition ('Unknown field'), routing it to stdout via console.log. The CLAUDE.md convention updated by this same PR explicitly states `logger.error(...)` for errors (stderr). The finding is factually correct.",
+      "severity_justification": "This is an interactive-only code path so scripted consumers are not impacted. The main concern is convention violation and minor separation of stdout/stderr, not a functional bug.",
+      "category_justification": "Wrong logger level used for an error condition, violating the stdout/stderr separation convention and the explicit rules in CLAUDE.md updated by this PR.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/app/edit.ts",
+      "start_line": 115,
+      "end_line": 115,
+      "message": "`logger.info(pc.red('Could not find this bot in Azure.'))` sends an error message to stdout. Should use `logger.error` (stderr). The same pattern was changed to `logger.error` everywhere else in this PR, making this an inconsistency that will confuse scripts checking stderr for failures.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 115: `logger.info(pc.red('Could not find this bot in Azure.'))` routes an error to stdout. The PR changed most `console.log(pc.red(...))` patterns to `logger.error`, making this a genuine inconsistency — 3 instances of `logger.info(pc.red(...))` remain in the codebase including this one.",
+      "severity_justification": "Interactive-only code path; no scripted consumer is affected. The issue is a convention inconsistency with the rest of the PR's changes, not a functional bug.",
+      "category_justification": "Wrong logger level used for an error condition, creating inconsistency with the stdout/stderr separation convention explicitly established by this same PR.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/app/bot/migrate.ts",
+      "start_line": 205,
+      "end_line": 206,
+      "message": "After a failed rollback, 'Could not restore BF registration. Re-register manually:' is printed via `logger.info` (stdout) rather than `logger.error` (stderr). This is a critical failure message that should be on stderr. A preceding `process.exit(1)` makes correct stream routing even more important for scripts.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at lines 205-206: `logger.info(pc.red(...))` and `logger.info(pc.cyan(...))` are used in a critical failure path (migration failed + rollback failed), routing the error to stdout. `process.exit(1)` follows at line 208. The command supports non-interactive/scripted use (has --json mode). Scripts monitoring stderr won't see these critical messages.",
+      "severity_justification": "This is a non-interactive command with a critical failure path (bot in broken state after failed rollback). Scripts relying on stderr to detect and diagnose failures will miss this output, making automated workflows harder to debug.",
+      "category_justification": "Wrong logger level routes critical failure output to stdout instead of stderr, violating the stdout/stderr contract that the PR explicitly establishes.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/self-update.ts",
+      "start_line": 30,
+      "end_line": 34,
+      "message": "On update failure, the error message is sent to stderr via `logger.error` but the actionable suggestion ('Try manually: npm install -g ...') is sent to stdout via `logger.info`. This splits related output across two streams. A script that redirects stderr to capture errors will see the error but not the recovery hint, and vice versa. Both were previously on stdout.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at lines 29-34: `logger.error` is used for the error message (stderr) and `logger.info` for the recovery hint (stdout). The PR introduced this split — both were previously `console.log` (stdout). A script capturing stderr sees the error without the remediation step.",
+      "severity_justification": "self-update is primarily an interactive command; scripts rarely call it. The split output is a minor inconsistency with low practical impact, but it is a real regression in stream coherence introduced by this PR.",
+      "category_justification": "Related output is split across stdout and stderr by this PR, breaking the coherence of the error path in a way that was not present before.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/utils/errors.ts",
+      "start_line": 64,
+      "end_line": 65,
+      "message": "`error.suggestion` is now sent to stderr via `logger.error`. Previously `console.log(error.suggestion)` sent it to stdout. Suggestions (e.g., 'Run `teams login` first.') are user-facing recovery hints, not error messages. Routing them to stderr means they disappear when stderr is suppressed (e.g., `2>/dev/null`), leaving the user with only a non-zero exit code and no guidance.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "While factually correct that suggestion moved to stderr, the error message also moved to stderr in the same change — both are on the same stream consistently. The finding's scenario ('leaves user with only exit code and no guidance') would require the error to remain visible while the suggestion is suppressed, but they're on the same stream. The design choice of sending all error-related output to stderr is internally consistent and follows common CLI conventions.",
+      "severity_justification": "Even if classified TP, the practical impact is minimal — the CLI is primarily interactive, and moving all error context to stderr together is a reasonable design.",
+      "category_justification": "Concerns stdout/stderr routing of user-facing output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/auth/login.ts",
+      "start_line": 8,
+      "end_line": 28,
+      "message": "The PR states 'Wrap all CLI command actions with wrapAction()' and modified this file (console→logger), but `loginCommand` still uses a bare `async () =>` action without `wrapAction`. An unexpected error from `getAccount()` (outside the inner try-catch) will bubble to the `unhandledRejection` handler rather than through the consistent `handleError` path. The login command also still calls `process.exit(1)` directly instead of throwing `CliError`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: loginCommand uses a bare async action without wrapAction, getAccount() is outside the try-catch (unexpected errors go to unhandledRejection), and the catch still calls process.exit(1) directly. The PR explicitly stated 'Wrap all CLI command actions with wrapAction()' but missed this one. The finding is factually correct.",
+      "severity_justification": "The unhandledRejection handler in index.ts still catches and handles unexpected errors. No interactive prompts means no ExitPromptError risk. No --json mode means no JSON routing needed. Impact is inconsistency with stated PR goal, not a functional bug.",
+      "category_justification": "Inconsistency with the PR's stated goal of wrapping all CLI commands with wrapAction(). A missed migration that creates inconsistent error-handling paths, but doesn't cause behavioral regression given the safety net in unhandledRejection.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/status.ts",
+      "start_line": 11,
+      "end_line": 11,
+      "message": "`statusCommand` action was modified in this PR but left unwrapped by `wrapAction`. If `getAccount()` or `runAz()` throws an unexpected error it bypasses `handleError` and falls through to the unhandledRejection handler. Inconsistent with the stated goal of the PR and the now-documented convention in CLAUDE.md.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified via git show: the actual committed diff for status.ts only added the logger import and swapped console.log→logger.info. The wrapAction wrapping shown in the problem statement's diff was not committed. The action is a bare async function at the SHA, inconsistent with the PR's stated goal.",
+      "severity_justification": "runAz() is already in a local try-catch; unexpected errors from getAccount() fall to the unhandledRejection safety net. No interactive prompts (no ExitPromptError risk) and no --json mode. Functional impact is minimal — primarily a consistency issue.",
+      "category_justification": "Missed migration inconsistent with the PR's stated convention ('Wrap all CLI command actions with wrapAction()'). Not a functional bug given the safety net, but creates drift from the documented pattern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/auth/logout.ts",
+      "start_line": 8,
+      "end_line": 16,
+      "message": "`logoutCommand` was modified in this PR (console→logger) but is not wrapped with `wrapAction`. `await logout()` has no error handling at all; if it throws, the error propagates unhandled to the process-level `unhandledRejection` handler, bypassing `handleError` and producing an inconsistent error format.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified via git show: the actual commit only added the logger import and changed console.log→logger.info. No wrapAction was added, and await logout() at line 15 has zero error handling. If logout() throws, it propagates to the unhandledRejection handler rather than handleError, inconsistent with the PR's stated goal.",
+      "severity_justification": "The unhandledRejection handler in index.ts provides a safety net that prints the error and exits with code 1. No interactive prompts or --json mode means no ExitPromptError or JSON routing concerns. Practical impact is inconsistency with the PR convention, not a functional regression.",
+      "category_justification": "Missed wrapAction migration, inconsistent with the PR's documented convention. The missing try-catch around logout() is a pre-existing gap, now exacerbated by the expectation set by wrapAction adoption.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/app/bot/migrate.ts",
+      "start_line": 128,
+      "end_line": 133,
+      "message": "Migration warnings ('Warning: This bot has the M365 Extensions channel enabled.' and 'Warning: This bot has a calling endpoint configured.') use `logger.info` (stdout) instead of `logger.warn` (stderr). These are genuine warnings that should go to stderr so they don't pollute stdout when the caller captures the command's output.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at lines 128-135: messages explicitly labeled 'Warning:' and styled with pc.yellow() use logger.info (stdout). The CLAUDE.md convention updated by this PR says logger.warn() for warnings (stderr). The PR changed console.log → logger.info instead of the appropriate logger.warn, which is the wrong migration target.",
+      "severity_justification": "These warnings only appear in !options.json (human-readable) mode, where stdout parsing by scripts is uncommon. The --json path (primary scripting mode) already suppresses them entirely. Convention violation with limited practical impact.",
+      "category_justification": "Wrong logger level used for warning messages, violating the stdout/stderr convention explicitly documented by this PR in CLAUDE.md.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/app/actions.ts",
+      "start_line": 149,
+      "end_line": 149,
+      "message": "Error messages from caught exceptions are printed with `logger.error(pc.red(...))` which prepends an unnecessary color code to the logger output. `logger.error` already prints to stderr, so `pc.red()` is redundant and can result in escaped color codes if the output is redirected. The color formatting should be removed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding incorrectly equates stderr routing with color formatting. logger.error going to stderr does not make pc.red() redundant — they are orthogonal. Color on stderr is standard practice. Picocolors handles TTY detection to avoid emitting ANSI codes when redirected. The same pattern (logger.error(pc.red(...))) is used in the codebase's own handleError() function in errors.ts.",
+      "severity_justification": "Even if considered valid, this would be a cosmetic/style concern with negligible impact.",
+      "category_justification": "The finding is about output formatting style, not a functional issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/app/manifest/actions.ts",
+      "start_line": 31,
+      "end_line": 31,
+      "message": "`JSON.stringify` is used without a `try...catch` block. If `manifestJson` contains circular references, this will throw an unhandled exception and crash the process. While unlikely for a manifest, it's safer to wrap this in a `try...catch` block.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "manifestJson comes directly from JSON.parse() two lines above. JSON-parsed data is by definition acyclic and re-serializable — JSON.stringify cannot throw a circular reference error on this value. The finding applies a generic best practice without accounting for the actual data provenance.",
+      "severity_justification": "Even if considered valid, the circular reference scenario is impossible here given the data source.",
+      "category_justification": "The concern is about unhandled exceptions from JSON.stringify, a reliability/error-handling topic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/app/manifest/upload.ts",
+      "start_line": 15,
+      "end_line": 15,
+      "message": "The command can be run as `teams manifest upload <appId> <filePath>` or `teams manifest upload <filePath>`. When only one argument is provided, it is treated as `filePath`. However, if the user provides an App ID that happens to be a valid-looking but non-existent file path (e.g., `teams manifest upload my-app-id`), the command will fail with a file-not-found error instead of prompting for the file path, which would be the more user-friendly behavior. The logic for disambiguating the arguments could be improved to check for file existence before assuming an argument is a file path.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The scenario requires a Teams app ID that looks like a file path (contains / or \\ or ends in .json). Teams app IDs are UUIDs and never match these patterns, making the described failure scenario practically impossible. The disambiguation logic is also pre-existing and unchanged by this PR. For plain string args without path chars, the code correctly throws 'Missing file path.' rather than a confusing file-not-found error.",
+      "severity_justification": "Even if valid, the edge case would require a contrived input that doesn't occur with real Teams app IDs.",
+      "category_justification": "Concerns argument disambiguation and CLI UX behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.ts",
+      "start_line": 18,
+      "end_line": 18,
+      "message": "The `unhandledRejection` handler logs both `CliError` suggestions and other error messages to `logger.error`, which writes to `stderr`. For `CliError`, the suggestion (e.g., \"Run `teams login` first.\") is intended as helpful guidance for the user and should be consistently directed to `stdout` via `logger.info` to separate it from the actual error message, which is correctly sent to `stderr`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both error.message and error.suggestion go to logger.error (stderr) together in both the unhandledRejection handler and handleError — they're consistently on the same stream. Splitting suggestion to stdout while error stays on stderr would introduce inconsistency, not fix one. The concern about 2>/dev/null suppressing only the suggestion is moot since both are on stderr equally. This is the same flawed argument as Finding 6.",
+      "severity_justification": "Design preference about stderr vs stdout routing with no concrete behavioral problem.",
+      "category_justification": "Concerns stdout/stderr routing of user-facing output.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/utils/logger.ts",
+      "start_line": 12,
+      "end_line": 17,
+      "message": "logger.warn and logger.error no longer include '[warn]' and '[error]' prefixes, which may lead to confusion during debugging since the level is less visually differentiated.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Removing [warn]/[error] prefixes is explicitly stated as the first design decision in the PR description. The finding disagrees with a deliberate choice without identifying a concrete problem — most error/warn calls pass pc.red()/pc.yellow() for color-based differentiation, and stream routing (stderr) is unchanged. The concern is a generic style preference that could apply to any logger.",
+      "severity_justification": "Cosmetic/stylistic concern with no functional impact. Color-coded output and stderr routing still differentiate warn/error visually.",
+      "category_justification": "Readability/debugging concern about log level visibility.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/utils/errors.ts",
+      "start_line": 57,
+      "end_line": 60,
+      "message": "Handling CliError in JSON mode skips formatting of the suggestion field. This can lead to lack of helpful hints in JSON output for machine parsing.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at lines 57-60 explicitly includes `suggestion` in the JSON output via conditional spread: `...(error.suggestion ? { suggestion: error.suggestion } : {})`. The finding's claim that 'JSON mode skips the suggestion field' is factually wrong — the suggestion is serialized as a plain text field in the JSON error object, which is correct behavior for machine consumers.",
+      "severity_justification": "The finding is incorrect about the code behavior; no actual issue exists.",
+      "category_justification": "The finding makes a factual claim about code behavior (omitting suggestion in JSON) that is incorrect.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/utils/errors.ts",
+      "start_line": 63,
+      "end_line": 65,
+      "message": "Human-mode errors now go to stderr, but the existing integration tests capture and assert validation error text from stdout (for example, tests/integration.test.ts:74-79 and similar cases). Without updating those tests (or the intended stream behavior), `npm test` will fail after this change.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `run()` in integration.test.ts only captures `execError.stdout` (not stderr) on failure. The validation tests at lines 74-153 assert error text against `stdout`. Before this PR, `handleError` used `console.log` (stdout); after this PR it uses `logger.error` → `console.error` (stderr). The error text now goes to stderr, which the test helper discards, so all 10 validation tests will fail.",
+      "severity_justification": "Causes all 10 CLI Validation Tests to fail, breaking the test suite. No runtime behavior impact for end users, but CI would fail.",
+      "category_justification": "The issue is that a code change broke existing tests — the test helper only captures stdout but errors were moved to stderr.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/app/bot/migrate.ts",
+      "start_line": 198,
+      "end_line": 198,
+      "message": "This message is part of a failing command path (the code exits with status 1 immediately afterward), but it is written with `logger.info` to stdout. Per the new logging convention in CLAUDE.md:25-27, failure/warning text should use `logger.error` or `logger.warn` so it does not appear as normal output.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 198 uses logger.info (stdout) for a yellow-colored failure message on a code path that calls process.exit(1). The CLAUDE.md convention added by this same PR maps logger.warn to warnings (stderr). This is a real convention violation introduced by the PR. Lines 205-206 also use logger.info with pc.red() text, compounding the inconsistency.",
+      "severity_justification": "No functional regression — the message went to stdout before (console.log) and still does now. The impact is limited to scripting scenarios where stdout/stderr are separated. Pure convention inconsistency.",
+      "category_justification": "The issue is about inconsistent use of the logging convention established by this PR — wrong logger method for the message category, not a bug.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/commands/app/auth/oauth/list.ts",
+      "start_line": 35,
+      "end_line": 36,
+      "message": "This JSON response bypasses `outputJson()`, even though the JSON output convention in CLAUDE.md:64-66 and the other command implementations (for example, src/commands/app/list.ts:45-47 and src/commands/app/doctor.ts:576-589) consistently use `outputJson()` for structured output. Using the helper keeps JSON formatting and future output behavior consistent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the actual file at this SHA uses logger.info(JSON.stringify(settings, null, 2)) without importing outputJson, despite the PR diff showing the intent to change it to outputJson(settings). The convention is established by this PR and all other commands follow it. The finding's factual claim about the code is correct.",
+      "severity_justification": "outputJson() is functionally identical to logger.info(JSON.stringify()) — both call console.log with the same formatted string. This is purely a convention inconsistency with no behavioral difference.",
+      "category_justification": "The issue is inconsistency with the project's established convention for JSON output (outputJson helper), not a functional bug.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

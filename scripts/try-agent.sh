@@ -11,9 +11,8 @@
 #   scripts/try-agent.sh my-reviewer:dev -e OPENAI_API_KEY -e RB_CONFIG_MODEL=gpt-5.5
 #   scripts/try-agent.sh my-reviewer:dev --set full -e OPENAI_API_KEY
 #
-# --set test (the default) runs the 25 pull requests in corpus/showcase.
-# --set full runs the full set of 219 in corpus/manifest.json, which exists
-# from launch.
+# --set test (the default) runs the 25 pull requests in corpus/test/test.json.
+# --set full runs the full set of 219 in corpus/manifest.json.
 #
 # Needs docker, git and jq. Findings land in ./findings/<pr key>.json.
 set -euo pipefail
@@ -36,9 +35,8 @@ done
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
 case "$set_name" in
-  test) manifest="$here/corpus/showcase/manifest.json" ;;
-  full) manifest="$here/corpus/manifest.json"
-    [ -f "$manifest" ] || { echo "no full set at corpus/manifest.json; it is published there at launch" >&2; exit 2; } ;;
+  test) manifest="$here/corpus/test/test.json" ;;
+  full) manifest="$here/corpus/manifest.json" ;;
   *) usage ;;
 esac
 work="${TRY_AGENT_WORK:-$PWD/.try-agent}"

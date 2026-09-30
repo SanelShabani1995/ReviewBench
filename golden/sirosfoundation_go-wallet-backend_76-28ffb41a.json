@@ -1,0 +1,151 @@
+{
+  "pr_key": "sirosfoundation_go-wallet-backend_76-28ffb41a",
+  "pr": {
+    "repo": "https://github.com/sirosfoundation/go-wallet-backend",
+    "pr_number": 76,
+    "base": "a1485bf4cd0f0a25cbd5b5c352bbc8dd595a530b",
+    "head": "28ffb41aa8c3db76a718f7c712a47977223f0d25"
+  },
+  "findings": [
+    {
+      "file": "go.mod",
+      "start_line": 9,
+      "end_line": 9,
+      "message": "Switching from the sirosfoundation/webauthn fork to upstream v0.16.3 reintroduces a known bug: BER-encoded ECDSA signatures in x5c attestation certificate chains are not normalized before CheckSignature(). The fork (v0.16.2-siros2) contained a BER→DER normalization fix for the full-attestation code path. The upstream v0.16.3 still uses Go's strict DER-only x509.Certificate.CheckSignature(). The commit message for this change explicitly states 'no BER attestation fix'. Any deployment that configures attestation_conveyance=direct (e.g., for YubiKey 5.8 beta3 firmware) will see registration failures.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified against commit history: 748a40b explicitly added the fork for BER→DER normalization fix for x5c attestation; 30e4f02 (part of this PR's branch) explicitly states 'no BER attestation fix' when describing the upstream v0.16.3 upgrade; the bug path (full attestation with x5c → x509.Certificate.CheckSignature() with no BER tolerance) is documented in project commits. The finding is factually correct. Mitigating factor: the final commit at the SHA sets the default back to 'none', so only deployments explicitly configuring 'direct' attestation are affected.",
+      "severity_justification": "The default attestation conveyance is 'none' at this SHA, so standard deployments are unaffected. However, any deployment explicitly enabling 'direct' attestation (e.g., for YubiKey 5.8 or similar authenticators) would see complete registration failures with x509: ECDSA verification failure. The failure mode is total and well-documented in the project's own commits.",
+      "category_justification": "The issue is a functional regression: BER-encoded ECDSA signatures in x5c attestation certificate chains will fail verification due to the removal of the BER→DER normalization fix that was present in the fork.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/service/webauthn.go",
+      "start_line": 571,
+      "end_line": 573,
+      "message": "req.Credential (the full user-submitted attestation JSON, which includes credential ID and authenticator response) is logged at DEBUG level every time CreateCredential fails. The credential ID is a persistent per-user-per-origin identifier; logging it on every failure creates a privacy concern and a data retention issue. This was introduced as temporary diagnostic code to capture attestation data for reproduction, per the commit message, but has been permanently merged with no TTL or feature flag to disable it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at SHA: req.Credential is logged via s.logger.Debug at line 572 with no level-check guard, inside the CreateCredential error path. Commit 30e4f02 explicitly added this as diagnostic/reproduction tooling; commit 28ffb41a downgraded it from Error to Debug but did not remove it or add a feature flag. The credential JSON contains the WebAuthn credential ID, a persistent per-user-per-origin identifier. The concern about diagnostic code merged without a removal plan is substantive.",
+      "severity_justification": "Only fires at DEBUG log level on failure, not in standard production logging. Credential IDs are not secret values (they're shared during authentication ceremonies), mitigating actual data sensitivity. However, the code was introduced as temporary and has no removal path.",
+      "category_justification": "Logging persistent user identifiers (WebAuthn credential ID embedded in the full credential JSON) creates a data retention and privacy concern, especially when debug logging is explicitly encouraged by the commit message for this exact scenario.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/service/webauthn.go",
+      "start_line": 522,
+      "end_line": 569,
+      "message": "The attestation debug-dump block fires unconditionally on every CreateCredential failure, regardless of whether the failure is attestation-related. Errors like challenge mismatch, wrong RPID, or user verification failure all cause the full attestation object (auth data, sig, x5c chain, and raw credential JSON) to be dumped to the debug log. The attestation data provides no diagnostic value for non-attestation failures, and the dump is purely wasteful, noisily inflating log volume on every failed registration attempt.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the actual code at the SHA: the attestation dump block (attObj extraction, per-field iteration, x5c chain logging, raw credential JSON) executes on every CreateCredential failure with no error-type filter. Furthermore, the base64/hex encoding calls are evaluated unconditionally before being passed to s.logger.Debug(), meaning the computation runs even when debug logging is disabled (no Core().Enabled() guard in the actual file).",
+      "severity_justification": "All dump calls are at DEBUG level, which is disabled in normal production deployments. The computational overhead per failure is small. The noise concern is real but only materialises when debug logging is explicitly enabled — a narrow operational scenario.",
+      "category_justification": "The core issue is code quality: debug diagnostics that are overly broad in scope (firing on all failures regardless of relevance) and lack a level-check guard, inflating log noise and doing redundant encoding work. Not a correctness or security issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/service/webauthn.go",
+      "start_line": 531,
+      "end_line": 537,
+      "message": "AttStatement field keys and byte-field base64 values come from CBOR-decoded user-submitted input and are logged with zap.String(\"key\", key) and zap.String(\"base64\", ...). An attacker can craft an attestation statement with arbitrarily long values or keys containing structured patterns that bloat or corrupt log records. While zap structured logging prevents classic newline injection, very large byte fields (e.g. a maliciously oversized sig value) will be base64-encoded in full with no length cap, enabling log flooding via deliberate registration failures.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: base64.StdEncoding.EncodeToString(v) at line 537 is uncapped while the hex_preview on the same variable uses v[:min(64, len(v))]. AttStatement comes from user-submitted CBOR. The inconsistency is real and specific. The flooding claim is technically accurate but exploitability is heavily limited by debug-only gating and upstream request size limits.",
+      "severity_justification": "Exploitable only when debug logging is explicitly enabled; HTTP transport/proxy body limits bound attestation object size in practice; registration failure rate limiting further constrains any abuse. The finding identifies a real inconsistency but the practical impact is negligible.",
+      "category_justification": "The concern is log flooding from user-controlled input with no size cap, which is a security/availability concern even if low impact in practice.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/config/config.go",
+      "start_line": 425,
+      "end_line": 427,
+      "message": "The updated function comment changes 'Defaults to none if not set or invalid' (informational) to 'Use direct for testing authenticator attestation verification', framing direct as the testing mode. Given that upstream v0.16.3 is now used without the BER attestation fix, enabling direct attestation in any environment (including test/staging) will silently break registration for authenticators with BER-encoded x5c signatures. The comment should warn that direct attestation is known to fail with certain authenticators on this build.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: the function comment at lines 425-427 says 'Use direct for testing authenticator attestation verification' with no caveat about BER-encoded signatures failing. The struct field comment mentions 'certificate validation issues' only vaguely. Given the confirmed absence of the BER fix in v0.16.3, this comment is factually incomplete — it presents direct as a viable test mode without noting the known failure scenario.",
+      "severity_justification": "Pure documentation concern; no runtime behavior is affected. The risk is that a developer follows the comment to enable direct attestation and encounters confusing failures, but the underlying bug (Finding 1) is the real issue. This is a supporting concern, not an independent one.",
+      "category_justification": "The finding is entirely about a misleading/incomplete function comment — specifically the omission of a warning about known BER signature failures when using direct attestation on this build.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/config/config.go",
+      "start_line": 428,
+      "end_line": 430,
+      "message": "The GetAttestationConveyance method recommends 'direct' for testing purposes but does not restrict its use in production environments. This should be explicitly documented or enforced, as 'direct' attestation may disclose sensitive device information.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding makes a generic WebAuthn best-practice claim that applies to any configurable attestation implementation. The code already defaults to 'none' and requires explicit operator opt-in for 'direct'. No specific code defect is identified — the suggestion to 'restrict in production' is underspecified and not practically implementable in a config accessor. The concern about 'direct' disclosing device info is standard WebAuthn knowledge, not a finding specific to this code.",
+      "severity_justification": "Even if treated as a real concern, the code defaults to 'none', requiring deliberate operator action to use 'direct'. The practical risk is low.",
+      "category_justification": "The finding boils down to a suggestion to add documentation or enforcement around a configuration option — a documentation/API design concern at most.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "internal/service/webauthn.go",
+      "start_line": 526,
+      "end_line": 537,
+      "message": "`zap.ByteString(\"auth_data_hex\", []byte(fmt.Sprintf(\"%x\", attObj.RawAuthData)))` (and the same pattern on line 537) formats the bytes as a hex string via `fmt.Sprintf`, then converts that ASCII hex string back into a `[]byte` so it can be logged via `ByteString`. This allocates twice and is semantically equivalent to `zap.String(\"auth_data_hex\", fmt.Sprintf(\"%x\", attObj.RawAuthData))` — using `zap.String` (or better, `hex.EncodeToString`) would be clearer and avoid the redundant conversion.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed in the actual file at this SHA: lines 526 and 537 use `zap.ByteString(..., []byte(fmt.Sprintf(\"%x\", ...)))`, which allocates a hex string via fmt.Sprintf then immediately converts it back to []byte for ByteString — which logs it as a UTF-8 string anyway. The redundant cast is verified and `zap.String` (or `hex.EncodeToString`) would be cleaner and avoid the extra allocation.",
+      "severity_justification": "This only runs in the debug logging error path during a failed registration, so the performance impact is negligible. It's a code quality/clarity issue rather than a correctness or reliability concern.",
+      "category_justification": "The issue is a redundant type conversion that makes the code harder to read without affecting behavior — a clarity/style concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

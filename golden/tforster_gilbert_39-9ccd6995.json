@@ -1,0 +1,1099 @@
+{
+  "pr_key": "tforster_gilbert_39-9ccd6995",
+  "pr": {
+    "repo": "https://github.com/tforster/gilbert",
+    "pr_number": 39,
+    "base": "bcb96e5317abfc4de175c9cdbc9aecd41d967b82",
+    "head": "9ccd6995f57aefd123f9e3d1d83ce32534c4489a"
+  },
+  "findings": [
+    {
+      "file": "services/gilbert/lib/index.js",
+      "start_line": 315,
+      "end_line": 325,
+      "message": "Pipeline errors silently close the output stream instead of erroring it. In the `.catch()` handler on line 319, `this.#mergeController.close()` is called instead of `this.#mergeController.error(error)`. Consumers of the stream returned by `compile()` will see the stream complete normally (no data, no error) when any pipeline fails, making failures completely undetectable.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at lines ~315-325: the .catch() handler calls `this.#mergeController.close()` instead of `this.#mergeController.error(error)`. Consumers piping from `compile()` will observe a normally-closed stream with no data and no error when a pipeline fails, making failures undetectable programmatically.",
+      "severity_justification": "Pipeline failures silently masquerade as successful empty builds. Any caller using `await gilbert.compile().pipeTo(dest)` will succeed without error even when templates, scripts, or stylesheets fail to process, leading to silently corrupted or empty output.",
+      "category_justification": "This is an error-handling defect — errors from pipeline processing are swallowed and not propagated to stream consumers, undermining fault tolerance.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/index.js",
+      "start_line": 153,
+      "end_line": 181,
+      "message": "`#processPipeline` acquires a reader at line 158 but never calls `reader.releaseLock()`. On both the success path (loop exits via `break` when `done`) and the error path (caught at line 171), the stream's reader lock is never released. The underlying pipeline stream remains permanently locked, preventing cancellation or cleanup.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `reader = pipelineStream.getReader()` at line 158, with no `reader.releaseLock()` call on any path (success break, catch, or finally). The reader lock is never released, permanently locking the stream.",
+      "severity_justification": "For the normal single-compile-to-completion flow this is benign since the streams are consumed and discarded. But mid-flight cancellation or any future stream reuse will fail with 'ReadableStreamDefaultReader locked' errors, and proper cleanup is impossible.",
+      "category_justification": "Missing resource cleanup — a reader lock that is never released prevents proper stream lifecycle management and cancellation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/index.js",
+      "start_line": 223,
+      "end_line": 227,
+      "message": "`compile()` calls `#initializeMergeStream()` to reset the merge stream but does not reset `this.#streams`. The input ReadableStreams (templates, data, staticFiles) stored in `this.#streams` are consumed on the first call. On a second `compile()` call the same already-exhausted streams are re-used: they immediately close with no data and no error is raised, silently producing empty output.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `compile()` calls `#initializeMergeStream()` suggesting re-compile intent, but `this.#streams` holds already-consumed ReadableStreams from the constructor. A second call reuses exhausted streams that immediately close, silently producing empty output. The partial reset creates false re-compile semantics.",
+      "severity_justification": "In practice the API is used as single-shot (constructor + one compile()), so this only affects code that calls compile() twice on the same instance. The design doesn't document re-compile support, but the presence of `#initializeMergeStream()` in compile() implies it was considered.",
+      "category_justification": "The reset of the merge stream without resetting consumed input streams is a logical inconsistency that causes incorrect behavior (empty output) on repeated invocations.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/TemplatePipeline.js",
+      "start_line": 63,
+      "end_line": 63,
+      "message": "`JSON.parse(uriContent)` inside the TransformStream's async `transform()` handler is not wrapped in try/catch. A malformed JSON data file will throw synchronously, which the TransformStream propagates as a stream error—terminating processing of all remaining URI files. The architecture docs note that unhandled rejections inside a TransformStream silently stall the stream; even when they do propagate, there is no recovery or per-file error skip.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `JSON.parse(uriContent)` at line 63 is inside an async TransformStream.transform() handler with no try/catch wrapper. A SyntaxError from malformed JSON will propagate as a stream error, terminating processing of all remaining URI files.",
+      "severity_justification": "A single malformed data file kills the entire template pipeline. In development this surfaces as a confusing stream error rather than a clear per-file parse error. In production it produces empty output for all pages that would have come after the bad file.",
+      "category_justification": "Missing error handling for a foreseeable failure case (malformed JSON input) that causes disproportionate damage — terminating the entire pipeline rather than skipping the bad file.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/TemplatePipeline.js",
+      "start_line": 150,
+      "end_line": 150,
+      "message": "`handlebars.partials = this.#templates` mutates the module-level singleton Handlebars instance's partials. When multiple Gilbert builds run concurrently (e.g., simultaneous webhook triggers), each `TemplatePipeline` overwrites the shared `handlebars.partials` with its own template set, causing renders mid-flight to use the wrong partials and producing corrupted HTML output.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: `handlebars.partials = this.#templates` at line 150 directly overwrites the module-level Handlebars singleton's partials. In Node.js, Bun, or Deno server scenarios with concurrent Gilbert instances, each pipeline's `#loadTemplates()` will overwrite the shared partials, potentially corrupting renders in-flight on other instances.",
+      "severity_justification": "The impact is real but deployment-specific. Cloudflare Workers are immune due to isolate-per-request isolation. In Node.js/Bun/Deno server contexts with concurrent compiles, this would corrupt partial rendering. Since the project targets all these runtimes, the risk is real but not universal.",
+      "category_justification": "Shared mutable state across concurrent operations — the module-level Handlebars singleton is a global resource that multiple pipeline instances compete to overwrite.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/SimpleHtmlMinifier.js",
+      "start_line": 45,
+      "end_line": 45,
+      "message": "The regex `/\\s*=\\s*/g` is applied to the entire HTML string, not limited to tag attribute syntax. It will also replace `=` characters inside quoted attribute values—for example `data-value=\"a = b\"` becomes `data-value=\"a=b\"` and `href=\"?foo=bar&baz=qux\"` is preserved only because those `=` have no surrounding spaces. Any attribute value containing spaced `=` (e.g., template interpolation results or CMS-generated URLs) will be silently corrupted.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at line 45: `/\\s*=\\s*/g` is applied to the entire HTML string with no awareness of attribute value boundaries or text nodes. Attribute values containing ` = ` (e.g. `data-label=\"a = b\"`) will be silently corrupted. The replacement runs after the global whitespace collapse, so any spaced equals signs in quoted values or text content are affected.",
+      "severity_justification": "Silent data corruption in generated HTML output. Template-generated content, CMS data, or any attribute value/text node containing spaced equals signs will be corrupted without error, causing broken client-side behavior or incorrect displayed content.",
+      "category_justification": "The regex incorrectly transforms content it should leave untouched — a logic error in the minifier that produces wrong output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/index.js",
+      "start_line": 296,
+      "end_line": 325,
+      "message": "`Promise.all(pipelinePromises)` is started as a floating promise—it is not awaited and its rejection is not propagated to the caller of `compile()`. `compile()` returns `this.stream` immediately while pipelines are still executing. Because the promise chain is detached, any pipeline failure is only logged (and the stream is incorrectly closed; see also the `.close()` vs `.error()` issue). There is no way for the caller to know via the `compile()` promise itself that processing failed.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `Promise.all(pipelinePromises)` at line 298 is not awaited — `compile()` returns `this.stream` immediately after launching it as a background promise. Pipeline failures are only handled in a `.catch()` that logs and (incorrectly) closes the stream. The `compile()` promise itself never rejects, so callers cannot detect failures via `await gilbert.compile()`.",
+      "severity_justification": "Callers have no reliable mechanism to detect pipeline failures: `compile()` always resolves successfully, the stream silently closes (per Finding 1), and errors are only logged. This is distinct from Finding 1's `.close()` vs `.error()` issue — it's about the compile() API contract being broken regardless of how the stream is errored.",
+      "category_justification": "Error propagation failure — the async API contract of compile() is broken: it never rejects even when all pipelines have failed.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-r2/lib/index.js",
+      "start_line": 192,
+      "end_line": 194,
+      "message": "When a known content length is available, `file.contents.pipeTo(writable)` is fired without `await` and errors are only logged via `.catch()`. If the source stream fails mid-transfer, the `FixedLengthStream` writable ends with fewer bytes than declared, causing R2's `put()` to either reject with an opaque error or silently store a truncated object. The error from the source stream is never re-thrown to the caller.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `file.contents.pipeTo(writable)` is intentionally not awaited (comment says 'Don't await - let it run in the background'). Errors are only logged. If the source stream fails, the FixedLengthStream gets fewer bytes than its declared length, R2's put() will receive an incomplete stream, and the error is silently discarded rather than propagated to the caller.",
+      "severity_justification": "A source stream failure during upload will result in either a truncated R2 object being stored (data corruption) or an opaque R2 error, neither of which is surfaced to the caller. The upload appears to succeed from the WritableStream consumer's perspective.",
+      "category_justification": "Error handling defect in I/O path — source stream errors during upload are swallowed, potentially causing silent data corruption in R2 storage.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-github/lib/index.js",
+      "start_line": 133,
+      "end_line": 133,
+      "message": "Glob patterns are tested against `gilbertFile.path`, which is the absolute path produced by the GilbertFile constructor (e.g., `/templates/home.hbs`). The Glob class only skips a leading `/` in the *pattern*, not in the test *input*. Patterns without a `**/` prefix—such as `templates/**/*.hbs` or `data/*.json`—will never match because the regex anchors at `^templates/...` while the path starts with `/`. Only patterns beginning with `**/` (matching zero or more directory levels via `.*`) will work, making specific directory-scoped patterns silently return no files.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: TarStream produces relative paths, GilbertFile resolves them to absolute paths via WebPath.resolve(cwd, path), and startFilteredPipeline tests glob.test(gilbertFile.path) which is absolute. The Glob class strips leading '/' from patterns but not from test inputs, so pattern 'templates/**/*.hbs' compiles to ^templates/... which never matches '/templates/home.hbs'. Compare gilbert-fs which tests both relativePath and '/' + relativePath.",
+      "severity_justification": "Non-**/- prefixed patterns silently return zero files from the GitHub adapter, making directory-scoped glob filtering completely non-functional. Users specifying patterns like 'templates/**/*.hbs' or 'data/*.json' get empty streams with no error, causing silent empty builds.",
+      "category_justification": "Logic error in path matching — the glob test input uses absolute paths while the regex anchors at the relative pattern, causing systematic mismatches.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-file/lib/index.js",
+      "start_line": 128,
+      "end_line": 130,
+      "message": "The `cwd` setter converts `#path` from an absolute path to a relative string via `WebPath.relative(val, this.#path)`. After this line, `this.path` returns a relative string (e.g., `../src/index.html`) instead of the absolute path the class invariant requires. All subsequent calls to `relative`, `dirname`, `basename`, and any code passing `file.path` to other APIs will receive a relative string and produce incorrect results or silent failures.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the cwd setter at line 129 does `this.#path = WebPath.relative(val, this.#path)` which converts #path to a relative string, contradicting the documented invariant. However, in all current usage the cwd setter is only called from the constructor before path is set (guarded by `if (this.#path)`), so the bug doesn't manifest in any existing code path.",
+      "severity_justification": "The invariant violation is real but dormant — no current pipeline or adapter code calls `file.cwd = ...` after a path is set. The bug would only surface if a caller explicitly mutates cwd on an existing GilbertFile with a path, which no current code does.",
+      "category_justification": "The cwd setter contains logic that corrupts the object's path invariant (absolute → relative) under a reachable but currently-unused code path.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-glob/lib/Glob.js",
+      "start_line": 23,
+      "end_line": 23,
+      "message": "[javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp] RegExp() called with a `glob` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application as RegExP blocks the main thread. For this reason, it is recommended to use hardcoded regexes instead. If your regex is run on user-controlled input, consider performing input validation or use a regex checking/sanitization library such as https://www.npmjs.com/package/recheck to verify that the regex does not appear vulnerable to ReDoS.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The RegExp is constructed from developer-supplied glob patterns (e.g., '**/*.hbs') at build/configuration time, not from external user input. There is no HTTP endpoint, form field, or other attack surface through which an adversary could supply a malicious pattern. This is a generic static analysis alert that fires on any non-literal RegExp without assessing actual attacker control of the input.",
+      "severity_justification": "Even if classified as TP, the risk would be low: patterns come from trusted developer configuration, not untrusted user input.",
+      "category_justification": "The finding is framed as a ReDoS security vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp"
+      }
+    },
+    {
+      "file": "tests/performance/generate-test-data.js",
+      "start_line": 445,
+      "end_line": 445,
+      "message": "[javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal] Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sanitize or validate user input first.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `post.slug` at line 445 is produced entirely by the `createSlug()` function which sanitizes to `[a-z0-9-]` only (no path separators, dots, or traversal characters). Furthermore, this is a test data generator script that runs locally with no user-supplied input — slugs are generated from hardcoded/programmatic blog post titles. There is no attack surface here.",
+      "severity_justification": "Even if the finding were valid, this is a developer test script with no external input, making exploitation impossible.",
+      "category_justification": "The finding is framed as a path traversal vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal"
+      }
+    },
+    {
+      "file": "tests/performance/performance.test.js",
+      "start_line": 92,
+      "end_line": 92,
+      "message": "[javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal] Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sanitize or validate user input first.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `item` variable at line 92 comes from `fs.readdirSync(dir)` — filesystem directory entries provided by the OS, not user-controlled input. This is a local test/benchmark script with no external inputs, network endpoints, or user interaction. There is no path traversal attack surface here.",
+      "severity_justification": "This is a developer test script with no external input; exploitation is impossible.",
+      "category_justification": "The finding is framed as a path traversal vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal"
+      }
+    },
+    {
+      "file": "tests/performance/performance.test.js",
+      "start_line": 92,
+      "end_line": 92,
+      "message": "[javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal] Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sanitize or validate user input first.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Duplicate of Finding 13 — same file, same line, same claim. The `item` variable comes from `fs.readdirSync(dir)` (OS-provided directory entries), not user-controlled input. This is a local performance test script with no external inputs or attack surface.",
+      "severity_justification": "Developer test script with no external input; no exploitable path traversal exists.",
+      "category_justification": "The finding is framed as a path traversal vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal"
+      }
+    },
+    {
+      "file": "tests/performance/performance.test.js",
+      "start_line": 212,
+      "end_line": 212,
+      "message": "[javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring] Detected string concatenation with a non-literal variable in a util.format / console.log function. If an attacker injects a format specifier in the string, it will forge the log message. Try to use constant values for the format string.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 212 logs a template literal with `duration.toFixed(2)` (a number from performance timing) and `error.message` (internal error). Neither is user-controlled input. JavaScript's console.error with template literals does not have format-string injection vulnerabilities — attackers cannot inject format specifiers via JS template literals to forge log output or cause memory corruption.",
+      "severity_justification": "Generic static analysis alert in a developer test file with no user input and no exploitable format-string vulnerability in JavaScript.",
+      "category_justification": "The finding is framed as a format-string injection vulnerability.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring"
+      }
+    },
+    {
+      "file": "tests/performance/src/templates/blog-landing.hbs",
+      "start_line": 26,
+      "end_line": 26,
+      "message": "[generic.html-templates.security.var-in-href.var-in-href] Detected a template variable used in an anchor tag with the 'href' attribute. This allows a malicious actor to input the 'javascript:' URI and is subject to cross- site scripting (XSS) attacks. If using Flask, use 'url_for()' to safely generate a URL. If using Django, use the 'url' filter to safely generate a URL. If using Mustache, use a URL encoding library, or prepend a slash '/' to the variable for relative links (`href=\"/{{link}}\"`). You may also consider setting the Content Security Policy (CSP) header.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "This is a static site generator test template. `{{url}}` is populated from developer-controlled JSON data at build time, not from end-user runtime input. Gilbert generates static HTML offline — there is no server rendering user-supplied data into these templates. The attacker-injecting-javascript-URI path does not exist in this context.",
+      "severity_justification": "No runtime user input flows into this template variable; it is a build-time static data substitution from developer-controlled sources.",
+      "category_justification": "The finding is framed as an XSS vulnerability via href injection.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "generic.html-templates.security.var-in-href.var-in-href"
+      }
+    },
+    {
+      "file": "tests/performance/src/templates/blog-post.hbs",
+      "start_line": 28,
+      "end_line": 28,
+      "message": "[javascript.express.security.audit.xss.mustache.explicit-unescape.template-explicit-unescape] Detected an explicit unescape in a Mustache template, using triple braces '{{{...}}}' or ampersand '&'. If external data can reach these locations, your application is exposed to a cross-site scripting (XSS) vulnerability. If you must do this, ensure no external data can reach this location.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "This is a static site generator test template. `{{{content}}}` is an intentional unescaped render of blog post body HTML, populated from developer-controlled JSON data at build time. Gilbert generates static files offline — no end-user input reaches this template variable at runtime. The rule targets server-side rendering of user-supplied data, which is not the use case here.",
+      "severity_justification": "No runtime user input flows into this triple-brace variable; it is a deliberate build-time HTML insertion from developer-controlled content sources.",
+      "category_justification": "The finding is framed as an XSS vulnerability via unescaped template output.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.express.security.audit.xss.mustache.explicit-unescape.template-explicit-unescape"
+      }
+    },
+    {
+      "file": "tests/performance/src/templates/blog-post.hbs",
+      "start_line": 74,
+      "end_line": 74,
+      "message": "[generic.html-templates.security.var-in-href.var-in-href] Detected a template variable used in an anchor tag with the 'href' attribute. This allows a malicious actor to input the 'javascript:' URI and is subject to cross- site scripting (XSS) attacks. If using Flask, use 'url_for()' to safely generate a URL. If using Django, use the 'url' filter to safely generate a URL. If using Mustache, use a URL encoding library, or prepend a slash '/' to the variable for relative links (`href=\"/{{link}}\"`). You may also consider setting the Content Security Policy (CSP) header.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same pattern as Finding 16 — a static site generator test template where href variables are populated from developer-controlled JSON data at build time, not from end-user runtime input. Gilbert generates static HTML offline; no attacker can inject a javascript: URI via these template variables.",
+      "severity_justification": "No runtime user input flows into href template variables; all data is build-time developer-controlled content.",
+      "category_justification": "The finding is framed as an XSS vulnerability via href injection.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "generic.html-templates.security.var-in-href.var-in-href"
+      }
+    },
+    {
+      "file": "tests/performance/src/templates/blog-post.hbs",
+      "start_line": 75,
+      "end_line": 75,
+      "message": "[generic.html-templates.security.var-in-href.var-in-href] Detected a template variable used in an anchor tag with the 'href' attribute. This allows a malicious actor to input the 'javascript:' URI and is subject to cross- site scripting (XSS) attacks. If using Flask, use 'url_for()' to safely generate a URL. If using Django, use the 'url' filter to safely generate a URL. If using Mustache, use a URL encoding library, or prepend a slash '/' to the variable for relative links (`href=\"/{{link}}\"`). You may also consider setting the Content Security Policy (CSP) header.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same pattern as Findings 16 and 18 — a static site generator test template where href variables are populated from developer-controlled JSON data at build time, not from end-user runtime input. Gilbert generates static HTML offline; no attacker can inject a javascript: URI via these template variables.",
+      "severity_justification": "No runtime user input flows into href template variables; all data is build-time developer-controlled content.",
+      "category_justification": "The finding is framed as an XSS vulnerability via href injection.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "generic.html-templates.security.var-in-href.var-in-href"
+      }
+    },
+    {
+      "file": "tests/performance/src/templates/home.hbs",
+      "start_line": 16,
+      "end_line": 16,
+      "message": "[generic.html-templates.security.var-in-href.var-in-href] Detected a template variable used in an anchor tag with the 'href' attribute. This allows a malicious actor to input the 'javascript:' URI and is subject to cross- site scripting (XSS) attacks. If using Flask, use 'url_for()' to safely generate a URL. If using Django, use the 'url' filter to safely generate a URL. If using Mustache, use a URL encoding library, or prepend a slash '/' to the variable for relative links (`href=\"/{{link}}\"`). You may also consider setting the Content Security Policy (CSP) header.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same pattern as Findings 16, 18, and 19 — a static site generator test template where href variables are populated from developer-controlled JSON data at build time, not from end-user runtime input. Gilbert generates static HTML offline; no attacker can inject a javascript: URI via these template variables.",
+      "severity_justification": "No runtime user input flows into href template variables; all data is build-time developer-controlled content.",
+      "category_justification": "The finding is framed as an XSS vulnerability via href injection.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "generic.html-templates.security.var-in-href.var-in-href"
+      }
+    },
+    {
+      "file": "tests/performance/src/templates/home.hbs",
+      "start_line": 17,
+      "end_line": 17,
+      "message": "[generic.html-templates.security.var-in-href.var-in-href] Detected a template variable used in an anchor tag with the 'href' attribute. This allows a malicious actor to input the 'javascript:' URI and is subject to cross- site scripting (XSS) attacks. If using Flask, use 'url_for()' to safely generate a URL. If using Django, use the 'url' filter to safely generate a URL. If using Mustache, use a URL encoding library, or prepend a slash '/' to the variable for relative links (`href=\"/{{link}}\"`). You may also consider setting the Content Security Policy (CSP) header.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same pattern as Findings 16, 18, 19, and 20 — a static site generator test template where href variables are populated from developer-controlled JSON data at build time, not from end-user runtime input. Gilbert generates static HTML offline; no attacker can inject a javascript: URI via these template variables.",
+      "severity_justification": "No runtime user input flows into href template variables; all data is build-time developer-controlled content.",
+      "category_justification": "The finding is framed as an XSS vulnerability via href injection.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "generic.html-templates.security.var-in-href.var-in-href"
+      }
+    },
+    {
+      "file": "tests/src/templates/about.hbs",
+      "start_line": 19,
+      "end_line": 19,
+      "message": "[javascript.express.security.audit.xss.mustache.explicit-unescape.template-explicit-unescape] Detected an explicit unescape in a Mustache template, using triple braces '{{{...}}}' or ampersand '&'. If external data can reach these locations, your application is exposed to a cross-site scripting (XSS) vulnerability. If you must do this, ensure no external data can reach this location.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same pattern as Finding 17 — a static site generator test template. Triple-brace `{{{...}}}` is an intentional unescaped HTML render populated from developer-controlled JSON data at build time. Gilbert generates static files offline with no end-user runtime input reaching template variables.",
+      "severity_justification": "No runtime user input flows into this triple-brace variable; it is a deliberate build-time HTML insertion from developer-controlled content sources.",
+      "category_justification": "The finding is framed as an XSS vulnerability via unescaped template output.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.express.security.audit.xss.mustache.explicit-unescape.template-explicit-unescape"
+      }
+    },
+    {
+      "file": "tests/src/templates/components/section.hbs",
+      "start_line": 6,
+      "end_line": 6,
+      "message": "[javascript.express.security.audit.xss.mustache.explicit-unescape.template-explicit-unescape] Detected an explicit unescape in a Mustache template, using triple braces '{{{...}}}' or ampersand '&'. If external data can reach these locations, your application is exposed to a cross-site scripting (XSS) vulnerability. If you must do this, ensure no external data can reach this location.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same pattern as Findings 17 and 22 — a static site generator test template. Triple-brace `{{{...}}}` is an intentional unescaped HTML render populated from developer-controlled JSON data at build time. Gilbert generates static files offline with no end-user runtime input reaching template variables.",
+      "severity_justification": "No runtime user input flows into this triple-brace variable; it is a deliberate build-time HTML insertion from developer-controlled content sources.",
+      "category_justification": "The finding is framed as an XSS vulnerability via unescaped template output.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.express.security.audit.xss.mustache.explicit-unescape.template-explicit-unescape"
+      }
+    },
+    {
+      "file": "tests/src/templates/homepage.hbs",
+      "start_line": 13,
+      "end_line": 13,
+      "message": "[javascript.express.security.audit.xss.mustache.explicit-unescape.template-explicit-unescape] Detected an explicit unescape in a Mustache template, using triple braces '{{{...}}}' or ampersand '&'. If external data can reach these locations, your application is exposed to a cross-site scripting (XSS) vulnerability. If you must do this, ensure no external data can reach this location.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same pattern as Findings 17, 22, and 23 — a static site generator test template. Triple-brace `{{{...}}}` is an intentional unescaped HTML render populated from developer-controlled JSON data at build time. Gilbert generates static files offline with no end-user runtime input reaching template variables.",
+      "severity_justification": "No runtime user input flows into this triple-brace variable; it is a deliberate build-time HTML insertion from developer-controlled content sources.",
+      "category_justification": "The finding is framed as an XSS vulnerability via unescaped template output.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.express.security.audit.xss.mustache.explicit-unescape.template-explicit-unescape"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/SimpleHtmlMinifier.js",
+      "start_line": 34,
+      "end_line": 52,
+      "message": "The whitespace collapsing step `result.replace(/\\s+/g, \" \")` is applied to the entire HTML document indiscriminately, which will corrupt the contents of whitespace-sensitive elements such as `<pre>`, `<textarea>`, `<script>`, and `<style>`. By the time the later `minifyCSS`/`minifyJS` blocks try to operate on `<style>`/`<script>` contents, the inner whitespace has already been collapsed (newlines lost, leading/trailing spaces stripped), which can break JavaScript that relies on ASI or any text inside `<pre>`/`<textarea>`. Consider excluding the contents of these elements before collapsing whitespace, or skipping global whitespace collapsing entirely for documents containing them.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in SimpleHtmlMinifier.js: the global `result.replace(/\\s+/g, \" \")` is applied to the entire HTML string before element-specific minification, which will collapse whitespace inside <pre>, <textarea>, <script>, and <style> blocks. This particularly breaks the subsequent JS minifier — once newlines are gone, the single-line comment regex `//.*$` with the `m` flag will consume from `//` to end-of-string rather than end-of-line, silently deleting code that follows the comment.",
+      "severity_justification": "Causes silent data corruption for any site with <pre> or <textarea> content, and can silently delete JavaScript code following single-line comments in inline <script> blocks. Only affects sites using those elements, but the damage is invisible to the caller.",
+      "category_justification": "Logic error in the minification algorithm that produces incorrect output for whitespace-sensitive HTML elements and inline scripts with comments.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/WebStreamUtils.js",
+      "start_line": 33,
+      "end_line": 46,
+      "message": "The JSDoc and the method name imply that `streamsFinish` waits for the supplied streams to complete, but for a `ReadableStream` this calls `stream.cancel()`, which actively discards any remaining buffered data and signals the producer to stop. That is the opposite of \"waiting for completion\" and will silently drop data if any caller passes a ReadableStream that hasn't yet been fully consumed. Either rename/redocument this helper to make the cancellation behaviour explicit, or change the ReadableStream branch to drain the stream (e.g. consume with a reader until `done`) rather than cancelling it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in WebStreamUtils.js: the `streamsFinish` method's ReadableStream branch calls `stream.cancel()` (discards data, aborts the producer) while the method name and inline comment claim it 'waits for streams to complete' / 'consume it completely'. This is factually incorrect. However, `streamsFinish` is never called anywhere in the codebase — only `createFileCollector` is used from `WebStreamUtils`.",
+      "severity_justification": "The method is dead code with an existing TODO suggesting it be deprecated. No production path invokes it, so the incorrect implementation has zero current impact. It's a real correctness bug but entirely inert.",
+      "category_justification": "The implementation does the opposite of what the name, JSDoc, and inline comment describe — calling cancel() instead of draining the stream.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-glob/lib/Glob.js",
+      "start_line": 48,
+      "end_line": 57,
+      "message": "The two branches of this `if/else` produce the same regex fragment `(?:.*/)?` and have identical comments other than the prose, so the leading-`**/` versus middle-`**/` distinction has no effect. Either collapse to a single branch or implement the intended difference (for example, anchoring the leading case so it cannot match arbitrary preceding path segments).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in Glob.js lines 48-57: both branches of the if/else produce identical regex `(?:.*/)?`. The comments describe intended semantic differences (leading vs. middle **/) that are never implemented. The code is functionally a dead branch with misleading documentation.",
+      "severity_justification": "In practice `(?:.*/)?` is the correct behavior for the common leading-**/ case, so typical Gilbert usage (e.g. `**/*.hbs`, `**/*.json`) works correctly. The bug only manifests in mid-pattern **/ cases where stricter matching would be expected, which is a less common pattern and not exercised by the test suite.",
+      "category_justification": "The if/else branches implement no actual difference, making the intended semantic distinction between leading and middle **/ non-functional. Dead code with misleading comments.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/ScriptsPipeline.js",
+      "start_line": 10,
+      "end_line": 10,
+      "message": "The logger is initialised once at module load using `globalThis.GILBERT_DEBUG === \"true\"`. This has two practical issues: (1) in Node.js, environment variables live on `process.env`, not `globalThis`, so `GILBERT_DEBUG=true npm test` will not enable debug logging here; (2) because the check happens at import time, any later changes (including setting the global) will not affect the module-level `logger`. Consider reading `process.env.GILBERT_DEBUG` (with a `globalThis`/runtime fallback) and/or constructing the logger lazily so the debug flag can be set by callers before logging occurs. Note that the `debug: true` option passed to the `Gilbert` constructor in the tests does not flow into this logger either.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "All three claims are verified: (1) no bridge from process.env to globalThis exists, so GILBERT_DEBUG=true as a shell env var won't work in Node.js; (2) the logger is a module-level singleton frozen at import time; (3) debug:true in the Gilbert constructor doesn't propagate to ScriptsPipeline's own module-level logger. The documentation explicitly documents GILBERT_DEBUG=true as an env var approach, creating a discrepancy.",
+      "severity_justification": "Only affects debug logging, not production functionality. The intended use case (Cloudflare Workers) correctly uses globalThis. For Node.js development the documented GILBERT_DEBUG=true env var approach silently does nothing, but users can work around it by setting globalThis.GILBERT_DEBUG at startup.",
+      "category_justification": "Developer experience issue: the documented debug activation mechanism doesn't work in Node.js due to the mismatch between process.env and globalThis, and debug:true in the constructor doesn't propagate as a developer might expect.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-r2/tests/index.test.js",
+      "start_line": 33,
+      "end_line": 45,
+      "message": "The `read()` method is documented in the README and used by examples elsewhere in the PR (e.g. `GilbertFS.dest(\"./dist\")` references in the README and `staticAdapter.read(\"files/**/*\")` usage in `services/gilbert/tests/full.test.js`), but the unit test here asserts that `adapter.read()` throws \"is not implemented\". For a 1.0.0-rc release this is a contradiction between documented public API and actual behaviour — either implement `read()` for R2 (or remove the read-throws unit test if there is a real implementation) or update the README and adapter-interface documentation to explicitly mark `read()` as unsupported on `GilbertR2`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding incorrectly claims read() is documented as working in the README. In fact, the gilbert-r2 README explicitly documents read() as 'Not implemented. Throws an error explaining that this adapter is write-only.' The source code, tests, and docs are all consistent: GilbertR2 is intentionally write-only. The finding confused GilbertFS.read() and github.read() calls elsewhere with GilbertR2.read().",
+      "severity_justification": "The finding is a false positive — no actual contradiction exists in the codebase.",
+      "category_justification": "The finding is about alleged inconsistency between documented API and implementation.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-r2/wrangler.json",
+      "start_line": 3,
+      "end_line": 3,
+      "message": "`wrangler dev` is configured to load `tests/integration-worker.js` (also referenced from `tests/run-integration-tests.sh` and `tests/README.md`), but that file is not added in this PR. Running `npm run test:integration` or the shell script as documented will fail immediately with a missing-entrypoint error. Either add the integration worker file or remove the script/config until the integration test harness is included.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims tests/integration-worker.js is missing, but the file exists in the repository at services/gilbert-r2/tests/integration-worker.js at this SHA. It contains a complete Cloudflare Worker implementation for integration testing. The wrangler.json configuration correctly references it.",
+      "severity_justification": "The finding is factually wrong — the file exists.",
+      "category_justification": "The finding was about a missing file that would break the integration test harness.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/SimpleHtmlMinifier.js",
+      "start_line": 18,
+      "end_line": 24,
+      "message": "The relevant condition is `options.keep_comments === false`, which only enables comment removal when the caller explicitly passes `keep_comments: false`. Calling `SimpleHtmlMinifier.minify(html)` with no options (the common case) leaves `keep_comments` as `undefined`, so `removeComments` becomes `false` and comments are kept. Similarly, `collapseWhitespace` is `options.allow_removing_spaces_between_attributes !== false`, which defaults to `true` (opposite default behaviour). Given the class name implies it minifies by default, the inverted default for comment removal is surprising and inconsistent. Consider defaulting `removeComments` to `true` unless explicitly disabled.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct: `removeComments` defaults to false (requires explicit `keep_comments: false` to enable) while `collapseWhitespace` defaults to true (requires explicit `allow_removing_spaces_between_attributes: false` to disable). This is an asymmetric and surprising API design for a class named SimpleHtmlMinifier. However, the sole caller (TemplatePipeline.js) always passes all options explicitly including `keep_comments: false`, so no production path is affected.",
+      "severity_justification": "The inconsistency only matters if someone calls minify() with no options, which no caller in the codebase does. The production path always explicitly passes keep_comments: false. This is a future API usability concern rather than an active bug.",
+      "category_justification": "Asymmetric default values in a public method make the API surprising and harder to use correctly, but the issue is about API design consistency rather than a runtime bug.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/SimpleHtmlMinifier.js",
+      "start_line": 73,
+      "end_line": 75,
+      "message": "The JavaScript comment stripping is not syntax-aware and will remove `//` inside string literals or URLs (for example `\"https://...\"`), producing invalid or changed inline scripts whenever `minify_js` is enabled.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the regex `/\\/\\/.*$/gm` at line 73 is not string-literal-aware and will match `//` inside URLs in string literals (e.g. `\"https://...\"`). Combined with the prior global whitespace collapse removing all newlines from script content, the `$` anchor with `m` flag only matches end-of-string, so the first `//` in any URL literal causes everything from that point to end of script to be silently deleted. The `minify_js: true` option is always passed in TemplatePipeline.js, making this active in production.",
+      "severity_justification": "Any inline `<script>` containing a URL string literal (extremely common) will have its code silently truncated at the URL's `//`. The corruption is silent — no error is thrown — and affects the generated HTML output.",
+      "category_justification": "Logic error that silently produces invalid/truncated JavaScript output for the common case of URLs in inline script string literals.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert/lib/index.js",
+      "start_line": 11,
+      "end_line": 12,
+      "message": "The logger is initialized only from `globalThis.GILBERT_DEBUG`, so passing `{ debug: true }` to the Gilbert constructor does not actually enable any logger output. This makes the documented/tested `debug` option ineffective unless callers also mutate a global before importing the module.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in index.js: the module-level logger is created with `createLogger(globalThis.GILBERT_DEBUG === \"true\")` at line 12, freezing the debug state at import time. The class then guards all 10 logger.debug() calls with `if (this.#options.debug)`, implying the constructor option controls logging — but since logger was already created with debug:false, those calls are no-ops regardless. Passing `debug:true` to the constructor enables the guards but not the underlying logger.",
+      "severity_justification": "Only affects debug logging output, not production functionality. The documented `debug:true` option silently does nothing for logger output, which is confusing for developers trying to diagnose issues but causes no data loss or functional regression.",
+      "category_justification": "The constructor `debug` option and the module-level logger are disconnected, making the documented debug capability non-functional in the common case where globalThis.GILBERT_DEBUG is not pre-set.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-fs/lib/index.js",
+      "start_line": 133,
+      "end_line": 134,
+      "message": "Joining `basePath` with `file.relative` without validating the resolved path allows a file whose relative path contains `..` to be written outside the requested destination directory. The new tests even create `../outside.txt`, which would escape `dist`; the writer should normalize and reject outputs that leave `basePath`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `path.join(basePath, file.relative)` at line 133 produces a path outside basePath when file.relative contains `../`. WebPath.relative() legitimately produces such values. The test at line 354 creates `../outside.txt` and the assertion only checks that some files were written — it does not verify the traversal file is rejected. mkdir with recursive:true then creates any needed parent dirs, completing the traversal write.",
+      "severity_justification": "In Node.js server deployments (e.g. webhook-triggered rebuilds writing via gilbert-fs), a maliciously crafted file stream (from gilbert-github or elsewhere) could write files outside the intended destination. Lower risk for pure local builds where the user controls all inputs, but the github adapter makes untrusted-source scenarios plausible.",
+      "category_justification": "Path traversal vulnerability — unvalidated file.relative with ../ segments escapes the intended write directory, a classic CWE-22 pattern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-fs/lib/index.js",
+      "start_line": 220,
+      "end_line": 224,
+      "message": "Absolute glob patterns will not match because `searchPattern` remains absolute while the walker tests it against paths relative to `searchDir` (for example `/tmp/src/*.json` is tested against `file.json`). Either convert the absolute pattern to a pattern relative to the search directory or test against absolute paths.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: when path.isAbsolute(pattern) is true, searchPattern stays as the absolute path (e.g. `/tmp/src/*.json`), but the walker tests `relativePath = path.relative(searchDir, fullPath)` (e.g. `data.json`) against Glob(absolutePattern). The Glob constructor strips the leading `/` and builds a regex anchored to `tmp/src/...`, which never matches a bare filename. The code has an explicit branch for absolute patterns but it's broken.",
+      "severity_justification": "All documented examples and actual call sites in the codebase use relative glob patterns exclusively. No tests exercise the absolute pattern branch. The broken feature is unreachable in normal usage, making practical impact minimal.",
+      "category_justification": "A code path explicitly intended to handle absolute glob patterns produces no matches due to a relative-vs-absolute path mismatch in the matching logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-github/lib/TarStream.js",
+      "start_line": 117,
+      "end_line": 126,
+      "message": "PAX extended headers are only skipped when the entire header payload and padding are already buffered. If the payload is split across chunks, the code falls through and treats the PAX header body as a normal entry; it also never parses the PAX `path` value despite later consulting `this.paxHeaders.path`, so long GitHub archive paths can be emitted incorrectly.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Both claims verified. (1) When buffer.length < skipSize in the PAX handler, the PAX content stays in the buffer but currentEntry is set to null — the next iteration parses PAX content as a tar header. (2) paxHeaders is initialized as {} and never populated (parsing code is commented out), but lines 147 and 192 rely on paxHeaders.path to get long paths from GitHub archives. Since it's always undefined, paths > 100 chars are silently truncated to the 100-byte tar name field.",
+      "severity_justification": "GitHub archives commonly have paths > 100 characters (repo-owner-sha/ prefix + nested directories). The gilbert-github adapter is core to the serverless CMS use case. Silently truncated/wrong file paths mean templates and data files are not found, producing incomplete or empty builds without clear errors.",
+      "category_justification": "Two distinct logic bugs in the PAX header handling that cause incorrect path values to be emitted for files with long paths in GitHub tar archives.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-cli/package.json",
+      "start_line": 7,
+      "end_line": 7,
+      "message": "This is not valid npm alias syntax for installing a scoped package under the name `gilbert`. Use the `npm:` alias form or depend on `@tforster/gilbert` directly; as written, workspace installs for the CLI can fail to resolve this dependency.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `\"gilbert\": \"@tforster/gilbert@1.0.0-rc.1\"` is not valid npm alias syntax — the `npm:` prefix is required for aliases. The syntax was pre-existing before this PR; commit 31efcdd only bumped the version string. The finding correctly identifies the invalid format.",
+      "severity_justification": "The gilbert-cli package is explicitly documented as stale/non-functional and is marked private:true. In a workspace context npm may resolve the local package anyway. No production use of the CLI exists.",
+      "category_justification": "Invalid package.json dependency specifier that could cause workspace install failures in a non-monorepo context.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-r2/README.md",
+      "start_line": 42,
+      "end_line": 42,
+      "message": "`compile()` is async, so this example calls `.pipeTo()` on the unresolved Promise rather than on the returned `ReadableStream`. The same pattern will throw at runtime for users copying the README example.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: compile() is async (line 223 of index.js), returning Promise<ReadableStream>. The README at lines 42 and 92 calls .pipeTo() directly on that Promise, which throws TypeError at runtime. The main README.md uses the correct two-step await pattern instead.",
+      "severity_justification": "Any user copying the gilbert-r2 README usage example will get an immediate runtime TypeError. The README is the primary onboarding resource for this new package, making the error highly visible and impactful for adoption.",
+      "category_justification": "Incorrect code example in README that produces a runtime error when followed by users.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-r2/README.md",
+      "start_line": 92,
+      "end_line": 93,
+      "message": "This usage example has the same async ordering issue: `gilbert.compile()` returns a Promise, so `.pipeTo()` must be called after awaiting the stream. As written, the documented upload code fails before it reaches R2.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same issue as Finding 14, verified at line 92 of gilbert-r2/README.md: `await gilbert.compile().pipeTo(` calls .pipeTo() on the Promise returned by the async compile(), not on the resolved ReadableStream. This is the same runtime TypeError as the line 42 instance.",
+      "severity_justification": "Same severity as Finding 14 — any user following this usage example will get an immediate TypeError. However this is a duplicate of Finding 14 covering the second occurrence of the same bug in the same file.",
+      "category_justification": "Incorrect code example in README that produces a runtime error when followed.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/how-to/deploy-to-cloudflare.md",
+      "start_line": 68,
+      "end_line": 68,
+      "message": "The R2 adapter's `write()` implementation requires the Worker R2 binding in the `binding` option; passing the binding as `bucket` leaves `#binding` unset and `write()` will throw `R2 bucket binding is required`. This deploy guide's main example cannot run as shown.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the deploy guide uses `new GilbertR2({ bucket: env.SITE_BUCKET })` but write() reads from this.#binding (not this.#bucket) and throws 'R2 bucket binding is required' when #binding is unset. The constructor stores bucket and binding in separate private fields; only `binding` enables write operations.",
+      "severity_justification": "The deploy-to-cloudflare.md is the primary documentation for the serverless edge use case. The main code example throws immediately at runtime, giving users no working reference for the intended workflow.",
+      "category_justification": "Incorrect constructor option in a documentation example — passes `bucket` instead of `binding`, causing the documented code to throw at runtime.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/how-to/deploy-to-cloudflare.md",
+      "start_line": 76,
+      "end_line": 76,
+      "message": "`compile()` returns a Promise for the output stream, so this line attempts to call `.pipeTo()` on a Promise. The example needs to await the compile result before piping, otherwise the publishing worker fails at runtime.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same async ordering issue as Findings 14/15. Line 76 of deploy-to-cloudflare.md uses `await gilbert.compile().pipeTo(r2Adapter.write('/'))` which calls .pipeTo() on the Promise returned by async compile(), not on the resolved ReadableStream, causing a TypeError at runtime.",
+      "severity_justification": "Same severity as Findings 14/15 — the deploy guide example fails immediately at runtime. This is a duplicate of the same pattern found in the R2 README, in a different documentation file covering the core serverless deployment use case.",
+      "category_justification": "Incorrect async usage in a code example that produces a runtime TypeError for users following the deployment guide.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/how-to/local-development.md",
+      "start_line": 63,
+      "end_line": 63,
+      "message": "This build script calls `.pipeTo()` on the Promise returned by `compile()` rather than on the resolved `ReadableStream`, so users following the local development guide will get a runtime TypeError.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at line 63: `await gilbert.compile().pipeTo(outputAdapter.write('./dist'))` calls .pipeTo() on the Promise from async compile(), not the resolved ReadableStream. Same TypeError as Findings 14/15/17, this time in the local development guide.",
+      "severity_justification": "The local development guide is the primary onboarding reference for new users. The build script example fails immediately with TypeError, blocking users from completing the tutorial.",
+      "category_justification": "Incorrect async usage in a code example that produces a runtime TypeError for users following the local development guide.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/how-to/integrate-cms.md",
+      "start_line": 90,
+      "end_line": 95,
+      "message": "There are two incompatible API issues in this example: the generated data file uses a top-level `uris` map, but the current TemplatePipeline reads each JSON file as a single `{ uri, webProducerKey, ... }` record; and `compile()` is async, so `.pipeTo()` is being called on a Promise. The example will not generate any pages as written.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both claims verified. (1) TemplatePipeline processes individual URI records with top-level uri/webProducerKey fields (confirmed by test data in tests/src/data/). The CMS example emits a file with a nested `uris` map — TemplatePipeline finds no webProducerKey on the outer object and silently skips it, generating zero pages. (2) Same async compile().pipeTo() TypeError as Findings 14-18.",
+      "severity_justification": "Two compounding bugs mean the CMS integration example produces no output and throws at runtime. The data format mismatch is particularly insidious since it fails silently with no error — the build completes but generates nothing.",
+      "category_justification": "Code examples in the CMS integration guide use an incompatible data format and incorrect async pattern, making the documented integration approach non-functional.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/reference/adapter-interface.md",
+      "start_line": 101,
+      "end_line": 101,
+      "message": "This reference example uses `.pipeTo()` directly on `gilbert.compile()`, but `compile()` returns `Promise<ReadableStream>`. The documented adapter flow fails unless the stream is awaited first.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at line 101: `await gilbert.compile().pipeTo(outputAdapter.write('./dist'))` calls .pipeTo() on the Promise returned by async compile(), not on the resolved ReadableStream. Same TypeError pattern as Findings 14/15/17/18, this time in the adapter interface reference doc.",
+      "severity_justification": "Same severity as prior occurrences — the reference documentation is authoritative for adapter authors and will mislead them into broken code. However this is another instance of the same pervasive pattern already identified.",
+      "category_justification": "Incorrect async usage in a reference code example that produces a runtime TypeError.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-fs/tests/gilbert-fs-read.test.js",
+      "start_line": 279,
+      "end_line": 289,
+      "message": "This test catches its own assertion failures and treats any `AssertionError` as acceptable, so patterns that return the wrong number of files still pass. Only errors thrown by `fs.read()` should be considered acceptable here; failed assertions need to fail the test.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the try block at lines 279-289 wraps both the fs.read() call and the assert.strictEqual(). AssertionError extends Error, so a failed assertion is caught and passes the `error instanceof Error` check, making the test always green regardless of the actual file count returned. The assertion is effectively dead code.",
+      "severity_justification": "The test is supposed to validate that edge-case patterns like `**`, `.`, and `..` return the correct file count. With the catch swallowing assertion errors, any incorrect behavior from these patterns passes silently, defeating the test's purpose.",
+      "category_justification": "Test design flaw where the catch block swallows AssertionErrors, making the assertions inside the try block ineffective.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/prompts/context-reset.prompt.md",
+      "start_line": 9,
+      "end_line": 10,
+      "message": "This prompt asks agents to read `docs/diary.md`, but that file does not exist in the repository. Following the prompt will fail or waste context-loading time; update the reference or add the missing document.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: docs/diary.md does not exist in the repository. The docs/ directory contains adr.md, developer-guide.md, explanation/, how-to/, reference/, tutorials/, etc. — no diary.md. The context-reset prompt at lines 9-10 references a non-existent file.",
+      "severity_justification": "Only affects AI agent tooling (context reset prompts), not production code or user-facing functionality. An agent following the prompt would simply fail to load the file, wasting a small amount of context budget.",
+      "category_justification": "Broken reference in a developer/agent tooling prompt file pointing to a non-existent document.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "gilbert-workspace.code-workspace",
+      "start_line": 6,
+      "end_line": 8,
+      "message": "This workspace file includes a developer-specific path outside the repository. Checking it in makes the shared workspace non-portable for other contributors and can surface missing-folder warnings in VS Code.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: gilbert-workspace.code-workspace lines 6-8 contain `../../../StopTheParty/website/www.stoptheparty.ca`, a hardcoded developer-specific path outside the repo. Any contributor without that exact directory structure will get a VS Code missing-folder warning. The path predates this PR.",
+      "severity_justification": "Cosmetic VS Code warning for other contributors — non-functional impact. The workspace file is used for IDE setup, not production builds. Pre-existing issue not introduced by this PR.",
+      "category_justification": "Committed developer-specific IDE configuration that makes the shared workspace non-portable.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-fs/README.md",
+      "start_line": 93,
+      "end_line": 97,
+      "message": "This API section is stale: `GilbertFS` now implements an instance `read(patterns, options)` method, while there is no `GilbertFS.src()` static method in the added implementation. Users following this README will think filesystem reads are unavailable or call a method that does not exist.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: services/gilbert-fs/README.md lines 93-97 document `GilbertFS.src()` as 'Not yet implemented - throws error', but the implementation at lib/index.js line 194 has a fully working instance `read(patterns, options)` method. No `src()` method exists anywhere in the implementation. The class JSDoc still references `src()`, confirming a rename that wasn't fully propagated to the README.",
+      "severity_justification": "Users consulting this README for a new package will either believe reads are unavailable or call the non-existent src() method. Since gilbert-fs is the primary filesystem adapter for local builds, this misdirects the most common Gilbert use case.",
+      "category_justification": "Stale API reference documenting a non-existent method while the real implemented method goes undocumented.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/src/data/home.json",
+      "start_line": 2,
+      "end_line": 3,
+      "message": "This fixture generates the same `/index.html` output as `tests/src/data/homepage.json`. Because both JSON records are read from a glob stream and written to the same destination, the final page depends on filesystem traversal/order and can make template/full-build tests nondeterministic.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: both home.json and homepage.json have `\"uri\": \"/index.html\"` with different webProducerKey values and titles. Both are read by `dataAdapter.read(\"**/*.json\")` in tests. templates.test.js line 77 asserts the output index.html contains homepage.json's title — this fails if home.json processes last. The outcome depends on readdir ordering, making the test non-deterministic.",
+      "severity_justification": "A real test reliability issue: which file 'wins' depends on filesystem ordering, making templates.test.js potentially flaky. The conflict is silent — no error is thrown, just the wrong content silently wins.",
+      "category_justification": "Duplicate URI in test fixtures causes non-deterministic test output and a test that silently verifies the wrong data depending on processing order.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/performance/package.json",
+      "start_line": 7,
+      "end_line": 9,
+      "message": "The `build` script points to `test-runner.js`, but that file is not present in `tests/performance`; the added runner is `performance.test.js`. Running `npm run build` in this package will fail with module-not-found.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: tests/performance/package.json line 8 references `node test-runner.js` in the `build` script, but only `performance.test.js`, `generate-test-data.js`, `manifest.json`, `package.json`, `README.md`, and `src/` exist in that directory. `test-runner.js` is absent, so `npm run build` fails immediately.",
+      "severity_justification": "Only affects the performance test build script, not production code or the main test suite. The actual performance test file (performance.test.js) is present and can be run directly; only the convenience npm script is broken.",
+      "category_justification": "Broken script reference in package.json that produces a module-not-found error at runtime.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/performance/README.md",
+      "start_line": 11,
+      "end_line": 12,
+      "message": "The quick-start command references `test-runner.js`, but the added performance directory does not contain that file. Users following this README cannot run the performance test as documented.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same missing file as Finding 26. tests/performance/ contains performance.test.js but no test-runner.js. The README quick-start command at lines 11-12 references `node test-runner.js`, which will fail with module-not-found for anyone following the documentation.",
+      "severity_justification": "Only affects developer tooling for performance testing, not production code. The actual test file exists under a different name; this is a docs/script naming inconsistency.",
+      "category_justification": "README references a non-existent file, preventing users from following the documented quick-start instructions.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-r2/tests/README.md",
+      "start_line": 9,
+      "end_line": 12,
+      "message": "The file list mentions `wrangler.toml` in the tests directory, but this PR adds `wrangler.json` at the package root instead. The integration-test docs point readers to a configuration file/path that does not exist.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: tests/README.md line 12 lists `wrangler.toml` as a file in the tests directory, but that file doesn't exist there. The actual wrangler config is `wrangler.json` at the gilbert-r2 package root. Two errors: wrong format (toml vs json) and wrong location (tests/ vs package root).",
+      "severity_justification": "Only affects integration test setup documentation. The actual wrangler.json at the package root works correctly with `npm run test:integration`; this just confuses developers looking for the config file.",
+      "category_justification": "Stale file listing in integration test README referencing the wrong filename and location for the wrangler configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "services/gilbert-file/package.json",
+      "start_line": 42,
+      "end_line": 48,
+      "message": "The added `docs:watch` script invokes `nodemon`, but `nodemon` is not declared in this package or the root devDependencies. Running the documented watch command will fail unless the developer happens to have a global install.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: gilbert-file/package.json devDependencies contains only jsdoc, jsdoc-to-markdown, and mime-db. The root package.json devDependencies also has no nodemon entry. The `docs:watch` script at line 46 invokes `nodemon` which is undeclared, so `npm run docs:watch` fails with command-not-found unless the developer has a global install.",
+      "severity_justification": "Only affects the docs watch convenience script, not production code, tests, or the build pipeline. The `docs` script works fine; only the watch wrapper is broken.",
+      "category_justification": "Missing devDependency causes a documented npm script to fail for any developer without a global nodemon install.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

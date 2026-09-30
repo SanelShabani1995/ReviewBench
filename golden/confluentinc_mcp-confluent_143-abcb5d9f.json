@@ -1,0 +1,751 @@
+{
+  "pr_key": "confluentinc_mcp-confluent_143-abcb5d9f",
+  "pr": {
+    "repo": "https://github.com/confluentinc/mcp-confluent",
+    "pr_number": 143,
+    "base": "b5ce7d99978c2ba1714861a5b59b2fdde23ccb94",
+    "head": "abcb5d9f237f7428064d3529cc0d7bc822a79424"
+  },
+  "findings": [
+    {
+      "file": "src/confluent/tools/handlers/schema/delete-schema-handler.ts",
+      "start_line": 112,
+      "end_line": 114,
+      "message": "getRequiredEnvVars() only returns [\"SCHEMA_REGISTRY_ENDPOINT\"], missing SCHEMA_REGISTRY_API_KEY and SCHEMA_REGISTRY_API_SECRET. This file was modified in this PR to remove the baseUrl parameter, but unlike every other Schema Registry handler updated in this PR (add-tags-to-topic, create-topic-tags, delete-tag, list-tags, remove-tag-from-entity, search-topic-by-tag, search-topics-by-name — all using CCLOUD_SCHEMA_REGISTRY_REQUIRED_ENV_VARS), this handler was not updated. If SCHEMA_REGISTRY_ENDPOINT is set but API credentials are absent, the tool will be enabled but will fail at runtime with auth errors when the Schema Registry client rejects unauthenticated requests.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at the given SHA: delete-schema-handler.ts returns only ['SCHEMA_REGISTRY_ENDPOINT'] while every other Schema Registry handler touched by this PR uses CCLOUD_SCHEMA_REGISTRY_REQUIRED_ENV_VARS which includes API key and secret. The file was modified by this PR to remove baseUrl but getRequiredEnvVars() was not brought in line with the new pattern.",
+      "severity_justification": "If SCHEMA_REGISTRY_ENDPOINT is set without credentials, the tool appears available but fails at runtime with auth errors. Medium rather than high because in practice users typically set all three vars together, but it breaks the enablement contract this PR sets out to establish.",
+      "category_justification": "getRequiredEnvVars() returns factually incomplete data — it omits required environment variables — causing incorrect tool-enablement decisions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/env-schema.ts",
+      "start_line": 287,
+      "end_line": 292,
+      "message": "CCLOUD_CONTROL_PLANE_REQUIRED_ENV_VARS includes \"CONFLUENT_CLOUD_REST_ENDPOINT\", but this env var is defined with .default(\"https://api.confluent.cloud\") in configSchema (line 221-226). After Zod parsing, env.CONFLUENT_CLOUD_REST_ENDPOINT is always a non-empty string. The tool-enablement check in index.ts (!env[varName]) will therefore always be false for this entry, meaning the URL never actually gates any control-plane tool. The constant falsely implies that the endpoint is a real gate, when only CONFLUENT_CLOUD_API_KEY and CONFLUENT_CLOUD_API_SECRET matter.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: CONFLUENT_CLOUD_REST_ENDPOINT has .default('https://api.confluent.cloud') in configSchema, so !env[varName] is always false for that entry. The tool-enablement check in index.ts line 136 uses !env[varName], meaning the endpoint entry never gates control-plane tools. The TELEMETRY_REQUIRED_ENV_VARS comment even acknowledges this exact pattern for TELEMETRY_ENDPOINT, making the inconsistency clear.",
+      "severity_justification": "Functionally the tools still work correctly — they are gated on API key/secret as intended. The issue is misleading intent in the constant rather than broken behavior.",
+      "category_justification": "The constant claims to require an env var that always has a value, making it a no-op gate that misrepresents what is truly required.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/kafka/alter-topic-config.ts",
+      "start_line": 83,
+      "end_line": 85,
+      "message": "getRequiredEnvVars() changed from [\"KAFKA_API_KEY\", \"KAFKA_API_SECRET\", \"BOOTSTRAP_SERVERS\"] to KAFKA_REST_REQUIRED_ENV_VARS = [\"KAFKA_REST_ENDPOINT\", \"KAFKA_API_KEY\", \"KAFKA_API_SECRET\"]. BOOTSTRAP_SERVERS is dropped and KAFKA_REST_ENDPOINT is added. While semantically correct (this tool uses getConfluentCloudKafkaRestClient(), not the native Kafka client), this is an undocumented breaking change: users who have BOOTSTRAP_SERVERS but not KAFKA_REST_ENDPOINT will silently lose this tool on upgrade. The same applies to get-topic-config.ts.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The change from BOOTSTRAP_SERVERS to KAFKA_REST_ENDPOINT is semantically correct and a bug fix. Both handlers use getConfluentCloudKafkaRestClient() which requires KAFKA_REST_ENDPOINT and never uses BOOTSTRAP_SERVERS. Any user with BOOTSTRAP_SERVERS but not KAFKA_REST_ENDPOINT previously had a tool that appeared enabled but threw at runtime; now it correctly shows disabled. There is no actual regression.",
+      "severity_justification": "The concern describes a non-issue — no user loses a previously functioning tool.",
+      "category_justification": "The finding is about whether the required env var set correctly reflects what the tool needs.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/kafka/get-topic-config.ts",
+      "start_line": 91,
+      "end_line": 93,
+      "message": "Same breaking gating change as alter-topic-config.ts: BOOTSTRAP_SERVERS is dropped from getRequiredEnvVars() and KAFKA_REST_ENDPOINT is added via KAFKA_REST_REQUIRED_ENV_VARS. Both tools use getConfluentCloudKafkaRestClient() so requiring KAFKA_REST_ENDPOINT is correct, but the removal of BOOTSTRAP_SERVERS without any migration note means existing deployments that don't set KAFKA_REST_ENDPOINT will silently lose these tools.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical reasoning to Finding 3. get-topic-config.ts uses only getConfluentCloudKafkaRestClient() and never BOOTSTRAP_SERVERS. The old gating on BOOTSTRAP_SERVERS was incorrect — users without KAFKA_REST_ENDPOINT had a tool that appeared enabled but threw at runtime. The new gating correctly reflects what the tool actually requires.",
+      "severity_justification": "No actual regression — no user loses a previously functioning tool.",
+      "category_justification": "The finding concerns whether required env vars correctly reflect tool dependencies.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/flink/diagnostics/query-profiler-handler.ts",
+      "start_line": 545,
+      "end_line": 551,
+      "message": "getRequiredEnvVars() constructs a mutable intermediate array using `const vars = [] as EnvVar[]` and then pushes spread elements into it. The `as EnvVar[]` cast discards the readonly tuple narrowing provided by the `as const` arrays (FLINK_REQUIRED_ENV_VARS, TELEMETRY_REQUIRED_ENV_VARS), making the type broader than necessary. The method signature promises readonly EnvVar[] but returns a fully mutable array, undermining the readonly guarantee at the implementation level. A simple `[...FLINK_REQUIRED_ENV_VARS, ...TELEMETRY_REQUIRED_ENV_VARS] as const` would be cleaner and correctly typed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The readonly contract is fully upheld: TypeScript enforces readonly at the call site via the return type signature, regardless of whether the underlying array is mutable within the method body. Returning a mutable array as readonly is idiomatic TypeScript. The 'undermining readonly guarantee' claim misrepresents how TypeScript readonly works. The code is verbose but functionally and type-correctly equivalent to a spread return.",
+      "severity_justification": "Even if considered a style issue, there is no correctness or safety impact — the caller-visible contract is maintained.",
+      "category_justification": "The real concern is verbosity/style, not correctness or type safety.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/create-tableflow-catalog-integration-handler.ts",
+      "start_line": 97,
+      "end_line": 99,
+      "message": "getRequiredEnvVars() declares EnvVar[] (mutable) while the abstract base class now mandates readonly EnvVar[]. TypeScript's structural typing accepts EnvVar[] where readonly EnvVar[] is required, so there is no compile error, but all 11 tableflow handlers modified in this PR to remove baseUrl were left with the old mutable return type while every other domain (flink, catalog, search, environments, clusters, connect, metrics, billing, kafka) was updated to readonly. This inconsistency also applies to connect/create-connector-handler.ts, kafka/list-topics-handler.ts, kafka/delete-topics-handler.ts, kafka/create-topics-handler.ts, kafka/consume-kafka-messages-handler.ts, kafka/produce-kafka-message-handler.ts, and schema/delete-schema-handler.ts.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: 19 handlers still declare getRequiredEnvVars(): EnvVar[] while the abstract base now mandates readonly EnvVar[]. All 11 tableflow handlers were touched by this PR (to remove baseUrl) but their return type was not updated, creating a within-PR inconsistency. The claim about structural TypeScript compatibility suppressing compile errors is also correct.",
+      "severity_justification": "No functional or runtime impact — TypeScript's structural subtyping ensures the contract is satisfied. This is a pure consistency/style concern with no behavioral consequence.",
+      "category_justification": "The issue is inconsistency in following a convention the PR itself established, with no functional impact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/catalog/list-tags.ts",
+      "start_line": 15,
+      "end_line": 15,
+      "message": "handle() is declared as handle(clientManager: ClientManager) dropping the toolArguments and sessionId parameters that are part of the ToolHandler interface and the abstract BaseToolHandler contract. JavaScript silently ignores extra arguments, so this works at runtime, but it deviates from the declared abstract method signature. If a future invocation adds code that relies on sessionId (e.g., for consumer group isolation as done in other handlers), the parameter will not be available without updating the signature.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: handle(clientManager: ClientManager) omits toolArguments and sessionId while BaseToolHandler declares abstract handle(clientManager, toolArguments, sessionId?). This deviation was introduced by this PR. TypeScript accepts it via parameter count compatibility, and runtime works. The inconsistency with the declared contract is real but the handler genuinely takes no input arguments.",
+      "severity_justification": "No functional impact — the handler takes no arguments and runtime behavior is correct. The concern is forward-looking maintainability: if sessionId is needed later, the signature must be updated.",
+      "category_justification": "Deviation from declared interface contract with no current functional impact, affecting code consistency and future extensibility.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/connect/create-connector-handler.ts",
+      "start_line": 115,
+      "end_line": 115,
+      "message": "The `getRequiredEnvVars` method for this tool is missing. The base class `BaseToolHandler` now defines it as an abstract method, so this class will fail to compile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getRequiredEnvVars() exists at line 134 of create-connector-handler.ts. The finding's claim that the method is missing and the class would fail to compile is factually wrong.",
+      "severity_justification": "The claim is incorrect; there is no missing method and no compile failure.",
+      "category_justification": "The finding makes an incorrect factual claim about missing code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/schema/delete-schema-handler.ts",
+      "start_line": 78,
+      "end_line": 78,
+      "message": "The `getRequiredEnvVars` method for this tool is missing. The base class `BaseToolHandler` now defines it as an abstract method, so this class will fail to compile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getRequiredEnvVars() exists at line 112 of delete-schema-handler.ts, verified while investigating Finding 1. The claim that the method is missing and the class would fail to compile is factually incorrect.",
+      "severity_justification": "The claim is incorrect; there is no missing method and no compile failure.",
+      "category_justification": "The finding makes a factually wrong claim about missing code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/create-tableflow-catalog-integration-handler.ts",
+      "start_line": 86,
+      "end_line": 86,
+      "message": "The `getRequiredEnvVars` method for this tool is missing. The base class `BaseToolHandler` now defines it as an abstract method, so this class will fail to compile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getRequiredEnvVars() exists at line 97 of create-tableflow-catalog-integration-handler.ts, verified during the Finding 6 investigation. The claim that the method is missing and the class would fail to compile is factually incorrect.",
+      "severity_justification": "The claim is incorrect; there is no missing method and no compile failure.",
+      "category_justification": "The finding makes a factually wrong claim about missing code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/delete-tableflow-catalog-integration-handler.ts",
+      "start_line": 78,
+      "end_line": 78,
+      "message": "The `getRequiredEnvVars` method for this tool is missing. The base class `BaseToolHandler` now defines it as an abstract method, so this class will fail to compile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getRequiredEnvVars() exists at line 81 of delete-tableflow-catalog-integration-handler.ts, confirmed by the grep in Finding 6 investigation. The claim that the method is missing and the class would fail to compile is factually incorrect.",
+      "severity_justification": "The claim is incorrect; there is no missing method and no compile failure.",
+      "category_justification": "The finding makes a factually wrong claim about missing code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/list-tableflow-catalog-integrations-handler.ts",
+      "start_line": 84,
+      "end_line": 84,
+      "message": "The `getRequiredEnvVars` method for this tool is missing. The base class `BaseToolHandler` now defines it as an abstract method, so this class will fail to compile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getRequiredEnvVars() exists at line 91 of list-tableflow-catalog-integrations-handler.ts, confirmed by the grep in Finding 6 investigation. The claim that the method is missing and the class would fail to compile is factually incorrect.",
+      "severity_justification": "The claim is incorrect; there is no missing method and no compile failure.",
+      "category_justification": "The finding makes a factually wrong claim about missing code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/read-tableflow-catalog-integration-handler.ts",
+      "start_line": 78,
+      "end_line": 78,
+      "message": "The `getRequiredEnvVars` method for this tool is missing. The base class `BaseToolHandler` now defines it as an abstract method, so this class will fail to compile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getRequiredEnvVars() exists at line 81 of read-tableflow-catalog-integration-handler.ts, confirmed by the grep in Finding 6 investigation. The claim that the method is missing and the class would fail to compile is factually incorrect.",
+      "severity_justification": "The claim is incorrect; there is no missing method and no compile failure.",
+      "category_justification": "The finding makes a factually wrong claim about missing code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/update-tableflow-catalog-integration-handler.ts",
+      "start_line": 76,
+      "end_line": 76,
+      "message": "The `getRequiredEnvVars` method for this tool is missing. The base class `BaseToolHandler` now defines it as an abstract method, so this class will fail to compile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getRequiredEnvVars() exists at line 93 of update-tableflow-catalog-integration-handler.ts, confirmed by the grep in Finding 6 investigation. The claim that the method is missing and the class would fail to compile is factually incorrect.",
+      "severity_justification": "The claim is incorrect; there is no missing method and no compile failure.",
+      "category_justification": "The finding makes a factually wrong claim about missing code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/list-tableflow-regions-handler.ts",
+      "start_line": 59,
+      "end_line": 59,
+      "message": "The `getRequiredEnvVars` method for this tool is missing. The base class `BaseToolHandler` now defines it as an abstract method, so this class will fail to compile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getRequiredEnvVars() exists at line 70 of list-tableflow-regions-handler.ts, confirmed by the grep in Finding 6 investigation. The claim that the method is missing and the class would fail to compile is factually incorrect.",
+      "severity_justification": "The claim is incorrect; there is no missing method and no compile failure.",
+      "category_justification": "The finding makes a factually wrong claim about missing code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/topic/create-tableflow-topic-handler.ts",
+      "start_line": 100,
+      "end_line": 100,
+      "message": "The `getRequiredEnvVars` method for this tool is missing. The base class `BaseToolHandler` now defines it as an abstract method, so this class will fail to compile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getRequiredEnvVars() exists at line 118 of create-tableflow-topic-handler.ts, confirmed by the grep in Finding 6 investigation. The claim that the method is missing and the class would fail to compile is factually incorrect.",
+      "severity_justification": "The claim is incorrect; there is no missing method and no compile failure.",
+      "category_justification": "The finding makes a factually wrong claim about missing code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/topic/delete-tableflow-topic-handler.ts",
+      "start_line": 80,
+      "end_line": 80,
+      "message": "The `getRequiredEnvVars` method for this tool is missing. The base class `BaseToolHandler` now defines it as an abstract method, so this class will fail to compile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "getRequiredEnvVars() exists at line 83 of delete-tableflow-topic-handler.ts, confirmed by the grep in Finding 6 investigation. The claim that the method is missing and the class would fail to compile is factually incorrect.",
+      "severity_justification": "The claim is incorrect; there is no missing method and no compile failure.",
+      "category_justification": "The finding makes a factually wrong claim about missing code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/base-tools.ts",
+      "start_line": 13,
+      "end_line": 23,
+      "message": "The BaseToolHandler.getRequiredEnvVars() method is now abstract and must be implemented by all subclasses. However, removing a default implementation eliminates backward compatibility. Any existing subclasses not implementing this method will break. Ensure this change does not impact other parts of the codebase where getRequiredEnvVars() might have been implicitly implemented.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Every class extending BaseToolHandler implements getRequiredEnvVars(). The only files in the handlers directory lacking the method are helper utilities that don't extend BaseToolHandler at all. The concern about broken backward compatibility is theoretical and does not apply to this codebase at this SHA.",
+      "severity_justification": "The described breakage does not exist in the codebase.",
+      "category_justification": "The finding makes an incorrect claim about missing implementations causing compile failures.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/metrics/query-metrics-handler.ts",
+      "start_line": 122,
+      "end_line": 127,
+      "message": "The getRequiredEnvVars() implementation for QueryMetricsHandler incorrectly infers the order of merging FLINK and TELEMETRY required environment variables, leading to potential runtime confusion. This change should document and explicitly assert combining responsibilities between domains (Flink and Telemetry) if made intentional.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "QueryMetricsHandler.getRequiredEnvVars() returns only TELEMETRY_REQUIRED_ENV_VARS with no merging of Flink env vars. The described behavior (merging FLINK and TELEMETRY) does not exist in this file — that pattern only appears in query-profiler-handler.ts. The finding is misdirected at the wrong handler.",
+      "severity_justification": "The finding is factually incorrect about what the code does.",
+      "category_justification": "The finding makes a factually wrong claim about the code's behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/environments/list-environments-handler.ts",
+      "start_line": 69,
+      "end_line": 72,
+      "message": "In ListEnvironmentsHandler, the removal of fallback logic for baseUrl means tools are hard-disabled when an environment variable is missing. This could impact flexibility or debugging, particularly in non-production environments. Consider including diagnostic logs or errors clarifying why the handler is disabled due to missing environment settings.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The diagnostic logging the finding requests already exists: index.ts logs a warning naming both the disabled tool and the specific missing environment variables. The 'hard-disabled' behavior is the explicit design goal of this PR. The finding is both factually incorrect (logging already present) and contradicts stated PR intent.",
+      "severity_justification": "The described gap does not exist; the concern is unfounded.",
+      "category_justification": "The finding is a generic operational/observability suggestion that doesn't account for existing code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/catalog/add-tags-to-topic.ts",
+      "start_line": 65,
+      "end_line": 65,
+      "message": "The clientManager.setConfluentCloudSchemaRegistryEndpoint(baseUrl) call is removed, assuming that all tools will use only environment-based configuration. If tools were dynamically switching the endpoint, this change removes that flexibility, impacting legacy configurations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Removing dynamic endpoint switching via tool arguments is the explicit, stated goal of this PR (fixes #139). The finding describes intentional design as a concern. There are no 'legacy configurations' being broken — the old behavior of allowing runtime URL injection was the bug being fixed.",
+      "severity_justification": "The finding describes intended behavior, not a defect.",
+      "category_justification": "The finding is a generic concern about flexibility that contradicts the PR's stated design intent.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/create-tableflow-catalog-integration-handler.ts",
+      "start_line": 54,
+      "end_line": 57,
+      "message": "The removal of conditional baseUrl configuration penalizes runtime customization. This is critical for tools utilizing different API endpoints per invocation. Confirm no dynamic configurations are expected.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same reasoning as Finding 21. Removing runtime baseUrl configuration is the explicit, stated design goal of this PR (fixes #139). The PR description directly states endpoints must be provided via environment variables at startup. The finding frames an intentional security/design fix as a missing feature.",
+      "severity_justification": "The finding describes intended behavior, not a defect.",
+      "category_justification": "Generic concern about flexibility that directly contradicts the PR's stated design intent.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/flink/diagnostics/detect-issues-handler.ts",
+      "start_line": 81,
+      "end_line": 90,
+      "message": "The DetectIssuesHandler no longer allows overriding the Flink REST API's base URL dynamically. This breaks scenarios in which multiple Flink clusters must be managed through different base URLs provided dynamically.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same reasoning as Findings 21 and 22. Removing dynamic baseUrl override is the explicit, stated design goal of this PR (fixes #139). The PR description says endpoints must be provided via environment variables at startup, not at invocation time. The scenario of managing multiple Flink clusters through different base URLs dynamically is the exact pattern this PR intentionally removes.",
+      "severity_justification": "The finding describes intended behavior, not a defect.",
+      "category_justification": "Generic concern about flexibility that directly contradicts the PR's stated design intent.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/env-schema.ts",
+      "start_line": 335,
+      "end_line": 344,
+      "message": "The TELEMETRY_REQUIRED_ENV_VARS still rely on 'fallback behavior,' which introduces ambiguity about which environment variables are required in certain configurations. If the code expects keys to become strictly predictive from YAML migrations later, this fallback may induce unexpected errors during transitional phases.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code comments at those exact lines already explicitly document the fallback behavior, the ambiguity it creates, and the known design limitation. The finding restates what is already acknowledged in the code and adds only speculation about future YAML migration phases. There is no concrete, unacknowledged bug or failure mode identified.",
+      "severity_justification": "The concern is speculative and already documented; no concrete issue is identified.",
+      "category_justification": "The finding is a generic, speculative concern about future migration that duplicates existing code comments.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/schema/delete-schema-handler.ts",
+      "start_line": 32,
+      "end_line": 40,
+      "message": "In DeleteSchemaHandler, removing the dynamic baseUrl configuration means schema registry endpoint flexibility is entirely reliant on preconfigured environment variables. Verify legacy deployments do not depend on endpoint overrides at runtime.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same reasoning as Findings 21, 22, and 23. Removing runtime baseUrl override is the explicit, stated design goal of this PR (fixes #139). The PR description directly states endpoints must be provided via environment variables at startup. The finding frames the intentional removal of dynamic endpoint injection as a concern about legacy deployments, which is the exact behavior this PR set out to eliminate.",
+      "severity_justification": "The finding describes intended behavior, not a defect.",
+      "category_justification": "Generic concern about flexibility that directly contradicts the PR's stated design intent.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/topic/create-tableflow-topic-handler.ts",
+      "start_line": 78,
+      "end_line": 80,
+      "message": "After removing the runtime `baseUrl`, this Tableflow tool is still enabled with only `TABLEFLOW_API_KEY`/`TABLEFLOW_API_SECRET` even though `getConfluentCloudTableflowRestClient()` is configured from `CONFLUENT_CLOUD_REST_ENDPOINT` in `DefaultClientManager`. If that endpoint is not set at startup, the tool remains advertised but fails when invoked with “Confluent Cloud Tableflow REST endpoint not configured”; include the endpoint in the required vars or ensure the default is applied during startup.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so env.CONFLUENT_CLOUD_REST_ENDPOINT is always populated. DefaultClientManager sets confluentCloudTableflowBaseUrl = config.endpoints.cloud from that value, meaning confluentCloudTableflowBaseUrl is never undefined. The error 'Confluent Cloud Tableflow REST endpoint not configured' cannot be thrown, so the failure scenario the finding describes cannot occur in practice.",
+      "severity_justification": "If the claim were true the tool would silently be enabled but fail at invocation, but because the env var has a hardcoded default the scenario is impossible.",
+      "category_justification": "The finding is about a runtime failure path caused by a missing env var, which is a correctness concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/topic/read-tableflow-topic-handler.ts",
+      "start_line": 49,
+      "end_line": 51,
+      "message": "After removing the runtime `baseUrl`, this Tableflow tool is still enabled with only `TABLEFLOW_API_KEY`/`TABLEFLOW_API_SECRET` even though `getConfluentCloudTableflowRestClient()` is configured from `CONFLUENT_CLOUD_REST_ENDPOINT` in `DefaultClientManager`. If that endpoint is not set at startup, the tool remains advertised but fails when invoked with “Confluent Cloud Tableflow REST endpoint not configured”; include the endpoint in the required vars or ensure the default is applied during startup.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical reasoning to the same claim on create-tableflow-topic-handler: CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so env.CONFLUENT_CLOUD_REST_ENDPOINT is always populated. DefaultClientManager sets confluentCloudTableflowBaseUrl = config.endpoints.cloud from that value, meaning the guard 'if (!this.confluentCloudTableflowBaseUrl)' never fires and the described error cannot occur.",
+      "severity_justification": "If the claim were true the tool would be silently broken at invocation, but the env var default makes the scenario impossible.",
+      "category_justification": "The finding concerns a runtime failure path triggered by a missing env var.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/topic/list-tableflow-topics-handler.ts",
+      "start_line": 59,
+      "end_line": 61,
+      "message": "After removing the runtime `baseUrl`, this Tableflow tool is still enabled with only `TABLEFLOW_API_KEY`/`TABLEFLOW_API_SECRET` even though `getConfluentCloudTableflowRestClient()` is configured from `CONFLUENT_CLOUD_REST_ENDPOINT` in `DefaultClientManager`. If that endpoint is not set at startup, the tool remains advertised but fails when invoked with “Confluent Cloud Tableflow REST endpoint not configured”; include the endpoint in the required vars or ensure the default is applied during startup.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same reasoning as findings 1 and 2: CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so confluentCloudTableflowBaseUrl is always populated via config.endpoints.cloud and the error 'Confluent Cloud Tableflow REST endpoint not configured' cannot be thrown.",
+      "severity_justification": "Would be a real silent failure if the premise were true, but the default value makes it impossible.",
+      "category_justification": "The finding is about a runtime failure path triggered by a missing endpoint configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/topic/delete-tableflow-topic-handler.ts",
+      "start_line": 49,
+      "end_line": 51,
+      "message": "After removing the runtime `baseUrl`, this Tableflow tool is still enabled with only `TABLEFLOW_API_KEY`/`TABLEFLOW_API_SECRET` even though `getConfluentCloudTableflowRestClient()` is configured from `CONFLUENT_CLOUD_REST_ENDPOINT` in `DefaultClientManager`. If that endpoint is not set at startup, the tool remains advertised but fails when invoked with “Confluent Cloud Tableflow REST endpoint not configured”; include the endpoint in the required vars or ensure the default is applied during startup.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to findings 1-3: CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so confluentCloudTableflowBaseUrl (set from config.endpoints.cloud) is always populated. The guarded error cannot be triggered.",
+      "severity_justification": "Would be a real silent failure if the premise were true, but the default value makes the scenario impossible.",
+      "category_justification": "The finding concerns a runtime failure path from a missing endpoint configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/topic/update-tableflow-topic-handler.ts",
+      "start_line": 80,
+      "end_line": 82,
+      "message": "After removing the runtime `baseUrl`, this Tableflow tool is still enabled with only `TABLEFLOW_API_KEY`/`TABLEFLOW_API_SECRET` even though `getConfluentCloudTableflowRestClient()` is configured from `CONFLUENT_CLOUD_REST_ENDPOINT` in `DefaultClientManager`. If that endpoint is not set at startup, the tool remains advertised but fails when invoked with “Confluent Cloud Tableflow REST endpoint not configured”; include the endpoint in the required vars or ensure the default is applied during startup.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to findings 1-4: CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so confluentCloudTableflowBaseUrl (set from config.endpoints.cloud) is always populated. The guarded error cannot be triggered.",
+      "severity_justification": "Would be a real silent failure if the premise were true, but the default value makes the scenario impossible.",
+      "category_justification": "The finding concerns a runtime failure path from a missing endpoint configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/list-tableflow-regions-handler.ts",
+      "start_line": 39,
+      "end_line": 41,
+      "message": "After removing the runtime `baseUrl`, this Tableflow tool is still enabled with only `TABLEFLOW_API_KEY`/`TABLEFLOW_API_SECRET` even though `getConfluentCloudTableflowRestClient()` is configured from `CONFLUENT_CLOUD_REST_ENDPOINT` in `DefaultClientManager`. If that endpoint is not set at startup, the tool remains advertised but fails when invoked with “Confluent Cloud Tableflow REST endpoint not configured”; include the endpoint in the required vars or ensure the default is applied during startup.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to findings 1-5: CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so confluentCloudTableflowBaseUrl (set from config.endpoints.cloud) is always populated. The guarded error cannot be triggered.",
+      "severity_justification": "Would be a real silent failure if the premise were true, but the default value makes the scenario impossible.",
+      "category_justification": "The finding concerns a runtime failure path from a missing endpoint configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/create-tableflow-catalog-integration-handler.ts",
+      "start_line": 57,
+      "end_line": 59,
+      "message": "After removing the runtime `baseUrl`, this Tableflow tool is still enabled with only `TABLEFLOW_API_KEY`/`TABLEFLOW_API_SECRET` even though `getConfluentCloudTableflowRestClient()` is configured from `CONFLUENT_CLOUD_REST_ENDPOINT` in `DefaultClientManager`. If that endpoint is not set at startup, the tool remains advertised but fails when invoked with “Confluent Cloud Tableflow REST endpoint not configured”; include the endpoint in the required vars or ensure the default is applied during startup.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to findings 1-6: CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so confluentCloudTableflowBaseUrl (set from config.endpoints.cloud) is always populated. The guarded error cannot be triggered.",
+      "severity_justification": "Would be a real silent failure if the premise were true, but the default value makes the scenario impossible.",
+      "category_justification": "The finding concerns a runtime failure path from a missing endpoint configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/read-tableflow-catalog-integration-handler.ts",
+      "start_line": 47,
+      "end_line": 49,
+      "message": "After removing the runtime `baseUrl`, this Tableflow tool is still enabled with only `TABLEFLOW_API_KEY`/`TABLEFLOW_API_SECRET` even though `getConfluentCloudTableflowRestClient()` is configured from `CONFLUENT_CLOUD_REST_ENDPOINT` in `DefaultClientManager`. If that endpoint is not set at startup, the tool remains advertised but fails when invoked with “Confluent Cloud Tableflow REST endpoint not configured”; include the endpoint in the required vars or ensure the default is applied during startup.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to findings 1-7: CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so confluentCloudTableflowBaseUrl (set from config.endpoints.cloud) is always populated. The guarded error cannot be triggered.",
+      "severity_justification": "Would be a real silent failure if the premise were true, but the default value makes the scenario impossible.",
+      "category_justification": "The finding concerns a runtime failure path from a missing endpoint configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/list-tableflow-catalog-integrations-handler.ts",
+      "start_line": 59,
+      "end_line": 61,
+      "message": "After removing the runtime `baseUrl`, this Tableflow tool is still enabled with only `TABLEFLOW_API_KEY`/`TABLEFLOW_API_SECRET` even though `getConfluentCloudTableflowRestClient()` is configured from `CONFLUENT_CLOUD_REST_ENDPOINT` in `DefaultClientManager`. If that endpoint is not set at startup, the tool remains advertised but fails when invoked with “Confluent Cloud Tableflow REST endpoint not configured”; include the endpoint in the required vars or ensure the default is applied during startup.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to findings 1-8: CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so confluentCloudTableflowBaseUrl (set from config.endpoints.cloud) is always populated. The guarded error cannot be triggered.",
+      "severity_justification": "Would be a real silent failure if the premise were true, but the default value makes the scenario impossible.",
+      "category_justification": "The finding concerns a runtime failure path from a missing endpoint configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/delete-tableflow-catalog-integration-handler.ts",
+      "start_line": 47,
+      "end_line": 49,
+      "message": "After removing the runtime `baseUrl`, this Tableflow tool is still enabled with only `TABLEFLOW_API_KEY`/`TABLEFLOW_API_SECRET` even though `getConfluentCloudTableflowRestClient()` is configured from `CONFLUENT_CLOUD_REST_ENDPOINT` in `DefaultClientManager`. If that endpoint is not set at startup, the tool remains advertised but fails when invoked with “Confluent Cloud Tableflow REST endpoint not configured”; include the endpoint in the required vars or ensure the default is applied during startup.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to findings 1-9: CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so confluentCloudTableflowBaseUrl (set from config.endpoints.cloud) is always populated. The guarded error cannot be triggered.",
+      "severity_justification": "Would be a real silent failure if the premise were true, but the default value makes the scenario impossible.",
+      "category_justification": "The finding concerns a runtime failure path from a missing endpoint configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/tableflow/catalog/update-tableflow-catalog-integration-handler.ts",
+      "start_line": 56,
+      "end_line": 58,
+      "message": "After removing the runtime `baseUrl`, this Tableflow tool is still enabled with only `TABLEFLOW_API_KEY`/`TABLEFLOW_API_SECRET` even though `getConfluentCloudTableflowRestClient()` is configured from `CONFLUENT_CLOUD_REST_ENDPOINT` in `DefaultClientManager`. If that endpoint is not set at startup, the tool remains advertised but fails when invoked with “Confluent Cloud Tableflow REST endpoint not configured”; include the endpoint in the required vars or ensure the default is applied during startup.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to findings 1-10: CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so confluentCloudTableflowBaseUrl (set from config.endpoints.cloud) is always populated. The guarded error cannot be triggered.",
+      "severity_justification": "Would be a real silent failure if the premise were true, but the default value makes the scenario impossible.",
+      "category_justification": "The finding concerns a runtime failure path from a missing endpoint configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/confluent/tools/handlers/connect/create-connector-handler.ts",
+      "start_line": 87,
+      "end_line": 89,
+      "message": "This handler removed the runtime `baseUrl`, but its `getRequiredEnvVars()` still does not include the REST endpoint required by `getConfluentCloudRestClient()`. With `CONFLUENT_CLOUD_REST_ENDPOINT` unset at startup, the create-connector tool can still be advertised because only the credentials are checked, then fail on invocation when the lazy client reports the endpoint is not configured.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "CONFLUENT_CLOUD_REST_ENDPOINT has a Zod default of 'https://api.confluent.cloud', so confluentCloudBaseUrl is always set in DefaultClientManager. The lazy-init guard for getConfluentCloudRestClient() will never throw, making the described failure scenario impossible regardless of whether CONFLUENT_CLOUD_REST_ENDPOINT is in getRequiredEnvVars().",
+      "severity_justification": "If the premise were true, a user would see a tool advertised that fails on every invocation — a real UX failure — but the Zod default prevents this.",
+      "category_justification": "The finding is about a runtime failure path triggered by a missing endpoint configuration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

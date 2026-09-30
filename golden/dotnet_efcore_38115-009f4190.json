@@ -1,0 +1,261 @@
+{
+  "pr_key": "dotnet_efcore_38115-009f4190",
+  "pr": {
+    "repo": "https://github.com/dotnet/efcore",
+    "pr_number": 38115,
+    "base": "fec5da438f8879ca73c9752683e323cda8be77e6",
+    "head": "009f41901ee1a943ce85425652bc454fe85d2278"
+  },
+  "findings": [
+    {
+      "file": "src/EFCore/ChangeTracking/Internal/InternalEntryBase.cs",
+      "start_line": 287,
+      "end_line": 292,
+      "message": "The fix unconditionally overwrites original values for Throw properties in the modifyProperties block regardless of oldState. For connected (non-Detached) entities, if a non-shadow Throw property's CLR value was changed without going through EF property APIs (bypassing change notifications, so the entity stays in Unchanged state), and then the user calls `entry.State = Modified`, the fix sets original = current (the changed value). This means original and current match, DetectChanges finds no mismatch, and SaveChanges does not throw PropertyReadOnlyAfterSave — silencing the enforcement that AfterSaveBehavior.Throw is meant to provide. The fix should be conditioned on `oldState == EntityState.Detached` to restrict it to the actual root cause: freshly-attached entities whose snapshots are initialized with sentinel values before value generators run.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The fix unconditionally calls SetOriginalValue for Throw properties whenever modifyProperties=true and newState=Modified, regardless of oldState. For a tracked (Unchanged) entity where a Throw CLR property was directly modified bypassing EF APIs, calling entry.State=Modified triggers the fix to set original=current, preventing DetectChanges from re-flagging the property as modified, thus silencing the PropertyReadOnlyAfterSave enforcement. Conditioning on oldState==Detached would address the root cause (fresh attachment with sentinel snapshot values) without weakening enforcement for connected entities.",
+      "severity_justification": "This weakens enforcement of AfterSaveBehavior.Throw for already-tracked entities whose Throw CLR properties are modified directly bypassing EF APIs. The scenario is somewhat contrived (shadow properties can't be bypassed, and users rarely direct-modify Throw CLR properties), but the enforcement regression is real and unexpected.",
+      "category_justification": "The fix changes the behavior of AfterSaveBehavior.Throw enforcement — a read-only-after-save guarantee that EF Core is designed to uphold — by silencing it in cases beyond the intended root cause.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/EFCore/ChangeTracking/Internal/InternalEntryBase.cs",
+      "start_line": 278,
+      "end_line": 292,
+      "message": "The fix only handles PropertySaveBehavior.Throw but not PropertySaveBehavior.Ignore. The same root cause (regression from #37394 where the snapshot factory stores default values for shadow properties on complex types) affects Ignore properties equally. After SetEntityState unflagged an Ignore property as modified, DetectChanges can re-mark it via the same stale original-vs-current mismatch. While Ignore properties are excluded from the UPDATE SET clause (ModificationCommand.cs:404), a falsely re-marked Ignore property can cause the entity to enter a SaveChanges cycle unnecessarily, and in configurations where the Ignore property lacks ValueGenerated.ForUpdate, it could generate a column modification with writeValue=false that still produces observable side effects.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding's root-cause description is correct (snapshot stores defaults affects Ignore properties too), but the claimed consequences are not supported by the code. Ignore properties don't trigger PropertyReadOnlyAfterSave (that's Throw-only). During updates, writeValue=false for Ignore properties means they don't even get a ColumnModification entry. CommandBatchPreparer explicitly skips Modified entities with no write column modifications (line 121). The claim about 'writeValue=false observable side effects' is unsubstantiated by the code.",
+      "severity_justification": "Even if the finding were correct, Ignore properties being falsely re-marked has at most negligible impact since they don't write SQL and CommandBatchPreparer handles no-write entities. No exception path exists for Ignore properties in PrepareToSave.",
+      "category_justification": "The finding is about whether the fix handles all affected property behaviors correctly.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/EFCore.Specification.Tests/Query/AdHocComplexTypeQueryTestBase.cs",
+      "start_line": 384,
+      "end_line": 436,
+      "message": "The test for Issue38105 reuses Context37337 (defined for Issue37337) instead of defining its own context class. This creates an implicit coupling: if the model configuration for Issue37337's context changes (e.g., removing the discriminator, adding a required property, or changing the shadow property), the regression test for Issue38105 will break or produce misleading failures with no obvious connection to the original bug. The test should define a minimal isolated context for the specific scenario it is testing.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test for Issue38105 does reuse Context37337 (defined for Issue37337) rather than defining its own context class, breaking the established pattern where every other issue test (Context33449, Context34749, ContextShadowDiscriminator, Context37162, Context37304, Context37337) defines its own. The seed also sets the CreatedBy shadow property which is irrelevant to Issue38105. The coupling is real and code-specific.",
+      "severity_justification": "Functionally the test is correct and tests the right scenario. The coupling is within the same file and Context37337 is unlikely to change in ways that break Issue38105's test. The issue is a minor maintainability/isolation concern.",
+      "category_justification": "This is a test design/isolation concern about reusing a context class across different issue regression tests instead of defining a minimal isolated context.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/EFCore.Specification.Tests/Query/AdHocComplexTypeQueryTestBase.cs",
+      "start_line": 384,
+      "end_line": 436,
+      "message": "The test calls `context.Update(updatedEntity)` with a disconnected entity where the `CreatedBy` shadow property is not set (its value is null/sentinel). After SaveChanges, the `CreatedBy` column in the database will be overwritten with null. The test doesn't assert the post-save value of `CreatedBy` on the reloaded entity, leaving it ambiguous whether the expected behavior is preservation or overwrite. If overwrite is intended, it should be explicitly asserted; if preservation is desired, the test demonstrates that Update() with a disconnected entity is destructive to shadow properties the caller doesn't know about.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct: CreatedBy has IsAutoLoaded=true (default), so when attaching the disconnected entity it is NOT marked IsPropertyNotLoaded, remains Modified with null value, and is written to the DB as null. The test doesn't assert the post-save state of CreatedBy, leaving the behavior undocumented. The concern is real and specific to this code.",
+      "severity_justification": "The test's purpose is narrow (verify no throw from discriminator), and the CreatedBy overwrite is expected behavior of Update() with disconnected entities. This is a test clarity issue rather than a functional bug in the fix.",
+      "category_justification": "The finding is about a missing assertion in the test that would clarify whether the destructive shadow property overwrite behavior is intended.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/EFCore.Cosmos.FunctionalTests/Query/AdHocComplexTypeQueryCosmosTest.cs",
+      "start_line": 88,
+      "end_line": 103,
+      "message": "The Cosmos test override only asserts two SELECT queries (the two SingleAsync calls) and does not assert any SQL for the SaveChangesAsync after context.Update(). In Cosmos, upsert/replace operations are point writes that do not appear in the query log, so the absence of a SQL assertion here silently accepts any behavior (including failure) from the update operation. The test relies entirely on the base class assertion that SaveChangesAsync doesn't throw and that the reloaded entity has the expected values — the Cosmos SQL override adds nothing meaningful while creating a false sense of coverage.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding misunderstands the Cosmos TestSqlLogger infrastructure. Write operations (ExecutedReplaceItem, etc.) are never captured in SqlStatements — the TestSqlLogger only captures ExecutingSqlQuery and ExecutingReadItem events. The absence of write-operation SQL in AssertSql is correct by design, consistent with all other Cosmos tests. The override does add value by asserting exactly 2 SELECT queries ran (with no extra). The base test already verifies SaveChangesAsync doesn't throw and the entity is correctly updated.",
+      "severity_justification": "Even if valid, this would only be a test documentation concern since the base test fully validates functional correctness.",
+      "category_justification": "The finding is about test coverage and the meaning of SQL assertions in the Cosmos test override.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/EFCore/ChangeTracking/Internal/InternalEntryBase.cs",
+      "start_line": 286,
+      "end_line": 293,
+      "message": "The logic to update original values for 'Throw' properties is only executed when setting an entity's state to `Modified`. If an entity with a `Throw` property is attached in any other state (e.g., `Unchanged`, `Added`) and a subsequent `DetectChanges` call finds a discrepancy for that property (e.g., due to a default value in the snapshot), the property could be incorrectly marked as modified, leading to a `SaveChanges` exception. This fix should likely be applied in more state-change scenarios to be fully robust.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Value generators run for both Detached→Modified (Update) and Detached→Unchanged (Attach) paths. The snapshot is created in OnStateChanging→StartTracking with null/default for shadow complex type properties. The fix's SetOriginalValue call is only in the modifyProperties block (newState==Modified && modifyProperties), so Attach (Detached→Unchanged) is not protected. DetectChanges would still find the null vs actual-value mismatch, re-mark the Throw discriminator as modified, and cause PrepareToSave to throw.",
+      "severity_justification": "Users who Attach disconnected entities with nullable complex types + discriminators will still hit PropertyReadOnlyAfterSave on SaveChanges. This is the same root cause as the bug being fixed, just via a different code path.",
+      "category_justification": "The fix is incomplete — an equivalent SaveChanges exception can still be triggered via Attach rather than Update, due to the same #37394 regression not being addressed in the Unchanged state path.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/EFCore/ChangeTracking/Internal/InternalEntryBase.cs",
+      "start_line": 274,
+      "end_line": 297,
+      "message": "While setting original values to current values for properties with AfterSaveBehavior.Throw to prevent false mismatches, the fix assumes that IsConceptualNull() and property.GetOriginalValueIndex() behave correctly for all scenarios. An incorrect implementation or edge cases in these methods may lead to unexpected results, making this fix fragile for certain property configurations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding makes no specific claim about an actual edge case or incorrect behavior in IsConceptualNull() or GetOriginalValueIndex(). Both conditions are simple, well-defined checks already used in the identical pattern at line 520-522 in the same method body. The finding is purely generic — it asserts the methods 'may' have edge cases without identifying any concrete one.",
+      "severity_justification": "No specific edge case is identified, making the concern entirely unsubstantiated.",
+      "category_justification": "The finding is a vague robustness concern with no actionable specifics.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/EFCore/ChangeTracking/Internal/InternalEntryBase.cs",
+      "start_line": 274,
+      "end_line": 297,
+      "message": "The change does not account for concurrency issues where multiple threads could modify properties concurrently leading to inconsistent data states. Verify if this code path is ever accessed concurrently, and if so, consider thread-safe approaches.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "DbContext is explicitly documented as not thread-safe — concurrent use from multiple threads is unsupported by design (as confirmed in DbContext.cs comments). This code path is no more or less thread-safe than the rest of InternalEntryBase.cs. The finding is a generic boilerplate concurrency concern that could be applied to any method in the EF Core change tracking internals, with no specific evidence that this particular code path introduces a new concurrency hazard.",
+      "severity_justification": "The concern is moot given EF Core's explicit design constraint against concurrent DbContext use.",
+      "category_justification": "The finding is about thread safety / concurrency.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/EFCore.Specification.Tests/Query/AdHocComplexTypeQueryTestBase.cs",
+      "start_line": 379,
+      "end_line": 433,
+      "message": "The test for Issue38105 assumes specific behaviors of Update() and SaveChangesAsync(), but it doesn't include any validation for scenarios where properties might not behave consistently due to edge cases or underlying framework assumptions. Consider adding more granular checks for intermediate states.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is entirely generic — 'doesn't include validation for scenarios where properties might not behave consistently due to edge cases or underlying framework assumptions' and 'consider adding more granular checks for intermediate states' are boilerplate test-coverage suggestions that could be copy-pasted onto any regression test in any codebase. No specific missing assertion, specific edge case, or specific intermediate state is identified. The test does assert the key behavior: SaveChangesAsync doesn't throw and the reloaded entity has the expected values.",
+      "severity_justification": "No concrete gap is identified, so there is no actionable improvement suggested.",
+      "category_justification": "The finding is about test coverage and test design.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/EFCore.Specification.Tests/Query/AdHocComplexTypeQueryTestBase.cs",
+      "start_line": 379,
+      "end_line": 433,
+      "message": "The test for the fix does not seem to cover all edge cases, such as scenarios where complex type properties have multiple shadow properties or scenarios where default values might be identical to the current values by coincidence.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is generic boilerplate — 'multiple shadow properties' and 'default values identical to current values by coincidence' are vague suggestions not grounded in specific analysis of the fix or the test. The second scenario ('default equals current') is actually impossible to test meaningfully for the discriminator case since the bug is specifically that the snapshot stores null/default while the value generator sets a non-default value; a discriminator whose value happens to equal its default would never trigger the bug. The finding could be copy-pasted onto any regression test without modification.",
+      "severity_justification": "No concrete missing test case with a specific expected failure mode is identified.",
+      "category_justification": "The finding is about test coverage.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/EFCore/ChangeTracking/Internal/InternalEntryBase.cs",
+      "start_line": 275,
+      "end_line": 275,
+      "message": "@copilot Rename to `hasAfterSaveThrowProperties`",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The variable at line 275 is `afterSaveBehavior`, a PropertySaveBehavior enum value used in two comparisons (one for Save, one for Throw). The suggested name `hasAfterSaveThrowProperties` implies a boolean and would be semantically incorrect — the variable is not a boolean and does not only relate to Throw behavior. The current name is accurate; the suggestion would make the code worse.",
+      "severity_justification": "The suggestion would introduce a misleading variable name, but it is a rename suggestion rather than a production bug.",
+      "category_justification": "The finding is a variable naming suggestion.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "AndriySvyryd",
+        "url": "https://github.com/dotnet/efcore/pull/38115#discussion_r3089343816",
+        "created_at": "2026-04-15T21:02:04Z",
+        "alignment": "code_changed",
+        "original_commit": "1315bc51041e7fbf349a42f3d3f247b173e2a8be",
+        "original_start_line": 275,
+        "original_end_line": 275
+      }
+    },
+    {
+      "file": "test/EFCore.Specification.Tests/Query/AdHocComplexTypeQueryTestBase.cs",
+      "start_line": 385,
+      "end_line": 385,
+      "message": "@copilot Microsoft.EntityFrameworkCore.Query.AdHocComplexTypeQueryCosmosTest.Check_all_tests_overridden [FAIL]\n  Failed Microsoft.EntityFrameworkCore.Query.AdHocComplexTypeQueryCosmosTest.Check_all_tests_overridden [< 1 ms]\n  Error Message:\n   \n-- Missing test overrides --\n\npublic override async Task Update_entity_with_nullable_complex_type_and_discriminator_does_not_throw(bool async)\n{\n    await base.Update_entity_with_nullable_complex_type_and_discriminator_does_not_throw(async);\n\n    AssertSql();\n}\n",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The override for Update_entity_with_nullable_complex_type_and_discriminator_does_not_throw() IS present in AdHocComplexTypeQueryCosmosTest at line 88 with the correct parameterless signature matching the base class. AssertAllMethodsOverridden checks m.DeclaringType != testClass — since the Cosmos class declares the override, the method is excluded from the failing set and Check_all_tests_overridden passes. The error message in the finding is incorrect — it shows the template that AssertAllMethodsOverridden would generate for a missing override, but the override is not missing.",
+      "severity_justification": "The claimed test failure does not occur at this SHA.",
+      "category_justification": "The finding is about a claimed test failure in the override-coverage check.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "AndriySvyryd",
+        "url": "https://github.com/dotnet/efcore/pull/38115#discussion_r3089898528",
+        "created_at": "2026-04-15T23:04:27Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "009f41901ee1a943ce85425652bc454fe85d2278"
+      }
+    }
+  ]
+}

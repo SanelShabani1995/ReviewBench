@@ -1,0 +1,703 @@
+{
+  "pr_key": "CommunityToolkit_Maui_3181-1e8d2e2f",
+  "pr": {
+    "repo": "https://github.com/CommunityToolkit/Maui",
+    "pr_number": 3181,
+    "base": "c7cb65bc98e429401e4f792f6b7aa21f94e81933",
+    "head": "1e8d2e2f880cfe1d9bcbdfbc6078cb6b72fd35ce"
+  },
+  "findings": [
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Extensions/StreamExtensions.shared.cs",
+      "start_line": 140,
+      "end_line": 144,
+      "message": "MPEG-TS detection uses only `header[0] is 0x47`, which is the ASCII code for 'G'. Any file whose first byte is 0x47 (common in many formats) will be misidentified as `video/mp2t` on Windows, causing `WinMediaSource.CreateFromStream` to reject it and silently fail playback. A valid MPEG-TS detection requires verifying the sync byte at 188-byte intervals, or at minimum checking multiple bytes.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 141-143 checks only `header[0] is 0x47` for MPEG-TS detection. Since 0x47 is ASCII 'G', any file starting with that byte (text, some QuickTime files, etc.) will be misidentified as `video/mp2t`, passing the wrong MIME type to `WinMediaSource.CreateFromStream` on Windows.",
+      "severity_justification": "Incorrect MIME type for Windows stream playback can cause playback failure, but the impact is limited to files whose first byte happens to be 0x47 and to the Windows platform only.",
+      "category_justification": "The detection logic produces an incorrect result for a wide class of inputs, leading to wrong MIME type being reported.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Views/MediaManager.macios.cs",
+      "start_line": 299,
+      "end_line": 301,
+      "message": "The `DispatchQueue` created for the AVAssetResourceLoader delegate is only held in a local variable `resourceLoaderQueue`. Once `PlatformUpdateSource` returns, no managed reference keeps it alive, so the GC can collect it. When the finalizer runs, it releases the ObjC reference count on the underlying dispatch queue, which AVFoundation still holds and dispatches to. This results in crashes or resource loader callbacks ceasing to fire.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "AVFoundation's setDelegate:queue: retains the underlying dispatch_queue_t natively via dispatch_retain. When the managed DispatchQueue wrapper is GCed and calls dispatch_release, the ref count goes from 2 to 1 (not 0), so the native queue remains alive. The managed wrapper is only needed to pass the queue to SetDelegate and is not required afterwards.",
+      "severity_justification": "If the finding were correct it would be a crash-level issue, but the underlying premise about dispatch_queue_t memory management is incorrect.",
+      "category_justification": "The claim concerns object lifetime management and potential crashes from premature deallocation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Primitives/StreamAssetResourceLoader.macios.cs",
+      "start_line": 23,
+      "end_line": 36,
+      "message": "`loadingRequest.FinishLoading()` is always called regardless of whether `FillDataRequest` failed. When `FillDataRequest` catches an exception and responds with no data, AVFoundation is told the request succeeded (not errored). The correct behaviour is to call `loadingRequest.FinishLoadingWithError(NSError)` on failure so AVFoundation can raise a `MediaFailed` event instead of silently hanging.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: FillDataRequest swallows exceptions and returns normally. ShouldWaitForLoadingOfRequestedResource then calls FinishLoading() unconditionally. On read failure, AVFoundation is told the request succeeded with no data, causing a silent hang instead of a MediaFailed event.",
+      "severity_justification": "On iOS/macOS, stream read errors silently hang playback rather than surfacing an error event to the user or developer. Playback failures become invisible and unrecoverable without a proper error signal.",
+      "category_justification": "Incorrect control flow on error: the wrong AVFoundation completion method is called, misreporting a failed request as successful.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Views/MediaManager.tizen.cs",
+      "start_line": 189,
+      "end_line": 194,
+      "message": "`NotSupportedException` is thrown synchronously from `PlatformUpdateSource`. The call chain is: `MapSource` → `MediaManager.UpdateSource()` → `PlatformUpdateSource()`. `MapSource` discards the returned `ValueTask` without awaiting it, but because the Tizen implementation throws synchronously (not via a faulted task), the exception propagates up through the call stack as an unhandled exception, crashing the app. Signalling the failure via `MediaElement.MediaFailed()` or returning a faulted `ValueTask` would be more consistent with the other platforms.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Tizen's PlatformUpdateSource is a non-async method that throws NotSupportedException synchronously. MapSource discards the ValueTask without awaiting. The synchronous exception propagates through UpdateSource() → MapSource() with no catch anywhere, causing an unhandled exception / app crash rather than a graceful MediaFailed event.",
+      "severity_justification": "Sets a StreamMediaSource on Tizen crashes the app outright rather than surfacing a handled error. Any app that conditionally uses StreamMediaSource across platforms will crash on Tizen.",
+      "category_justification": "Incorrect error signaling — an unsupported-platform scenario throws an unhandled exception instead of using the established MediaFailed error pathway.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Views/MediaManager.macios.cs",
+      "start_line": 507,
+      "end_line": 548,
+      "message": "`GetStreamContentType` only recognises MP4/MOV/QuickTime and defaults to `\"public.mpeg-4\"` (a video container UTI) for everything else. A stream containing MP3, AAC, WAV, or any other format will receive `\"public.mpeg-4\"` as its content type. AVFoundation will then reject or misparse the data, causing silent playback failure for all non-MP4 audio streams. The shared `StreamExtensions.GetMimeType` already detects many more formats but is not used here.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: GetStreamContentType only checks for the ftyp box (MP4/QuickTime) and returns 'public.mpeg-4' for all other formats. MP3, AAC, WAV, WebM, and other audio/video streams receive the wrong UTI, causing AVFoundation to misparse the stream and silently fail playback on iOS/macOS.",
+      "severity_justification": "All non-MP4 audio stream formats fail silently on iOS/macOS with no MediaFailed event. This is a significant functional gap for a feature marketed as supporting general stream playback, but limited to one platform.",
+      "category_justification": "Wrong content type UTI is reported to AVFoundation for most audio formats, leading to incorrect demux/decode behavior and playback failure.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Primitives/StreamDataSourceFactory.android.cs",
+      "start_line": 19,
+      "end_line": 22,
+      "message": "`CreateDataSource()` returns a new `StreamDataSource` every time it is called, but all instances wrap the same underlying `stream`. ExoPlayer's `ProgressiveMediaSource` can call `CreateDataSource()` more than once (e.g. for parallel or retry reads). Two concurrent `StreamDataSource` instances will race on `stream.Position` and `stream.Seek`, corrupting reads. The factory should either enforce single-instance use or create an independent stream per call (e.g. via a stream-provider callback).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: CreateDataSource() wraps the same stream each time. While ProgressiveMediaSource typically creates one DataSource at a time, the factory interface allows multiple instances, and retry/re-open scenarios create a new StreamDataSource while the shared stream is in an indeterminate position state. For non-seekable streams this is a definite correctness bug.",
+      "severity_justification": "For the typical MemoryStream case, seekability makes retries work. But the shared-stream design is fragile and fails silently for non-seekable streams on retry, and would corrupt reads if ExoPlayer ever creates two DataSource instances concurrently.",
+      "category_justification": "Multiple data source instances sharing a single stream violates the IDataSourceFactory contract and can produce corrupted reads or incorrect seek behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Pages/Views/MediaElement/MediaElementFromStreamPage.xaml.cs",
+      "start_line": 169,
+      "end_line": 180,
+      "message": "In `UpdateSourceStream`, `sourceStream = new MemoryStream()` and the subsequent `CopyToAsync` are executed outside the semaphore. If `DisposeAsync` is called concurrently (e.g. the user navigates away while the `OnAppearing` download is in progress), `ReleaseSourceStream` will acquire the semaphore, dispose `sourceStream`, and set it to null while `CopyToAsync` is still writing to it, causing an `ObjectDisposedException`. The stream allocation and copy should be protected by the semaphore, or a `CancellationToken` should be used to abort the copy.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: sourceStream assignment and CopyToAsync are outside the semaphore in UpdateSourceStream. A concurrent ReleaseSourceStream call (from OnDisappearing during an active download) can dispose the stream while CopyToAsync is writing to it, causing ObjectDisposedException. The exception is caught by UpdateSourceStream's try/catch, producing an erroneous 'Failed to stream video' toast rather than a crash.",
+      "severity_justification": "This is sample code only, the ObjectDisposedException is caught and handled (logged + toast), and the scenario requires specific timing of navigation vs. active download. Annoying UX but not a crash or data loss.",
+      "category_justification": "Race condition due to missing synchronization around shared mutable state (sourceStream) between UpdateSourceStream and ReleaseSourceStream.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Views/MediaManager.windows.cs",
+      "start_line": 343,
+      "end_line": 344,
+      "message": "`streamMediaSource.Stream.AsRandomAccessStream()` creates an `IRandomAccessStream` wrapper that is not stored anywhere by the managed code. When the source is later changed, neither the `IRandomAccessStream` nor the underlying .NET `Stream` is explicitly disposed. The `IRandomAccessStream` relies on the caller to manage its lifetime; if it goes unreferenced before the `WinMediaSource` releases it internally, the stream can be cleaned up prematurely, or conversely, the stream is never explicitly closed when the source is cleared.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "COM reference counting keeps the IRandomAccessStream adapter alive as long as WinMediaSource holds it — the local variable going out of scope does not cause premature cleanup. The secondary concern about not explicitly closing the stream is by design per the PR's documented stream lifecycle policy.",
+      "severity_justification": "The underlying mechanism (COM ref counting) prevents the claimed premature cleanup, and the lifecycle-management concern is an intentional design choice.",
+      "category_justification": "The finding concerns object lifetime management and resource cleanup.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Primitives/StreamAssetResourceLoader.macios.cs",
+      "start_line": 46,
+      "end_line": 74,
+      "message": "`FillDataRequest` treats `dataRequest.CurrentOffset != 0` as meaning 'resume from `CurrentOffset`', but it ignores `CurrentOffset` when it equals 0, always falling back to `RequestedOffset`. This is inverted: `CurrentOffset` tracks how much of the current request has already been filled and should always take precedence over `RequestedOffset` once data has begun to be sent. Using `RequestedOffset` when `CurrentOffset` is non-zero would seek the stream backwards and re-send already-delivered bytes.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding claims the logic is inverted, but the code correctly uses CurrentOffset when non-zero. Per AVFoundation, CurrentOffset starts equal to RequestedOffset, so when CurrentOffset == 0, RequestedOffset is also 0 — both produce the same seek position. The described bug (re-sending already-delivered bytes) would require using RequestedOffset when CurrentOffset is non-zero, which the code explicitly does not do.",
+      "severity_justification": "If the finding were correct it would cause duplicate data and playback corruption on iOS/macOS, but the premise is factually wrong.",
+      "category_justification": "The claim concerns incorrect data seeking and repeated data delivery in the resource loader.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Pages/Views/MediaElement/MediaElementFromStreamPage.xaml.cs",
+      "start_line": 54,
+      "end_line": 59,
+      "message": "`OnAppearing` streams and copies the full Big Buck Bunny video into a `MemoryStream` on every page appearance, including re-appearances after the user navigates away and back. There is no cancellation support: if the user navigates away during the download, the `HttpClient.GetStreamAsync` and `CopyToAsync` calls complete but write into a stream that `OnDisappearing` may have already disposed, causing an `ObjectDisposedException`. A `CancellationTokenSource` tied to `OnDisappearing` / `OnNavigatedFrom` is needed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: OnAppearing starts an uncancellable HTTP download + MemoryStream copy with no CancellationToken. Navigation away during download cannot abort GetStreamAsync or CopyToAsync, leading to wasted bandwidth and the ObjectDisposedException race (same as Finding 7, caught by try/catch). Re-download on every re-appearance is also confirmed.",
+      "severity_justification": "Sample code only. ObjectDisposedException is caught and shows a toast rather than crashing. Main practical impact is unnecessary bandwidth usage on re-appearance and a confusing error toast on quick navigation.",
+      "category_justification": "Missing cancellation support for long-running async operations tied to page lifecycle, leading to resource waste and an error state on navigation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Views/MediaManager.android.cs",
+      "start_line": 601,
+      "end_line": 601,
+      "message": "The method opens a file for reading using `File.OpenRead(normalizedFilePath)`, but the `try-finally` block around it disposes the stream as if it were opened for writing: `stream.Close(); stream.Dispose();`. In the `catch` block, `File.Delete(normalizedFilePath)` is called, which will fail because the file is still open for reading. The file should be opened with `FileMode.Open` and `FileAccess.Read` and only closed/disposed, not deleted, in case of an error.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's core claim — that File.Delete is called in the catch block while the stream is still open — is factually wrong. There is no File.Delete anywhere in MediaManager.android.cs at this SHA. The file is already correctly opened with File.OpenRead (equivalent to FileMode.Open + FileAccess.Read). The finding appears to be based on incorrect analysis or a different version of the code.",
+      "severity_justification": "If the described File.Delete bug were real it would be a correctness issue, but the claim is factually incorrect.",
+      "category_justification": "The finding alleges incorrect file handling (open-then-delete while still open).",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Primitives/StreamDataSourceFactory.android.cs",
+      "start_line": 70,
+      "end_line": 74,
+      "message": "The `Read` method in `StreamDataSource` does not correctly handle the case where `stream.Read` returns a value less than the requested `bytesToRead` but greater than 0. It decreases `bytesRemaining` by `bytesRead`, which is correct, but then returns `bytesRead`. If `bytesRemaining` becomes smaller than `length`, subsequent reads could read more data than what `bytesRemaining` indicates is left, potentially causing issues with ExoPlayer's byte counting and seeking logic.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's claimed bug doesn't exist. bytesToRead = Math.Min(bytesRemaining, length) is recomputed on every call, so each subsequent read is always capped at the current bytesRemaining value. Partial reads from stream.Read correctly decrement bytesRemaining by actual bytes read, and the cap is applied fresh on the next call. ExoPlayer's IDataSource contract explicitly allows partial reads.",
+      "severity_justification": "If the described bug were real it would corrupt ExoPlayer's byte accounting, but the premise is factually wrong.",
+      "category_justification": "The finding concerns incorrect byte counting in the ExoPlayer data source read loop.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Views/MediaManager.android.cs",
+      "start_line": 566,
+      "end_line": 571,
+      "message": "`GetBytesFromMetadataArtworkUrl` is an instance method and uses the instance field `client`, but it's called from a static context in another overload `GetBytesFromMetadataArtworkUrl(string, CancellationToken)`. This seems to be a copy-paste error from making the method non-static. `GetBytesFromMetadataArtworkUrl` should be static and accept an `HttpClient` as a parameter, or use a static `HttpClient`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims GetBytesFromMetadataArtworkUrl is called from a static context in another overload, but there is no static overload. There is exactly one instance method at line 586, called from two instance methods (CreateMediaItem and CreateMediaItemFromStream). Both the HttpClient field and the method were correctly converted from static to instance in this PR.",
+      "severity_justification": "The described scenario (static calling instance) doesn't exist in the code, so there's no actual issue.",
+      "category_justification": "The finding alleges incorrect static/instance method relationships.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Extensions/StreamExtensions.shared.cs",
+      "start_line": 105,
+      "end_line": 105,
+      "message": "The string slicing `header.Slice(8, 4)` to get the `brand` from an MP4 file header can throw an `ArgumentOutOfRangeException` if the header is shorter than 12 bytes but long enough to pass the initial `ftyp` check (i.e., between 8 and 11 bytes). The code should validate that `header.Length >= 12` before attempting to slice.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The if condition already checks `header.Length >= 12` as its first clause before any indexing or slicing. header.Slice(8, 4) is inside that if block and only executes when the length check passes. The validation the finding says is missing is already present.",
+      "severity_justification": "Even if the claim were correct it would be a localized exception in MIME detection with a safe fallback, but the claim is wrong.",
+      "category_justification": "The finding alleges a potential out-of-bounds exception from insufficient length validation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Pages/Views/MediaElement/MediaElementFromStreamPage.xaml.cs",
+      "start_line": 40,
+      "end_line": 40,
+      "message": "The `OnNavigatedFrom` method calls `MediaElement.Handler?.DisconnectHandler()`, but this can be problematic. Disconnecting the handler while the page is still in the navigation stack can prevent it from being correctly re-attached if the user navigates back, potentially leaving the `MediaElement` in a non-functional state. Handler disconnection should typically be managed by the framework during page destruction, not manually on navigation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "MediaElementFromStreamPage copies the identical OnNavigatedFrom/DisconnectHandler pattern from the existing MediaElementPage. This is an established convention in the same codebase for releasing native media resources on navigation. The finding raises a generic concern without identifying a concrete problem specific to this code.",
+      "severity_justification": "Even if the concern were valid, it applies equally to the pre-existing MediaElementPage sample which has presumably been working.",
+      "category_justification": "The finding concerns potential broken state from handler lifecycle management.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Pages/Views/MediaElement/MediaElementFromStreamPage.xaml.cs",
+      "start_line": 103,
+      "end_line": 109,
+      "message": "The method `OnAppearing` directly uses `HttpClient.GetStreamAsync` to access network resources without any form of timeout or failure handling. This could cause indefinite hanging if the server response is delayed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The HttpClient is registered with AddStandardResilienceHandler which provides TotalRequestTimeout (30s default) and per-attempt timeouts. The claim 'without any form of timeout or failure handling' is factually incorrect. UpdateSourceStream also catches all exceptions. This is sample code that follows the same resilience pattern as other HttpClient registrations in the same MauiProgram.cs.",
+      "severity_justification": "Even if the concern were valid it would only affect a sample page, and the resilience handler already mitigates the described risk.",
+      "category_justification": "The finding concerns timeout and failure handling for network operations.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Pages/Views/MediaElement/MediaElementFromStreamPage.xaml.cs",
+      "start_line": 241,
+      "end_line": 253,
+      "message": "`OnOpenVideoClicked` does not handle exceptions for `MediaPicker.Default.PickVideosAsync`. This could result in the application crashing if any issue arises while accessing the media picker.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: OnOpenVideoClicked is async void with no try-catch. MediaPicker.Default.PickVideosAsync can throw FeatureNotSupportedException, PermissionException, or platform exceptions. Unhandled exceptions in async void crash the app. The same pattern exists in OnRecordVideoClicked.",
+      "severity_justification": "Sample code only. In typical usage PickVideosAsync returns null on cancel or a result on success without throwing. Crash requires unusual conditions (permissions denied, unsupported platform).",
+      "category_justification": "Missing exception handling in an async void event handler that could propagate to the SynchronizationContext and crash the app.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Pages/Views/MediaElement/MediaElementFromStreamPage.xaml.cs",
+      "start_line": 258,
+      "end_line": 268,
+      "message": "The `OnRecordVideoClicked` method lacks exception handling for `MediaPicker.Default.CaptureVideoAsync`. Any failure in accessing the media picker could lead to runtime crashes.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: OnRecordVideoClicked is async void with no try-catch around CaptureVideoAsync, which can throw FeatureNotSupportedException, PermissionException, or platform exceptions. Unhandled exceptions in async void propagate to the SynchronizationContext and crash the app. This is the same pattern issue as Finding 17 on the same page.",
+      "severity_justification": "Sample code only. CaptureVideoAsync typically returns null on cancel without throwing in normal usage. A crash requires specific failure conditions like missing camera permissions or unsupported hardware.",
+      "category_justification": "Missing exception handling in an async void event handler where exceptions would propagate to the SynchronizationContext and crash the app.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Pages/Views/MediaElement/MediaElementFromStreamPage.xaml.cs",
+      "start_line": 307,
+      "end_line": 320,
+      "message": "`ChangeAspectClicked` assumes successful behavior for user choices and parsing, but unhandled exceptions may occur if parsing the aspect ratio fails unexpectedly. Additional error handling or input validation could improve robustness.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Enum.TryParse never throws — it returns false on failure, which the code already handles by showing an error dialog and returning. The action sheet presents only known-valid enum names. The method is identical to the pre-existing MediaElementPage.ChangeAspectClicked. There is no unhandled exception path.",
+      "severity_justification": "The described scenario (unhandled parsing exception) cannot occur because TryParse does not throw.",
+      "category_justification": "The finding concerns missing exception handling for a method that cannot throw.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Pages/Views/MediaElement/MediaElementFromStreamPage.xaml.cs",
+      "start_line": 318,
+      "end_line": 320,
+      "message": "The `ChangeAspectClicked` method uses unchecked `Enum.TryParse`. This could cause unexpected operations if unanticipated or invalid inputs are made.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding mischaracterizes Enum.TryParse as 'unchecked' — TryParse is precisely the safe, checked alternative to Enum.Parse. It returns false on failure, which the code handles by showing an error dialog and returning. The inputs come from a fixed DisplayActionSheet with only known-valid enum names. This is identical to Finding 19 and the same method in the pre-existing MediaElementPage.",
+      "severity_justification": "Enum.TryParse cannot produce unexpected behavior from invalid input — that is its entire purpose. No unhandled exception path exists.",
+      "category_justification": "The finding incorrectly characterizes Enum.TryParse as unsafe or unchecked.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/CommunityToolkit.Maui.Sample.csproj",
+      "start_line": 90,
+      "end_line": 90,
+      "message": "Can you remove this <ItemGroup> ? It is not needed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 90 is an empty line, not an ItemGroup. Both ItemGroups in the file (lines 44-67 and 78-89) contain substantive project and package references. The finding provides no rationale for removal and cannot be verified against the actual file content.",
+      "severity_justification": "The finding is unverifiable — it points to a line that doesn't have the claimed construct, and no unnecessary empty ItemGroup exists in the file.",
+      "category_justification": "The finding is about removing unnecessary project file content.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "ne0rrmatrix",
+        "url": "https://github.com/CommunityToolkit/Maui/pull/3181#discussion_r3070369172",
+        "created_at": "2026-04-13T00:03:39Z",
+        "alignment": "code_changed",
+        "original_commit": "a9c8c92410c06ece4fed09afdb2687a43e154137",
+        "original_start_line": 90,
+        "original_end_line": 90
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample.slnx",
+      "start_line": 37,
+      "end_line": 37,
+      "message": "Can you revert these project path changes? Do you need to make this change for a reason?",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "At SHA 1e8d2e2f, git diff against main shows no changes to CommunityToolkit.Maui.Sample.slnx. The PR's internal history shows the unwanted Deploy entries were added in an earlier commit and already reverted within the PR branch. There is nothing to revert at the evaluated SHA.",
+      "severity_justification": "The finding references a non-existent change at the evaluated SHA.",
+      "category_justification": "The finding concerns unintentional project file modifications.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "ne0rrmatrix",
+        "url": "https://github.com/CommunityToolkit/Maui/pull/3181#discussion_r3070370135",
+        "created_at": "2026-04-13T00:04:33Z",
+        "alignment": "code_changed",
+        "original_commit": "a9c8c92410c06ece4fed09afdb2687a43e154137",
+        "original_start_line": 37,
+        "original_end_line": 37
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Primitives/StreamDataSourceFactory.android.cs",
+      "start_line": 63,
+      "end_line": 71,
+      "message": "When the underlying stream is non-seekable (`length == C.LengthUnset`) and the `dataSpec.Length` is also `C.LengthUnset`, the conditional expression assigns `C.LengthUnset` (-1) to `bytesRemaining`. The very next check (`if (bytesRemaining < 0)`) will then throw `ArgumentOutOfRangeException`, breaking the legitimate case of \"read until end of stream\" for non-seekable sources. The negative-position guard should be performed on `dataSpec.Position` against `length`, not on the resulting `bytesRemaining`.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: when stream is non-seekable, `length = C.LengthUnset` (negative sentinel). When `dataSpec.Length` is also `C.LengthUnset` (legitimate 'read to end' case), `bytesRemaining` is assigned `C.LengthUnset`. The guard `if (bytesRemaining < 0)` then throws, incorrectly rejecting valid usage. The `Read` method confirms `C.LengthUnset` was intended as a valid `bytesRemaining` value.",
+      "severity_justification": "This breaks the entire non-seekable stream playback path on Android — any stream that doesn't report its length will fail to open at all.",
+      "category_justification": "Logic error: the negative-value guard conflates the C.LengthUnset sentinel with an actual out-of-range position.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Primitives/StreamAssetResourceLoader.macios.cs",
+      "start_line": 65,
+      "end_line": 73,
+      "message": "`Stream.Read(buffer, 0, requestedLength)` is not guaranteed to return all requested bytes in a single call (this is especially true for network-backed streams or any non-MemoryStream). The current implementation responds with only the bytes returned by a single `Read` and then calls `loadingRequest.FinishLoading()` in the caller, so AVFoundation will receive truncated chunks. The read should loop until either `requestedLength` bytes have been read or end of stream is reached before calling `Respond`. Additionally, allocating `new byte[requestedLength]` for potentially large requests is wasteful — consider reading in fixed-size buffers and calling `Respond` multiple times.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Stream.Read is contractually allowed to return fewer bytes than requested. The code does a single Read call and then FinishLoading() is called unconditionally in the caller, so AVFoundation sees a completed but potentially truncated response. This is a real bug for any Stream that is not a MemoryStream.",
+      "severity_justification": "Affects non-MemoryStream callers (file streams, network streams, crypto streams) causing truncated/corrupted media playback on iOS/macOS. The primary sample use case (MemoryStream) is unaffected, limiting immediate impact.",
+      "category_justification": "Logic error: partial Stream.Read results are treated as complete data delivery to AVFoundation.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Views/MediaManager.android.cs",
+      "start_line": 32,
+      "end_line": 32,
+      "message": "`HttpClient` was changed from a `static readonly` field shared across all `MediaManager` instances to a per-instance `readonly` field that gets disposed in `Dispose`. This is unrelated to adding stream-media-source support and undoes the recommended `HttpClient` reuse pattern: every MediaElement now creates its own client (and its own connection pool), and disposing the client too aggressively can lead to socket exhaustion. If this change is intentional, please call it out in the PR description; otherwise revert to the static instance.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`Dispose()` on static field was the real bug — per-instance fixes it",
+      "severity_justification": "Creates a new connection pool per MediaElement instance and disposes it aggressively, risking socket exhaustion in apps that create/destroy many MediaElements. Not immediately catastrophic since the client is only used for metadata artwork fetching, but is a real resource management regression.",
+      "category_justification": "Improper HttpClient lifecycle management leading to potential socket exhaustion and connection pool fragmentation.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Pages/Views/MediaElement/MediaElementFromStreamPage.xaml.cs",
+      "start_line": 260,
+      "end_line": 269,
+      "message": "`sourceStreamSemaphore.WaitAsync()` is invoked inside the `try` block, so if the await throws (e.g. due to cancellation/disposed semaphore), `Release()` will still be called in the `finally` block on an un-acquired semaphore — throwing `SemaphoreFullException` and masking the original error. The `WaitAsync` call should occur before entering the try, with the try/finally only wrapping the work done while the semaphore is held.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually correct: WaitAsync is inside the try block so a throw from it causes Release() to fire on an unacquired semaphore, producing SemaphoreFullException. However, in this specific code no cancellation token is passed and the semaphore is not disposed before this method is called, so practical risk is very low.",
+      "severity_justification": "Technically incorrect semaphore pattern but the conditions that would trigger the bug cannot realistically occur here: no cancellation token is used and the semaphore is never disposed before this call. Also in a sample app only.",
+      "category_justification": "Incorrect try/finally placement around semaphore acquisition is a well-known concurrency anti-pattern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Extensions/StreamExtensions.shared.cs",
+      "start_line": 3,
+      "end_line": 6,
+      "message": "The doc comment states \"Extension methods for Stream on Windows platform\", but this file is `StreamExtensions.shared.cs` (compiled for all targets) and the `GetMimeType` method is consumed on multiple platforms (e.g. the iOS `GetStreamContentType` should also use it). Please update the comment to reflect that this is shared, not Windows-specific.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the file is StreamExtensions.shared.cs (compiled for all platforms) but the class doc comment explicitly says 'on Windows platform'. The claim is factually correct. GetMimeType is only called in the Windows MediaManager currently, but the shared file context means the comment is misleading.",
+      "severity_justification": "Pure documentation inaccuracy with no behavioral impact. The comment mislabels a shared utility as Windows-only, which could confuse developers but does not affect runtime behavior.",
+      "category_justification": "The finding is about an incorrect doc comment that misidentifies the scope of a shared file as Windows-only.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Pages/Views/MediaElement/MediaElementFromStreamPage.xaml.cs",
+      "start_line": 28,
+      "end_line": 28,
+      "message": "`MediaElement.PropertyChanged += MediaElement_PropertyChanged;` is subscribed in the constructor but never unsubscribed (e.g. in `OnNavigatedFrom` or `DisposeAsync`). Combined with `MediaElement.Handler?.DisconnectHandler();` this can keep the page rooted via the event handler until the MediaElement is collected. Consider unsubscribing symmetrically when the page is leaving / disposing.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The existing MediaElementPage follows the identical pattern (subscribes to PropertyChanged without unsubscribing) and it is the established convention in these sample pages. The circular reference (page owns MediaElement which holds page via handler) is handled by the .NET GC cycle collector. The described memory leak requires an external holder of MediaElement, which doesn't exist here.",
+      "severity_justification": "Even if the pattern were considered wrong, the GC cycle collector handles this case and the actual leak risk is negligible in normal MAUI navigation.",
+      "category_justification": "Concerns object lifetime and potential memory retention via event subscriptions.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/MediaSource/StreamMediaSource.shared.cs",
+      "start_line": 28,
+      "end_line": 28,
+      "message": "The PR description's usage example claims `MediaSource source = myStream;` (Stream → MediaSource) works via implicit conversion, but the implicit operator added on `StreamMediaSource` only converts `Stream → StreamMediaSource`. Since there is no `Stream → MediaSource` user-defined conversion (and chained user-defined conversions are not allowed), the example as written will not compile. Either add an implicit operator on `MediaSource` accepting `Stream`, or correct the PR description.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The C# spec explicitly permits chaining a user-defined implicit conversion with a standard reference conversion. Stream→StreamMediaSource (user-defined) followed by StreamMediaSource→MediaSource (standard inheritance reference conversion) is a valid chain. The example in the PR description compiles correctly.",
+      "severity_justification": "The finding is incorrect; there is no actual bug or compilation failure.",
+      "category_justification": "The finding makes an incorrect claim about C# implicit conversion rules.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Primitives/StreamAssetResourceLoader.macios.cs",
+      "start_line": 41,
+      "end_line": 43,
+      "message": "For non-seekable streams this reports a `ContentLength` of `0`, which tells AVFoundation the resource is empty even when there is data available. That makes non-seekable stream playback fail or end immediately; avoid setting a false zero length or require/validate seekable streams instead.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: ContentLength is explicitly set to 0 for non-seekable streams. AVFoundation treats ContentLength=0 as an empty resource, causing immediate end-of-stream or playback failure. This is a real bug for any non-MemoryStream passed on iOS/macOS.",
+      "severity_justification": "Completely breaks non-seekable stream playback on iOS/macOS with no error message. Mitigated by the fact that the primary sample use case (MemoryStream) is seekable and unaffected.",
+      "category_justification": "Incorrect value (0 instead of unknown/unset) reported to AVFoundation for the content length of non-seekable streams.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Primitives/StreamAssetResourceLoader.macios.cs",
+      "start_line": 65,
+      "end_line": 72,
+      "message": "`Stream.Read` is allowed to return fewer bytes than requested, but this loader responds with only a single read and then the request is finished by the caller. Partial reads will truncate the requested range and can cause playback stalls or corrupted media; keep reading/responding until the requested length is satisfied or EOF is reached.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is the same issue identified in Finding 2 on the same lines of the same file: Stream.Read can return fewer bytes than requested, the partial result is responded to AVFoundation, and then FinishLoading() is unconditionally called by the caller. The code is identical to what was analyzed in Finding 2.",
+      "severity_justification": "Affects non-MemoryStream callers causing truncated/corrupted media on iOS/macOS. Primary MemoryStream use case is unaffected since MemoryStream.Read fills the buffer completely.",
+      "category_justification": "Logic error: single partial Stream.Read result treated as a complete data response to AVFoundation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/CommunityToolkit.Maui.MediaElement/Primitives/StreamAssetResourceLoader.macios.cs",
+      "start_line": 65,
+      "end_line": 67,
+      "message": "This allocates a buffer for the entire requested range. AVFoundation can request large ranges (or even most of the asset), so stream-backed playback can allocate very large arrays and cause memory pressure or OOM. Respond in bounded chunks instead of allocating `RequestedLength` bytes at once.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the code allocates a buffer of exactly RequestedLength bytes, which can be the entire asset. For the MemoryStream use case this doubles peak memory. The concern is factually correct and actionable.",
+      "severity_justification": "In the primary MemoryStream use case, the data is already fully in managed memory, so a second equal-sized buffer is wasteful but not typically OOM-inducing. More severe if users pass large file-backed or network streams. A fix also resolves the correctness issue in Finding 9.",
+      "category_justification": "Unnecessary large allocation proportional to AVFoundation request size, creating memory pressure for large media assets.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Platforms/iOS/Info.plist",
+      "start_line": 43,
+      "end_line": 44,
+      "message": "The new stream sample lets users pick existing videos from the photo library, but this adds only the write-only `NSPhotoLibraryAddUsageDescription` permission. iOS requires a read photo-library usage description (`NSPhotoLibraryUsageDescription`) for picking existing media, so the sample can fail permission validation or crash when `OnOpenVideoClicked` opens the picker.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The app targets iOS 15.0+ minimum. On iOS 14+, MAUI's MediaPicker.PickVideosAsync uses PHPickerViewController (out-of-process system picker), which does not require NSPhotoLibraryUsageDescription. That permission was only needed for the deprecated UIImagePickerController. The finding is incorrect for this deployment target.",
+      "severity_justification": "The finding is factually wrong — no permission gap exists for iOS 15+ targets using PHPickerViewController.",
+      "category_justification": "The finding makes an incorrect claim about iOS permission requirements for PHPickerViewController on iOS 15+.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "samples/CommunityToolkit.Maui.Sample/Platforms/MacCatalyst/Info.plist",
+      "start_line": 42,
+      "end_line": 43,
+      "message": "The new stream sample picks existing videos from the photo library, but this adds only the add/write photo-library permission. Mac Catalyst also needs the read photo-library usage description for media picking; otherwise the picker path can fail permission validation despite the added key.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The app targets Mac Catalyst 15.0+ (macOS 12+). PHPickerViewController is available from Mac Catalyst 14+/macOS 11+ and does not require NSPhotoLibraryUsageDescription since it runs out-of-process. The finding is incorrect for this deployment target, for the same reasons as Finding 11 on iOS.",
+      "severity_justification": "The finding is factually wrong — no permission gap exists for Mac Catalyst 15+ targets using PHPickerViewController.",
+      "category_justification": "The finding makes an incorrect claim about Mac Catalyst permission requirements for PHPickerViewController.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

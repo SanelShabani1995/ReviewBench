@@ -1,0 +1,411 @@
+{
+  "pr_key": "ls1intum_Artemis_12479-237b3656",
+  "pr": {
+    "repo": "https://github.com/ls1intum/Artemis",
+    "pr_number": 12479,
+    "base": "dec2422f27c4b4fa45a1d70142604ea827b51301",
+    "head": "237b36560d91b57ec1b8948b4425cdba7ff25bb3"
+  },
+  "findings": [
+    {
+      "file": "src/main/webapp/app/exam/overview/services/exam-participation-live-events.service.ts",
+      "start_line": 318,
+      "end_line": 347,
+      "message": "fetchPreviousExamEvents() subscribes to the HTTP observable with no error handler. If the request fails (network error, 5xx, timeout), the error propagates as an unhandled Observable error. This silently aborts the backfill — on WebSocket reconnection, missed events are never recovered, exactly the intermittent delivery problem this PR is meant to fix.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 318 calls `.subscribe((fetchedEvents: ExamLiveEvent[]) => {...})` with only a success handler and no error callback. An HTTP failure (network error, 5xx) would cause the observable to error out with no handling, silently skipping the backfill. This is factually correct and directly undermines the reconnection recovery path this PR introduces.",
+      "severity_justification": "The WebSocket subscription is unaffected, so real-time delivery still works. The impact is limited to the backfill path: events that arrived while the WebSocket was disconnected would not be recovered if the backfill HTTP request fails. Relevant but not a complete failure of event delivery.",
+      "category_justification": "Error handling gap in an HTTP call — the backfill silently fails when the server returns an error or the network is unavailable, which is a fault-tolerance/reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/webapp/app/exam/overview/services/exam-participation-live-events.service.ts",
+      "start_line": 133,
+      "end_line": 138,
+      "message": "On WebSocket reconnection, fetchPreviousExamEvents() is now called immediately with no delay (changed from 5s to 0). The 2-second delay was intentionally kept for initial page load to stagger requests across students. On a server-side disruption all connected clients reconnect and call this REST endpoint simultaneously, creating a thundering herd. The initial-load stagger logic (setTimeout 2000) does not apply to the reconnection path.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 138 calls `this.fetchPreviousExamEvents()` directly with no delay on reconnection, while line 194 uses `setTimeout(() => this.fetchPreviousExamEvents(), 2000)` for initial load. A server-side disruption that drops all WebSocket connections would cause all students to reconnect and immediately fire the REST endpoint simultaneously — no stagger. The finding is factually correct about the asymmetry.",
+      "severity_justification": "The thundering herd on reconnection is a real concern, but reconnections are naturally spread out by varying network latency, and the reconnection scenario is less common than initial exam load. The 2s delay at initial load addresses the worst case (exam start). The missing delay on reconnection is a real gap but unlikely to cause catastrophic load in practice.",
+      "category_justification": "Potential server overload from simultaneous REST requests during a reconnection event — a scalability and fault-tolerance concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/webapp/app/exam/overview/services/exam-participation-live-events.service.ts",
+      "start_line": 196,
+      "end_line": 202,
+      "message": "fetchEventsTimeoutHandle is never reset to undefined inside the timeout callback itself. After the 2-second delay fires and fetchPreviousExamEvents() runs, fetchEventsTimeoutHandle still holds the stale (already-elapsed) timer ID. On the next student exam change, 'if (this.fetchEventsTimeoutHandle)' evaluates truthy and clearTimeout is called on an already-completed timer — a no-op that masks the actual state. The handle should be cleared at the start of the timeout callback.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "While the finding is factually correct that fetchEventsTimeoutHandle is not reset inside the callback, the behavioral consequence is nil. clearTimeout() on an already-fired timer ID is a guaranteed safe no-op in all JS environments. The cleanup block (lines 158-160) still correctly cancels pending timers and always ends with fetchEventsTimeoutHandle = undefined. No double-fetch, no missed fetch, no incorrect state — the code works identically whether the stale handle is present or not.",
+      "severity_justification": "Purely cosmetic — stale handle causes a no-op clearTimeout() on next student exam change. Zero behavioral impact.",
+      "category_justification": "A code cleanliness concern about not resetting a handle to undefined after the timer fires — has no behavioral impact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/webapp/app/exam/overview/services/exam-participation-live-events.service.ts",
+      "start_line": 435,
+      "end_line": 446,
+      "message": "observeNewEventsAsSystem() and observeNewEventsAsUser() schedule an uncancellable setTimeout(() => this.replayEvents()) as a side effect on every call. The timer handle is not stored, so it cannot be cancelled if the caller unsubscribes. When multiple components call these methods (e.g., multiple exam exercise components subscribing on load), N replay tasks are queued in parallel, each iterating the full events array and emitting to all active subjects. With many events and subscriptions this causes redundant O(N*subscribers) work per page load.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: the setTimeout handle is not stored, making it uncancellable, and multiple calls to these methods do queue parallel replays. However, the pattern is pre-existing (present before this PR) and this PR only added JSDoc. The distinct() operator prevents actual double-processing downstream, limiting real impact.",
+      "severity_justification": "With only 4 callers per page load and typically few exam events, the redundant emission work is trivially small. The distinct() operator prevents downstream double-processing, and unsubscribes just result in harmless emissions to nobody.",
+      "category_justification": "The concern is about redundant work — multiple replays iterating the full event list and emitting to subjects unnecessarily.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/exam/service/ExamService.java",
+      "start_line": 1549,
+      "end_line": 1577,
+      "message": "originalWorkingTimes.put(studentExam.getId(), ...) is called before saveAll(). If any StudentExam is newly created and has a null ID at that point, null is stored as the map key. After saveAll(), Hibernate sets the generated non-null ID on the entity in-place, so originalWorkingTimes.get(studentExam.getId()) in the notification loop returns null (key mismatch). Auto-unboxing the returned Integer null to int throws a NullPointerException. In practice, updateStudentExamsAndRescheduleExercises is only called on already-persisted exams (all student exams have IDs), but the code pattern creates a latent NPE with no defensive guard.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The NPE scenario is accurately described but the finding itself admits it cannot currently occur in practice. Both callers load student exams from the DB via findOneWithEagerExercisesGroupsAndStudentExams(), guaranteeing all entities have non-null IDs before the first loop. saveAll() merges existing entities without changing their IDs. The code pattern is safe for all current usage.",
+      "severity_justification": "Even if the finding were true, it's a latent NPE in a method that's only called with persisted entities.",
+      "category_justification": "The concern is about a potential NPE from auto-unboxing a null Integer from a HashMap with a null key.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/exercise/service/ParticipationService.java",
+      "start_line": 659,
+      "end_line": 662,
+      "message": "The fallback calls findLatestWithEagerSubmissionsByExerciseIdAndStudentLogin, which is not restricted by testRun flag and selects the participation with the latest initializationDate for any participation type. For a regular student (not instructor) in a regular exam who somehow lacks a graded participation, this could return a practice/test-run participation (testRun=true), which would then be used as the save target for the student's graded submission. A narrower query that also checks testRun=true would be safer to avoid accidental cross-contamination.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: findLatestWithEagerSubmissionsByExerciseIdAndStudentLogin has no testRun filter and returns any participation type. The fallback is intended exclusively for test runs (instructors with testRun=true), but using a broader query makes the behavior non-obvious and risks misuse. A narrower query with testRun=true would be safer and more explicit about the intent.",
+      "severity_justification": "The cross-contamination scenario requires a regular student lacking a graded participation AND having a testRun participation — two anomalies that shouldn't co-occur in normal operation. The code works correctly for all realistic scenarios but the query is broader than it needs to be.",
+      "category_justification": "The concern is about the wrong participation being returned and used as a save target for a student's submission — a data integrity issue in an edge case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "run-e2e-tests-local-fast.sh",
+      "start_line": 133,
+      "end_line": 144,
+      "message": "check_port_available is designed for the start context: when the port is still occupied after killing, it prints 'Cannot start <service>' and calls exit 1. Calling it inside the --stop block means that if a port (8080 or 9000) cannot be freed within 2 seconds, the stop sequence aborts with a misleading 'Cannot start' error before the Postgres cleanup (docker compose down) step, leaving Postgres running. The function is semantically inappropriate here and its exit 1 side-effects break the stop flow.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: check_port_available() prints 'Cannot start <service_name>' and calls exit 1 on line 113 when the port is still in use. In the --stop block, this is called at lines 133 and 143, before the docker compose down at line 147. If either call exits, Postgres is left running and the error message is misleading.",
+      "severity_justification": "The stop flow can leave Postgres running after a failed port cleanup, requiring manual intervention. The misleading error message makes debugging harder. This is a local dev tool so the blast radius is limited, but a broken stop command directly hinders the development workflow the PR is meant to support.",
+      "category_justification": "The stop sequence can abort prematurely, leaving infrastructure (Postgres) in a running state — an operational correctness issue in the CI/CD helper script.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/test/java/de/tum/cit/aet/artemis/exam/StudentExamIntegrationTest.java",
+      "start_line": 2476,
+      "end_line": 2541,
+      "message": "testSubmitTextExerciseDuringTestRun and testSubmitModelingExerciseDuringTestRun declare textSubmission/modelingSubmission as null outside the loop but only assign them inside an if-instanceof block that also has an early break. If assertions inside the loop pass (participation found, submissions found) but the loop exits via break with textSubmission/modelingSubmission still null (impossible with the current assertions, but fragile), the subsequent PUT request body is null. The test should assert both variables are non-null before the PUT call.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: textSubmission has no null assertion before textSubmission.setText() in the text test, creating an asymmetry with testSubmitModelingExerciseDuringTestRun which does assert modelingSubmission non-null. A null textSubmission would produce an NPE rather than a clear assertion failure. The scenario is difficult to trigger in practice but the test design is inconsistent.",
+      "severity_justification": "The scenario where textSubmission is null while textExercise is non-null is logically near-impossible given the code structure. The real issue is test fragility and a missing assertion that makes failures less informative — a minor test design concern.",
+      "category_justification": "Missing null assertion in a test method, causing asymmetry with the analogous test and potentially obscuring failure messages.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/exam/service/ExamService.java",
+      "start_line": 1550,
+      "end_line": 1550,
+      "message": "The change introduces a `HashMap` to store original working times, but `studentExams` (which can be large) is iterated over twice. A more efficient approach would be to update, save, and then notify within a single loop over `studentExams`, eliminating the need for the intermediate map and the second loop. This would reduce memory allocation and improve performance for exams with many students.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggested single-loop approach would break the correctness fix that is the entire point of this PR — all saves must complete before any WebSocket notification is sent. Merging into one loop would either require per-student saves (eliminating the batch saveAll and degrading performance) or violate the save-before-notify ordering constraint. The performance claim is also wrong: the HashMap is O(N) same as the collection itself, and a merged loop would replace one bulk saveAll with N individual saves.",
+      "severity_justification": "The suggested change would be harmful to both correctness and performance, but it's not an actual defect in the code as written.",
+      "category_justification": "The finding claims the two-loop pattern is inefficient and suggests a single-loop optimization.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/exercise/service/ParticipationService.java",
+      "start_line": 658,
+      "end_line": 658,
+      "message": "The fallback logic to find a test run participation for an instructor uses `findLatestWithEagerSubmissionsByExerciseIdAndStudentLogin`, which fetches all submissions for the participation. However, this method is called within `findParticipationForSubmission`, which is used when creating a *new* submission. The eager-fetched submissions are not used in this context, leading to an unnecessary database query that could be avoided by using a more lightweight repository method that only fetches the participation itself.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's claim that 'eager-fetched submissions are not used' is factually incorrect. The save() method calls participation.addSubmission(textSubmission) which accesses the submissions collection — the eager load is used. Additionally, all other code paths in the same method also use eager-loading queries, so this follows the existing pattern and is not a new inefficiency introduced by the PR.",
+      "severity_justification": "Even if the finding were correct, loading existing submissions when saving a new one is a minor optimization concern, not a significant performance issue.",
+      "category_justification": "The finding claims an unnecessary database query overhead from eager-loading submissions.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/webapp/app/exam/overview/services/exam-participation-live-events.service.ts",
+      "start_line": 204,
+      "end_line": 204,
+      "message": "The `fetchPreviousExamEvents` method sorts events by date after merging them. However, since WebSocket events are added to the beginning of the `events` array with `unshift` and new events from the REST call are added to the end with `...newEvents`, a full sort on the entire merged array is inefficient. A more performant approach would be to sort only the `newEvents` from the REST call before merging them into the main `events` array.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggested optimization (sort only newEvents before merging) would not produce a correctly sorted merged array because this.events itself may not be sorted. Additionally, exam live events number in the tens at most, making any sort optimization irrelevant — O(N log N) on ~20 elements is negligible. The finding proposes a broken optimization for a non-existent performance problem.",
+      "severity_justification": "Purely a micro-optimization suggestion on trivially small data, and the proposed fix would introduce a correctness issue.",
+      "category_justification": "The finding is about sorting efficiency in the event merge operation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/webapp/app/exam/overview/services/exam-participation-live-events.service.ts",
+      "start_line": 128,
+      "end_line": 133,
+      "message": "When no student exam is available or it is a test run, several service properties (`studentExamId`, `examId`, `courseId`, `studentExam`) are reset to `undefined`. However, `lastAcknowledgedEventStatus` is not reset in this branch, which could lead to stale acknowledgement data being used if the service is later re-initialized with a new student exam.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect. `this.lastAcknowledgedEventStatus = undefined` is on line 156, in the shared cleanup block that executes before the if/else branch. It is reset for all cases — null student exam, test run, and real exam alike. The else branch doesn't need to reset it because it was already reset unconditionally.",
+      "severity_justification": "The claim is factually wrong; no stale acknowledgement data issue exists.",
+      "category_justification": "The finding concerns stale state from missing reset — but the reset does happen.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/webapp/app/exam/overview/services/exam-participation-live-events.service.ts",
+      "start_line": 158,
+      "end_line": 158,
+      "message": "When a new student exam is loaded, `subscribeToExamLiveEvents` is called immediately, and `fetchPreviousExamEvents` is scheduled with a 2-second delay. If the `fetchPreviousExamEvents` call is canceled (e.g., because the component is destroyed), the WebSocket subscriptions created by `subscribeToExamLiveEvents` will leak, as there is no corresponding `unsubscribeFromExamLiveEvents` call in the cleanup logic for the timeout.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually incorrect. The timeout cancellation and unsubscribeFromExamLiveEvents() always execute together in the same shared cleanup block (lines 156-162). There is no code path where clearTimeout fires without also unsubscribing from WebSocket channels. The service is also providedIn: 'root' and never destroyed with individual components.",
+      "severity_justification": "No actual leak exists — the cleanup is correctly coupled.",
+      "category_justification": "The concern is about resource leaks from WebSocket subscriptions.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/de/tum/cit/aet/artemis/exam/service/ExamService.java",
+      "start_line": 1560,
+      "end_line": 1566,
+      "message": "The studentExamRepository.saveAll call lacks error handling. If the database operation fails, the subsequent live event notifications would still proceed, causing inconsistency between the database and notifications.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually incorrect about Java exception behavior. If saveAll() throws a DataAccessException (or any RuntimeException), execution immediately propagates up the stack — the subsequent notification loop is never reached. There is no scenario where saveAll fails but the notifications still proceed. The finding misunderstands Java's exception propagation model.",
+      "severity_justification": "The concern is moot — Java exception propagation already prevents the inconsistency described.",
+      "category_justification": "The finding concerns error handling and consistency between database state and notifications.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/webapp/app/exam/overview/services/exam-participation-live-events.service.ts",
+      "start_line": 302,
+      "end_line": 313,
+      "message": "In fetchPreviousExamEvents, there is a potential race condition where a stale HTTP response (e.g., delayed by network latency) could overwrite newer events. Although a guard for mismatched studentExamId exists, there is no validation for timestamps or sequence states in merged event lists.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The merge logic is purely additive — it only adds events not already present by ID, never removes or overwrites existing events. A stale HTTP response cannot overwrite newer events because the merge uses a Set-based deduplication that preserves all previously known events. The claimed race condition consequence is factually incorrect.",
+      "severity_justification": "Even if two concurrent requests fire, the additive merge ensures no events are lost or corrupted regardless of response order.",
+      "category_justification": "The finding claims a race condition causing data corruption in the event merge.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/webapp/app/exam/overview/services/exam-participation-live-events.service.ts",
+      "start_line": 377,
+      "end_line": 382,
+      "message": "The conditional logic in observeNewEventsAsUser suppressing problem statement updates is based on createdDate but may not account for time zone differences or unexpected inaccuracies in server timestamps.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic boilerplate concern. dayjs.isBefore() compares absolute Unix timestamps (milliseconds since epoch), making timezone differences between client and server irrelevant. Both dates originate from the same server and go through the same convertDateFromServer() parsing. The finding does not identify any specific scenario where the comparison would fail, and the same text could apply to any timestamp comparison in any codebase.",
+      "severity_justification": "Even if there were minor clock differences, this filter only controls whether a pre-exam problem statement update is shown to students — a minor UX concern with no data integrity impact.",
+      "category_justification": "The concern is about correctness of a timestamp comparison.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/webapp/app/exam/overview/services/exam-participation-live-events.service.ts",
+      "start_line": 457,
+      "end_line": 462,
+      "message": "The setEventAcknowledgeTimestamps method directly modifies the event object passed as a parameter, which violates immutability principles and could lead to unintended side effects if the event is shared across different components.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The mutation is intentional by design — the JSDoc explicitly describes this as hydrating acknowledge timestamps onto event objects for UI consumption. The filtering logic reads from localStorage (not from event.acknowledgeTimestamps), so the mutation doesn't affect correctness. The finding restates a general immutability preference without identifying any concrete bug or unintended side effect in this codebase. The pattern is also pre-existing.",
+      "severity_justification": "No concrete bug identified — the mutation is the designed behavior and doesn't affect the filtering or deduplication logic.",
+      "category_justification": "Generic code style concern about object mutation vs immutability principles.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "run-e2e-tests-local-fast.sh",
+      "start_line": 130,
+      "end_line": 130,
+      "message": "The server PID file deletion after kill_tree lacks a confirmation or retry mechanism to ensure that processes are truly stopped, potentially leaving orphaned processes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims there's no confirmation mechanism after kill_tree, but check_port_available is called immediately after (line 133) and IS the confirmation step — it verifies the port is free, retries killing if needed, and waits 2 seconds. This call was added by this PR. The mention of 'PID file deletion' also misidentifies what line 130 does.",
+      "severity_justification": "The concern is already addressed by the check_port_available call that follows kill_tree.",
+      "category_justification": "The concern is about process cleanup reliability in the stop sequence.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/test/java/de/tum/cit/aet/artemis/exam/StudentExamIntegrationTest.java",
+      "start_line": 2511,
+      "end_line": 2511,
+      "message": "The regression coverage does not include the file-upload path mentioned in the PR and issue. The new tests use createTestRun(), which calls addTextModelingProgrammingExercisesToExam and creates text/modeling/(optional programming/quiz) exercises but no FileUploadExercise (ExamUtilService.java:981-1027), so the multipart FileUploadSubmissionService path fixed by the ParticipationService fallback remains untested.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified that createTestRun() calls addTextModelingProgrammingExercisesToExam(testRunExam, false, true), which only creates text and modeling (plus quiz) exercises — no FileUploadExercise. The PR explicitly claims to fix file-upload test run submissions but provides no test covering that path.",
+      "severity_justification": "The underlying fix in ParticipationService likely covers file-upload too (same code path), so this is purely a test coverage gap rather than an unverified behavior change. No production correctness risk, just missing regression coverage.",
+      "category_justification": "The finding is about a missing test case for a code path the PR claims to fix.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/webapp/app/exam/overview/services/exam-participation-live-events.service.ts",
+      "start_line": 195,
+      "end_line": 203,
+      "message": "This reset path does not actually run when a student leaves the exam page: ExamParticipationComponent.ngOnDestroy() only calls resetExamLayout(), and resetExamLayout() does not emit to currentlyLoadedStudentExam (exam-participation.component.ts:618-628, exam-participation.service.ts:366-370). Because this root service keeps the old WebSocket subscriptions and studentExamId until another student exam/test run is loaded, navigating away can still leave stale live-event subscriptions and reconnection backfills active for the previous exam.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ngOnDestroy() calls only resetExamLayout() and unsubscribes local subscriptions — it never emits to currentlyLoadedStudentExam. resetExamLayout() only updates examIsStartedSubject/testRunSubject. The PR's new else-branch identity resets (studentExamId=undefined etc.) are therefore unreachable on navigation away, leaving stale WebSocket subscriptions and reconnection backfill logic active.",
+      "severity_justification": "Stale WebSocket subscriptions remain active after leaving the exam page, and the reconnection handler can trigger unnecessary REST backfill fetches for the old exam. Not data-corrupting, but wastes resources and could cause confusion if events from the old exam are processed.",
+      "category_justification": "Resource leak (undisposed WebSocket subscriptions) and potentially spurious network calls when the connection drops/reconnects after the user has already navigated away.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

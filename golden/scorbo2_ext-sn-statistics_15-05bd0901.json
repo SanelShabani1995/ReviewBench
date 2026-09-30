@@ -1,0 +1,371 @@
+{
+  "pr_key": "scorbo2_ext-sn-statistics_15-05bd0901",
+  "pr": {
+    "repo": "https://github.com/scorbo2/ext-sn-statistics",
+    "pr_number": 15,
+    "base": "eef945e2a8d421ccfa3ded7e7cd62e6731394b26",
+    "head": "05bd09018cd9a4b6274dc5e3f6dcffe37cba8cbe"
+  },
+  "findings": [
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 103,
+      "end_line": 167,
+      "message": "setFilter() runs 31 query.execute() calls plus StatisticsUtil.countWords() for each day synchronously on the Event Dispatch Thread. It is invoked directly from combo box value-changed listeners in StatisticsDialog.monthFilterChanged(). For large note collections this will freeze the UI on every filter change. Other charts in the codebase avoid this by pre-computing all needed data in StatisticsLoaderThread; MonthChart skips that and does all work inline on the EDT.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: setFilter() runs 31 synchronous query.execute() + countWords() calls on the EDT via combo box listeners. The code's own comment explicitly acknowledges this deviation from the pattern used by all other charts (StatisticsLoaderThread precomputes everything in background threads). This is a concrete, demonstrable performance issue.",
+      "severity_justification": "UI freezes affect user experience on every filter change, but the queries are in-memory and for typical note collections the impact may be tolerable. For large collections this becomes noticeably bad, but it doesn't affect correctness.",
+      "category_justification": "Synchronous CPU-bound work on the EDT causing UI freezes on user interaction is a performance/responsiveness issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsDialog.java",
+      "start_line": 194,
+      "end_line": 224,
+      "message": "monthCombo and yearCombo value-changed listeners are registered before monthChart is initialised. The field monthChart is assigned after formPanel.add(monthCombo) and formPanel.add(yearCombo). If any framework code (e.g. FormPanel.add) causes a value-changed event to fire during construction, monthFilterChanged() is called with monthChart == null, producing a NullPointerException. The fix is to initialise monthChart before registering the listeners.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The ordering is factually wrong: both combo listeners are registered and active before monthChart is assigned. monthFilterChanged() has no null guard on monthChart. Whether the NPE actually fires depends on FormPanel/ComboField internals not available as source, but the structural risk is real and the fix (initialize monthChart before registering listeners) is straightforwardly correct.",
+      "severity_justification": "If triggered, this is a NPE during dialog construction — a hard crash in the UI. The probability depends on framework internals but the consequence is severe when it does occur.",
+      "category_justification": "Incorrect initialization ordering that can produce a NullPointerException at runtime.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 62,
+      "end_line": 62,
+      "message": "The uniqueYears field is stored in the constructor and never read anywhere in the class. It is dead storage that serves no purpose and misleads readers into thinking the chart uses per-year data directly.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: this.uniqueYears is assigned once in the constructor (line 70) and never read again. The null/empty check on line 71 uses the constructor parameter uniqueYears, not the field. The field is genuinely dead storage.",
+      "severity_justification": "No behavioral impact — it's unused dead storage. It does slightly mislead readers and wastes a small amount of memory per instance, but has no correctness or runtime consequence.",
+      "category_justification": "Unused field that misleads readers about the class's data usage is a maintainability/readability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 77,
+      "end_line": 79,
+      "message": "The constructor works around the no-op check in setFilter() by temporarily setting yearFilter = 9999 before calling setFilter(null, null). This is fragile: if a user has notes from year 9999 and later calls setFilter(9999, null), it will be incorrectly treated as a no-op on the first call because yearFilter still equals 9999 at that point. A cleaner approach is to separate the internal population logic from the no-op guard, or to use an explicit 'initialized' flag.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The failure scenario is incorrect. The constructor sets yearFilter=9999, then immediately calls setFilter(null,null) which sets yearFilter=null before construction completes. By the time any external caller can invoke setFilter(9999,null), yearFilter is already null — not 9999 — so the no-op check would not incorrectly skip the update. The code is admittedly ugly (the comment says 'this is dumb') but the specific bug described cannot occur.",
+      "severity_justification": "Even if the concern were valid, year 9999 notes are a purely theoretical edge case with negligible real-world impact.",
+      "category_justification": "The finding makes a claim about incorrect runtime behavior (spurious no-op), which would be a correctness issue if true.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 140,
+      "end_line": 147,
+      "message": "The condition `if (wordCount > 0 && noteCount > 0)` silently ignores days that have notes whose text contains zero countable words (e.g. blank notes, or notes consisting entirely of punctuation). Those cells remain in the 'no data' state even though notes do exist for that day. The condition should be `if (noteCount > 0)` to show activity; if wordCount happens to be zero but there are notes, the cell can still receive a tooltip. The current logic can make users incorrectly believe they wrote nothing on a given day.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: countWords() returns 0 for blank or punctuation-only notes. The condition `wordCount > 0 && noteCount > 0` will skip cells where notes exist but have zero countable words, leaving them in the 'no data' visual state despite real note activity on that day.",
+      "severity_justification": "This affects only an edge case — notes with no countable words (blank or punctuation-only). Such notes may be rare in practice, and the visual impact is limited to a cell showing 'no data' color rather than activity.",
+      "category_justification": "The chart produces incorrect output (shows no activity) for days that have real notes with zero countable words.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 230,
+      "end_line": 249,
+      "message": "getDateDescription() uses hardcoded English ordinal suffixes ('st', 'nd', 'rd', 'th'). The rest of the UI uses Locale.getDefault() for month names, making this inconsistent and incorrect for non-English locales where ordinal suffixes either don't apply or differ. These suffix strings will appear garbled in the tooltip for any locale other than English.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: getDateDescription() hardcodes English ordinal suffixes while using Locale.getDefault() for month names in the same method. The code's own comment 'English is so much fun:' acknowledges the language-specific nature. The inconsistency is real.",
+      "severity_justification": "The broader application has no i18n infrastructure — all UI text is hardcoded English. This is a tooltip-only inconsistency in an app that is fundamentally English-only. Non-English users already see English everywhere else, making the practical impact negligible.",
+      "category_justification": "This is a consistency/style issue — the method mixes locale-aware API calls with hardcoded English strings, which is inconsistent but has negligible real-world impact given the app's English-only nature.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 111,
+      "end_line": 120,
+      "message": "Grid alignment (start column offset) is only computed when both yearFilter and monthFilter are non-null. When yearFilter is non-null but monthFilter is null (a user selects a specific year but 'All months'), x and y both start at 0, so day 1 is always placed in the Sunday column regardless of any real calendar alignment. This is intentional for aggregate data, but the class Javadoc omits this fourth filter combination (year-only), leaving the behaviour undocumented and potentially surprising.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the offset calculation is guarded by `yearFilter != null && monthFilter != null`, so year-only selection always starts at Sunday (x=0). The class Javadoc explicitly enumerates three filter combinations but omits (year, null), which is a reachable state from the UI. Both factual claims are correct.",
+      "severity_justification": "The behavior for the undocumented case is reasonable and consistent, and the UI works correctly. The only risk is developer confusion when reading the code — no user-visible correctness issue.",
+      "category_justification": "The finding is primarily about a missing Javadoc case for a valid filter combination that the class explicitly supports.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 139,
+      "end_line": 141,
+      "message": "When no notes are found for any day in the selected month/year, the chart remains empty. This is because `minWords` and `maxWords` are not initialized correctly for the case where word counts might be zero. If all days have 0 words, `Math.min` is never called, and `minWords` stays at `Integer.MAX_VALUE`, causing `normalizeValue` to produce incorrect results and cells not to be colored.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The stale Integer.MAX_VALUE/Integer.MIN_VALUE values for minWords/maxWords are never passed to normalizeValue. normalizeValue is only called when cell.getValue()!=0, which only occurs when setValue(wordCount) was called with a non-zero value — inside the same conditional block that updates minWords/maxWords. When all days have 0 words, no cells get non-zero values and the coloring phase skips all cells entirely — correct behavior.",
+      "severity_justification": "No actual bug exists; the described failure path cannot occur given the code structure.",
+      "category_justification": "The finding claims incorrect runtime behavior (wrong normalization results), which would be a correctness issue if true.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 139,
+      "end_line": 141,
+      "message": "The loop for populating the month chart iterates from `currentDay = 1` to `31` regardless of the selected month. When a month with fewer than 31 days is selected (e.g., February), the loop continues to query for non-existent days like February 30th, performing unnecessary work.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: the loop always iterates 31 times regardless of month length. For February (28/29 days) this means querying for Feb 29/30/31, which can never match any notes. These extra iterations are genuinely unnecessary work, confirmed by reading the loop bounds.",
+      "severity_justification": "At most 3-4 extra in-memory query executions per filter change. The correctness is unaffected (empty queries return no results). The inefficiency is real but trivial in practice.",
+      "category_justification": "The issue is unnecessary computation — executing queries for days that cannot exist in the selected month.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 232,
+      "end_line": 232,
+      "message": "The `convert8601` method incorrectly assumes that `DayOfWeek.getValue()` for Sunday is 7. According to `java.time.DayOfWeek` documentation, Monday is 1 and Sunday is 7, which is correct ISO-8601. The comment states the method is converting from ISO-8601, but the logic seems to be trying to map Sunday to 1, which it already does after the check for 7.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The method is correct. In java.time.DayOfWeek, Sunday does have getValue() == 7 (ISO-8601). convert8601 correctly maps Sunday→1, Monday→2, ..., Saturday→7, producing column indices 0-6 when the caller subtracts 1. Without the special case for isoValue==7, Sunday would produce 8 which is invalid. The finding misreads the logic.",
+      "severity_justification": "No actual bug exists; the finding is based on incorrect analysis of correct code.",
+      "category_justification": "The finding makes a claim about incorrect behavior in a calendar day-of-week mapping computation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/StatisticsDialog.java",
+      "start_line": 224,
+      "end_line": 224,
+      "message": "When no unique years are available (`stats.getUniqueYears()` is empty), the 'All years' ComboBox will only contain 'All years'. Selecting this single option will result in `getSelectedIndex()` being 0, which correctly sets `yearFilter` to `null`. However, if there are years, `getSelectedItem()` returns a String that is converted to an Integer. This could be simplified by using `getSelectedIndex()` to derive the year or storing Integers in the ComboBox directly to avoid the String conversion.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code is correct: years are stored as Strings via String.valueOf() and parsed back with Integer.valueOf(), which is safe since the inputs are always valid integers. The finding identifies no bug and the suggested alternatives (index arithmetic or mixed-type combo) are not clearly better. This is a cosmetic style observation about a working pattern.",
+      "severity_justification": "No correctness issue exists. The String/Integer round-trip is inelegant but safe.",
+      "category_justification": "The finding is a code style/simplification suggestion about an unnecessary type conversion.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 63,
+      "end_line": 67,
+      "message": "'new MonthChart(stats.getAllNotes(), stats.getUniqueYears())' directly passes data without null-checks. If 'stats.getAllNotes()' or 'stats.getUniqueYears()' is null, this causes a NullPointerException. Add null-checks before invocation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The MonthChart constructor explicitly null-checks both parameters on line 71 (`if (allNotes == null || ... || uniqueYears == null || ...)`), gracefully falling back to buildEmptyLayout(). The claimed NPE cannot occur.",
+      "severity_justification": "No actual defect exists; the null case is already handled.",
+      "category_justification": "The finding makes a factually incorrect claim about a NullPointerException that cannot occur given the existing null guards.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/Statistics.java",
+      "start_line": 137,
+      "end_line": 157,
+      "message": "'getMostActiveMonthByWords' iterates the entire map of month counts but does not handle edge cases where 'allMonthsWordCount' is null. This risks a NullPointerException.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "allMonthsWordCount is always initialized as new HashMap<>() in StatisticsLoaderThread.loadAllMonthsData() before being passed to the Statistics constructor. The field is final in Statistics and there is no code path where it can be null. This is a generic defensive-null-check suggestion with no concrete failure path.",
+      "severity_justification": "No real null risk exists given the class's construction contract and the only instantiation path through StatisticsLoaderThread.",
+      "category_justification": "The finding makes a claim about a potential NullPointerException at runtime.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/Statistics.java",
+      "start_line": 159,
+      "end_line": 179,
+      "message": "'getMostActiveMonthByNotes' follows the same approach as 'getMostActiveMonthByWords' and risks a NullPointerException when 'allMonthsNoteCount' is null. Add null-safety checks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "allMonthsNoteCount is always initialized as new HashMap<>() in StatisticsLoaderThread.loadAllMonthsData() alongside allMonthsWordCount, and passed to the Statistics constructor which stores it as a final field. The same analysis as finding 13 applies: no code path exists where allMonthsNoteCount is null when getMostActiveMonthByNotes() is called.",
+      "severity_justification": "No real null risk exists given the class's construction contract and the only instantiation path through StatisticsLoaderThread.",
+      "category_justification": "The finding claims a potential NullPointerException at runtime.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 180,
+      "end_line": 203,
+      "message": "'resetChart()' resets UI components like cell background colors but does not validate 'ValueCell[][].cells' for null or initialization. This could cause unintended NPEs during setup or reuse when 'cells' is not consistently initialized.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "resetChart() is private and only reachable via setFilter(). For an empty chart, yearFilter=null/monthFilter=null, and any external setFilter(null,null) call is blocked by the no-op check. A non-null setFilter on an empty chart would require years to exist while allNotes is empty — a state the data model prevents. The finding is generic and doesn't demonstrate a realistic failure path.",
+      "severity_justification": "Even if the structural gap is real, the scenario that triggers it requires an inconsistent data state that the application prevents.",
+      "category_justification": "The finding claims potential NPE in resetChart() due to uninitialised cells.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/ValueCell.java",
+      "start_line": 77,
+      "end_line": 89,
+      "message": "'ValueCell.setValueColor' leaves color inconsistency unchecked after 'ValueCell.value'=0 edge cases. Debugging further inconsistencies is limited when data visualization lacks rules for overridable safeguards.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is too vague to be actionable. The value=0 edge case is already handled: setValueColor handles f<=0.0001f, normalizeValue returns 0f for value==0, resetChart() explicitly resets both value and background color together, and the coloring phase only calls setValueColor when getValue()!=0. No concrete inconsistency exists.",
+      "severity_justification": "No actual defect is identified; the finding is unverifiable generic language.",
+      "category_justification": "The finding vaguely alludes to a design concern about color state consistency, which at most would be a maintainability/design issue.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/Statistics.java",
+      "start_line": 173,
+      "end_line": 173,
+      "message": "Trailing whitespace was introduced on this otherwise-blank line.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 173 is a blank line containing 4 spaces of trailing whitespace, introduced by this PR in the new `getMostActiveMonthByNotes()` method block.",
+      "severity_justification": "Purely cosmetic — trailing whitespace on a blank line has zero functional impact.",
+      "category_justification": "Trailing whitespace is a code style/formatting issue.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/java/ca/corbett/snotes/extensions/statistics/charts/MonthChart.java",
+      "start_line": 31,
+      "end_line": 33,
+      "message": "The linked issue and PR description call for a fixed-size MonthChart with five rows of seven cells, but this implementation creates and documents six rows. If the six-row layout is intentional to handle months that span six calendar weeks, the requirement/description should be updated; otherwise the chart size does not match the requested behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The PR description does not mention 'five rows' anywhere — the finding's premise is factually incorrect. The implementation's choice of six rows is also technically justified: some calendar months span six calendar weeks (e.g., a 31-day month starting on Saturday), so five rows would be insufficient. The linked issue (#14) is inaccessible, but the core factual claim about the PR description is wrong.",
+      "severity_justification": "Even if taken at face value, this would be a documentation alignment issue with low functional impact.",
+      "category_justification": "The finding is about a mismatch between a requirement description and the implementation documentation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

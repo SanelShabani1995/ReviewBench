@@ -1,0 +1,291 @@
+{
+  "pr_key": "thomHayner_bicycle-repair-stations_6-567f44d4",
+  "pr": {
+    "repo": "https://github.com/thomHayner/bicycle-repair-stations",
+    "pr_number": 6,
+    "base": "d6a8d86d691cbd6c1f857870f3220e32506f743e",
+    "head": "567f44d48ff8667629a470fa0bf808257a24cce2"
+  },
+  "findings": [
+    {
+      "file": "src/components/Menu/MenuDrawer.tsx",
+      "start_line": 39,
+      "end_line": 86,
+      "message": "The focus trap useEffect depends on `onClose` in its dependency array, but `onClose` is passed as an inline arrow function (`() => setMenuOpen(false)`) from Toolbar.tsx:261. Every Toolbar re-render (which happens frequently due to MapPage state changes from map movement, station loading, etc.) creates a new `onClose` reference, causing the effect to re-execute while the drawer is open. The cleanup fires first — calling `previousActive?.focus()` on whatever is focused (an element inside the panel) — then the new effect run captures that panel element as the new `previousActive`. When the drawer eventually closes, focus returns to an element inside the now-hidden panel instead of the button that triggered it. Fix: stabilise `onClose` with `useCallback` at the call site, or capture `previousActive` in a ref that is only written once when `open` transitions to `true`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `onClose` is an inline arrow `() => setMenuOpen(false)` at Toolbar.tsx:261 with no `useCallback`. The `useEffect` in MenuDrawer depends on `[open, onClose]`, so any Toolbar re-render (triggered by MapPage state changes like userPosition updates) creates a new `onClose` reference, fires the cleanup (calling `previousActive?.focus()` on a focused panel element), then re-captures that panel element as the new `previousActive`. On close, focus returns to the now-hidden panel element instead of the original trigger button.",
+      "severity_justification": "Focus return is a meaningful accessibility requirement for dialogs (WCAG 2.1 SC 3.2.2). When the drawer closes, keyboard focus is lost to a hidden element, leaving keyboard users stranded. It's not catastrophic but is a real a11y regression.",
+      "category_justification": "The bug directly affects keyboard focus management — a core accessibility behavior for dialogs/drawers.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/Menu/MenuDrawer.tsx",
+      "start_line": 108,
+      "end_line": 112,
+      "message": "`role=\"dialog\"` and `aria-modal=\"true\"` are added to the drawer panel, which stays in the DOM when closed (only visually hidden via `translate-x-full`). There is no `aria-hidden` attribute on the closed state. Some screen readers (especially NVDA) interpret `aria-modal=\"true\"` as making background content inert regardless of the element's visual state, so SR users may find the rest of the page inaccessible even when the drawer is closed. Add `aria-hidden={!open}` to the panel element — and remove it (or set it to `false`) when the drawer opens — to correctly hide the dialog from the accessibility tree when it is not active.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the drawer panel has `role=\"dialog\"` and `aria-modal=\"true\"` unconditionally present in the DOM with no `aria-hidden` toggling when closed. Only a CSS transform hides it visually. The NVDA/aria-modal issue is a documented real-world SR compatibility problem where persistent aria-modal dialogs in the a11y tree can interfere with virtual cursor navigation outside the dialog even when the dialog is not active.",
+      "severity_justification": "Depending on screen reader, users may find the entire page inaccessible (virtual cursor trapped in the off-screen dialog) when the drawer is closed. This is a meaningful a11y regression that could block access for assistive-technology users.",
+      "category_justification": "The issue is about incorrect ARIA semantics on a dialog component that affects screen reader navigation when the component is in its closed state.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/LoadingOverlay.tsx",
+      "start_line": 7,
+      "end_line": 7,
+      "message": "Changing from `aria-hidden={!visible}` (element kept in DOM) to `if (!visible) return null` (element unmounted) breaks the `aria-live`/`role=\"status\"` announcement. The WAI-ARIA spec requires a live region to be present in the DOM *before* content is injected into it for announcements to be reliable. When the component mounts with content already present, many screen readers will not announce it. The previous pattern of keeping the element in the DOM and toggling `aria-hidden` was actually better suited to live-region semantics; the new `aria-live=\"polite\"` attribute on a freshly mounted element with content does not reliably trigger announcements in NVDA, JAWS, or VoiceOver.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed from the diff: the old code kept the element in the DOM and toggled `aria-hidden`; the new code uses `if (!visible) return null`, causing the live region to mount with its message content already present. This is a known WAI-ARIA issue — live regions must exist in the DOM before content is injected for announcements to be reliable. NVDA and JAWS will typically not announce content that was already present when the live region was added to the DOM.",
+      "severity_justification": "The overlay is a brief loading screen primarily shown at page load. The practical impact is that screen reader users may not hear the 'Finding your location…' announcement, but the visual overlay still covers the page. The severity is limited by the transient, single-message nature of the component.",
+      "category_justification": "Directly concerns screen reader announcement reliability for a live region — a core a11y mechanism.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/LoadingOverlay.tsx",
+      "start_line": 9,
+      "end_line": 14,
+      "message": "`transition-opacity duration-300` is still in the class list but the element is now removed from the DOM immediately when `visible` becomes false (`if (!visible) return null`). The fade-out animation no longer runs — the overlay disappears instantly — making this class list entry dead code and producing an abrupt visual transition that regresses the previous smooth fade.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `if (!visible) return null` immediately unmounts the element, so `transition-opacity duration-300` never executes on dismount. The previous code kept the element in DOM and toggled opacity classes to produce a smooth fade-out; the new code produces an instant disappearance. The transition class is dead code and the fade-out animation is broken.",
+      "severity_justification": "This is a visual regression — the overlay disappears abruptly instead of fading — but it does not affect functionality or accessibility in a blocking way. It's a noticeable UX degradation for sighted users but not harmful.",
+      "category_justification": "The transition class no longer has any effect due to the early return, making it dead code, and the intended fade-out behavior is broken — a logic error introduced by the refactor.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/Share/ShareSheet.tsx",
+      "start_line": 35,
+      "end_line": 87,
+      "message": "Same stale `previousActive` bug as in MenuDrawer: `onClose` is `closeShare`, which is re-created on every `ShareProvider` render. If `ShareProvider` re-renders while the sheet is open (e.g., a parent re-render, or if `shareNotice`/`shareEntryPoint` state changes during an async native-share flow), the effect re-fires, clobbering the captured `previousActive` with an element inside the panel. Focus return on close will then land inside the already-dismissed sheet rather than on the trigger element.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `closeShare` is defined as `const closeShare = () => setShareOpen(false)` with no `useCallback`, creating a new reference on every ShareProvider render. It is passed directly as `onClose` to ShareSheet whose useEffect depends on `[open, onClose]`. Any ShareProvider re-render while the sheet is open fires the cleanup, clobbering `previousActive` with a panel element and breaking focus return on close.",
+      "severity_justification": "Same focus-return a11y bug as MenuDrawer but with less frequent triggers since ShareProvider sits above MapPage in the tree. Still a real WCAG dialog focus management failure that could leave keyboard users stranded after closing the sheet.",
+      "category_justification": "Breaks focus return on dialog close, a required behavior for accessible modal dialogs per WCAG 2.1.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/AdBanner/AdBanner.tsx",
+      "start_line": 3,
+      "end_line": 8,
+      "message": "`<aside>` already carries the implicit ARIA role `complementary`; adding the explicit `role=\"complementary\"` attribute is redundant. Per the ARIA in HTML spec, authors should not use `role=\"complementary\"` on an `<aside>` because the role is already implied. While harmless today, this pattern could mislead future contributors into thinking explicit roles are required alongside semantic elements.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: AdBanner.tsx uses `<aside role=\"complementary\">`. The `<aside>` element has an implicit ARIA role of `complementary` per the ARIA in HTML spec, making the explicit `role` attribute redundant. The finding is factually correct and code-specific.",
+      "severity_justification": "Functionally harmless — no behavior or accessibility impact today. The concern is purely about misleading future contributors into thinking explicit roles are needed alongside semantic HTML elements.",
+      "category_justification": "Redundant ARIA role on a semantic element is a code quality issue that could mislead contributors, not a functional or accessibility bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/App.tsx",
+      "start_line": 21,
+      "end_line": 21,
+      "message": "`aria-label` on a `<main>` element is only needed when a page contains multiple `main` landmarks. This app has a single `<main>`, so the label is superfluous and causes screen readers to announce a verbose name (\"Bicycle repair stations app, main\") instead of simply \"main\". WCAG technique ARIA11 and the ARIA spec both note that landmarks should only be labeled when disambiguation between multiple instances is necessary.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: there is exactly one `<main>` in the app (App.tsx:21). The ARIA in HTML spec and WCAG ARIA11 technique both state that landmark labels are only needed when multiple instances of the same role exist on a page. The `aria-label` on a single `<main>` is superfluous and causes screen readers to announce a verbose name unnecessarily.",
+      "severity_justification": "No functional or blocking accessibility impact — screen readers still navigate to the landmark correctly. The only effect is slightly more verbose SR announcements, which is a minor annoyance rather than a real barrier.",
+      "category_justification": "Misapplication of ARIA labeling guidance for landmark elements, resulting in unnecessary verbosity for screen reader users.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/lib/leafletConfig.ts",
+      "start_line": 107,
+      "end_line": 108,
+      "message": "The visually-hidden `<span>Station cluster</span>` is added inside a `createMutedClusterIcon` `DivIcon`, but `createClusterIcon` (the active-radius cluster icon that shows counts) has no accessible text — only a numeric count inside a `<div>` with no label. A screen reader user tabbing to an active cluster will hear something like \"36\" with no context. The count div should include a visually-hidden descriptor (e.g., \"36 bicycle repair stations\") or an `aria-label` to give the count meaning.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `createClusterIcon` renders `<div>${count}</div>` with no accessible label or visually-hidden descriptor, while `createMutedClusterIcon` was updated in this PR to include a visually-hidden 'Station cluster' span. Screen readers will announce just the number (e.g. '36') for active clusters with no context. The PR intentionally addressed muted clusters but overlooked active clusters.",
+      "severity_justification": "Active cluster icons are the primary interactive elements for navigating station groups on the map. A screen reader user hearing only '36' with no context cannot understand what the number means, which meaningfully impairs map navigation for AT users.",
+      "category_justification": "Missing accessible name on an interactive map control — screen reader users receive a meaningless numeric announcement with no context.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/Menu/MenuDrawer.tsx",
+      "start_line": 46,
+      "end_line": 93,
+      "message": "Potential issue: The `onKeyDown` event listener traps focus within the modal, but the `Escape` key handler doesn't prevent bubbling. This could cause unintended side effects if other listeners for `Escape` exist higher in the DOM.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the Escape handler calls `e.preventDefault()` but not `e.stopPropagation()` or `e.stopImmediatePropagation()`. Leaflet's `closeOnEscapeKey` listener is also registered at document level and could co-fire. The finding is factually correct, though slightly imprecise — `stopPropagation` alone wouldn't prevent same-node listeners; `stopImmediatePropagation` would be needed.",
+      "severity_justification": "The realistic scenario of menu open simultaneously with a Leaflet popup is unlikely given the modal nature of the drawer. The worst-case side effect (closing a station popup at the same time) is harmless. Valid but negligible practical impact.",
+      "category_justification": "The event handler does not fully isolate its Escape key processing from other document-level listeners, which could produce unintended simultaneous side effects.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/Map/StationMarker.tsx",
+      "start_line": 20,
+      "end_line": 21,
+      "message": "The fallback value for 'stationName' (\"Bicycle repair station\") may not fully describe the specific station for users relying on screen readers. Consider enhancing the handling to include more granular information when the name tag is unavailable.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a vague improvement suggestion that could apply to any map marker with a fallback name. 'Bicycle repair station' is an accurate and contextually appropriate fallback for an unnamed OSM node. The finding doesn't identify a specific bug, data field that should be used, or concrete user harm — it just generically notes the fallback 'may not fully describe' the station, which is true of any type-based fallback and not actionable without more specificity.",
+      "severity_justification": "No concrete bug or user harm identified — the fallback accurately describes the feature type.",
+      "category_justification": "The concern is about accessible names for screen reader users navigating map markers.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/components/LoadingOverlay.tsx",
+      "start_line": 6,
+      "end_line": 6,
+      "message": "Critical assumption in `visible` guard: when `visible` is false, the component returns null. There is no provision for when visibility dynamically toggles. This might leave stray DOM nodes during rapid toggling.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim that `return null` might leave stray DOM nodes during rapid toggling is factually incorrect. React's reconciler cleanly removes all DOM nodes when a component returns null, regardless of toggle frequency. This is a fundamental React guarantee. No stray DOM node scenario exists from conditional null returns.",
+      "severity_justification": "Even if taken at face value, the described scenario would be a minor rendering edge case, not a critical issue.",
+      "category_justification": "The finding makes an incorrect claim about React rendering behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/accessibility.md",
+      "start_line": 31,
+      "end_line": 39,
+      "message": "These axe commands target the Vite preview server, but the checklist never tells contributors to start it after `npm run build` (for example via the existing `npm run preview` script). As written, the commands will fail on a fresh shell even when the build succeeds.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified against docs/accessibility.md lines 26-39: the checklist runs `npm run build` (step 1) then immediately runs axe against http://127.0.0.1:4173/ (step 2) without an intervening `npm run preview`. Port 4173 is Vite preview's port; the dev server uses 5173. The same gap exists in the CONTRIBUTING.md addition. A contributor following these steps would get connection-refused errors from axe.",
+      "severity_justification": "This is documentation only — it won't break the app or cause runtime failures. A developer would likely notice the commands fail and figure out they need to start the preview server, but the instructions are misleading and the axe checks would be skipped rather than caught.",
+      "category_justification": "The issue is a missing step in developer-facing documentation/checklist, not a code logic or runtime bug.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "CONTRIBUTING.md",
+      "start_line": 63,
+      "end_line": 68,
+      "message": "This new axe-check section also points at local preview URLs without instructing contributors to start the preview server first. Since `package.json` provides `npm run preview`, add that step here so the documented workflow works from a clean terminal.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified against CONTRIBUTING.md lines 57-68: the workflow runs `npm run build` then immediately runs axe against 127.0.0.1:4173 without starting the preview server. Port 4173 is Vite preview's port (confirmed by package.json `npm run preview` = `vite preview`). The axe commands will fail with connection refused on a fresh terminal. This is a distinct instance of the same gap from Finding 1, in a different file.",
+      "severity_justification": "Documentation-only gap; no runtime or application behavior is affected. A contributor would notice the axe commands fail immediately, but the missing step makes the documented workflow non-functional as written.",
+      "category_justification": "The issue is a missing step in a developer-facing checklist in CONTRIBUTING.md, not a code logic error.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 297,
+      "end_line": 303,
+      "message": "This checklist tells contributors to run axe checks after the build, but it omits the required step of starting the local preview server for the routes referenced in the linked accessibility guide. Include `npm run preview` (or equivalent) so the workflow is executable as documented.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "README.md lines 299-303 only say 'Run axe checks on affected routes' — they do not include any axe commands or hardcoded 127.0.0.1:4173 URLs that would fail without a running preview server. The section is a high-level summary that defers to docs/accessibility.md for detailed commands. The actual broken workflow (missing `npm run preview`) is in docs/accessibility.md and CONTRIBUTING.md, which Findings 1 and 2 already cover. This section cannot be said to omit a step it never specified.",
+      "severity_justification": "Even if the finding were valid, it would be a documentation-only gap with no runtime impact.",
+      "category_justification": "The concern is about documented workflow steps for contributors.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

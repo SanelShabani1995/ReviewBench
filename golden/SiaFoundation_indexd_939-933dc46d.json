@@ -1,0 +1,135 @@
+{
+  "pr_key": "SiaFoundation_indexd_939-933dc46d",
+  "pr": {
+    "repo": "https://github.com/SiaFoundation/indexd",
+    "pr_number": 939,
+    "base": "34903936328bedda64ba8ba4acbe0fa58d94ae4c",
+    "head": "933dc46dd64f5f927e1cc41fa845544dcbd749b1"
+  },
+  "findings": [
+    {
+      "file": "api/admin/admin.go",
+      "start_line": 1316,
+      "end_line": 1325,
+      "message": "AppStats and host stats are fetched with a hardcoded limit of 1000. Both `a.store.AppStats(0, 1000)` and `a.hosts.Stats(jc.Request.Context(), 0, 1000)` use SQL LIMIT clauses in the underlying store (postgres/stats.go lines 165, 324). If there are more than 1000 apps or hosts, the Prometheus endpoint silently returns incomplete metrics with no indication of truncation, which will cause a Prometheus scraper to record permanently wrong aggregates.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: both a.store.AppStats(0, 1000) and a.hosts.Stats(ctx, 0, 1000) use SQL LIMIT clauses (confirmed in persist/postgres/stats.go lines 165, 325). The hardcoded limit of 1000 means that if there are more than 1000 apps or hosts, the Prometheus endpoint silently returns incomplete metrics. There is no truncation detection, no warning, and no indication to the scraper that data is missing.",
+      "severity_justification": "Silent truncation of metrics data beyond 1000 entries is a real correctness concern for Prometheus scrapers — they would record incomplete/wrong aggregates without any indication. However, in practice most deployments may not exceed 1000 apps or hosts, and this is an internal admin metrics endpoint rather than a user-facing operation.",
+      "category_justification": "The endpoint silently returns incomplete data when the number of apps or hosts exceeds 1000, producing incorrect metric values in Prometheus without any error or truncation signal.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "api/admin/admin.go",
+      "start_line": 1334,
+      "end_line": 1356,
+      "message": "The Content-Type header is set and the first successful enc.Append call flushes HTTP 200 + headers to the client. If any subsequent enc.Append call fails (e.g. the 3rd out of 9 marshallers), the handler logs a warning and returns, but the client already received a 200 with a partial, malformed Prometheus text body. There is no way to signal the error at that point. A Prometheus scraper may silently accept the truncated sample set or fail without a clear error, making this hard to detect operationally.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: enc.Append writes directly to jc.ResponseWriter (an io.Writer) on each call. In Go's net/http, the first Write commits HTTP 200 + headers. If any subsequent Append fails (unsupported label type or write error), the partial body is already sent and the error can only be logged — not returned to the client as an HTTP error. The writeResponse helper has the same issue for single marshallers, but the new endpoint chains 9 of them, increasing the risk surface.",
+      "severity_justification": "In practice, encoding failures are unlikely given the well-known types used (state, wallet, stats structs). The metric.go encode function only fails for unsupported label value types, which would be a programming error caught early. Write errors would typically indicate client disconnects, which are benign. The operational impact (undetected truncated scrapes) is real but low probability.",
+      "category_justification": "The issue concerns fault tolerance and error signaling in the HTTP response path — once streaming begins, errors cannot be communicated to the client, making operational diagnosis difficult.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "api/admin/admin.go",
+      "start_line": 1322,
+      "end_line": 1325,
+      "message": "A new slice `hostStats` is allocated, and then results from `a.hosts.Stats` are appended to it one by one. This is inefficient as it requires a type conversion and re-allocation. The `TODO` comment indicates this is known. This can be made more efficient by modifying `a.hosts.Stats` to return a type that implements `prometheus.Marshaller`, similar to `a.store.AppStats`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's 're-allocation' claim is incorrect — the slice is pre-allocated with make(HostStatsResponse, 0, len(hosts)), so no re-allocations occur. The type conversion HostStats(s) is a zero-cost alias cast (HostStats is defined as hosts.HostStats). Additionally, the code already has a TODO comment explicitly calling this out as known 'silliness'. The finding merely restates what the author already documented, without identifying a bug or actionable new concern.",
+      "severity_justification": "Even if considered a valid style observation, there is no real performance cost: the allocation is pre-sized and the conversion is free at runtime.",
+      "category_justification": "The finding's primary claim is about inefficiency — unnecessary re-allocation and type conversion overhead.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "api/admin/admin.go",
+      "start_line": 1324,
+      "end_line": 1324,
+      "message": "In addition to this should we also follow up with a PR that removes the \"prometheus\" query arg altogether considering that we have this endpoint now?",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a discussion question about future work ('should we also follow up with a PR...'), not a finding about a concrete issue in the current code. It does not identify a bug, inconsistency, or problem — it is asking whether the existing prometheus query-arg pattern should be removed in a separate PR. That is a design discussion, not an actionable code review finding.",
+      "severity_justification": "No concrete issue is identified; this is purely a forward-looking design question with no impact on the current PR.",
+      "category_justification": "The question touches on whether to remove the per-endpoint prometheus query parameter in favor of the new consolidated endpoint, which is an API design/contract concern.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "ChrisSchinnerl",
+        "url": "https://github.com/SiaFoundation/indexd/pull/939#discussion_r3092242251",
+        "created_at": "2026-04-16T09:42:11Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "933dc46dd64f5f927e1cc41fa845544dcbd749b1"
+      }
+    },
+    {
+      "file": "api/admin/admin.go",
+      "start_line": 1256,
+      "end_line": 1256,
+      "message": "There is existing admin handler/client test coverage in api/admin/admin_test.go, including the individual stats endpoints, but no test covers this new Prometheus endpoint. Please add coverage that exercises the consolidated text/plain response and verifies it includes representative state, wallet, aggregate, per-app, and per-host metrics so regressions in encoding or aggregation are caught.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: admin_test.go has tests for individual stats endpoints (TestContractsStatsAPI, TestHostsStatsAPI, TestSectorStatsAPI, TestAccountStatsAPI, etc.) but no test exists for the new handleGETPrometheusMetrics handler or the /prometheus/metrics route.",
+      "severity_justification": "Missing test coverage is a quality concern but doesn't affect runtime behavior. The new endpoint composes existing already-tested store calls, so the risk of silent regression is moderate but not critical.",
+      "category_justification": "The finding is about missing test coverage for a newly introduced endpoint.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "api/admin/admin.go",
+      "start_line": 290,
+      "end_line": 290,
+      "message": "This adds a public admin route without a matching method on the admin Go client. The surrounding stats routes are exposed by api/admin/client.go (for example StatsAccounts through StatsSectors at api/admin/client.go:378-426), so consumers using the maintained client cannot call the new endpoint without bypassing it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: client.go has methods for all the surrounding stats routes (StatsAccounts, StatsConnectKeys, StatsApps, StatsContracts, StatsHosts, StatsHostsDetailed, StatsSectors at lines 378-426), but no method for the new /prometheus/metrics endpoint exists anywhere in client.go.",
+      "severity_justification": "The endpoint is usable via raw HTTP, and its primary consumer is likely a Prometheus scraper (not the Go client). However, inconsistency with the established pattern of exposing every admin route via the client is a real maintenance concern.",
+      "category_justification": "The finding is about a missing public interface method on the maintained Go client, which is an API contract / module boundary concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

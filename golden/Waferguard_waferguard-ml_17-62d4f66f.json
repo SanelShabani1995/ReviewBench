@@ -1,0 +1,679 @@
+{
+  "pr_key": "Waferguard_waferguard-ml_17-62d4f66f",
+  "pr": {
+    "repo": "https://github.com/Waferguard/waferguard-ml",
+    "pr_number": 17,
+    "base": "56411efab470a71e9ef342bc1e10fab767751de5",
+    "head": "62d4f66fbeaef3dd84578b7cd547f37d43086a26"
+  },
+  "findings": [
+    {
+      "file": ".gitignore",
+      "start_line": 87,
+      "end_line": 88,
+      "message": "requirements.txt is added to .gitignore, which means the project's pip dependency manifest will no longer be tracked in version control. This breaks reproducibility for any consumer (CI, Streamlit Cloud, teammates) who installs via pip rather than Poetry. The project uses pyproject.toml+poetry.lock but a generated requirements.txt is a common deployment artifact that should not be silently hidden. The batch summary JSON path for LOT_001 is also ignored, meaning a key output artifact is excluded from any future audit trail in the repo.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "requirements.txt is verifiably present in .gitignore at this SHA, which would prevent tracking a pip-installable dependency manifest if one were generated for Streamlit Cloud or CI. The finding correctly identifies a real deployment reproducibility concern.",
+      "severity_justification": "No requirements.txt currently exists and the project uses Poetry with a full lock file, so no immediate breakage occurs. The risk is forward-looking: a generated requirements.txt for deployment would be silently untracked.",
+      "category_justification": "This affects the ability to reproduce and deploy the project consistently across environments (CI, Streamlit Cloud, teammates using pip).",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 159,
+      "end_line": 163,
+      "message": "O(n²) performance in build_batch_df: for each of k unique patterns, the function iterates over all n binary_labels to collect matching confidences (`confs_this = [float(confidences[i]) for i, lbl in enumerate(binary_labels) if lbl == binary_label]`). The notebook demo runs 38015 wafers against ~38 patterns (~1.4M iterations just for confidence extraction). This should be a single pass grouping confidences by label upfront (e.g., using a defaultdict or pandas groupby), giving O(n) instead of O(n×k).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The O(n×k) pattern is present in the checked-out financial.py at SHA 62d4f66f. The inner list comprehension re-iterates all n binary_labels for each of k unique patterns. The fix (defaultdict single-pass) was designed in the PR diff but not included in the final commit.",
+      "severity_justification": "For typical batch sizes (~38K wafers, ~38 patterns), ~1.4M Python iterations is slow but not blocking. The function completes successfully as shown in notebook output. However, it's an easily avoidable quadratic loop where a O(n) solution is trivial.",
+      "category_justification": "This is a performance issue — unnecessary O(n×k) iteration that could be O(n) with a single-pass grouping.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 196,
+      "end_line": 200,
+      "message": "The `financial_params` parameter accepted by `compute_financials` is assigned but never used. The function always delegates to `get_params()`, which reads the module-level `FINANCIAL_PARAMS` global directly. Any caller passing a custom params dict (e.g., for testing or scenario analysis) will have it silently ignored, producing results from the hardcoded table instead.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed at SHA 62d4f66f: compute_financials accepts financial_params but delegates to get_params(binary_label) which ignores that parameter and always reads the module-level FINANCIAL_PARAMS global. A caller passing a custom params dict gets results from the hardcoded table instead — silent incorrect behavior.",
+      "severity_justification": "Silent data correctness failure: custom params (for testing, scenario analysis, or Excel-loaded overrides) are accepted but ignored, producing wrong results without any error. Not crash-level but a meaningful API contract violation.",
+      "category_justification": "The function signature promises to use the passed financial_params but the implementation doesn't honor that contract, producing incorrect computation results when a non-default dict is supplied.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 203,
+      "end_line": 206,
+      "message": "In `get_params`, the filter `if d.get(\"replace\")` is falsy for both `None` (\"00000001\" pattern) and `0` (\"00000000\" pattern). The intent is to exclude `None` (no replacement cost defined), not `0`. The correct guard is `if d[\"replace\"] is not None`. As written, any future defect pattern with a legitimate $0 replacement cost would be incorrectly dropped from the aggregated `replace` sum, producing a silent undercount.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The falsy guard `if d.get('replace')` is confirmed at SHA 62d4f66f. It incorrectly treats both None and 0 the same way. The proper check is `is not None`. However, no current single-defect pattern reachable via decompose() has replace=0, so there is no present data correctness impact — only a hypothetical future risk.",
+      "severity_justification": "No current pattern in FINANCIAL_PARAMS produces incorrect output: the only replace=0 entry is '00000000' which decompose() never returns, and the only None entry ('00000001') is correctly excluded. The issue is a code quality/defensive programming concern about future data, not a present bug.",
+      "category_justification": "The guard condition uses the wrong semantic check (falsy vs. None-check), which is a correctness issue even if currently harmless.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 210,
+      "end_line": 211,
+      "message": "In `get_params`, `yhi` is capped at 1.0 but `ylo` is not. For multi-defect combos where several components have high `ylo` values, the formula `ylos[0] + 0.5 * sum(ylos[1:])` can exceed 1.0 (e.g., four defects each with ylo=0.50 yields 1.25). An uncapped `ylo` flows into `y_mid = (ylo + yhi) / 2` in `compute_financials`, producing a yield-impact midpoint above 100%, which inflates `daily_loss`, `evoa`, and `priority_score`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Max real `ylo` ~`0.665` — `4×0.50` example impossible",
+      "severity_justification": "With current FINANCIAL_PARAMS, ylo cannot exceed ~0.665 in any realistic multi-defect combination, so there is no present-day financial calculation error. The risk is theoretical/future data only.",
+      "category_justification": "The missing cap is a correctness/defensive programming issue — ylo and yhi should be symmetrically bounded to [0, 1] since they represent yield fractions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 222,
+      "end_line": 223,
+      "message": "When `daily_loss == 0` (e.g., for the normal '00000000' pattern where y_mid=0, or any pattern with zero batch frequency), `break_even` is set to the magic number `9_999` days. This value will appear in CSVs and the Streamlit UI as if it is a real estimate (~27 years). The correct representation is `float('inf')` or `None` to signal 'never breaks even', otherwise downstream consumers cannot distinguish between a real 9999-day estimate and the sentinel.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at SHA 62d4f66f: break_even uses 9_999 as a sentinel for zero daily_loss, which flows into CSV and JSON outputs as 9999.0. This is indistinguishable from a real estimate in downstream consumers. The notebook output in the diff already shows this value for the Edge_Ring row.",
+      "severity_justification": "This is a data clarity/UX issue rather than a functional bug. The financial calculations for non-zero patterns are correct. The sentinel is pragmatic (float('inf') breaks JSON serialization; None breaks round()), but should be documented or replaced with a more explicit signal.",
+      "category_justification": "Using a magic number sentinel that's indistinguishable from a real value in serialized output is a data correctness concern for downstream consumers.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "wafer_images/waferguard_financial_impact.ipynb",
+      "start_line": 76,
+      "end_line": 78,
+      "message": "The notebook calls `wg_fin.load_artifacts(artifact_dir)` and `wg_fin.run_inference(model_cnn_path, model_tl_path, X_batch)` on the `financial_impact.financial` module, but neither function is defined in that module. `load_artifacts` raises AttributeError which is swallowed by the broad except clause and proceeds. `run_inference` is called later without a broad catch (the inner try re-raises), so the notebook will crash with AttributeError at runtime. The PR description claims the library is 'fully decoupled from inference', yet the notebook depends on inference functions the module does not export.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed at SHA 62d4f66f: the notebook calls wg_fin.load_artifacts and wg_fin.run_inference on financial_impact.financial, but neither function exists in financial.py. load_artifacts AttributeError is caught silently, then run_inference raises AttributeError inside a re-raising except block, crashing the notebook. inference.py from the PR diff doesn't exist at this SHA.",
+      "severity_justification": "The notebook cannot be run to completion at this SHA. Any user trying to execute it will hit a crash mid-run. This is a functional breakage of the primary demo/analysis artifact, though it affects a notebook rather than production code.",
+      "category_justification": "The notebook calls API methods that don't exist on the imported module — a clear correctness failure causing AttributeError at runtime.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "wafer_images/waferguard_financial_impact.ipynb",
+      "start_line": 78,
+      "end_line": 80,
+      "message": "The notebook hardcodes `repo_root = \"/Users/hernanmontoyag/Desktop/Capstone/waferguard-ml\"`, an absolute path to a specific developer's machine. Any other user, CI runner, or Streamlit deployment will fail with FileNotFoundError when attempting to load the dataset or models. The notebook also uses `globals().get(\"BATCH_ID\", \"LOT_001\")` etc. which returns the default when run non-interactively (cells out of order), making configuration unreliable.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at SHA 62d4f66f: repo_root is hardcoded to '/Users/hernanmontoyag/Desktop/Capstone/waferguard-ml'. The PR diff shows a _find_repo_root() helper was designed but didn't land in this commit. The globals().get() claim is partially overstated — Cell 2 sets these as true globals — but the path hardcoding is a genuine portability failure.",
+      "severity_justification": "This is a notebook (development artifact), not production code or the Streamlit app. Any collaborator would need to change one line. It doesn't affect the library code or the app.",
+      "category_justification": "Hardcoded developer-specific paths and non-portable configuration are a maintainability/portability concern in a shared notebook.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 285,
+      "end_line": 285,
+      "message": "When `df_batch` is not empty, but does not contain any rows where `binary_label` is not '00000000' (i.e., no defects), this line will raise an `IndexError` because `iloc[0]` is called on an empty DataFrame.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code uses Python ternary expressions where `.iloc[0]` appears in the true-branch and the empty-check guard is the condition. Python short-circuits evaluation, so iloc[0] is never called when the filtered DataFrame is empty. The guard correctly handles the all-'00000000' batch case.",
+      "severity_justification": "The finding is incorrect — no IndexError occurs. The guard works as intended.",
+      "category_justification": "The finding alleges an IndexError bug, which would be a correctness issue if true.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 296,
+      "end_line": 299,
+      "message": "When `df_financial` is not empty, but contains only rows where `risk_level` is 'Normal', this line will raise an `IndexError` because `iloc[0]` is called on an empty DataFrame slice. This happens if all detected patterns are 'Normal' risk.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The top_action computation at lines 281-285 uses a correctly-placed Python ternary guard: .iloc[0] is in the true-branch and is only evaluated when the filtered DataFrame is NOT empty. When all risk_levels are 'Normal', the condition is False and 'None' is returned without calling iloc[0]. Lines 296-299 merely reference the already-computed top_action variable.",
+      "severity_justification": "The finding is factually incorrect — the guard works as intended and no IndexError occurs.",
+      "category_justification": "The finding alleges an IndexError bug, which is a correctness claim.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 232,
+      "end_line": 233,
+      "message": "In the case of a mixed-defect label, `replaces` can be a list of numbers and `None` values (if one of the components has `replace: None`). The `sum(replaces)` call will then raise a `TypeError: unsupported operand type(s) for +: 'int' and 'NoneType'`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The filter `if d.get('replace')` is falsy for None, so components with replace=None (like '00000001'/Random) are excluded from the replaces list before sum() is called. Verified: for a Center+Random combo, replaces=[6_000_000] not [6_000_000, None]. No TypeError can occur from None values via this path.",
+      "severity_justification": "The finding is incorrect — the existing falsy guard already prevents None from reaching sum().",
+      "category_justification": "The finding claims a TypeError at runtime, which would be a correctness/reliability issue if true.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 284,
+      "end_line": 284,
+      "message": "`total_wafers` is calculated by summing the 'count' column of `df_batch`, but it's also fetched from `config.get(\"total_wafers\", ...)`. This leads to redundant calculation and potential inconsistency if `config['total_wafers']` is stale or differs from the data in `df_batch`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The dual-source design is intentional: config['total_wafers'] is the authoritative caller-provided value, falling back to df_batch['count'].sum() only as a default. When compute_financials is called on the decomposed base-anomaly view, df_batch['count'].sum() would be wrong, making the config override necessary. The finding conflates a deliberate design choice with a bug.",
+      "severity_justification": "No actual bug exists; the design handles both use cases correctly.",
+      "category_justification": "The finding is a design/API clarity concern, not a correctness issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 269,
+      "end_line": 269,
+      "message": "The `params.get(\"replace\")` call can return `None`, but this value is then passed into a `pd.DataFrame` that is later accessed without handling the `None` case. It's better to provide a default value like `np.nan` or 0 if `replace` is `None` to ensure consistent data types in the DataFrame column and prevent potential errors in downstream processing.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "replacement_cost is a display-only column not used in any calculation. pandas handles None→NaN gracefully. No concrete downstream error is identified in the current code — only speculative 'potential errors'. The suggestion (use np.nan instead of None for nullable numeric columns) is generic best-practice advice that could apply to any project.",
+      "severity_justification": "Even if the finding were considered TP, the impact is minimal — no arithmetic on this column, and None/NaN display correctly in CSV output.",
+      "category_justification": "The concern is about defensive coding and DataFrame type consistency, not a concrete bug.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 329,
+      "end_line": 329,
+      "message": "The function imports `os` inside the function body. Imports should be at the top of the file for clarity, to avoid repeated import costs, and to make dependencies explicit.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "import os is verifiably inside save_reports at line 316 rather than at the module top-level with the other standard imports. The finding correctly identifies a PEP 8 style violation with no defensive rationale (unlike the deferred tensorflow import in inference.py).",
+      "severity_justification": "Python caches imports; no repeated overhead occurs and the function works correctly. This is purely a style/clarity issue with no behavioral impact.",
+      "category_justification": "Misplaced import violates PEP 8 convention (imports should be at the top of the file) and obscures module dependencies.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 144,
+      "end_line": 151,
+      "message": "The `merge_predictions` function does not handle cases where `pred_cnn` or `pred_tl` matrices have inconsistent dimensions. This can result in a runtime error due to shape mismatch.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a generic 'add input validation' suggestion that could apply to any function taking two numpy arrays. In practice, both inputs come from the same batch through two models, making shape mismatch essentially impossible. numpy would raise a clear ValueError if shapes mismatched — not a silent bug. No concrete realistic scenario is demonstrated.",
+      "severity_justification": "Even in the theoretical mismatch case, numpy raises an explicit error rather than silently producing wrong results, so the failure mode is detectable.",
+      "category_justification": "The finding concerns error handling and input validation in a data processing function.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 157,
+      "end_line": 163,
+      "message": "In `decode_labels`, default values '00000000' and 'Unknown' are hardcoded for class_ids not found in the mappings. This may propagate unhandled or unexpected output patterns without a failure mechanism.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Using .get() with defaults is an intentional defensive choice — silent fallback to '00000000' (Normal) is preferable to crashing the Streamlit app on an unmapped class ID. The finding doesn't identify a concrete realistic path to unknown class IDs beyond general model/config mismatch. The same comment could apply to any dict.get() with defaults.",
+      "severity_justification": "Even if true, the impact is limited: unknown class IDs would be treated as Normal wafers, a conservative miss rather than a catastrophic failure.",
+      "category_justification": "The concern is about error propagation and lack of failure signaling in data processing.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 206,
+      "end_line": 213,
+      "message": "The `decompose` function assumes binary_label string length is exactly 8. If input data with different lengths is processed, this will result in an `IndexError`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "All binary_label values in the pipeline come from FINANCIAL_PARAMS keys, decode_labels defaults, or id_to_binary mappings — all 8-char strings by construction. No realistic code path produces a shorter string reaching decompose(). The finding is a generic 'add length validation' suggestion with no demonstrated failure scenario.",
+      "severity_justification": "Even if true, it would require externally malformed input. The function's fixed-format string contract is clear and consistently honoured by all callers.",
+      "category_justification": "The concern is about missing input validation causing a potential runtime IndexError.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 245,
+      "end_line": 258,
+      "message": "The use of `config.get()` without validating the presence of required keys in `compute_financials` can lead to silent failures or misconfigured runs if certain keys are omitted.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "All config.get() calls have sensible domain-appropriate defaults (WPH=100, VALUE_PER_WAFER=5000, PLANNING_HORIZON=30, REPAIR_HOURS=8) matching the notebook's configured values. The docstring lists required keys. Using defaults is intentional design, not a validation gap. The finding doesn't identify a realistic scenario where omitted keys produce wrong outputs.",
+      "severity_justification": "Defaults are meaningful business values producing reasonable financial estimates, not silent corruption.",
+      "category_justification": "The concern is about missing input validation / config key handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 305,
+      "end_line": 317,
+      "message": "In `save_reports`, the file outputs overwrite each other if `batch_id` collisions occur. There is no safeguard against overwriting existing files.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Overwriting is intentional for a batch reporting function — re-running analysis on the same lot should produce an updated report, not accumulate duplicates. batch_id is a lot identifier, not a run ID, so 'collisions' are re-runs of the same lot. The finding doesn't specify what alternative behavior is desired and applies to virtually any file-writing function.",
+      "severity_justification": "No practical harm — overwriting is the expected behavior for a batch reporting system where each lot has one canonical report.",
+      "category_justification": "The concern is about file I/O safety and data persistence behaviour.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "wafer_images/waferguard_financial_impact.ipynb",
+      "start_line": 169,
+      "end_line": 169,
+      "message": "this won't work because financial_impact is somewhere else. You need to do \n\n```\n%cd ..\nfrom financial_impact import financial as wg_fin\n%cd wafer_images\n```",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed at SHA 62d4f66f: the import `from financial_impact import financial` precedes the sys.path.insert call that would make it importable. This fails with ModuleNotFoundError when the notebook is opened from the wafer_images/ directory. The finding correctly identifies the ordering bug even if the suggested fix is suboptimal.",
+      "severity_justification": "This only breaks if the notebook is opened from wafer_images/ rather than the repo root (standard Jupyter usage). The hardcoded path issue (Finding 8) is also a compounding problem. It's a notebook portability issue, not a production code bug.",
+      "category_justification": "The code execution order is wrong — sys.path is manipulated after the import it was meant to enable, causing an ImportError in non-root launch scenarios.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "Oliversinn",
+        "url": "https://github.com/Waferguard/waferguard-ml/pull/17#discussion_r3096005613",
+        "created_at": "2026-04-16T20:00:32Z",
+        "alignment": "code_changed",
+        "original_commit": "615ac95e5dee36c5adb82ba5405aff3d51f020b5",
+        "original_start_line": 169,
+        "original_end_line": 169
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 18,
+      "end_line": 118,
+      "message": "Wouldn't be better to use the excel file you created instead? \n\nIn that way, if you want to make changes you just change/update the excel without changing a single line of code.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "At SHA 62d4f66f, no Excel file exists in the repo — data/ only has Python scripts. The referenced Defect_Financial_Mapping.xlsx was committed on a separate branch not merged here. The finding references an artifact that doesn't exist at this SHA, making it unverifiable/unactionable. The PR diff showed an intermediate state with both Excel file and loading code, but neither landed in the final commit.",
+      "severity_justification": "Even if the Excel file existed, this is a design preference (data-driven vs hardcoded config) with low immediate impact.",
+      "category_justification": "The suggestion is about moving hardcoded parameters to an external configuration file for easier updates.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "Oliversinn",
+        "url": "https://github.com/Waferguard/waferguard-ml/pull/17#discussion_r3096119975",
+        "created_at": "2026-04-16T20:17:44Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "62d4f66fbeaef3dd84578b7cd547f37d43086a26"
+      }
+    },
+    {
+      "file": "wafer_images/waferguard_financial_impact.ipynb",
+      "start_line": 48,
+      "end_line": 50,
+      "message": "instead of doing this. Add the dependency to the `toml`. You can do that by doing `poetry add openpyxl`.\n\nthen delete this check and installation",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "No pip install or openpyxl installation check exists in the notebook at SHA 62d4f66f — the notebook has 5 cells with no package installation code. The finding's referenced 'check and installation' at lines 48-50 doesn't exist. The suggestion (use pyproject.toml) is also already partially addressed in the PR diff's pyproject.toml change, but even that didn't land in the final SHA.",
+      "severity_justification": "The finding references non-existent code, making it unactionable.",
+      "category_justification": "The underlying suggestion (use pyproject.toml instead of inline pip install) would be a dependency management best practice.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "Oliversinn",
+        "url": "https://github.com/Waferguard/waferguard-ml/pull/17#discussion_r3105302284",
+        "created_at": "2026-04-18T14:17:49Z",
+        "alignment": "code_changed",
+        "original_commit": "615ac95e5dee36c5adb82ba5405aff3d51f020b5",
+        "original_start_line": 48,
+        "original_end_line": 50
+      }
+    },
+    {
+      "file": "financial_impact/__init__.py",
+      "start_line": 3,
+      "end_line": 3,
+      "message": "The `inference` module doesn't exist.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "At SHA 62d4f66f, __init__.py only imports `financial` with no reference to inference. No broken import exists. In the PR diff state, both inference.py and its import in __init__.py are added together in the same changeset, so they are consistent — the finding's claim that the module doesn't exist is incorrect for the diff state.",
+      "severity_justification": "No broken import exists at either the diff state or the final SHA.",
+      "category_justification": "The finding alleges a missing module that would cause an ImportError.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "Oliversinn",
+        "url": "https://github.com/Waferguard/waferguard-ml/pull/17#discussion_r3105310712",
+        "created_at": "2026-04-18T14:24:43Z",
+        "alignment": "code_changed",
+        "original_commit": "c887997e44fd1518af1416deab397071996ded29",
+        "original_start_line": 3,
+        "original_end_line": 3
+      }
+    },
+    {
+      "file": "wafer_images/waferguard_financial_impact.ipynb",
+      "start_line": 101,
+      "end_line": 101,
+      "message": "Hey, the notebook is currently in wafer_images/ but it imports from financial_impact/ which is at the repo root. When Jupyter opens the notebook, it sets the working directory to wafer_images/, so Python can't find the financial_impact package — gives a ModuleNotFoundError.\n\nEither do what @Oliversinn  proposed or move the notebook to the repo root, next to the financial_impact/ folder. That way imports just work without any sys.path hacks. `financial.py` already uses `Path(__file__)` for the Excel path so that won't break.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: notebook is in wafer_images/, financial_impact/ is at repo root, and the import precedes sys.path.insert in cell 4. Opening from wafer_images/ causes ModuleNotFoundError before the path fix can take effect. The Path(__file__) claim about financial.py is incorrect for this SHA but doesn't undermine the main concern.",
+      "severity_justification": "Only affects users opening the notebook from the wafer_images/ directory rather than the repo root. Not a production code issue.",
+      "category_justification": "Wrong execution order causes ImportError at runtime — a correctness/portability failure for the notebook.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "mxr3562-cpu",
+        "url": "https://github.com/Waferguard/waferguard-ml/pull/17#discussion_r3105702707",
+        "created_at": "2026-04-18T19:26:45Z",
+        "alignment": "code_changed",
+        "original_commit": "615ac95e5dee36c5adb82ba5405aff3d51f020b5",
+        "original_start_line": 101,
+        "original_end_line": 101
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 231,
+      "end_line": 234,
+      "message": "The docstring lists the required config keys as `WPH, VALUE_PER_WAFER, REPAIR_HOURS, PLANNING_HORIZON, BATCH_ID, CONFIDENCE_THRESHOLD`, but the function never reads `CONFIDENCE_THRESHOLD` from `config` (it only consults `low_conf_count`, which the caller pre-computes). Conversely, `total_wafers` and `low_conf_count` are actually read but not documented. Please align the docstring with the actual keys used.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified directly in the code: the docstring at line 233 lists CONFIDENCE_THRESHOLD as a config key but the function never reads it; conversely, total_wafers and low_conf_count are read via config.get but not mentioned in the docstring.",
+      "severity_justification": "Pure documentation inaccuracy — no runtime behavior is affected, but the misleading docstring could cause confusion for callers assembling the config dict.",
+      "category_justification": "The issue is exclusively a mismatch between the function's docstring and its actual behavior.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "wafer_images/waferguard_financial_impact.ipynb",
+      "start_line": 101,
+      "end_line": 103,
+      "message": "The notebook imports the new library as `from financial_impact import financial as wg_fin`, but the markdown immediately above describes it as `waferguard.financial`. The package is actually named `financial_impact` (see `financial_impact/__init__.py`). Please update the markdown to reference the real module path to avoid confusing future readers / Streamlit integrators.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "In the diff (the PR's added notebook file), the markdown cell correctly references `financial_impact.financial` and the import is `from financial_impact import financial` with no alias — no discrepancy exists. The issue described matches the checkout at SHA 62d4f66 (an intermediate commit) but not the diff state, which is what should be trusted per instructions.",
+      "severity_justification": "Even if real, this would be a minor documentation inconsistency in a notebook cell.",
+      "category_justification": "The claim is about a mismatch between markdown text and the actual module path.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 291,
+      "end_line": 291,
+      "message": "This summary average is the unweighted mean of the per-pattern averages, so a rare pattern contributes as much as a high-volume pattern. For a batch-level `avg_confidence`, this produces incorrect results whenever pattern counts differ; it should be weighted by `count` or computed from the original per-wafer confidences.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified at line 291: `df_batch[\"avg_confidence\"].mean()` takes an unweighted mean of per-pattern averages. df_batch rows have wildly different counts (e.g. 31 vs 14019 in the notebook output), so this produces a statistically incorrect batch-level average confidence.",
+      "severity_justification": "The avg_confidence figure in the summary payload is a KPI surfaced to users/Streamlit; reporting a meaningfully incorrect number undermines trust and decision-making, but it does not affect the financial calculations or repair recommendations.",
+      "category_justification": "The computation produces a wrong numerical result — an unweighted mean where a count-weighted mean is required.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "financial_impact/financial.py",
+      "start_line": 268,
+      "end_line": 268,
+      "message": "The output column is hard-coded as `evoa_30d` even though the value uses the configurable `PLANNING_HORIZON`. If callers set a horizon other than 30 days, the report labels the metric incorrectly.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `planning_horizon` is configurable via config dict and directly drives the evoa calculation, but the DataFrame column is always named `evoa_30d`. Any non-30 horizon value produces a mislabeled column in the output CSV/DataFrame.",
+      "severity_justification": "Mislabeling only manifests when callers use a non-default planning horizon; the default is 30d so typical usage is unaffected. It's a real semantic confusion for downstream consumers of the CSV/Streamlit view but doesn't corrupt the numeric calculation.",
+      "category_justification": "The column name in the output artifact doesn't match the actual value computed, which is a correctness issue in the report schema.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "wafer_images/waferguard_financial_impact.ipynb",
+      "start_line": 191,
+      "end_line": 193,
+      "message": "This hard-codes a second copy of the model label mapping even though the Streamlit app already defines the class order in `app/labels.py`. Duplicating the mapping makes the notebook/library path easy to drift from the app and model class order; reuse the shared mapping or derive both mappings from one source.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the notebook defines a 38-entry label_mapping (binary string → name) that is a full duplicate of app/labels.py's ID_TO_PATTERN. The same ordering is confirmed by checking all 38 IDs match. Duplication is real and creates a genuine drift risk if the model class order changes.",
+      "severity_justification": "If either mapping diverges (e.g. a new pattern class is added or reordered), the notebook/library and Streamlit app would silently assign wrong labels to predictions, corrupting financial reports. The risk is realistic given active ML development.",
+      "category_justification": "This is a DRY violation — the same semantic mapping is defined in two places in different formats, creating a maintenance burden.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "wafer_images/waferguard_financial_impact.ipynb",
+      "start_line": 247,
+      "end_line": 247,
+      "message": "`y_class_all` is computed but never used in the notebook, which adds unnecessary work and makes the reconstruction path harder to follow.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the checkout at SHA 62d4f66: `y_class_all` has exactly 1 occurrence across the entire notebook — only the assignment `y_class_all = np.array([pattern_to_id.get(s, 0) for s in label_str_arr])` — and is never referenced again. It is a dead computation.",
+      "severity_justification": "A single unused variable in a notebook. It wastes a small amount of compute and marginally obscures intent, but has no runtime impact.",
+      "category_justification": "Dead code / unused variable — a readability and cleanliness concern in a notebook.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "wafer_images/waferguard_financial_impact.ipynb",
+      "start_line": 101,
+      "end_line": 103,
+      "message": "This references a `waferguard.financial` library, but the PR adds the package as `financial_impact.financial`. The instructions will send users to an import path that does not exist.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The diff (authoritative per instructions) shows the notebook being added as a new file where cell 'a36044f9' already reads 'financial_impact.financial' — the corrected module path. The `waferguard.financial` text exists only in the checkout at this intermediate commit SHA, not in the diff state. This is the same finding as Finding 2 from a different angle.",
+      "severity_justification": "Even if real, it's a documentation-only error in a markdown cell that would only mislead a reader of the notebook.",
+      "category_justification": "The claim is about an incorrect module path reference in a markdown instruction cell.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "wafer_images/waferguard_financial_impact.ipynb",
+      "start_line": 291,
+      "end_line": 294,
+      "message": "The artifacts saved by `wafer_images/model.ipynb` include `pattern_to_id` and `id_to_pattern`, but not `id_to_binary`. With the current default `{}`, `decode_labels` maps every class ID to `00000000`, so an artifacts-based run would report all wafers as normal. Reconstruct `id_to_binary` from `pattern_to_id` when loading existing artifacts.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: model.ipynb's artifact dict includes pattern_to_id and id_to_pattern but not id_to_binary. The financial notebook's else-branch reads `artifacts.get('id_to_binary', {})`, yielding an empty dict. decode_labels then maps every class ID to '00000000' (Normal), silently producing a financial report showing no defects.",
+      "severity_justification": "Silent data corruption: when running the artifacts-based path, every wafer is reported as Normal regardless of the model's actual predictions. The entire financial analysis outputs zeros for defect rate, daily loss, and repair recommendations — the core purpose of the tool — with no error or warning.",
+      "category_justification": "A logic bug causing wrong output — all predictions silently decoded as the Normal class when running from saved artifacts.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

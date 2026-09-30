@@ -1,0 +1,177 @@
+{
+  "pr_key": "saasquatch_program-tools_490-7a9aa6b4",
+  "pr": {
+    "repo": "https://github.com/saasquatch/program-tools",
+    "pr_number": 490,
+    "base": "9e552794ea3a5e8124b4f02609b76ee25343e42f",
+    "head": "7a9aa6b405af88c754abfa1f8e8e9a3f03cde398"
+  },
+  "findings": [
+    {
+      "file": "packages/mint-components/src/components/tax-and-cash/sqm-banking-info-form/useBankingInfoForm.tsx",
+      "start_line": 209,
+      "end_line": 242,
+      "message": "The TypeScript types for SetImpactPublisherWithdrawalSettingsResult and UpdateImpactPublisherWithdrawalSettingsResult declare `errorPath: string` in validationErrors, but the GraphQL mutations at lines 255 and 272 request `code` (not `errorPath`). The error-processing code at line 515 then reads `error.errorPath`, which will always be `undefined`. The entire API_ERROR_PATH_TO_FRONTEND mapping and the per-field ICU error message feature are therefore completely broken — errorCode will always be undefined, causing every validation error to fall through to the generic `other {{errorCode}}` branch (which renders 'undefined') rather than showing the human-readable message.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the GraphQL mutations request 'code' but the TypeScript types declare 'errorPath' and the error processing at line 515 reads 'error.errorPath'. Since the response will contain 'code' not 'errorPath', errorPath is always undefined. The API_ERROR_PATH_TO_FRONTEND lookup and per-field error codes are broken. Confirmed via direct file inspection and git history (commit f08069cfa changed queries from errorPath to code but forgot to update the type and processing code).",
+      "severity_justification": "The entire per-field validation error messaging feature is broken — every validation error will produce an undefined errorCode, causing the ICU messages to fall through to the 'other {undefined}' branch instead of showing human-readable field-specific errors.",
+      "category_justification": "The code reads a field name ('errorPath') that does not exist in the GraphQL response (which returns 'code'), causing runtime behavior to diverge from intent.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/mint-components/src/components/sqm-partner-info-modal/sqm-partner-info-modal-view.tsx",
+      "start_line": 181,
+      "end_line": 181,
+      "message": "The currency sl-select is disabled whenever `!!states.currency` is truthy — meaning once the user selects any currency it is permanently locked. For new partners this prevents correcting a wrong currency choice. The country select correctly locks only for existing partners via `!!states.countryCode && states.isExistingPartner`; the currency condition should follow the same pattern: `!!states.currency && states.isExistingPartner`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: currency sl-select at line 181 is disabled whenever `!!states.currency` regardless of partner type, while country select at ~154 correctly uses `!!states.countryCode && states.isExistingPartner`. For new partners who select a wrong currency, the only escape is changing country (which resets currency to empty). The asymmetry is a real bug introduced in this PR.",
+      "severity_justification": "New partners who select the wrong currency cannot correct it directly — they must change their country selection first to reset the currency. This impairs the primary workflow of the modal but has a workaround.",
+      "category_justification": "The disable condition is logically incorrect — it prevents a valid user interaction (correcting a wrong currency selection for new partners) that the equivalent country field explicitly allows.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/mint-components/src/components/sqm-rewards-table/cells/sqm-rewards-table-status-cell.tsx",
+      "start_line": 111,
+      "end_line": 111,
+      "message": "Debug console.log left in production: `console.log(this.reward, \"reward in status cell\")`. This will log every reward object on every render in production, leaking user data to browser consoles.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed at line 111: `console.log(this.reward, \"reward in status cell\")` is present in the production render path. This logs reward objects on every render, leaking user data to browser consoles.",
+      "severity_justification": "Logs reward objects (which may contain user financial/PII data) to the browser console in production on every render. A real data exposure concern, though exploitation requires browser console access (i.e., the user themselves or someone with physical access).",
+      "category_justification": "Unintended logging of reward objects to the browser console exposes potentially sensitive user financial data in production.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/mint-components/src/components/sqm-partner-info-modal/sqm-partner-info-modal.tsx",
+      "start_line": 241,
+      "end_line": 255,
+      "message": "The `text` object built in `useDemoPartnerInfoModal` is missing three required fields: `allowBankingCollection`, `termsAndConditionsLabel`, and `termsAndConditionsLink`. These are required by `PartnerInfoModalViewProps['text']` and used in `PartnerInfoModalContentView` to render the terms-and-conditions checkbox via `intl.formatMessage`. In demo/storybook mode the checkbox label will render as the raw ICU template with undefined substitution values.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `useDemoPartnerInfoModal` builds a `text` object missing `allowBankingCollection`, `termsAndConditionsLabel`, and `termsAndConditionsLink`, all of which are required by `PartnerInfoModalViewProps['text']` and used directly in `PartnerInfoModalContentView` to render the T&C checkbox. A `// @ts-ignore` suppresses the type error. In demo/content-editor mode these fields will be undefined, breaking the checkbox label rendering.",
+      "severity_justification": "Only affects demo/content-editor preview mode (when `isDemo()` is true), not production usage. The checkbox will render broken text in storybook/content editor previews but does not affect real user flows.",
+      "category_justification": "Missing required data fields cause incorrect rendering in demo mode — the terms checkbox label will be undefined/broken instead of showing the expected formatted text.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/mint-components/src/components/sqm-partner-info-modal/usePartnerInfoModal.tsx",
+      "start_line": 266,
+      "end_line": 275,
+      "message": "`onSubmit` uses `props.missingFieldsErrorText` (default: \"Please select both a country and currency.\") for two different validation failures: an unchecked banking-collection checkbox AND missing country/currency. The message is factually wrong for the checkbox case. This is especially confusing because the submit button is normally disabled until the checkbox is checked, but any code path that calls `onSubmit` with an unchecked checkbox (e.g., keyboard shortcut, programmatic call) shows a misleading error.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: onSubmit at lines 266-270 uses `props.missingFieldsErrorText` ('Please select both a country and currency.') for an unchecked checkbox case. The message is factually wrong for that condition. However, the submit button is disabled when `!states.allowBankingCollection`, and there is no form element for keyboard submission, making this code path unreachable in practice through normal UI interaction.",
+      "severity_justification": "The wrong error message is shown for the checkbox validation case, but the submit button is disabled when the checkbox is unchecked, making this code path unreachable through normal UI interaction. The impact is negligible in practice.",
+      "category_justification": "The error message text is semantically incorrect for the condition it guards — reusing a country/currency error string for a checkbox validation failure.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/mint-components/src/components/sqm-partner-info-modal/usePartnerInfoModal.tsx",
+      "start_line": 163,
+      "end_line": 165,
+      "message": "`usePartnerInfoModal` always calls `startImpactConnection` regardless of the current `connectionStatus`. In the same PR, both `useIndirectTaxForm` and `useUserInfoForm` were updated to call `completeImpactConnection` when `connectionStatus === \"STARTED\"` to avoid repeating the start step. If a user has already completed the widget-verification partner step (status is \"STARTED\") and reloads the page, `useWidgetVerification` will show the partner modal again (because `connected` is still false). When the user submits, `startImpactConnection` is called instead of `completeImpactConnection`, which may fail or create inconsistent state depending on what the API allows.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Confirmed: usePartnerInfoModal always calls startImpactConnection. When inModal=true (used by sqm-widget-verification), PartnerInfoModalContentView renders regardless of states.open. useWidgetVerification shows the partner modal whenever connected=false && emailVerified=true — at STARTED status this triggers a re-display. Submitting calls startImpactConnection again instead of completeImpactConnection, unlike useIndirectTaxForm and useUserInfoForm which both check connectionStatus==='STARTED' and branch to completeImpactConnection.",
+      "severity_justification": "A user who reaches STARTED status then reloads will hit this code path and call the wrong mutation. This may fail silently or create inconsistent state in the Impact API, potentially leaving the partner creation flow stuck.",
+      "category_justification": "The mutation called diverges from the correct API sequence for the STARTED connection state, unlike peer hooks in the same PR which handle this case correctly.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/mint-components/src/components/tax-and-cash/sqm-tax-and-cash/useTaxAndCash.tsx",
+      "start_line": 40,
+      "end_line": 53,
+      "message": "In `getCurrentStep`, `user.impactConnection.publisher` is destructured (line 42–50) before the `connectionStatus === \"STARTED\"` guard check (line 48). In the \"STARTED\" state the publisher may contain a partially-populated object with `payoutsAccount` set to null. If execution ever falls through past the STARTED check (e.g., the guard is removed or conditions change), accessing `payoutsAccount.hold` at line 60 would throw. More critically, the guard for null publisher at the top of the function does return early, but moving the STARTED check above the destructuring would make the intent clearer and eliminate any future regression risk.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding explicitly acknowledges there is no current bug — the STARTED guard at line 48 returns before `payoutsAccount.hold` is ever accessed. The concern is purely speculative ('if execution ever falls through past the STARTED check'). The code is correctly structured: publisher is guaranteed non-null by the prior guard, and payoutsAccount.hold is never reached when status is STARTED. The suggestion to reorder guards before destructuring is a minor style preference with no impact on current behavior.",
+      "severity_justification": "Even if taken as a valid concern, this is purely a defensive coding / code organization preference with no current impact and no demonstrated path to a real bug.",
+      "category_justification": "The finding is about code organization and defensive coding style — moving a guard to appear before the destructuring for clarity — not about a current defect.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/mint-components/src/components/sqm-partner-info-modal/sqm-partner-info-modal-view.tsx",
+      "start_line": 144,
+      "end_line": 144,
+      "message": "Should probably have a more stable key here",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is too vague to be actionable ('Should probably have a more stable key here') — no explanation of what problem the id causes, no demonstration of an actual bug, no suggested fix. While the id 'bankingCollectionText' is duplicated across two components, both use the same message template making the practical impact negligible. The comment reads as generic boilerplate that provides no specific analysis of this codebase.",
+      "severity_justification": "Even if taken seriously, duplicate intl message ids with identical templates cause no observable misbehavior in practice.",
+      "category_justification": "The concern, if any, is about non-unique message ids in the intl system — a code organization issue.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "noahwc",
+        "url": "https://github.com/saasquatch/program-tools/pull/490#discussion_r3083763205",
+        "created_at": "2026-04-15T03:26:04Z",
+        "alignment": "code_changed",
+        "original_commit": "56dd0453ca6ecbfedb0541f958c1b0202468eeda",
+        "original_start_line": 144,
+        "original_end_line": 144
+      }
+    }
+  ]
+}

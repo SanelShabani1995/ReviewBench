@@ -1,0 +1,767 @@
+{
+  "pr_key": "tableau_server-client-python_1760-c2c05c5f",
+  "pr": {
+    "repo": "https://github.com/tableau/server-client-python",
+    "pr_number": 1760,
+    "base": "f4a1003609b2a7cf6daf9da9e8ab5432ffefd9d7",
+    "head": "c2c05c5fd648d75946b1fecc6041f83cb81dc99c"
+  },
+  "findings": [
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1283,
+      "end_line": 1283,
+      "message": "update_permissions is described as 'Adds or updates permissions' but the actual implementation (and its REST API link 'Replace Content Permissions') overwrites all existing permissions — any rule not in the supplied list is deleted. This misleading description could cause callers to accidentally revoke permissions they didn't intend to remove.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The doc says 'Adds or updates permissions' but the REST API link directly references 'Replace Content Permissions' (replace_permissions_for_content), which overwrites all existing permissions. The description and the linked API are directly contradictory, and the inaccurate description could cause callers to accidentally revoke permissions not included in the supplied list.",
+      "severity_justification": "A misleading description of a permissions-modifying operation can lead to users inadvertently revoking access for principals not included in the call — a real security/correctness risk in production environments.",
+      "category_justification": "The issue is an inaccurate description in the documentation that contradicts the actual behavior of the underlying REST API endpoint.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1413,
+      "end_line": 1413,
+      "message": "delete_dqw links to the wrong REST API anchor: '#delete_dqw_triggers' (Delete Quality Warning Triggers by Content). The actual implementation calls DELETE on /sites/{site_id}/dataQualityWarnings/datasource/{id}, which corresponds to '#delete_dqws' (Delete Data Quality Warning). The source code docstring for this method also confirms the correct anchor is '#delete_dqws'.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The description explicitly says 'Removes all data quality warnings' but the REST API link points to '#delete_dqw_triggers' (Delete Quality Warning Triggers by Content), which is a different endpoint. Data quality warnings and data quality warning triggers are distinct Tableau REST API concepts. The link and the description are internally inconsistent, and the correct anchor for deleting DQW instances would be '#delete_dqws'.",
+      "severity_justification": "A wrong REST API anchor in the docs is misleading for users trying to look up the underlying API, but does not affect runtime behavior. Low impact but a real documentation inaccuracy.",
+      "category_justification": "The issue is an incorrect REST API reference link in the documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1650,
+      "end_line": 1689,
+      "message": "update_hyper_data has no Version section, but the implementation is decorated with @api(version=\"3.13\"), making it one of the most recent version requirements in this file. Every other method added in this PR includes a version section; omitting it here means users on older servers will encounter a runtime error with no prior warning from the docs.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified that the update_hyper_data section (lines 1650-1689) contains no Version section, while most other methods added in this PR (create_extract, delete_extract, populate_permissions, populate_dqw, etc.) all include explicit version sections. The omission leaves users without guidance on the minimum server version required.",
+      "severity_justification": "Missing version information is a documentation gap, not a code bug. Users on older servers may encounter a runtime error, but this is a docs omission rather than a behavior defect. Worth fixing for consistency but not high urgency.",
+      "category_justification": "The issue is a missing version section in the documentation, inconsistent with the pattern established by every other method documented in the same PR.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1357,
+      "end_line": 1378,
+      "message": "add_dqw has no Returns section, but the implementation returns list[DQWItem]. The DQW item(s) created by the server (including their server-assigned ID) are only accessible from the return value, so omitting it leaves users unable to retrieve the warning ID needed for subsequent update_dqw or delete calls.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified that the add_dqw section (lines 1357-1378) has no Returns section, while other methods added in the same PR that return meaningful values include Returns sections. If the implementation returns list[DQWItem], omitting this is a genuine documentation gap. The severity argument about needing the ID is slightly overstated since populate_dqw can retrieve warnings, but the missing section is still a real omission.",
+      "severity_justification": "Missing Returns documentation is a minor gap; users can retrieve DQW items via populate_dqw as a workaround. The impact is inconvenience rather than inability to accomplish the task.",
+      "category_justification": "The issue is a missing Returns section in the method documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1381,
+      "end_line": 1403,
+      "message": "update_dqw has no Returns section, but the implementation returns list[DQWItem]. The updated item is only accessible from the return value; omitting this means users will not know the method returns anything useful.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified from the file (lines 1381-1403) that the update_dqw section has no Returns section, consistent with what was found for add_dqw. The section only contains a description, REST API link, Parameters, and Version. If the implementation returns list[DQWItem], the omission is a genuine documentation gap.",
+      "severity_justification": "Missing Returns documentation is a minor inconvenience for users. The updated items can be retrieved in other ways (e.g., populate_dqw), so this is not blocking.",
+      "category_justification": "The issue is a missing Returns section in the method documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1577,
+      "end_line": 1607,
+      "message": "update_connection has no Version section. The implementation is decorated with @api(version=\"2.3\"), making it unavailable on Tableau Server instances running API v2.0–2.2. Every comparable method in this section includes a version section.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified from the file that the update_connection section (lines 1577-1607) has no Version section, while the majority of other new methods in this PR do include version sections. The claim about the missing section is factually correct.",
+      "severity_justification": "Missing version documentation is a minor documentation gap. Users on older server versions would encounter a runtime error rather than a clear upfront warning, but this is a docs-only issue with no code impact.",
+      "category_justification": "The issue is a missing Version section in the method documentation, inconsistent with other methods documented in the same PR.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1691,
+      "end_line": 1719,
+      "message": "add_tags has no Version section. The implementation uses @api(version=\"1.0\"), which is fine to note, but the absence of any version callout is inconsistent with every other method documented in this PR that includes a Version section.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Other baseline 1.0 methods also omit Version section; claim of uniqueness is false",
+      "severity_justification": "Since the version is 1.0 (universally supported), the practical impact of omitting the Version section is negligible — no user will encounter a runtime error from version incompatibility. This is purely an inconsistency in documentation style.",
+      "category_justification": "The issue is a missing Version section in the method documentation, inconsistent with other methods documented in the same PR.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1721,
+      "end_line": 1748,
+      "message": "delete_tags has no Version section, unlike every other new method in this PR. The implementation uses @api(version=\"1.0\").",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same — omission is consistent with other 1.0 methods",
+      "severity_justification": "Same as add_tags — the version is 1.0 (universally supported), so no user will hit a version incompatibility error. The issue is purely a style inconsistency in the documentation.",
+      "category_justification": "The issue is a missing Version section in the method documentation, inconsistent with other methods documented in the same PR.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1751,
+      "end_line": 1779,
+      "message": "update_tags has no Version section, unlike every other new method in this PR. The implementation uses @api(version=\"1.0\").",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same pattern",
+      "severity_justification": "Version 1.0 means universal compatibility, so no user will hit a version incompatibility error. The issue is a style inconsistency in the documentation with negligible practical impact.",
+      "category_justification": "Missing Version section in method documentation, inconsistent with other methods in the same PR.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1293,
+      "end_line": 1293,
+      "message": "In `datasources.update_permissions`, the parameter `permission_item` is described as \"A list of `PermissionsRule` objects\". A parameter representing a list should have a plural name, for example `permission_rules` or `permissions`, to avoid confusion.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The parameter name `permission_item` is the actual method signature parameter name shown in the code block, consistent with the naming convention of other parameters in this same file (`datasource_item`, `connection_item`, `capability_item`). Renaming it in docs only would create inconsistency with the actual Python implementation. The suggestion is a subjective naming preference that contradicts the established local convention of singular item names.",
+      "severity_justification": "Even if valid, this would be a minor naming style issue with no runtime impact.",
+      "category_justification": "The finding is about parameter naming style.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1320,
+      "end_line": 1320,
+      "message": "In `datasources.delete_permission`, the parameter `capability_item` is described as being a `PermissionsRule` object. The name `capability_item` is misleading because a `PermissionsRule` defines permissions for a grantee (a user or group), not just a capability. A more accurate name would be `permission_rule`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The parameter name `capability_item` appears in the actual method signature code block, indicating it is the real Python parameter name. Suggesting renaming it in the docs without changing the actual implementation would create inconsistency. This is a subjective naming preference about the underlying API design, not a documentation error — the docs accurately reflect the actual parameter name.",
+      "severity_justification": "Even if valid, this would be a minor naming style suggestion with no runtime impact.",
+      "category_justification": "The finding is about parameter naming style in the API.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1447,
+      "end_line": 1447,
+      "message": "In the example for `datasources.download_revision`, the `revision_number` is passed as a string (`'2'`). Revision numbers are typically integers. The example should be `revision_number=2`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Both download_revision and delete_revision examples consistently use string '2' for revision_number, suggesting the string type is intentional. Without the Python implementation to verify the expected type, the claim that revision numbers should be integers cannot be confirmed. The consistent use of strings across both methods implies it reflects the actual API's expected type, not an error.",
+      "severity_justification": "Even if valid, this would be a minor example type discrepancy.",
+      "category_justification": "The finding concerns the type used in a code example.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1483,
+      "end_line": 1483,
+      "message": "In `datasources.schedule_extract_refresh`, the parameter `item` is very generic. For consistency with other methods documented in this file, it should be renamed to `datasource_item`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The parameter name `item` is the actual Python parameter name shown in the code block, and multiple other methods in this same PR (add_tags, delete_tags, update_tags) also use `item` as the parameter name. The claim of inconsistency is incorrect — `item` is a consistent local convention for methods that accept an item of any type. Renaming in docs only would create inconsistency with the actual implementation.",
+      "severity_justification": "Even if valid, this would be a minor naming style issue with no runtime impact.",
+      "category_justification": "The finding is about parameter naming style.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1528,
+      "end_line": 1528,
+      "message": "The version information for `datasources.update_connections` (\"This endpoint is available with REST API version 3.26 and up.\") is formatted differently than all other methods in this PR. It should be moved under a `**Version**` heading to be consistent.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Already under a Version heading in the docs",
+      "severity_justification": "Formatting inconsistency in documentation with no runtime impact.",
+      "category_justification": "The issue is an inconsistent format for the Version section in the method documentation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1618,
+      "end_line": 1618,
+      "message": "In `datasources.add_tags` and `datasources.delete_tags`, the parameter is named `item`. It should be `datasource_item` for clarity and consistency with other methods.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The parameter name `item` is the actual Python parameter name shown in the method signature code blocks for add_tags, delete_tags, and update_tags. It is a consistent local convention across multiple methods in this PR. Renaming in the docs without changing the implementation would create inconsistency. This is the same subjective naming preference as finding 13.",
+      "severity_justification": "Even if valid, this is a minor naming style issue with no runtime impact.",
+      "category_justification": "The finding is about parameter naming style.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1648,
+      "end_line": 1648,
+      "message": "In `datasources.update_tags`, the parameter is named `item`. It should be `datasource_item` for clarity and consistency with other methods.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical to findings 13 and 15. The parameter name `item` is the actual Python parameter name shown in the method signature code block, and it is a consistent local convention used across add_tags, delete_tags, update_tags, and schedule_extract_refresh. Renaming it in the docs would create inconsistency with the implementation.",
+      "severity_justification": "Minor naming style issue with no runtime impact.",
+      "category_justification": "The finding is about parameter naming style.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1177,
+      "end_line": 1181,
+      "message": "The datasources.create_extract method specifies an optional 'encrypt' parameter, but does not mention potential exceptions or errors that may occur (e.g., invalid datasource item or server errors). Proper error handling instructions should be documented for robust usage.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a generic 'you should document exceptions' recommendation without identifying any specific, concrete exception that create_extract actually raises. The pattern in this file is to only include Exceptions sections when there are specific, code-enforced precondition errors (e.g., missing datasource ID). The same comment could be copy-pasted onto any method in any API reference, making it generic boilerplate.",
+      "severity_justification": "Even if valid, this is a minor documentation gap with no runtime impact.",
+      "category_justification": "The finding concerns missing exception documentation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1230,
+      "end_line": 1234,
+      "message": "The datasources.delete_extract method lacks documentation for any exceptions or edge cases, such as 'datasource item not found'. This omission may lead to unclear handling during method failures.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical pattern to finding 17. The finding is a generic 'should document exceptions' recommendation without citing any specific exception the method actually raises. The same comment applies to the majority of methods in this file. No comparable method documents generic 'item not found' server errors.",
+      "severity_justification": "Minor documentation gap with no runtime impact.",
+      "category_justification": "The finding concerns missing exception documentation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1283,
+      "end_line": 1287,
+      "message": "The datasources.populate_permissions method does not specify how the permissions list is handled for invalid datasource items, which could lead to confusion or runtime errors if not clarified.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic 'should document error handling' recommendation without identifying any specific exception that populate_permissions actually raises. Same pattern as findings 17 and 18. The comment could apply to virtually any method in the file and does not reference specific code behavior.",
+      "severity_justification": "Minor documentation gap with no runtime impact.",
+      "category_justification": "The finding concerns missing exception documentation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1333,
+      "end_line": 1337,
+      "message": "The datasources.update_permissions method lacks clarification on how conflicts between existing and new permissions are resolved, which is important for accurately managing permission updates.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a vague, generic request for 'conflict resolution' clarification that doesn't identify a specific, verifiable documentation gap. The real, specific issue — that the method description says 'Adds or updates' when the API actually replaces all permissions — was already identified more precisely in finding 1. This finding's framing ('how conflicts are resolved') doesn't match the actual behavior and reads as generic boilerplate.",
+      "severity_justification": "Even if valid, this would be a minor documentation clarification with no runtime impact beyond what finding 1 already captures.",
+      "category_justification": "The finding concerns missing behavioral clarification in method documentation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1382,
+      "end_line": 1386,
+      "message": "The datasources.delete_permission method should document how it handles attempts to delete non-existent permissions, as this is a common edge case.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic 'should document edge cases' recommendation without citing any specific exception or behavior the method exhibits when deleting a non-existent permission. Could be copy-pasted onto any delete method in any API reference. No specific code behavior is identified.",
+      "severity_justification": "Minor documentation gap with no runtime impact.",
+      "category_justification": "The finding concerns missing edge case documentation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1428,
+      "end_line": 1432,
+      "message": "The datasources.populate_dqw method does not address potential errors, such as invalid datasource items or server issues when fetching data quality warnings.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic 'should document potential errors' boilerplate without citing any specific exception populate_dqw actually raises. Identical pattern to findings 17-19 and 21. Could apply to any method in the file.",
+      "severity_justification": "Minor documentation gap with no runtime impact.",
+      "category_justification": "The finding concerns missing error documentation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1543,
+      "end_line": 1547,
+      "message": "The datasources.update_hyper_data method specifies required parameters and examples, but does not provide details on how errors like 'invalid request_id' or 'unsupported actions format' are handled or indicated to the user.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic 'should document error handling' recommendation citing hypothetical errors ('invalid request_id', 'unsupported actions format') without verifying these are specific, code-enforced exceptions that the method actually raises. Same boilerplate pattern as findings 17-19, 21-22. Could apply to any complex method in the file.",
+      "severity_justification": "Minor documentation gap with no runtime impact.",
+      "category_justification": "The finding concerns missing error documentation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1659,
+      "end_line": 1663,
+      "message": "The datasources.update_connections method mentions bulk updates to datasource connections, but does not describe error handling for invalid 'connection_luids' or mismatches between connection types and authentication methods.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic 'should document error handling' boilerplate citing hypothetical errors without verifying these are specific exceptions the method actually raises. Identical pattern to findings 17-19, 21-23. Could apply to any method accepting multiple parameters.",
+      "severity_justification": "Minor documentation gap with no runtime impact.",
+      "category_justification": "The finding concerns missing error documentation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1719,
+      "end_line": 1723,
+      "message": "The datasources.add_tags method lacks documentation on how duplicate tags are handled during addition, which could influence its idempotent usage.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic 'should document duplicate handling' recommendation without identifying specific, verifiable behavior. Could apply to any tag-management method in any API reference. No concrete code behavior is cited.",
+      "severity_justification": "Minor documentation gap with no runtime impact.",
+      "category_justification": "The finding concerns missing edge case documentation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1765,
+      "end_line": 1769,
+      "message": "The datasources.delete_tags method does not describe behavior when attempting to delete tags that do not exist, which is a key edge case to consider.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Generic 'should document edge case behavior' boilerplate without citing specific exceptions or behavior the method exhibits when deleting non-existent tags. Same pattern as findings 17-19, 21-25. Could apply to any delete method in any API reference.",
+      "severity_justification": "Minor documentation gap with no runtime impact.",
+      "category_justification": "The finding concerns missing edge case documentation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1220,
+      "end_line": 1220,
+      "message": "https://help.tableau.com/current/api/rest_api/en-us/REST/rest_api_ref_extract_and_encryption.htm#delete_extract_from_datasource",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding consists solely of a URL with no description, assertion, or claim about what is wrong. The URL matches exactly what is already present in the docs at line 1224. There is no actionable or verifiable issue stated.",
+      "severity_justification": "No issue is identified.",
+      "category_justification": "The finding references a documentation URL.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "jacalata",
+        "url": "https://github.com/tableau/server-client-python/pull/1760#discussion_r3042566564",
+        "created_at": "2026-04-07T02:24:36Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "c2c05c5fd648d75946b1fecc6041f83cb81dc99c"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1251,
+      "end_line": 1251,
+      "message": "https://help.tableau.com/current/api/rest_api/en-us/REST/rest_api_ref_permissions.htm#query_data_source_permissions",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding consists solely of a URL with no description, assertion, or claim about what is wrong. There is no actionable or verifiable issue stated. Identical pattern to finding 27.",
+      "severity_justification": "No issue is identified.",
+      "category_justification": "The finding references a documentation URL.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "jacalata",
+        "url": "https://github.com/tableau/server-client-python/pull/1760#discussion_r3042567835",
+        "created_at": "2026-04-07T02:25:06Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "c2c05c5fd648d75946b1fecc6041f83cb81dc99c"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1331,
+      "end_line": 1331,
+      "message": "https://help.tableau.com/current/api/rest_api/en-us/REST/rest_api_ref_metadata.htm#query_dqws",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding consists solely of a URL with no description, assertion, or claim about what is wrong. There is no actionable or verifiable issue stated. Identical pattern to findings 27 and 28.",
+      "severity_justification": "No issue is identified.",
+      "category_justification": "The finding references a documentation URL.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "jacalata",
+        "url": "https://github.com/tableau/server-client-python/pull/1760#discussion_r3042573834",
+        "created_at": "2026-04-07T02:27:43Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "c2c05c5fd648d75946b1fecc6041f83cb81dc99c"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1614,
+      "end_line": 1614,
+      "message": "https://help.tableau.com/current/api/rest_api/en-us/REST/rest_api_ref_data_sources.htm#update_data_source_connections",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding consists solely of a URL with no description, assertion, or claim about what is wrong. There is no actionable or verifiable issue stated. Identical pattern to findings 27-29.",
+      "severity_justification": "No issue is identified.",
+      "category_justification": "The finding references a documentation URL.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "jacalata",
+        "url": "https://github.com/tableau/server-client-python/pull/1760#discussion_r3042577055",
+        "created_at": "2026-04-07T02:29:08Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "c2c05c5fd648d75946b1fecc6041f83cb81dc99c"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 730,
+      "end_line": 730,
+      "message": "This adds a second REST API reference for `datasources.delete`; the same section already has an existing REST API line below (docs/api-ref.md:747), so the rendered docs will show two conflicting links for one method. Please consolidate this to a single reference.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the datasources.delete section has two REST API links — the new one added by this PR at line ~730 pointing to the /current/ URL, and a pre-existing one at line ~747 pointing to an older /v0.0/ URL. They appear in the same method section with different link text ('Delete Data Source' vs 'Delete Datasource'), creating a duplicate that is also inconsistent.",
+      "severity_justification": "Documentation-only issue with two conflicting links — no runtime behavior affected. Minor reader confusion but easily identified.",
+      "category_justification": "The issue is a duplicate/conflicting REST API reference link in the documentation for a single method.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1577,
+      "end_line": 1580,
+      "message": "`datasource.update_connection` is already documented earlier in this file (docs/api-ref.md:1110-1135). Adding a second `datasources.update_connection` section creates duplicate API reference entries that can drift and confuse readers; update the existing section instead of adding another one.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: there are two sections documenting the same method. The pre-existing section at ~1108 is headed '#### datasource.update_connection' (note singular, a naming bug) and the new section added by this PR is '#### datasources.update_connection'. Both document the same method signature and behavior, creating a duplicate that can drift and confuse readers. The finding's claim of duplication is factually correct, even though it slightly misidentifies the header name of the existing entry.",
+      "severity_justification": "Documentation-only duplication; no runtime impact. However, two divergent descriptions of the same method can mislead users, and the pre-existing entry also has a naming inconsistency that the PR failed to address.",
+      "category_justification": "The issue is duplicate API reference documentation for the same method.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1650,
+      "end_line": 1653,
+      "message": "`datasource.update_hyper_data` is already documented earlier in this file (docs/api-ref.md:1141-1173). This duplicate section introduces a second version/endpoint description for the same method, making the API reference inconsistent; update the existing section instead of adding a second one.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: two sections document the same method. Pre-existing section at ~1141 is '#### datasource.update_hyper_data' (singular) and the new PR section at ~1650 is '#### datasources.update_hyper_data' (plural). Both cover the same method signature. They differ in version info (old: 3.13+, new: omitted), REST API URL targets, and parameter descriptions — divergent duplicate documentation that will confuse readers.",
+      "severity_justification": "Documentation-only issue; no runtime impact. The divergence in details (version, URL) between the two entries could mislead users but doesn't affect functionality.",
+      "category_justification": "Duplicate API reference entries for the same method with inconsistent details.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1787,
+      "end_line": 1787,
+      "message": "This says `filter` returns a list, but the Returns section below says it returns a `QuerySet` and the existing filter documentation describes Django-style filtering as querysets (docs/filter-sort.md:156-169). Please make the return type consistent so readers know whether lazy queryset behavior is available.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the method description at line 1787 states 'Returns a list of datasources...' while the Returns section of the same documentation block says 'Returns a QuerySet of DatasourceItem objects.' These are genuinely different types — a QuerySet supports lazy evaluation, chaining, and slicing. The inconsistency within the same documentation block is factually present.",
+      "severity_justification": "Documentation-only inconsistency; no runtime impact. However, it could mislead readers about whether lazy/chainable queryset behavior is available, which affects how they'd write code against the API.",
+      "category_justification": "Inconsistent return type description within a single documentation section.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1269,
+      "end_line": 1271,
+      "message": "This example introduces `datasource.permissions`, but the `DatasourceItem` attributes table in this section does not document a `permissions` attribute (unlike `connections`, which is documented as populated by its populate method at docs/api-ref.md:677). Please add the populated attribute to the class reference so readers know where the permissions are stored.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the DatasourceItem attributes table at line ~676 lists `connections` with a note about populate_connections, but has no `permissions` attribute documented. The example at lines 1269-1271 uses `datasource.permissions` after calling `populate_permissions`, creating a gap where readers cannot find documentation for the attribute they're expected to iterate over.",
+      "severity_justification": "Documentation gap only — no runtime impact. Readers can likely infer the attribute exists from the example, but it's inconsistent with how `connections` is documented and could cause confusion.",
+      "category_justification": "Missing attribute documentation in the DatasourceItem class reference, inconsistent with how other populate-backed attributes are documented.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1349,
+      "end_line": 1351,
+      "message": "This example uses `datasource.dqws`, but the `DatasourceItem` attributes table in this section does not document a `dqws` attribute. Please add the populated attribute to the class reference so users can discover where `populate_dqw` stores its results.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the example at lines 1349-1351 uses `datasource.dqws` after calling `populate_dqw`, but the DatasourceItem attributes table does not list a `dqws` attribute. The same gap exists as with `permissions` in finding 5 — readers consulting the class reference cannot discover where `populate_dqw` stores its results.",
+      "severity_justification": "Documentation gap only; no runtime impact. Readers can infer the attribute from the example, but it's inconsistent with how populated attributes like `connections` are documented.",
+      "category_justification": "Missing attribute documentation in the DatasourceItem class reference for a populate-backed attribute introduced in the new doc section.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/api-ref.md",
+      "start_line": 1458,
+      "end_line": 1460,
+      "message": "This example uses `datasource.revisions`, but the `DatasourceItem` attributes table in this section does not document a `revisions` attribute. Please add the populated attribute to the class reference so users can discover where `populate_revisions` stores its results.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the example at lines 1458-1460 uses `datasource.revisions` after calling `populate_revisions`, but the DatasourceItem attributes table does not list a `revisions` attribute. Consistent with the same gaps found for `permissions` and `dqws` — readers cannot discover from the class reference where `populate_revisions` stores its results.",
+      "severity_justification": "Documentation gap only; no runtime impact. Inconsistent with how `connections` is documented in the same attributes table.",
+      "category_justification": "Missing attribute documentation in the DatasourceItem class reference for a populate-backed attribute used in the new doc section.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "pr_key": "franklesniak_PSStyleGuide_47-3dfce1e3",
+  "pr": {
+    "repo": "https://github.com/franklesniak/PSStyleGuide",
+    "pr_number": 47,
+    "base": "9ac12092cca8c7e5eacc0508469d40628d06c1f7",
+    "head": "3dfce1e3ee95726bff7bed27592e02c8b4507d7c"
+  },
+  "findings": [
+    {
+      "file": "STYLE_GUIDE.md",
+      "start_line": 1238,
+      "end_line": 1238,
+      "message": "The PR description states the introductory sentence was changed from 'MUST be written as a \"Modern Advanced\" function' to 'MUST be written in the \"Modern Advanced\" style' to avoid implying scripts must be converted into functions, but the actual file at line 1238 still reads 'it **MUST** be written as a \"Modern Advanced\" function'. This stated goal of the PR was not implemented.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The checked-out file at line 1238 still reads 'it MUST be written as a \"Modern Advanced\" function' — the old text. The diff shows this line was supposed to be changed to 'written in the \"Modern Advanced\" style', and the adjacent change at line 1244 ('Functions and scripts written in this...') was applied, confirming the introductory sentence update was simply missed.",
+      "severity_justification": "This is a documentation inconsistency — the introductory sentence still implies scripts must be converted into functions, contradicting the PR's stated intent. It doesn't cause incorrect behavior, but it is the specific goal the PR set out to achieve and failed to deliver.",
+      "category_justification": "The PR claims to have made a specific change that is verifiably absent from the file — the stated goal was not implemented.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "STYLE_GUIDE.md",
+      "start_line": 1246,
+      "end_line": 1246,
+      "message": "Rule 2 still uses function-only language: 'The function **MUST** declare its primary output object type using `[OutputType()]`.' The PR description explicitly claims rules 2–3 were 'reworded from function-only language to consistently cover both functions and scripts', but this line was not changed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 1246 in the checked-out file still reads 'The function MUST declare its primary output object type...' and 'validating the function's contract' — the old function-only language. The diff explicitly shows this should have been updated to 'All modern functions and scripts MUST declare...' and 'validating the function's or script's contract', but the change is absent from the file.",
+      "severity_justification": "Documentation inconsistency — Rule 2 still uses function-only language despite the PR's stated goal of extending it to scripts. No behavioral impact, but contradicts the PR's stated purpose.",
+      "category_justification": "A stated change in the PR description was not implemented in the file — the rule body does not match the claimed update.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "STYLE_GUIDE.md",
+      "start_line": 1247,
+      "end_line": 1247,
+      "message": "Rule 3 still uses function-only language: 'Functions that return collections **MUST** write objects directly to the pipeline...' The PR description claims rules 2–3 were updated to cover both functions and scripts, but this rule body was not changed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 1247 in the checked-out file still reads 'Functions that return collections MUST write objects directly to the pipeline...' — the old function-only language. The diff explicitly shows this should have been changed to 'Functions and scripts that return collections MUST...', matching the PR's stated goal, but the change is absent from the file.",
+      "severity_justification": "Documentation inconsistency — Rule 3 still only mentions functions despite the PR's intent to cover scripts too. No behavioral impact.",
+      "category_justification": "A stated change in the PR description was not implemented — the rule body does not reflect the claimed update.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "STYLE_GUIDE.md",
+      "start_line": 109,
+      "end_line": 109,
+      "message": "The exception checklist entry still reads 'Exception: Modern functions **MAY** temporarily suppress $VerbosePreference...' while all five main [Modern] checklist items directly above it were updated to 'Modern functions and scripts'. The PR description claims all six [Modern] checklist entries (including the exception) were updated, but this one was not, creating an internal inconsistency.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 109 in the file reads 'Exception: Modern functions MAY temporarily suppress $VerbosePreference...' while lines 104-108 directly above it all use 'Modern functions and scripts'. The diff shows this entry should have been updated to 'Modern functions and scripts MAY temporarily suppress...', matching the PR description's claim that all six [Modern] checklist entries were updated. The change is absent.",
+      "severity_justification": "Documentation inconsistency — one checklist entry out of six still uses function-only language, inconsistent with the five entries immediately above it. No behavioral impact, but creates a noticeable internal inconsistency in the checklist.",
+      "category_justification": "A stated change in the PR description was not implemented — the exception entry does not match the claimed update.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "STYLE_GUIDE.md",
+      "start_line": 1245,
+      "end_line": 1245,
+      "message": "The new rule text states '`[CmdletBinding()]` and the `param` block **MUST** be the first non-comment, non-attribute content in the file.' This is self-contradictory: `[CmdletBinding()]` is itself an attribute, so describing it as 'the first non-attribute content' logically forbids the very thing being mandated.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The self-contradictory phrase 'first non-comment, non-attribute content' exists in the checked-out file but not in the diff's new text, which reads 'appear as the first statement in the script, other than permitted `using` statements, comments, and blank lines' — a clean formulation with no self-contradiction. Per the instruction to trust the diff hunk over the checked-out file for lines under review, the finding's specific claim does not apply to the authoritative new text.",
+      "severity_justification": "Even if considered against the file's text, this is a documentation wording issue with negligible practical impact.",
+      "category_justification": "The concern is about the clarity and logical consistency of documentation wording.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "STYLE_GUIDE.md",
+      "start_line": 1245,
+      "end_line": 1245,
+      "message": "`using` statements are permitted before `[CmdletBinding()]` in PowerShell script files and are a common pattern (e.g., `using module`, `using namespace`). The PR description explicitly calls out 'permitted `using` statements, comments, and blank lines' as exceptions, but the actual rule text only says 'non-comment' — omitting `using` statements. An engineer following the rule literally would incorrectly place `using` statements after `[CmdletBinding()]`.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The diff's new text for Rule 1 explicitly reads 'other than permitted `using` statements, comments, and blank lines', which directly includes the `using` statement exception the finding claims is missing. The omission only exists in the checked-out file's divergent intermediate text, not in the diff hunk that is authoritative per the evaluation instructions.",
+      "severity_justification": "If the omission were real, it could mislead engineers into placing `using` statements incorrectly (after `[CmdletBinding()]`), which would cause PowerShell errors. But the finding is factually incorrect against the diff.",
+      "category_justification": "The concern is about incomplete or misleading rule documentation for script authoring.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "STYLE_GUIDE.md",
+      "start_line": 1245,
+      "end_line": 1245,
+      "message": "The claim 'Any executable statement before `[CmdletBinding()]` causes a `ParseException` when the script is invoked via the call operator (`& $path`)' is technically inaccurate. In PowerShell, statements before the script-level `param()` block do not generally throw a `ParseException`; instead, the `param()` block is silently treated as a function call rather than script parameters, and `[CmdletBinding()]` is not applied to the script. A `ParseException` is a parse-time error, but this is a runtime semantic failure. Misstating the error type will mislead engineers trying to diagnose the failure.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The claim 'causes a ParseException' is technically inaccurate: a script with statements before `param()` is syntactically parseable (no parse-time error). The failure mode is a runtime semantic one — `[CmdletBinding()]` is treated as a type expression and `param()` is not recognized as the script parameter block. ParseException is the wrong error class and will mislead engineers diagnosing the issue. Both the diff's new text and the file's text contain this inaccuracy.",
+      "severity_justification": "The underlying rule (don't place statements before [CmdletBinding()]/param) is correct and useful. The error-type mislabeling is a documentation accuracy issue that could cause confusion during troubleshooting, but is not blocking or dangerous.",
+      "category_justification": "The finding is about a technically inaccurate description of PowerShell runtime behavior in the style guide's documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "STYLE_GUIDE.md",
+      "start_line": 1245,
+      "end_line": 1245,
+      "message": "The PR description states that \"executable statement\" was broadened to \"other statements\" to accurately reflect the parser constraint (which also rejects function/class definitions). However, the updated text still reads \"Any executable statement before `[CmdletBinding()]` causes a `ParseException`...\" — the wording was not broadened. Either update the text to \"Any other statement\" (or similar), or correct the PR description.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The diff hunk clearly shows the new Rule 1 text uses 'Placing other statements before `[CmdletBinding()]` / `param` causes a `ParseException`' — the broadening from 'executable statement' to 'other statements' did occur in the PR. The finding's claim that 'the wording was not broadened' is factually incorrect per the diff.",
+      "severity_justification": "This is a documentation consistency issue; even if it were a TP it would be a minor wording inconsistency with no behavioral impact.",
+      "category_justification": "The finding concerns wording consistency between the PR description and the actual documentation text in STYLE_GUIDE.md.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "STYLE_GUIDE.md",
+      "start_line": 1245,
+      "end_line": 1245,
+      "message": "The last sentence still narrows the parser failure to “executable statement” before `[CmdletBinding()]`. The rule being documented also applies to other statements such as function/class definitions before the script param block, so this wording can lead readers to think declarations are safe when they are not.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "At SHA 3dfce1e3, line 1245 reads 'Any executable statement before `[CmdletBinding()]` causes a `ParseException`'. This wording was introduced by this commit. The finding correctly identifies that function/class definitions are also statements that interfere with `[CmdletBinding()]` placement in a script and could cause the same failure; calling them out only as 'executable statements' may mislead readers into thinking declarations are safe.",
+      "severity_justification": "This is a documentation wording issue with no direct behavioral impact, but it could mislead readers of the style guide into making incorrect assumptions about what is safe to place before `[CmdletBinding()]` in a script.",
+      "category_justification": "The finding concerns the precision of wording in a style-guide documentation file, specifically whether the term 'executable statement' accurately covers the full set of statements that cause the described parser failure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

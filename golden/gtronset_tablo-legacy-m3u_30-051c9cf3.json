@@ -1,0 +1,331 @@
+{
+  "pr_key": "gtronset_tablo-legacy-m3u_30-051c9cf3",
+  "pr": {
+    "repo": "https://github.com/gtronset/tablo-legacy-m3u",
+    "pr_number": 30,
+    "base": "3d6d8d760d62008d395e852e2d73fc42e78fc039",
+    "head": "051c9cf394ac3f247779034233df9e9590887993"
+  },
+  "findings": [
+    {
+      "file": "tablo_legacy_m3u/routes.py",
+      "start_line": 253,
+      "end_line": 255,
+      "message": "TOCTOU race between `_refresh_tuners` and `_probe_device`. `replace(app_state.device_status, tuners=tuners)` is not atomic: it reads `device_status`, creates a new object, then assigns it. If `_probe_device` replaces `device_status` (with fresh `last_probe`, `harddrives`, `guide_status`) between the read and write in `_refresh_tuners`, the probe's update is silently lost — overwritten by the background task's stale snapshot. The existing class docstring acknowledges only a single writer (`_probe_device`); this PR introduces a second writer without adding any synchronisation.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `_refresh_tuners` does `replace(app_state.device_status, tuners=tuners)` which reads device_status, creates a new object, then assigns — all non-atomically. `_probe_device` also writes a new DeviceStatus object with fresh probe data. If `_probe_device` completes between the read and write in `_refresh_tuners`, the probe's fresh `last_probe`, `harddrives`, `guide_status`, `server_info` are silently overwritten by the stale snapshot. AppState docstring explicitly acknowledges only a single writer for device_status; this PR adds a second without synchronisation.",
+      "severity_justification": "Race window is narrow (probe interval is 60s, tuner refresh is fast), and stale values self-correct on next probe. But the data corruption is silent and observable on the status page — a legitimate correctness concern worth addressing.",
+      "category_justification": "Classic TOCTOU race (read-modify-write without synchronisation) between two concurrent writers of a shared mutable reference.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/app_state.py",
+      "start_line": 85,
+      "end_line": 86,
+      "message": "`shutdown_executor(wait=False, cancel_futures=True)` cancels only *pending* futures, not an already-running one. A tuner refresh task that is in-flight when shutdown is called continues executing and can still write to `app_state.device_status` after shutdown returns. In the `_init_tablo` error path (`main.py` line 152), `shutdown_executor()` is called before `set_phase(InitPhase.ERROR)`, so a running refresh task can mutate state after the app has logically entered the ERROR phase.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The Python behavior described (`cancel_futures=True` doesn't stop in-flight futures) is accurate, but the scenario it targets — a tuner refresh running during the `_init_tablo` error path — is effectively impossible. Watch requests require READY state, and `set_phase(InitPhase.READY)` is the very last statement in the try block; there is no code after it that could fail and trigger the error path. No tuner refresh tasks can be in-flight when the error path's `shutdown_executor()` is reached.",
+      "severity_justification": "Even if the shutdown behavior concern were real, the impact would be limited to a brief post-error state mutation with no security or data-integrity consequences.",
+      "category_justification": "The finding concerns thread lifecycle and executor shutdown behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/test_app_state.py",
+      "start_line": 92,
+      "end_line": 122,
+      "message": "`test_submit_tuner_refresh_executes_task` and `test_submit_tuner_refresh_skips_if_pending` create `AppState()` directly without calling `state.shutdown_executor()`. Each `AppState` spawns a `ThreadPoolExecutor` with a live daemon thread. Without shutdown the thread leaks until process exit. The `app_state` fixture in `conftest.py` properly handles this via `yield`/teardown, but the direct `AppState()` instances in these tests bypass it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the two new executor-exercising tests create AppState() without shutdown, inconsistent with the conftest.py fixture added by this same PR specifically to handle executor teardown. The threads are technically not daemon threads, though CPython's weakref callback and atexit handler mitigate the practical impact.",
+      "severity_justification": "CPython's weakref finalizer and atexit handler clean up executor threads when the AppState goes out of scope, so there's no true resource leak — this is a test hygiene and consistency issue rather than a functional problem.",
+      "category_justification": "The finding is about missing cleanup in test code, inconsistent with an explicit teardown fixture added in the same PR.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/tablo_client.py",
+      "start_line": 90,
+      "end_line": 101,
+      "message": "A single `_cache_lock` guards both `_cache` (channels and airings) and `_tuner_cache`. Under concurrent load, a thread writing to `_cache` (e.g., completing a channel refresh) blocks all threads doing even momentary reads of `_tuner_cache`, and vice versa. These two caches have independent TTLs and access patterns; giving each its own lock would eliminate unnecessary cross-resource contention.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: a single `_cache_lock` is used for both `_cache` (channels/airings) and `_tuner_cache`. The claim is factually accurate. Cross-cache lock contention is real but trivially brief since the lock is only held during dict operations, not HTTP fetches.",
+      "severity_justification": "Lock hold time is nanoseconds (TTLCache dict ops only; HTTP fetches happen outside the lock). For the expected load of a single-household Tablo proxy, contention is practically immeasurable. This is a valid design observation with negligible real-world impact.",
+      "category_justification": "The finding is about unnecessary lock contention between two independent caches under concurrent load.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/app_state.py",
+      "start_line": 28,
+      "end_line": 28,
+      "message": "The ThreadPoolExecutor is not shut down when the AppState object is garbage collected. This can lead to resource leaks, as the worker thread and other resources associated with the executor may not be properly cleaned up. A __del__ method should be added to call self.shutdown_executor().",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Python's ThreadPoolExecutor already has built-in finalization: a weakref callback wakes up worker threads when the executor is GC'd, and `threading._register_atexit` joins threads at process exit. Additionally, main.py already has explicit `shutdown_executor()` calls in both the error path and the `finally` block. The suggestion is generic boilerplate that doesn't account for either Python's existing mechanism or the existing explicit cleanup code.",
+      "severity_justification": "No actual resource leak exists; the finding's premise is incorrect.",
+      "category_justification": "The finding is about resource cleanup and thread lifecycle management.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/app_state.py",
+      "start_line": 34,
+      "end_line": 36,
+      "message": "The `drain_tuner_refresh` method is documented for testing but is also used in `test_main.py` where it could deadlock in a real scenario. Submitting a new task to the executor and waiting for its result only ensures that this new task and any preceding it are complete. If another thread adds a long-running task after `drain_tuner_refresh` is called but before the submitted lambda starts, the `result()` call could block indefinitely, as the new long-running task occupies the single worker thread. This function's implementation is not robust for production use if it were ever to be used there, and its behavior in tests is fragile.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The described deadlock scenario is factually incorrect. `ThreadPoolExecutor` with max_workers=1 uses FIFO ordering — a task submitted after drain's no-op is enqueued behind it and cannot run before it. Empirically confirmed: the order is always [pre-existing-task, no-op, post-drain-task]. The finding misunderstands the executor's queue semantics.",
+      "severity_justification": "Even if the analysis were correct, the 5-second timeout prevents indefinite blocking. The method is documented as for testing only.",
+      "category_justification": "The finding concerns concurrent execution correctness and potential blocking behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/main.py",
+      "start_line": 204,
+      "end_line": 204,
+      "message": "The exception handler in `_init_tablo` only calls `app_state.shutdown_executor()` for exceptions that occur *after* the `try...except` block has been entered. If an exception occurs during the creation of `TabloClient` (e.g., if `discover_tablo_ip` fails) or `Config` object, the `_init_tablo` function exits, but the `AppState` object has already been created with a running `ThreadPoolExecutor`. This executor is never shut down, leading to a resource leak. The `shutdown_executor()` call should be in a `finally` block within `_init_tablo` to ensure it's always executed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`discover_tablo_ip` and `TabloClient()` are both called inside the try block; the `except Exception` handler catches all failures from them and explicitly calls `shutdown_executor()`. There is no code path where an exception in `_init_tablo` bypasses the executor shutdown. The finding is factually incorrect about where these calls appear.",
+      "severity_justification": "The described leak doesn't exist; the finding is based on a misreading of the code structure.",
+      "category_justification": "The finding is about resource cleanup and executor lifecycle management.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/routes.py",
+      "start_line": 257,
+      "end_line": 257,
+      "message": "The call to `tablo_client.refresh_tuners()` inside `_refresh_tuners` is a blocking network call. Although it runs in a background thread, if multiple `/watch` requests arrive in quick succession, they will each spawn a thread that executes `_refresh_tuners`. The `submit_tuner_refresh` logic only prevents a new task from being queued if one is already running, but it doesn't prevent multiple threads from being created to execute the same logic if they all pass the `_tuner_future.done()` check before the first one starts. While a race is unlikely with a single-worker executor, the function `_refresh_tuners` should use `tablo_client.get_tuners()` which handles request coalescing, instead of `refresh_tuners()` which always hits the API, to avoid redundant network requests.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The race condition claim is wrong: `submit_tuner_refresh` wraps the check and submit inside `with self._tuner_lock:`, making the check-and-submit atomic. Multiple concurrent callers cannot all pass the `_tuner_future.done()` check. The suggested replacement with `get_tuners()` would also defeat the PR's explicit goal of bypassing the cache to show fresh tuner state.",
+      "severity_justification": "The described multi-thread bypass cannot happen due to the lock. No real issue exists.",
+      "category_justification": "The finding makes incorrect claims about concurrent execution behavior and coalescing logic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/tablo_client.py",
+      "start_line": 104,
+      "end_line": 104,
+      "message": "The `_fetch_locks` dictionary is shared across all `TabloClient` instances because it's defined as a class-level dictionary. This means if multiple `TabloClient` instances exist (e.g., in a testing environment or a more complex application setup), they will all contend for the same locks. This can cause unexpected blocking and serialization between supposedly independent clients. The lock dictionary should be initialized in the `__init__` method to ensure each instance has its own set of locks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`_fetch_locks` is assigned as `self._fetch_locks = {...}` inside `__init__`, making it an instance attribute. Each `TabloClient` instance has its own independent set of locks. The finding's premise that it is class-level and shared is factually incorrect.",
+      "severity_justification": "The described issue does not exist in the code.",
+      "category_justification": "The finding makes a factually incorrect claim about class vs. instance attribute scoping.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/tablo_client.py",
+      "start_line": 152,
+      "end_line": 160,
+      "message": "The `refresh_tuners` method acquires `_fetch_locks['tuners']` and then `_cache_lock`. This is a different lock acquisition order than in `get_tuners`, which acquires `_cache_lock` first. While there is no direct path in the current code for a deadlock between these two methods, having inconsistent lock ordering is a dangerous pattern that can lead to deadlocks if the code evolves. All code paths should acquire locks in the same order.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding mischaracterizes the lock ordering. When both locks are held simultaneously, the order is consistently `_fetch_locks` → `_cache_lock` in both `get_tuners` and `refresh_tuners`. The initial standalone `_cache_lock` in `get_tuners` is fully released before any `_fetch_lock` is acquired, so it never creates a lock-ordering cycle. This pattern is also pre-existing for channels and airings. No actual deadlock risk exists under the current or natural evolution of the code.",
+      "severity_justification": "No deadlock is possible given the actual nested lock ordering, and the finding explicitly concedes no current issue.",
+      "category_justification": "The finding makes incorrect claims about lock ordering consistency and deadlock risk.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/conftest.py",
+      "start_line": 64,
+      "end_line": 67,
+      "message": "The `app_state` fixture creates an `AppState` instance but does not properly handle cleanup if an exception occurs during the test setup phase *after* the `app_state` is created but before it is yielded. The `state.shutdown_executor()` is in the teardown part of the generator, which doesn't run on setup failure. This can leak a `ThreadPoolExecutor` worker thread. Wrapping the `yield` in a `try...finally` block would ensure `shutdown_executor()` is always called.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "There is no code between `state = AppState()` and `yield state` that could fail while leaving `state` dangling — the scenario is impossible. Additionally, pytest's generator fixture mechanism runs teardown after `yield` even on test failure. The `try/finally` pattern would only be needed for fallible setup code in the gap before yield, which does not exist here.",
+      "severity_justification": "Even if the pattern were applied, the practical impact would be zero — there is no failure path between creation and yield.",
+      "category_justification": "The finding is about test fixture cleanup patterns.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/routes.py",
+      "start_line": 267,
+      "end_line": 275,
+      "message": "The `_refresh_tuners` callable executed in the background thread does not have retry logic or timeouts, so failures due to transient issues may not recover gracefully.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`refresh_tuners()` routes through `_get()` which already applies a 10-second timeout (`REQUEST_TIMEOUT=10`) and a `urllib3.Retry(total=2, backoff_factor=0.5)` adapter. Exceptions are caught and logged. The finding's factual premise — no retry or timeout — is wrong.",
+      "severity_justification": "The described gap does not exist; the underlying HTTP layer already handles timeouts and transient retries.",
+      "category_justification": "The finding is about error handling and resilience of background network calls.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/tablo_client.py",
+      "start_line": 244,
+      "end_line": 276,
+      "message": "`get_tuners` uses double-checked locking but assumes that locking the `_fetch_locks` dictionary and `_cache_lock` concurrently will not introduce deadlocks or delays; this synchronisation might lead to contention under heavy load.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is generic boilerplate — 'might lead to contention under heavy load' could apply to any locking code. No specific deadlock path or race condition is demonstrated. The double-checked locking pattern is correct (consistent nested ordering: _fetch_locks → _cache_lock) and is the established pre-existing pattern for channels and airings. No concrete issue is identified.",
+      "severity_justification": "No specific issue is demonstrated; lock hold times are nanoseconds and the pattern is correct.",
+      "category_justification": "The finding concerns lock contention under concurrent load.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/tablo_client.py",
+      "start_line": 278,
+      "end_line": 291,
+      "message": "`refresh_tuners` bypasses cache but provides no isolation for retries when failures occur, leading to possible failure cascades if upstream API issues are encountered.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both claims are incorrect or unsubstantiated: retry logic IS present at the HTTP adapter level (`Retry(total=2)`), and failure isolation IS present — `_refresh_tuners` catches all exceptions so a tuner refresh failure cannot cascade to the watch response. 'Possible failure cascades' is vague and unsupported by any specific code path.",
+      "severity_justification": "The described issues don't exist in the code.",
+      "category_justification": "The finding concerns error handling and resilience of background network calls.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/tablo_client.py",
+      "start_line": 407,
+      "end_line": 421,
+      "message": "`get_watch_url` creates one-off HTTP connections without retries or pooling, which goes against adapter-based retries used elsewhere, and may lead to hard-to-recover failures.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The one-off no-retry design is explicitly documented in the method's docstring as intentional: 'Uses a one-off request (no retry) since starting a stream is not idempotent.' Retrying watch requests could start multiple streams. A timeout IS present (REQUEST_TIMEOUT=10s). This is pre-existing code unchanged by this PR. The finding ignores the documented rationale and applies a generic 'add retries' heuristic incorrectly.",
+      "severity_justification": "No bug exists — the design is intentional, documented, and correct for a non-idempotent endpoint.",
+      "category_justification": "The finding concerns HTTP retry and connection pooling behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tablo_legacy_m3u/app_state.py",
+      "start_line": 76,
+      "end_line": 78,
+      "message": "This drops `/watch`-triggered refreshes whenever a previous refresh is still running, so there is no guarantee that a refresh occurs after the latest successful watch request. If another watch completes while the first refresh is pending, the tuner status can still reflect the earlier state until the next probe; consider coalescing by scheduling one trailing refresh instead of skipping outright.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at lines 76-78 confirms the finding: `submit_tuner_refresh` drops the new task if `_tuner_future` is not done. If a second `/watch` arrives while a refresh is in-flight, its refresh is silently skipped, so the tuner status after that watch is never captured until the next periodic probe. The finding is factually correct and identifies a real gap relative to the PR's stated goal.",
+      "severity_justification": "The gap only manifests with near-simultaneous watch requests; the existing periodic probe (up to 60s) will eventually catch up. No data is lost and no user-facing failure occurs — the status page is just stale for up to one probe interval.",
+      "category_justification": "The feature's stated goal (reflect tuner-in-use immediately after a watch) is not fully met when concurrent watches occur; this is a logic/behavioral correctness issue in the new coalescing strategy.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

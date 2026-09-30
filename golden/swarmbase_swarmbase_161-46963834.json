@@ -1,0 +1,939 @@
+{
+  "pr_key": "swarmbase_swarmbase_161-46963834",
+  "pr": {
+    "repo": "https://github.com/swarmbase/swarmbase",
+    "pr_number": 161,
+    "base": "1aab894f631e1f4ba552583189c2328cc6495297",
+    "head": "46963834141328168e1f6a268c12b375ad9309e8"
+  },
+  "findings": [
+    {
+      "file": "examples/browser-test/src/react-app-env.d.ts",
+      "start_line": 5,
+      "end_line": 5,
+      "message": "The declaration uses `RELAY_MULTIADDR` but the code in App.tsx (line 80) reads `process.env.REACT_APP_RELAY_MULTIADDR`. CRA strips environment variables without the `REACT_APP_` prefix at build time, so the declared name does not match the one actually used. TypeScript provides no type safety on the env var actually referenced.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The declaration file declares `RELAY_MULTIADDR` but App.tsx reads `process.env.REACT_APP_RELAY_MULTIADDR`. The names don't match, so TypeScript provides no type safety for the env var actually used. The same mismatch is confirmed in wiki-swarm as well.",
+      "severity_justification": "This is a type-declaration mismatch that causes missing TypeScript type safety but has no runtime impact — CRA simply treats the undeclared `REACT_APP_RELAY_MULTIADDR` as `string | undefined` anyway, so behavior is not affected.",
+      "category_justification": "The issue is a naming/type-declaration inconsistency that undermines TypeScript's type checking, which is a code quality/maintainability concern rather than a runtime bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/wiki-swarm/src/react-app-env.d.ts",
+      "start_line": 5,
+      "end_line": 5,
+      "message": "Same issue as browser-test: declares `RELAY_MULTIADDR` but WikiArticle.tsx reads `process.env.REACT_APP_RELAY_MULTIADDR`. The declaration is dead — the env var that is actually used has no typed declaration.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: wiki-swarm/src/react-app-env.d.ts declares `RELAY_MULTIADDR` but WikiArticle.tsx line 67 reads `process.env.REACT_APP_RELAY_MULTIADDR`. The declaration is dead and provides no type safety for the actual env var used.",
+      "severity_justification": "Type-declaration mismatch only — no runtime impact. CRA treats the undeclared REACT_APP_RELAY_MULTIADDR as string | undefined at runtime regardless.",
+      "category_justification": "A naming inconsistency in type declarations that undermines TypeScript safety, a code quality concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "guides/docker/Caddyfile",
+      "start_line": 8,
+      "end_line": 16,
+      "message": "The Caddyfile routes connections round-robin to `relay-1:9001` and `relay-2:9001`. libp2p clients embed the target peer's peer ID in the multiaddr (e.g. `/dns4/relay.example.com/tcp/443/wss/p2p/12D3KooW...`). During the libp2p handshake, the client verifies the remote TLS certificate against the expected peer ID. Since relay-1 and relay-2 have different peer IDs, a connection routed to the wrong backend will fail identity verification. Clients following the production deployment guide will see intermittent connection failures. The guide itself says not to use a connection-splitting proxy — the Caddy round-robin config contradicts that advice.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The Caddyfile uses Caddy's Layer-7 WebSocket round-robin across relay-1 and relay-2. The coordination-servers guide (lines 357-358) explicitly warns against using connection-splitting proxies and recommends TCP/Layer 4 passthrough or sticky sessions. Since libp2p clients verify the remote peer's identity (via Noise protocol) against the peer ID embedded in the multiaddr, round-robin routing to a backend with a different peer ID will fail the handshake. This is a direct contradiction between the Caddyfile config and the guide's own stated advice.",
+      "severity_justification": "The configuration would cause intermittent connection failures in production for any client using a peer-ID-pinned multiaddr, which is the standard usage. However this is in a documentation/example guide rather than production code, so the blast radius is limited to users following the guide.",
+      "category_justification": "The Caddyfile configuration is functionally incorrect for its stated purpose — it contradicts the guide's own advice and would cause handshake failures due to peer ID mismatch when connections are routed to the wrong backend.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 1247,
+      "end_line": 1261,
+      "message": "When `_sendLoadRequestAndSync` returns `false` for snapshot-load, the loop comment says 'Empty response — peer has no snapshot, try doc-load below.' But `false` is also returned for decryption failures (unrecognized key ID, line ~1154), payload too short (line ~1143), document ID mismatch (line ~1168), and signature verification failure (line ~1200). For all those cases, doc-load on the same peer will also fail for the same reason, wasting a round-trip per peer. The fallthrough to doc-load is only semantically correct when the snapshot-load response was genuinely empty.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "_sendLoadRequestAndSync returns false for five distinct conditions, but the load() loop comment and fallthrough to doc-load treats them all as 'no snapshot available'. For cases like unrecognized keyID or signature failure, doc-load on the same peer will also fail for the same reason, wasting a round-trip. The code and comment conflate five different failure modes.",
+      "severity_justification": "The behavior is non-optimal (wasted round-trips) but not dangerous — the document will still eventually load from another peer, or the doc-load attempt will simply fail and be skipped. The impact is latency on edge-case failures, not data loss or security issues.",
+      "category_justification": "The fallthrough logic is semantically incorrect for error cases other than empty response, and the comment misrepresents the actual semantics of the return value.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 1444,
+      "end_line": 1453,
+      "message": "`sync()` unconditionally calls `this._syncMessageSerializer.serializeSyncMessage(messageWithoutSignature)` to produce `raw`, but when called with `verifySignature = false` (the common load-response path from `_sendLoadRequestAndSync`), `raw` is computed and then immediately discarded — the `if (verifySignature && ...)` branch is skipped. For messages carrying a snapshot, `messageWithoutSignature` includes the full snapshot state bytes (potentially megabytes). This serialization is O(snapshot_size) wasted work on every document open. The signature was already verified by the caller before `sync()` was invoked.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: sync() unconditionally serializes messageWithoutSignature (including snapshot bytes) to compute `raw`, but when verifySignature=false (the path from _sendLoadRequestAndSync), raw is never used. The code itself has a TODO comment acknowledging this inefficiency. Snapshot messages could be megabytes in size, making this O(snapshot_size) wasted work on every document open.",
+      "severity_justification": "This is a performance inefficiency, not a correctness bug. Document load is infrequent (once per open), so the wasted serialization cost is bounded. The code already acknowledges this with a TODO comment, suggesting it's a known limitation rather than an oversight.",
+      "category_justification": "Unnecessary serialization of potentially large snapshot data on every document load when verifySignature=false is a pure performance concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 808,
+      "end_line": 843,
+      "message": "`_pruneChanges` BFS processes ACL nodes by always enqueueing their children (the `else` branch fires whenever `isACLNode = true`, regardless of `documentNodesVisited`). When an ACL node is encountered after the keepCount boundary has been reached, its document-node children are still enqueued, visited, and retained in the tree (only their children are pruned). This violates the keepCount guarantee: a tree with k ACL nodes having document children can retain up to keepCount + k document nodes. Over many compaction cycles with ACL changes interleaved in history, the pruned tree grows larger than intended.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `_pruneChanges` BFS condition `!isACLNode && documentNodesVisited >= keepCount` never prunes children of ACL nodes. When an ACL node has document-node children, those children are enqueued, retained in the tree, and increment documentNodesVisited beyond keepCount. The keepCount guarantee is violated by as many document nodes as exist as descendants of ACL nodes appearing after the boundary.",
+      "severity_justification": "Compaction is disabled by default. When enabled, the violation is bounded (each ACL subtree contributes a small number of extra nodes), and ACL nodes with document descendants are uncommon in practice. The impact is that slightly more nodes are kept than intended — not data loss or security issues.",
+      "category_justification": "The implemented behavior does not match the keepCount contract — document nodes beyond keepCount can be retained when they are descendants of ACL nodes.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 574,
+      "end_line": 593,
+      "message": "`_applyACLFromTree` silently skips nodes where `change === undefined` (deferred nodes). If a load response's change tree contained ACL nodes with deferred payloads, those writers would not be populated before `_verifySnapshotSignature` runs, causing legitimate snapshots to be rejected as unauthorized. In practice load responses are built from `_lastSyncMessage` which always has full change data for locally-created changes, but the behavior differs for the edge case of a peer that received ACL changes only via pubsub (it would have an empty `_lastSyncMessage`). There is no warning logged when deferred ACL nodes are skipped, making this silent failure hard to debug.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: _applyACLFromTree checks `if (node.change)` which is falsy for deferred nodes (change === undefined per CRDTChangeNode type). Deferred ACL nodes are silently skipped, meaning writers won't be populated from them before _verifySnapshotSignature runs. No warning is logged when this happens. The edge case (load response containing deferred ACL nodes when a snapshot is present) is real, though narrow.",
+      "severity_justification": "Requires a narrow edge case: compaction enabled, a peer with deferred ACL nodes serving a snapshot. In practice load responses are built from _lastSyncMessage which typically has full change data. The impact is silent snapshot rejection (degraded to slow full-history sync) rather than data loss or security failure.",
+      "category_justification": "Silent skip of deferred ACL nodes leads to incorrect writer population, potentially causing valid snapshots to be rejected — behavior diverges from intent in a non-obvious edge case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-node.ts",
+      "start_line": 199,
+      "end_line": 214,
+      "message": "In `_acquirePinSlot`, when a slot is available, `_activePins` is incremented and the function returns `Promise.resolve()`. When no slot is available, a resolver is pushed to `_pinQueue` and `_activePins` is NOT incremented. In `_releasePinSlot`, if there is a queued resolver, it is called (`next()`) without decrementing `_activePins`. This correctly 'transfers' the slot. However, if `next()` triggers the queued operation's continuation synchronously (e.g., microtask resolution), the continuation may call `_releasePinSlot` again before the current `_releasePinSlot` stack unwinds. Since `_activePins` was never decremented for the transfer, the effective slot count is maintained. This is correct but fragile — the invariant depends on `_activePins` meaning 'active or transferring', not 'currently active', which isn't documented.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The mechanism is a standard JavaScript async semaphore pattern. _activePins correctly tracks allocated slots. Promise resolution via next() schedules a microtask (not synchronous execution), so there's no re-entrancy risk. The 'transfer' path (no decrement + next()) correctly maintains the slot count. The finding correctly describes the code but mischaracterizes it as fragile — the invariant is a well-understood pattern for this type of concurrency control. The lack of a comment is a minor style concern but the code is not actually fragile or incorrect.",
+      "severity_justification": "The code is functionally correct. The concern is only about documentation of an invariant, which is a minor maintainability issue at most.",
+      "category_justification": "The only valid concern is the undocumented invariant in a concurrency control mechanism, which is a maintainability/documentation issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 1665,
+      "end_line": 1715,
+      "message": "In `snapshot()`, the `compactedCount` is set to `this._documentChangeCount`, which counts ALL document-kind changes applied by this peer including remote changes fetched from the blockstore. However, when a remote snapshot is accepted in `sync()`, `_documentChangeCount` is inflated to `max(_documentChangeCount, incoming.compactedCount)`. If the peer received a remote snapshot with compactedCount=500 but has only locally seen 50 changes, creating a new snapshot with `compactedCount=500` overstates how many changes it has verified individually. Peers receiving this snapshot rely on `compactedCount` for tie-breaking — an inflated count could cause an inferior (less complete) snapshot to 'win' the tie-break over a legitimate peer's higher-CID snapshot at the true count.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The inflation of _documentChangeCount is verified at lines 1540-1542 and 1680. However, the finding's claimed harm (inferior/less complete snapshot winning tie-break) doesn't hold: snapshot state is always derived from the actual CRDT document state, which correctly includes the 500 changes from the applied remote snapshot. A peer that accepted a remote snapshot at count=500 and creates its own snapshot at count=500 produces equivalent state — the tie-break between two equivalent-state snapshots is cosmetic, not a correctness issue.",
+      "severity_justification": "Even if the semantic inconsistency in compactedCount is acknowledged, the actual snapshot content is always valid. No data loss, no security failure, no incorrect CRDT state — just a naming/semantic ambiguity in the counter.",
+      "category_justification": "The finding is about whether compactedCount accurately represents what a peer has individually verified versus what its CRDT state covers, and whether this causes tie-break errors.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 1126,
+      "end_line": 1212,
+      "message": "`_sendLoadRequestAndSync` verifies the outer sync-message signature by serializing `messageWithoutSignature` (which includes the snapshot state bytes) in the `preLoadWriters.length > 0` branch, then immediately calls `this.sync(message, false)` which performs the same full serialization again internally (the `raw` variable in `sync()`). For a document with a 10 MB snapshot, each load call serializes the snapshot at least twice — once for external verification and once for the discarded `raw` inside `sync()`. This is O(snapshot_size) extra work per `open()` call.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: _sendLoadRequestAndSync serializes messageWithoutSignature for verification when preLoadWriters.length > 0, then calls sync(message, false) which unconditionally serializes it again (the wasted `raw` variable, noted with a TODO comment). For snapshot-containing messages, this is two full serializations of potentially large state bytes per load call.",
+      "severity_justification": "Document load is infrequent (once per open), and while the O(snapshot_size) double serialization is wasteful, it's a performance concern not a correctness issue. The same concern was already noted with a TODO comment in the code.",
+      "category_justification": "Redundant serialization of large snapshot data on document open is a performance inefficiency with no correctness impact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-node.ts",
+      "start_line": 234,
+      "end_line": 234,
+      "message": "The `change` handler for document publish events can trigger async pinning operations (`this._pinCID(cid).catch(() => {})`) but doesn't wait for them to complete. If the node shuts down shortly after receiving a publish event, pinning operations for the document's CIDs may be aborted midway. This could lead to incomplete data persistence on the pinning node.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: _pinCID(cid).catch(() => {}) and _pinNewCIDs(...).catch(...) are fire-and-forget in event callbacks. The stop() method does not track or await in-flight pin operations. A shutdown after receiving a publish event could leave pins incomplete with no automatic retry on restart (the node would only re-pin if another publish event arrives for the same CID).",
+      "severity_justification": "The data remains available from other peers until the node restarts and re-encounters the CID. This is a known architectural limitation of async event handlers rather than a critical reliability failure. The dedup mechanism ensures re-pinning would occur on next encounter.",
+      "category_justification": "Incomplete graceful shutdown / missing draining of async operations is a reliability concern for a node intended to provide persistent data availability.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm.ts",
+      "start_line": 231,
+      "end_line": 231,
+      "message": "The `connect` method dials peers using `this.heliaNode.libp2p.dial()`, but it does not wait for the connection to be fully established or for peer metadata (like supported protocols) to be exchanged before returning. Callers might assume that after `connect` resolves, they can immediately use protocols with the dialed peer, but dialing is asynchronous. This could lead to race conditions where a subsequent `dialProtocol` call fails because the connection isn't ready. The method should await `this.libp2p.dial()`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The connect() method pushes dial() Promises into connectionPromises and then awaits Promise.all(connectionPromises). The dial is fully awaited before the method returns. The finding's claim that dial is not awaited is factually incorrect.",
+      "severity_justification": "The finding is incorrect — no bug exists here.",
+      "category_justification": "The finding is about a supposed missing await that would cause async/race condition issues, which is a correctness concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm-automerge/src/collabswarm-automerge.ts",
+      "start_line": 153,
+      "end_line": 153,
+      "message": "In `deserializeSyncMessage`, the `snapshot` is being destructured from `raw` and then `raw` is spread into the return object. This means if `raw` contains a `snapshot` property, it will be included twice: once from the spread of `raw`, and once from the explicitly set `snapshot` property. The `snapshot` property should be removed from `raw` before spreading.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "In JavaScript object literals, later properties override earlier ones from a spread. The explicit `snapshot` assignment after `...raw` correctly overrides the raw snapshot. No duplication occurs — the transformed snapshot value wins. The finding misunderstands JavaScript's object spread override semantics.",
+      "severity_justification": "No bug exists — the code behaves correctly due to property override in object literals.",
+      "category_justification": "The finding is about a supposed data duplication bug in deserialization.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 1058,
+      "end_line": 1060,
+      "message": "In `sync()`, when a remote snapshot is received and `_latestSnapshot` is updated, `_changesSinceSnapshot` is reset to 0. However, the code proceeds to call `_syncDocumentChanges` to apply any post-snapshot changes from the same message. This will increment `_changesSinceSnapshot` again. The counter should be reset *after* `_syncDocumentChanges` has finished applying all changes from the message to accurately reflect the state.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The current behavior is correct: _changesSinceSnapshot is reset to 0 when the remote snapshot becomes the new baseline, and then _syncDocumentChanges increments it for each genuine post-snapshot change applied. The final value correctly reflects how many changes occurred after the snapshot. The finding's suggested fix (reset after _syncDocumentChanges) would set the counter to 0 after applying M post-snapshot changes, incorrectly discarding those M changes from the compaction trigger counter.",
+      "severity_justification": "The finding describes no actual bug — the code is correct. The suggested fix would introduce a bug.",
+      "category_justification": "The finding is about correctness of a change counter that drives compaction triggering.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 490,
+      "end_line": 520,
+      "message": "When fetching missing blocks in `_syncDocumentChanges`, `_getBlock` is called and its promise is pushed to `fetchPromises`. However, the code doesn't `await` the `this._fireRemoteUpdateHandlers` call inside the `.then()` block. This means `Promise.all(fetchPromises)` might resolve before all remote update handlers have completed, leading to a race condition where `_maybeCompact()` is called on an incomplete state.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The .then() callback is declared async and explicitly `await`s _fireRemoteUpdateHandlers(). An async .then() callback returns a Promise that won't resolve until all awaited work inside it completes. Therefore Promise.all(fetchPromises) correctly waits for all remote update handler calls before _maybeCompact() runs. The finding's claim that _fireRemoteUpdateHandlers is not awaited is factually incorrect.",
+      "severity_justification": "No bug exists — the async await chain is correct.",
+      "category_justification": "The finding is about a supposed race condition from missing await in async handler chains.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 810,
+      "end_line": 814,
+      "message": "When loading a document, `_sendLoadRequestAndSync` attempts to dial a peer for the `snapshot-load` protocol. If this fails, it silently proceeds to try the `doc-load` protocol. The `catch` block is empty. This can mask underlying network issues or configuration problems, making debugging difficult. The error should be logged.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the snapshot-load catch block binds no error variable and logs nothing, while the doc-load catch below it does log with console.warn. Any failure — including network errors, timeouts, and misconfigurations — is silently swallowed and attributed to 'peer doesn't support snapshot-load'. This asymmetry with the doc-load error handling makes debugging harder.",
+      "severity_justification": "This is a debugging/observability concern. The fallthrough behavior itself is correct. The only practical impact is making it harder to diagnose issues when snapshot-load fails for unexpected reasons.",
+      "category_justification": "Silent error swallowing that reduces debuggability is a code quality/maintainability concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/browser-test/src/App.tsx",
+      "start_line": 78,
+      "end_line": 88,
+      "message": "The environment variable REACT_APP_RELAY_MULTIADDR is used to fetch the relay address, but no validation is performed on its value. A malformed or malicious value could lead to app crash or misbehavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "REACT_APP_RELAY_MULTIADDR is a CRA build-time environment variable set by the operator in docker-compose, not user-supplied runtime input. A malformed value would cause a failed libp2p connection (graceful degradation), not a crash or security issue. The finding is generic input-validation advice without a concrete exploit path for this specific code.",
+      "severity_justification": "Even if addressed, the practical risk is negligible — a malformed operator-controlled build-time env var at worst causes a failed bootstrap connection.",
+      "category_justification": "The finding frames this as a security concern about malicious input.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "relay-server/src/index.ts",
+      "start_line": 71,
+      "end_line": 77,
+      "message": "Auto-subscribe logic for topics assumes that topics initiated by peers are trusted. Without verifying the topic or peer, a malicious peer might cause subscription to excessive or inappropriate topics, impacting performance or introducing security risks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code has explicit hardening controls: TOPIC_ALLOWLIST (allowlist when configured), MAX_AUTO_TOPICS hard cap (default 1000), IGNORED_TOPIC_PREFIXES for system topics, and auto-unsubscribe cleanup. The finding is a generic advisory that doesn't acknowledge these mitigations or demonstrate a concrete bypass. It could be copy-pasted to any relay with auto-subscribe logic.",
+      "severity_justification": "The existing controls (cap, allowlist, ignored prefixes) adequately bound the attack surface. No concrete exploit path is demonstrated.",
+      "category_justification": "The finding frames this as a security/DoS concern about untrusted peer input.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "relay-server/src/index.ts",
+      "start_line": 78,
+      "end_line": 84,
+      "message": "Unsubscribing from a topic based solely on the absence of subscribers might cause unintended topic loss if subscriber state is temporarily inconsistent (e.g., due to network partitions).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Only auto-subscribed topics (not seed/permanent topics) are eligible for removal. When a partition heals and the peer reconnects and re-subscribes, the subscription-change event fires again, triggering re-subscription. The relay is self-healing. The finding is a generic advisory about distributed system consistency that doesn't demonstrate a concrete lasting failure scenario specific to this code.",
+      "severity_justification": "Temporary topic loss on partition is self-correcting when peers reconnect and re-subscribe. Permanent seed topics are never removed.",
+      "category_justification": "The concern is about reliability under network partitions.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 605,
+      "end_line": 609,
+      "message": "There is no retry mechanism for fetch failures when retrieving missing blocks from the blockstore. A transient failure could leave the document in an incomplete state, potentially causing synchronization issues.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The CRDT sync protocol provides natural retry: subsequent pubsub sync messages re-trigger _syncDocumentChanges which will attempt to fetch the blocks again. A transient failure delays but doesn't permanently break convergence. The finding is a generic 'add retry logic' advisory that doesn't demonstrate why the existing eventual-consistency mechanism is insufficient, and the pattern is pre-existing rather than introduced by this PR.",
+      "severity_justification": "Missing blocks delay convergence but CRDT design handles this gracefully through subsequent syncs. No permanent data loss or corruption.",
+      "category_justification": "The concern is about retry/fault tolerance for transient failures in async block fetching.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 1398,
+      "end_line": 1404,
+      "message": "When determining peer connection status, the code assumes that `event.detail` contains a valid PeerId. However, there is no check to ensure event.detail matches the expected type or format, which may lead to runtime errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The referenced file and lines (collabswarm-document.ts:1398-1404) contain document load logic with no event.detail or PeerId handling. The actual peer event code is in collabswarm.ts and uses the typed libp2p v2 API where event.detail is a PeerId by contract, with a comment explicitly documenting this. The finding points to the wrong location and the concern is a generic advisory about typed event parameters.",
+      "severity_justification": "No bug exists — the event type is guaranteed by the libp2p TypeScript API contract.",
+      "category_justification": "The finding is about a supposed runtime type validation gap in event handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/sync-message-serializer.ts",
+      "start_line": 7,
+      "end_line": 15,
+      "message": "The `SyncMessageSerializer` interface does not define how to handle serialization errors. If a serialization error occurs, it may lead to unhandled exceptions or inconsistent operation state.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "TypeScript interfaces never specify error handling — they define method signatures only. This is generic boilerplate that applies to every interface in any TypeScript codebase. The interface was not changed in this PR, errors propagate via exceptions by default, and no concrete issue or divergence from expected behavior is identified.",
+      "severity_justification": "No concrete bug or vulnerability is identified.",
+      "category_justification": "The finding is about an interface contract not specifying error handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docker-compose.yaml",
+      "start_line": 11,
+      "end_line": 14,
+      "message": "The health check for the 'relay' service uses a custom script, but the handling of service unavailability (e.g., long-term failures) is not defined. This could lead to unclear status in orchestrations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Docker Compose's health check mechanism fully defines the behavior for service unavailability: after retries=20 failures the container is marked unhealthy, and dependent services using condition: service_healthy handle this correctly. The finding is generic advice about health check coverage that doesn't identify a specific flaw in the configuration.",
+      "severity_justification": "No concrete issue — Docker handles the unhealthy state as expected.",
+      "category_justification": "The finding is about service availability monitoring and orchestration behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "examples/password-manager/src/App.tsx",
+      "start_line": 56,
+      "end_line": 68,
+      "message": "The password manager application directly appends configuration to the environment without validation. An empty or invalid relay address could crash the application or leave it without network connectivity.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code already handles the undefined/empty case with a ternary check. An invalid multiaddr causes a connection failure (graceful degradation), not a crash. REACT_APP_RELAY_MULTIADDR is a build-time operator-controlled env var, not user input. This is a generic 'validate your config' advisory that doesn't demonstrate a concrete crash path.",
+      "severity_justification": "Worst case is failed bootstrap connection — no crash, no data corruption, just no network connectivity.",
+      "category_justification": "The concern is about app behavior with invalid configuration.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/crdt-provider.ts",
+      "start_line": 57,
+      "end_line": 64,
+      "message": "The `applySnapshot` method lacks robust error handling if the snapshot is malformed or incompatible. Applying an invalid snapshot could corrupt the local document state.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The applySnapshot interface method is guarded at its call site by cryptographic signature verification — a snapshot must be signed by an authorized writer before being applied. The finding is a generic advisory about interface methods not specifying error handling, applicable to any TypeScript interface. No concrete corruption path is demonstrated given the pre-application signature check.",
+      "severity_justification": "The signature verification gate provides meaningful defense against malformed snapshots reaching applySnapshot. CRDT implementations are designed to apply atomically.",
+      "category_justification": "The concern is about error handling for malformed input causing state corruption.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-node.ts",
+      "start_line": 155,
+      "end_line": 178,
+      "message": "The pinning logic does not provide a retry mechanism upon failure to pin CIDs. Transient failures could lead to incomplete data availability for other peers.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The referenced lines are the constructor, not the pinning logic. The actual _pinCID method (lines 212-234) already provides implicit retry: failed CIDs are not added to _seenCids, so they are re-attempted when encountered in future sync messages. This is the same architectural eventual-consistency retry as found in Finding 20.",
+      "severity_justification": "Transient pin failures are eventually retried via pubsub, matching the CRDT eventual-consistency model.",
+      "category_justification": "The finding is about retry/fault tolerance for transient pinning failures.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "guides/coordination-servers.md",
+      "start_line": 207,
+      "end_line": 207,
+      "message": "[javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket] Insecure WebSocket Detected. WebSocket Secure (wss) should be used for all WebSocket connections.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a static analysis scanner alert triggered by ws:// appearing in a documentation file. The guide explicitly labels plain WebSocket as development-only and mandates wss:// for production with full TLS configuration guidance. This is a boilerplate scanner alert on documentation, not a real vulnerability.",
+      "severity_justification": "No code vulnerability — this is documentation that correctly distinguishes dev vs. production usage.",
+      "category_justification": "The scanner is flagging an insecure WebSocket usage concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 544,
+      "end_line": 544,
+      "message": "[javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring] Detected string concatenation with a non-literal variable in a util.format / console.log function. If an attacker injects a format specifier in the string, it will forge the log message. Try to use constant values for the format string.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Template literal interpolation occurs before the string reaches console.error — there is no format string processing of the variable. missingHash is a content-addressed CID hash, not user-controlled input. JavaScript console.error's limited printf-style support is not exploitable for log forging in any meaningful sense. This is a C/C++ format string vulnerability pattern incorrectly applied to JavaScript template literals by a static analysis scanner.",
+      "severity_justification": "No real vulnerability — format string injection in this context is not exploitable.",
+      "category_justification": "The scanner flagged a format string injection concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 1269,
+      "end_line": 1269,
+      "message": "[javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring] Detected string concatenation with a non-literal variable in a util.format / console.log function. If an attacker injects a format specifier in the string, it will forge the log message. Try to use constant values for the format string.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same scanner rule as Finding 28 applied to another console.log/console.warn call with a template literal. JavaScript template literals interpolate before passing to console functions, so no format string processing of the variable occurs. This is a C/C++ format string vulnerability pattern misapplied to JavaScript by an automated scanner.",
+      "severity_justification": "No real vulnerability — format string injection via console.log template literals is not exploitable in JavaScript.",
+      "category_justification": "The scanner flagged a format string injection concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 1521,
+      "end_line": 1521,
+      "message": "[javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring] Detected string concatenation with a non-literal variable in a util.format / console.log function. If an attacker injects a format specifier in the string, it will forge the log message. Try to use constant values for the format string.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same scanner rule as Findings 28 and 29 applied to another console.log/console.warn call with a template literal in the snapshot verification path. JavaScript template literals interpolate variables before passing to console functions, so no format string processing of the variable occurs at runtime. This is a C/C++ format string vulnerability pattern misapplied to JavaScript template literals by an automated scanner.",
+      "severity_justification": "No real vulnerability — format string injection via JavaScript console functions and template literals is not exploitable.",
+      "category_justification": "The scanner flagged a format string injection concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring"
+      }
+    },
+    {
+      "file": "relay-server/src/index.ts",
+      "start_line": 163,
+      "end_line": 174,
+      "message": "The relay listens on `/ip4/0.0.0.0/tcp/9001/ws`, so `wsMultiaddr` written to `relay-info.json` is also `/ip4/0.0.0.0/tcp/9001/ws/p2p/...`. The docker-compose services (`browser-test`, `wiki-swarm`) then read this value and inject it into the browser app as `REACT_APP_RELAY_MULTIADDR`. Browsers running on the host cannot reliably dial `0.0.0.0` — Chrome rejects it for security/dial purposes, and Firefox's behavior is inconsistent. Even when the port is mapped to the host, the address the client needs is `/ip4/127.0.0.1/tcp/9001/ws/p2p/...` (or the host's reachable IP/DNS name).\n\nConsider either: (a) rewriting `0.0.0.0` → `127.0.0.1` when generating `wsMultiaddr` (or when extracting in the compose command), (b) making the relay's announced address configurable via an env var (e.g. `ANNOUNCE_ADDR`), or (c) documenting that the user must set the announced address for the docker-compose to work out of the box.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "js-libp2p/websockets expands wildcard via `getThinWaistAddresses` into concrete IPs",
+      "severity_justification": "The docker-compose dev/demo setup (browser-test, wiki-swarm) will silently fail to connect to the relay when the browser runs on the host, making the new relay-based setup non-functional out of the box. This affects developer experience and the intended demo workflow, but not production deployments.",
+      "category_justification": "The relay multiaddr written to shared storage will often be an unreachable internal Docker IP for the browser, causing silent connection failure in the new compose setup.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docker-compose.yaml",
+      "start_line": 84,
+      "end_line": 103,
+      "message": "The `node` service has its `CLIENT_CONFIG_FILE=/app/client-config.env` env var preserved, but the volume mount for `./client-config.env:/app/client-config.env` was removed in this PR (it was previously the source of the file). Unless `client-config.env` is baked into the image, the node service will fail to find the file and likely fail to start or wait indefinitely (the prior `wait-for-file.sh` command was removed from `browser-test` and `wiki-swarm` but the node service entrypoint is unchanged here, so it may still depend on this file). Please verify the node service still works after this change, or update it to consume `REACT_APP_RELAY_MULTIADDR` / `/shared/relay-info.json` like the other services.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims removing the `./client-config.env` volume mount will cause the node service to fail to start. But the node entrypoint (`collabswarm-automerge-d.ts`) never reads `CLIENT_CONFIG_FILE` — it calls `defaultNodeConfig(defaultBootstrapConfig([]))` directly. The only related code in `collabswarm-node.ts` reads `REACT_APP_CLIENT_CONFIG_FILE` (different name) and *writes* to that file, not reads from it. The node service will start fine without the volume mount.",
+      "severity_justification": "The finding is incorrect about the failure mode, though there is a minor real concern that the node service doesn't connect to the new relay (uses empty bootstrap list).",
+      "category_justification": "The finding makes an incorrect claim about a runtime failure caused by a missing file dependency.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "guides/docker/Caddyfile",
+      "start_line": 14,
+      "end_line": 15,
+      "message": "The Caddyfile uses `header_up Connection {>Connection}` / `header_up Upgrade {>Upgrade}`. With modern Caddy v2, `reverse_proxy` already forwards `Connection` and `Upgrade` headers transparently for WebSocket connections — these explicit `header_up` directives are unnecessary and the placeholder syntax `{>HeaderName}` is non-standard (the correct form for reading request headers is `{http.request.header.HeaderName}`). As written, these directives will likely either be no-ops or insert empty/literal header values, depending on the Caddy version. Recommend removing both `header_up` lines; WebSocket upgrades work out of the box with `reverse_proxy`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding incorrectly states that `{>Connection}` / `{>Upgrade}` is non-standard Caddy v2 syntax. In Caddy v2, `{>Header-Name}` IS the documented shorthand for request headers (the long form being `{http.request.header.Header-Name}`). These directives correctly copy the incoming headers upstream and won't insert empty or literal values. They are redundant but harmless, and the described failure mode is incorrect.",
+      "severity_justification": "Even if taken as a suggestion to remove redundant lines, WebSocket functionality is unaffected either way.",
+      "category_justification": "The finding makes an incorrect factual claim about Caddy v2 placeholder syntax and the resulting behavior.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "guides/docker/Dockerfile.bootstrap",
+      "start_line": 1,
+      "end_line": 43,
+      "message": "`Dockerfile.bootstrap` is documented as \"DHT bootstrap node\" and `Dockerfile.relay` as the \"Circuit Relay / Bootstrap Node\", but their contents are byte-for-byte identical — both build the same `relay-server` source. The accompanying comment in `Dockerfile.bootstrap` even acknowledges this (\"This uses the same relay-server code but could be extended...\"). Shipping two identical Dockerfiles is confusing for users and creates a maintenance burden (any change must be applied to both). Consider either: (a) removing `Dockerfile.bootstrap` and using `Dockerfile.relay` for both roles with documentation explaining the dual purpose, or (b) actually differentiating the bootstrap image (e.g. setting `clientMode: false` for the DHT, or running a different entrypoint).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Stripping comments, the two Dockerfiles are functionally identical — every actual Docker instruction is the same. The finding's claim of 'byte-for-byte identical' is slightly imprecise (comments differ), but the substantive concern is correct: both produce the exact same image. The Dockerfile.bootstrap even self-acknowledges this in its own comments.",
+      "severity_justification": "This is a maintainability/documentation concern in new guide files. No runtime behavior is affected; both files are guides, not production assets. The duplication creates a small drift risk but the impact is limited.",
+      "category_justification": "Duplicate Dockerfiles with identical build instructions but different documented purposes create a maintenance burden (changes must be applied twice) and user confusion.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm.ts",
+      "start_line": 129,
+      "end_line": 136,
+      "message": "This removes the public `ipfsNode` accessor without adding the deprecated alias described in the PR. Existing consumers that still call `collabswarm.ipfsNode` will now fail at runtime instead of receiving the Helia node, so the migration is not backward compatible.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: there is no `get ipfsNode()` deprecated alias anywhere in `collabswarm.ts` or any other file in the package at this SHA. The PR description claims 'Backward-compatible deprecated aliases retained' for `ipfsNode`/`ipfsInfo`, but the code does not implement them. External library consumers using the previously public `ipfsNode` accessor will get a runtime failure.",
+      "severity_justification": "This is a breaking API change for external consumers of the `@collabswarm/collabswarm` package, contradicting the PR's stated backward-compatibility guarantee. Any downstream code calling `.ipfsNode` will fail at runtime.",
+      "category_justification": "Removal of a public API accessor without the promised deprecated alias is a breaking public interface change.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm.ts",
+      "start_line": 144,
+      "end_line": 149,
+      "message": "This removes the public `ipfsInfo` accessor without providing the deprecated alias promised by the PR. Consumers that still read `collabswarm.ipfsInfo` will break; keep a getter that delegates to `peerId` if backward compatibility is required.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: no `get ipfsInfo()` accessor or deprecated alias exists anywhere in the package at this SHA. The PR description claims backward-compatible aliases are retained, but none is implemented. External consumers calling `.ipfsInfo` will get a runtime failure. The diff itself shows the password-manager example was updated from `collabswarm.ipfsInfo.addresses` to `collabswarm.libp2p.getMultiaddrs()`, confirming the old API shape existed.",
+      "severity_justification": "Breaking public API change for external consumers of `@collabswarm/collabswarm`, contradicting the PR's stated backward-compatibility guarantee.",
+      "category_justification": "Removal of a public accessor without the promised deprecated alias is a breaking public interface change.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-config.ts",
+      "start_line": 83,
+      "end_line": 85,
+      "message": "The `ipfs` config alias was removed instead of being accepted as a deprecated fallback. Existing callers that pass `{ ipfs: ... }` will have their custom Helia/libp2p configuration ignored, which can initialize a node without the expected transports/services or fail the pubsub guard.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `CollabswarmConfig` has no `ipfs` field and no deprecated fallback. If an external consumer passes `{ ipfs: {...} }`, `config.helia` is `undefined` and `createHelia()` is called with no arguments — the custom transports/services are silently ignored. The PR claims backward-compatible deprecated aliases are retained, but none exists for the `ipfs` config key.",
+      "severity_justification": "Silent misconfiguration: a caller passing `{ ipfs: {...} }` gets Helia with default settings (no gossipsub), which will hit the pubsub guard and throw, or behave incorrectly. The failure mode is non-obvious since no validation error flags the unrecognized `ipfs` field.",
+      "category_justification": "Removing a previously accepted config field without a deprecated fallback is a breaking change to the public configuration API.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docker-compose.yaml",
+      "start_line": 47,
+      "end_line": 50,
+      "message": "This passes the relay's advertised `wsMultiaddr` directly to the browser container, but `relay-info.json` is generated from listen addresses such as `/ip4/0.0.0.0/tcp/9001/ws/...`. From another container, dialing `0.0.0.0` does not reach the relay service; the compose setup should rewrite the host to the Docker service name (for example `/dns4/relay/...`) or publish an externally reachable address.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding incorrectly claims `wsMultiaddr` contains `0.0.0.0` (libp2p expands the wildcard to actual interface IPs before `getMultiaddrs()` returns) and frames the issue as a container-to-container dial failure. The actual dialers are host browsers running the served React app, not containers. The real reachability concern (host browser gets a Docker-internal IP) is the same issue as Finding 1 but this finding misidentifies both the address format and the failure scenario.",
+      "severity_justification": "The underlying reachability concern is real but the specific claimed failure mode is wrong.",
+      "category_justification": "The finding makes incorrect factual claims about what address appears in relay-info.json and which component performs the dial.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docker-compose.yaml",
+      "start_line": 79,
+      "end_line": 82,
+      "message": "This has the same issue as the browser-test service: it exports the raw `wsMultiaddr` from `relay-info.json`, which is based on the relay's `0.0.0.0` listen address and is not a dialable remote address from the wiki container. Rewrite it to the relay service DNS name or another reachable address before passing it to the app.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same analysis as Finding 8: `libp2p.getMultiaddrs()` expands `0.0.0.0` to actual interface IPs before writing relay-info.json, so `wsMultiaddr` does not contain `0.0.0.0`. Additionally, the wiki-swarm container runs `yarn start` (a CRA dev server serving JS to the host browser), so it's the host browser — not the wiki container — that dials the relay. The container-level reachability concern is therefore misdirected. The real issue (host browser receives a Docker-internal IP) is the same concern as Finding 1.",
+      "severity_justification": "The underlying reachability concern is real but the finding misidentifies both the address format and the failing component.",
+      "category_justification": "The finding incorrectly claims `0.0.0.0` appears in wsMultiaddr and that the wiki container itself dials the relay.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/compaction.test.ts",
+      "start_line": 123,
+      "end_line": 128,
+      "message": "This test reimplements the private snapshot signing payload builder instead of exercising the production implementation. A future change could break `CollabswarmDocument._buildSnapshotSignPayload()` while these tests continue to pass, so the snapshot signature format is effectively untested.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the `Snapshot sign payload construction` describe block (lines 123–228) defines a local `buildSnapshotSignPayload` that duplicates the logic of the private production method. No test in the file instantiates CollabswarmDocument or calls the real `_buildSnapshotSignPayload()`. A change to the production byte layout would not be caught by these tests.",
+      "severity_justification": "The snapshot signing format is security-sensitive (verification depends on the exact byte layout), but the drift risk is limited since both implementations are currently identical and the production method is private. The impact is a testing gap rather than a live bug.",
+      "category_justification": "The test duplicates production logic rather than exercising it, creating a false sense of coverage for a security-relevant serialization format.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/compaction.test.ts",
+      "start_line": 231,
+      "end_line": 240,
+      "message": "These tie-breaking tests duplicate the selection logic in a local helper rather than applying snapshots through `CollabswarmDocument.sync()`. That leaves the real snapshot replacement path, signature verification, and state updates uncovered while the copied helper can pass independently.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the test defines a local `shouldReplace()` that mirrors the `if` condition in `sync()` (lines 1502-1505 of collabswarm-document.ts). No test exercises `sync()` or the real replacement path (signature verification, state application, counter resets). A change to the production tie-breaking condition would not be caught by these tests.",
+      "severity_justification": "The tie-breaking logic is simple and currently matches the test helper. The real gap is that the broader snapshot replacement path (verification, state update, counter resets) has no integration-level coverage, but that's a test coverage concern rather than a live bug.",
+      "category_justification": "Tests duplicate production decision logic rather than exercising it, leaving the actual snapshot replacement path uncovered.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 1136,
+      "end_line": 1144,
+      "message": "This now treats short load responses as malformed instead of falling back to the legacy plaintext sync response that the previous code accepted. That breaks loading from older peers that still serve unencrypted doc-load responses, despite the compatibility guarantees in the PR.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The rejection of short load responses (treating them as malformed rather than falling back to plaintext) was already in place before this PR, introduced by an earlier commit (`12d4d2a` removed the plaintext fallback in a dedicated 'Fix plaintext fallback security risk' commit). The only change this PR makes to that code path is a cosmetic comment punctuation change (`--` to `—`). The finding incorrectly attributes a pre-existing behavior change to this PR.",
+      "severity_justification": "If the concern were valid, it would represent a breaking compatibility change. But it's pre-existing and not introduced by this PR.",
+      "category_justification": "The finding makes an incorrect claim about what this PR changed in the load response handling path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 549,
+      "end_line": 555,
+      "message": "Fetch failures are swallowed here, but `_syncDocumentChanges()` still proceeds to `_maybeCompact()` after `Promise.all(fetchPromises)`. If any missing block could not be loaded, this can create and sign a snapshot of a partial document state, making that incomplete state look authoritative to later peers.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: fetch errors are caught and swallowed (`.catch()` only logs, doesn't re-throw), so `Promise.all(fetchPromises)` always resolves even when blocks fail to load. `_maybeCompact()` then runs unconditionally. If some blocks succeed and push `_changesSinceSnapshot` to the `snapshotInterval` threshold while others fail, `snapshot()` will be called and sign an incomplete CRDT state as authoritative. The comment 'avoiding premature snapshots of incomplete state' shows intent but the implementation doesn't fulfill it.",
+      "severity_justification": "A signed snapshot of partial state would be accepted by other peers as authoritative (it passes writer signature verification), potentially causing peers to permanently miss changes that failed to load. This is data integrity issue, though it requires specific timing (partial fetch failure exactly at a compaction threshold).",
+      "category_justification": "Logic error: the fetch failure guard doesn't actually prevent compaction on incomplete state because errors are swallowed before `Promise.all` is evaluated.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 1530,
+      "end_line": 1536,
+      "message": "Applying a snapshot mutates `_document`, but this path never fires the remote update handlers. When a load response contains only a snapshot (or all post-snapshot changes are skipped at the boundary), subscribers will not be notified that the document state changed, so UI/state caches can remain stale after snapshot-based sync.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the snapshot-apply path mutates `this._document` but has no call to `_fireRemoteUpdateHandlers`. The subsequent `_syncDocumentChanges` call is guarded by `if (message.changes)` and only fires handlers for individual change nodes — not for the snapshot state change itself. A snapshot-only load response or one where all post-snapshot changes are already in `_hashes` will silently update `_document` without notifying any subscribers.",
+      "severity_justification": "Subscribers (UI components, state managers) will not see the updated document after snapshot-based sync, making the primary sync mechanism for compacted documents broken for UIs. This is the core new feature of this PR and the notification gap would make it appear to not work.",
+      "category_justification": "Logic error: mutating document state without firing the change notification handlers breaks the observer contract that all consumers of CollabswarmDocument rely on.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/collabswarm/src/collabswarm-document.ts",
+      "start_line": 1206,
+      "end_line": 1207,
+      "message": "This returns `true` after `sync()` regardless of whether the snapshot was actually accepted or any changes were applied. If a peer serves a signed load response with a malformed/invalid snapshot and no usable change tree, `load()` will stop trying peers and leave the document empty instead of falling back to doc-load/another peer.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_sendLoadRequestAndSync` returns `true` after `await this.sync(message, false)` unconditionally. `sync()` silently rejects invalid snapshots without returning an indicator of success. If a peer's response contains an invalid snapshot and no change tree, `load()` stops trying peers and reports success while the document remains empty. This path was introduced by the new snapshot handling in this PR.",
+      "severity_justification": "A buggy or malicious peer serving an invalid snapshot can cause `load()` to abort all peer attempts, leaving the document permanently empty for that open() call. Requires a peer that passes outer signature verification but serves an invalid snapshot — plausible for buggy implementations.",
+      "category_justification": "load() declares success without verifying that any document state was actually applied, causing silent failure when an invalid snapshot is served.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "guides/coordination-servers.md",
+      "start_line": 354,
+      "end_line": 359,
+      "message": "Sticky sessions are not enough for libp2p relay load balancing because each client multiaddr contains a specific relay peer ID. A generic load balancer can still route the initial WebSocket to a backend with a different peer ID, causing the secure connection to fail; production docs should recommend per-relay hostnames/ports or peer-ID-aware routing instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The guide recommends 'sticky sessions' for load balancing across multiple relay nodes, but libp2p embeds the target peer ID in the multiaddr and verifies it cryptographically during the Noise handshake. A load balancer routing an initial WebSocket to the wrong relay (different peer ID) causes an immediate handshake failure that sticky sessions cannot prevent. The guide's Caddyfile also shows round-robin across two relays, which would suffer this issue. The correct recommendation (per-relay hostnames/ports) is mentioned earlier but the sticky session advice for the LB case is misleading.",
+      "severity_justification": "This is a documentation inaccuracy in guide material rather than production code. The correct approach (give clients all relay addresses) is also documented; the sticky session recommendation is an addendum that could mislead operators setting up multi-relay deployments.",
+      "category_justification": "The finding identifies a technically incorrect recommendation in the coordination server guide that would cause broken multi-relay deployments if followed.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

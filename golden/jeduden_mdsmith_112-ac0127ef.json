@@ -1,0 +1,371 @@
+{
+  "pr_key": "jeduden_mdsmith_112-ac0127ef",
+  "pr": {
+    "repo": "https://github.com/jeduden/mdsmith",
+    "pr_number": 112,
+    "base": "0b239cd5e14de6817e953c230c7fa5eca94b1654",
+    "head": "ac0127ef6fa437a99d486ae5f31586cc9267e533"
+  },
+  "findings": [
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 167,
+      "end_line": 167,
+      "message": "Task 7 says 'Implement MDS029 rule in `mds026.go`' but MDS026 is the table-readability rule. The Files section at line 139 correctly names the implementation file `rule.go`. This typo will cause an implementer to create a file with the wrong name, shadowing the wrong rule ID.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 167 says 'Implement MDS029 rule in `mds026.go`' while line 139 (Files section) correctly names it `rule.go`. The PR description itself notes MDS026 is the table-readability rule, making `mds026.go` doubly wrong. The inconsistency is real and concrete.",
+      "severity_justification": "A developer following Task 7 literally would create the wrong filename, conflicting with the file layout spec within the same document and potentially shadowing an unrelated rule ID.",
+      "category_justification": "This is an inconsistency in a planning/specification document — the wrong filename in a task description vs. the correct filename in the implementation layout section.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 79,
+      "end_line": 85,
+      "message": "The plan specifies the default threshold as 0.5 but the actual existing implementation in `internal/rules/concisenessscoring/rule.go` uses `defaultMinScore = 0.20`, and the PR description also states 0.20. The plan contradicts both the existing code and the PR description, and would lead implementers to retrain or reconfigure with the wrong default.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: plan/66 lines 79-85 show threshold 0.5 and config key `paragraph-conciseness`, but the existing rule.go implementation uses `defaultMinScore = 0.20` and config key `conciseness-scoring`. The plan contradicts both the code at this SHA and the PR description.",
+      "severity_justification": "The plan document is the authoritative spec for future work; having the wrong default threshold and wrong config key means implementers reading the plan would use incorrect values that contradict the already-implemented code.",
+      "category_justification": "The inconsistency is in a planning/specification document whose values disagree with the actual implementation in the same repo.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 81,
+      "end_line": 85,
+      "message": "The YAML config example uses `paragraph-conciseness:` as the rule key, but the actual rule's Name() returns `\"conciseness-scoring\"` and `.mdsmith.yml` already uses `conciseness-scoring: false`. An implementer following this plan would configure the rule under the wrong key, silently having no effect.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: rule.go line 65 returns `\"conciseness-scoring\"` from Name(), and .mdsmith.yml line 64 uses `conciseness-scoring: false`. The plan's YAML example at lines 81-85 uses `paragraph-conciseness:` which is wrong and would silently have no effect.",
+      "severity_justification": "An implementer following the plan's config example would use the wrong key, resulting in configuration that is silently ignored — a non-obvious misconfiguration.",
+      "category_justification": "The wrong config key in the plan's YAML example contradicts the actual implementation, making the spec document misleading.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 180,
+      "end_line": 180,
+      "message": "The acceptance criterion references `paragraph-conciseness.min-score` as the config path, but the real config key is `conciseness-scoring` with a `min-score` sub-key. This continues the wrong-key inconsistency from the YAML example and provides an incorrect observable behaviour to verify against.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 180 uses `paragraph-conciseness.min-score` in the acceptance criteria, while rule.go's Name() returns `\"conciseness-scoring\"` and the config sub-key is `min-score`. The correct path is `conciseness-scoring.min-score`.",
+      "severity_justification": "Same root issue as findings 2 and 3 (wrong config key), just repeated in the acceptance criteria. Low because it's the same underlying error already identified, and the acceptance criteria are a planning artifact rather than executable code.",
+      "category_justification": "Incorrect config path in an acceptance criterion within a planning document.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 43,
+      "end_line": 43,
+      "message": "The machine-readable comment `<!-- supersedes: 53, 54, 56, 58, 62, 64 -->` lists plans 62 and 64 as superseded, but both are marked ✅ (completed) in PLAN.md and the PR description explicitly calls them 'completed foundation'. Including them in a `supersedes` annotation contradicts their completed status and would mislead any tooling that parses this comment for lineage tracking.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 43 has `<!-- supersedes: 53, 54, 56, 58, 62, 64 -->` and the section is titled 'Superseded Plans' including 62 and 64, but PLAN.md marks both as ✅ completed. The PR description explicitly calls them 'completed foundation plans', not superseded. No current tooling parses the comment, but the mislabeling is a real internal inconsistency in the document.",
+      "severity_justification": "No tooling currently parses the supersedes comment, so there's no runtime impact. The conceptual error (conflating 'completed foundation' with 'superseded') could mislead someone reading the plan, but the practical consequence is limited.",
+      "category_justification": "Inconsistency within and across planning documents — wrong categorization of plan relationships.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 194,
+      "end_line": 202,
+      "message": "The section says 'Two projects deserve re-evaluation' but then enumerates three projects: GoMLX, Hugot, and gonnx. The count is wrong, which creates ambiguity about which two are intended if one is meant to be excluded.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: line 194 says 'Two projects' but the list that follows has three entries (GoMLX, Hugot, gonnx). The count is factually incorrect.",
+      "severity_justification": "Minor factual error in a planning document's prose count. No runtime or behavioral impact; a reader can simply count the list items.",
+      "category_justification": "Factual error in prose within a planning document.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 41,
+      "end_line": 52,
+      "message": "The section heading is 'Superseded Plans' but includes plans 62 and 64 with dispositions 'Absorbed; merge #35' and 'Foundation; merge #33' — i.e., they are prerequisites to merge, not plans being superseded. This contradicts the PR description's 'completed foundation' framing and PLAN.md's ✅ status for both. Mixing completed prerequisites with superseded plans in the same section creates confusion about what implementers should do with each entry.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: plans 62 and 64 appear under 'Superseded Plans' with dispositions 'Absorbed; merge #35' and 'Foundation; merge #33', indicating they are prerequisites to merge, not superseded work. PLAN.md marks both as ✅ completed, and the PR description explicitly calls them 'completed foundation plans'. The section heading misrepresents their relationship to this plan.",
+      "severity_justification": "Documentation inconsistency in a planning document. The merge order subsection directly below partially clarifies the intent, but the section heading and table still mislead about the nature of plans 62 and 64.",
+      "category_justification": "Incorrect framing/categorization within a planning document that misrepresents the relationship between plans.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 28,
+      "end_line": 31,
+      "message": "The plan claims '100% deterministic... across runs and platforms' as a rationale, and then adds `compression_ratio` (using Go's `compress/flate`) as a new feature. flate's output can change between Go versions when the compression implementation is updated, meaning the feature value — and therefore the classifier score — could differ between the training environment and deployment, silently degrading model accuracy without any visible error.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The plan claims 100% deterministic scoring as a core rationale while also proposing compression_ratio via flate as a new feature. Go's flate compressor output has changed between versions, creating a real cross-version non-determinism risk that contradicts the stated design goal. The concern is factually grounded and specific to this plan's design.",
+      "severity_justification": "The feature is not yet implemented; for a linear classifier, small cross-version drift in one feature would produce proportionally small output changes rather than catastrophic failure. The plan also calls for retraining when features change, which would mitigate the issue. Worth noting but not blocking.",
+      "category_justification": "Logical contradiction in the plan's design: the determinism property claimed as a rationale is undermined by one of the proposed features.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 126,
+      "end_line": 133,
+      "message": "The file paths for the new rule implementation are inconsistent. The plan specifies creating files under `internal/rules/concisenessscoring/`, but the rule documentation path is listed as `internal/rules/MDS029-conciseness-scoring/README.md`. These paths should follow a consistent naming convention.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: every rule in the repo lives under `internal/rules/MDS0NN-name/` (e.g., `MDS029-conciseness-scoring/`), which already contains rule.go, rule_test.go, etc. The plan proposes a separate `internal/rules/concisenessscoring/` path for the implementation while using `MDS029-conciseness-scoring/` only for the README — inconsistent with the established convention and the actual existing file layout.",
+      "severity_justification": "The plan path is wrong, but the correct path is easily inferred from the existing repo structure. An implementer who checks the repo would use the correct path.",
+      "category_justification": "Incorrect file path in a planning document that contradicts the established project conventions.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 47,
+      "end_line": 47,
+      "message": "The table entry for Plan 53 says \"MDS029 conciseness score\", but the title of plan 53 is just \"Conciseness Scoring\". The rule ID MDS029 is introduced in this new plan (66), not the original plan 53.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: plan 53's actual title is 'Conciseness Scoring' and it contains no mention of MDS029. The table in plan 66 incorrectly labels it 'MDS029 conciseness score', attributing a rule ID that belongs to plan 66 itself.",
+      "severity_justification": "Minor inaccuracy in a summary table — an implementer cross-referencing plan 53 would immediately see the discrepancy. No behavioral or operational impact.",
+      "category_justification": "Incorrect title/description in a cross-reference table within a planning document.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 48,
+      "end_line": 48,
+      "message": "The table entry for Plan 54 says \"MDS029 conciseness rule\", but the title of plan 54 is \"Conciseness Metrics Design and Implementation\". The rule ID MDS029 is defined in this new plan (66), not in plan 54.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: plan 54's title is 'Conciseness Metrics Design and Implementation', not 'MDS029 conciseness rule'. The MDS029 rule ID belongs to plan 66, not plan 54.",
+      "severity_justification": "Same type of minor labeling inaccuracy as Finding 10 — wrong title/description in a summary table with no behavioral impact.",
+      "category_justification": "Incorrect title/description in a cross-reference table within a planning document.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 59,
+      "end_line": 64,
+      "message": "The merge order specifies PR #35 (corpus) before this plan's PR, but the file does not confirm any prerequisites from PR #35 are required. Clarify in the plan if there is a dependency beyond merging in a 'logical' sequence.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The plan explicitly explains the PR #35 dependency at lines 147-149: 'Use the corpus from PR #35 (plan 62)' is step 1 of the weight retraining process. The dependency is clearly documented — the corpus is required for the offline retraining step that produces the v2 weights file.",
+      "severity_justification": "Even if it were a real gap, it would be a minor documentation clarity issue in a planning doc.",
+      "category_justification": "Finding concerns documentation completeness in a planning document.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 160,
+      "end_line": 162,
+      "message": "The `MDS029` rule fires using `conciseness < threshold`, but there is no mention of handling undefined or NaN `conciseness` scores. Ensure robust handling is included for edge cases.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The existing scoring.go already handles edge cases: empty token lists return Score=1.0, and all score values are clamped with math.Max/Min. No division-by-zero path exists since the code checks len(tokens)==0 before dividing. The finding is a generic 'ensure robust handling' suggestion without identifying a specific concrete vulnerability in the plan or code.",
+      "severity_justification": "Even if taken seriously, the existing implementation already handles the edge cases the finding is concerned about.",
+      "category_justification": "Concerns error/edge-case handling in a scoring function.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 174,
+      "end_line": 185,
+      "message": "Among the new proposed features, `compression_ratio` mentions redundancy detection 'via flate', but lacks clarity on the specific metric or implementation details. This could lead to misalignment in expectation versus functionality.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "All seven new features use the same brief one-line description format. Singling out `compression_ratio` as lacking clarity is arbitrary — every feature in the table has the same level of detail. This is a generic documentation completeness suggestion that could be copy-pasted onto any feature table without change.",
+      "severity_justification": "Even if taken seriously, it would be a minor documentation enhancement request with no behavioral impact.",
+      "category_justification": "Concerns documentation detail level in a planning document.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 275,
+      "end_line": 276,
+      "message": "The binary size delta ceiling (`< 2 KB over PR #33 baseline`) seems tight given the 14 new features. Consider either quantitative validation of this projection or broader acceptance criteria.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Wrong line numbers (file is 232 lines). The underlying claim is speculative — 'seems tight' without evidence. Pure-Go string/math feature functions are small; the existing classifier adds +480 bytes per the PR description. This is a generic 'validate your estimate' suggestion that could apply to any numeric acceptance criterion, with no concrete basis for concern.",
+      "severity_justification": "Even if the limit is exceeded, it would be caught during implementation and the criterion adjusted. No behavioral impact.",
+      "category_justification": "Suggestion to add quantitative justification to an acceptance criterion in a planning document.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/proto.md",
+      "start_line": 4,
+      "end_line": 4,
+      "message": "The added `⛔` symbol requires proper documentation of its semantic meaning and implications for tool compatibility. No guidance here informs developers whether behavior differs from '🔳' or '🔲'.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The diff for plan/proto.md explicitly adds a status value legend documenting all four statuses including '⛔ superseded (replaced by another plan)'. The finding incorrectly claims no guidance was provided — the PR diff shows the documentation was added in the same change that added ⛔ to the allowed status set.",
+      "severity_justification": "Even if the comment block were missing, the semantic meaning of ⛔ is self-evident from the symbol and context.",
+      "category_justification": "Concerns documentation of a new status value in a schema/prototype file.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 98,
+      "end_line": 122,
+      "message": "This feature inventory is out of sync with the classifier currently in the repo. `internal/rules/concisenessscoring/classifier/model.go` defines 8 existing features (`filler_rate`, `hedge_rate`, `verbose_phrase_rate`, `modal_rate`, `vague_rate`, `action_rate`, `content_ratio`, `log_word_count`), not the 7 names listed here, so adding 7 more would produce 15 features rather than the stated 14 unless the baseline is reconciled.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: model.go defines 8 features (filler_rate, hedge_rate, verbose_phrase_rate, modal_rate, vague_rate, action_rate, content_ratio, log_word_count) via the featureOrder slice, not the 7 features listed in the plan doc. The names also differ from those in the plan (e.g., filler_rate vs filler_density, log_word_count is absent from the plan list). The stated total of 14 features would actually be 15 with 7 new additions on top of the 8 existing ones.",
+      "severity_justification": "This is a planning document inconsistency — no production code is incorrect. It could cause implementation confusion when the author starts building from the plan, but does not affect any currently working code.",
+      "category_justification": "The issue is a factual inaccuracy in a planning/design document (the feature names and count in the plan don't match what's actually implemented in the classifier).",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plan/66_unified-conciseness-score.md",
+      "start_line": 16,
+      "end_line": 17,
+      "message": "This says there are “seven open PRs,” but the same plan later says PRs #21, #24, #31, and #34 are closed, and the PR description says those PRs were closed with supersession comments. The motivation should avoid calling the superseded PRs open if they are already closed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Per the instruction to trust the diff hunk for lines under review: the diff version of lines 16-17 reads 'Six plans and seven PRs addressed conciseness with diverging approaches' — past tense, with no 'open'. The finding incorrectly claims the plan says 'seven open PRs'; that wording appears in the checked-out file but not in the diff being reviewed.",
+      "severity_justification": "Even if the stale wording existed in the final document, it would be a minor clarity issue in a planning doc, not a functional problem.",
+      "category_justification": "The concern is about accuracy of prose in a planning document.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

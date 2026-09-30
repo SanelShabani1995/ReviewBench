@@ -1,0 +1,231 @@
+{
+  "pr_key": "mareklesko_ProxmoxMCP-Plus_1-b44013c3",
+  "pr": {
+    "repo": "https://github.com/mareklesko/ProxmoxMCP-Plus",
+    "pr_number": 1,
+    "base": "5a8047f5bc592e5e170d3828e9633dd018f13cbe",
+    "head": "b44013c3e80fd71ca639ee272b88c5e07af4b507"
+  },
+  "findings": [
+    {
+      "file": ".devcontainer/devcontainer.json",
+      "start_line": 8,
+      "end_line": 8,
+      "message": "`postCreateCommand` runs `uv pip install -e '.[dev]'`, but `pyproject.toml` (which declares `hatchling` as the build backend) has no `[project.optional-dependencies]` section and no `dev` extra. Hatchling does not read `setup.py`, so the command will fail at container creation time with 'package does not have an extra named dev'. Contributors will get an unusable environment. The `dev` dependencies need to be added to `pyproject.toml` under `[project.optional-dependencies]`.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The actual devcontainer.json at this SHA has `postCreateCommand: uv venv && uv pip install -e '.[dev]'`, and pyproject.toml confirmed has no [project.optional-dependencies] section and no 'dev' extra. uv/pip will error with 'package does not have an extra named dev', making the container setup fail entirely.",
+      "severity_justification": "The postCreateCommand failing means the dev container produces a broken environment with no dependencies installed — the entire purpose of this PR is defeated.",
+      "category_justification": "The command references an extra ('dev') that does not exist in pyproject.toml, causing a runtime failure during container setup.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".devcontainer/devcontainer.json",
+      "start_line": 4,
+      "end_line": 6,
+      "message": "The build context is set to `..` (the repo root), but the `.devcontainer/Dockerfile` contains no `COPY` instruction and uses nothing from that context. There is no `.dockerignore`, so the entire repository — including `.git/` — is sent to the Docker daemon on every container rebuild. This is pure overhead. The context should be set to `.` (the `.devcontainer/` directory itself) or a `.dockerignore` should exclude unneeded paths.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: devcontainer.json sets build context to `..`, the Dockerfile has no COPY instruction and needs nothing from the repo root, and no .dockerignore exists. The full repo including .git/ is sent to the Docker daemon on every rebuild unnecessarily.",
+      "severity_justification": "Pure build-time overhead — it slows container rebuilds but doesn't break anything or affect the resulting image.",
+      "category_justification": "Sending an unnecessarily large build context is a build performance issue with no correctness or security impact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".devcontainer/Dockerfile",
+      "start_line": 17,
+      "end_line": 20,
+      "message": "The `vscode` user is created with no `sudo` access. If contributors need to install additional system packages (e.g., `openssh-client`, `jq`, or debug tools) during a session, they cannot do so without rebuilding the container. The standard VS Code dev container pattern grants the dev user passwordless sudo via `echo '$USERNAME ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers`. This should be added here.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "While factually correct that sudo is absent, the finding is a generic best-practice recommendation that could apply verbatim to any non-root dev container user. Not granting sudo is a valid, deliberate design choice that enforces reproducibility. The suggestion has no project-specific basis.",
+      "severity_justification": "No functional breakage; at worst slightly less convenient for ad-hoc package installs during a session.",
+      "category_justification": "Developer ergonomics / dev tooling preference, not a correctness or security issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".devcontainer/devcontainer.json",
+      "start_line": 20,
+      "end_line": 20,
+      "message": "`python.defaultInterpreterPath` is hardcoded to `/workspaces/ProxmoxMCP-Plus/.venv/bin/python`. This path only exists if `postCreateCommand` succeeds. Since that command currently fails (missing `dev` extra in `pyproject.toml`), VS Code will immediately report the interpreter as missing and IntelliSense/linting will be non-functional. Even when the underlying issue is fixed, the hardcoded workspace name means the setting breaks if the repo is cloned under a different folder name in Codespaces.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The diff shows `${containerWorkspaceFolder}/.venv/bin/python` (not hardcoded). Even per the actual file, the hardcoded path is consistent with workspaceFolder in the same config and works correctly in all devcontainer scenarios — the path inside the container is always determined by workspaceFolder, not the local clone directory name. The 'breaks under a different folder name' claim is incorrect for devcontainer semantics.",
+      "severity_justification": "Even if considered a real issue, it is a minor maintainability concern with no functional breakage in normal usage.",
+      "category_justification": "Concerns code coupling between two config values, not a correctness or security issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".devcontainer/Dockerfile",
+      "start_line": 21,
+      "end_line": 22,
+      "message": "`WORKDIR /home/$USERNAME` is set in the Dockerfile, but the Dev Container runtime mounts the workspace at `/workspaces/ProxmoxMCP-Plus` and runs `postCreateCommand` from `workspaceFolder`. The `WORKDIR` directive is effectively ignored and is misleading about where work actually happens inside the container.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The Dockerfile sets WORKDIR /home/vscode but devcontainer.json specifies workspaceFolder as /workspaces/ProxmoxMCP-Plus and the Dev Container runtime executes postCreateCommand from workspaceFolder, not the Dockerfile WORKDIR. The directive is effectively dead in this context.",
+      "severity_justification": "No functional breakage — it is purely a clarity/misleading-code issue with no impact on the resulting dev environment.",
+      "category_justification": "The WORKDIR is misleading dead code in the devcontainer context, a readability/clarity concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".devcontainer/devcontainer.json",
+      "start_line": 8,
+      "end_line": 8,
+      "message": "The postCreateCommand runs 'uv pip install' before the workspace is fully initialized, which can lead to dependencies being installed in the wrong location or failing if the command relies on workspace files. The command should be run in the workspace directory using 'cd \"${containerWorkspaceFolder}\" && ...'.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "postCreateCommand in the Dev Container spec runs after the workspace is mounted, with the working directory already set to workspaceFolder. The claim that it runs before workspace initialization is incorrect. Adding 'cd containerWorkspaceFolder &&' is redundant and does not change behavior.",
+      "severity_justification": "The suggested change would have no effect; the premise is factually wrong about devcontainer lifecycle.",
+      "category_justification": "The finding makes an incorrect factual claim about when and where postCreateCommand executes.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".devcontainer/Dockerfile",
+      "start_line": 10,
+      "end_line": 10,
+      "message": "uv is installed via pip with root privileges into the global site-packages. This can conflict with system package managers and is not a recommended practice for installing system-wide tools. A better approach is to use 'pipx install uv' to isolate it from system Python packages.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "In a python:3.11-slim Docker container, pip install uv as root places uv in /usr/local/bin/uv with no system package manager to conflict with. The isolation concern behind 'use pipx instead' applies to developer machines, not minimal Docker images where this is standard practice.",
+      "severity_justification": "No actual conflict or harm occurs in this Docker context; the finding applies a desktop-environment heuristic to a container.",
+      "category_justification": "Generic best-practice suggestion about tool installation method with no concrete impact in this context.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".devcontainer/Dockerfile",
+      "start_line": 5,
+      "end_line": 8,
+      "message": "The `apt-get install` command omits some common flags that improve the stability of image builds: consider adding `--no-install-suggests` and `--no-install-upgrades` to align with best practices.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`--no-install-upgrades` is not a valid apt-get flag (the real flag is `--no-upgrade`), making the finding factually incorrect. Additionally, this is a generic Dockerfile best-practice comment that could apply verbatim to any project.",
+      "severity_justification": "No functional impact; the finding recommends a non-existent flag.",
+      "category_justification": "Generic Docker image hygiene suggestion with an incorrect flag name.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".devcontainer/Dockerfile",
+      "start_line": 16,
+      "end_line": 21,
+      "message": "The `useradd` command creates a user without specifying a shell. Systems default to `/bin/sh`, which might not support advanced scripting. Consider specifying a shell explicitly (e.g., `--shell /bin/bash`) if that is expected in workflows.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "VS Code Dev Containers configure the terminal shell independently of the useradd login shell. No concrete failure mode is demonstrated — the finding speculates about 'advanced scripting' without identifying a real scenario where this causes a problem. It is a generic suggestion applicable to any Dockerfile with useradd.",
+      "severity_justification": "No concrete breakage or failure mode exists; the integrated terminal and postCreateCommand are unaffected by the login shell setting.",
+      "category_justification": "Generic Docker user-creation style suggestion with no project-specific basis.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".devcontainer/devcontainer.json",
+      "start_line": 10,
+      "end_line": 10,
+      "message": "The `uv venv` and `uv pip install` commands in `postCreateCommand` assume `uv` is globally available. If `uv` installation fails in the Dockerfile, this will break container initialization.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "If pip install uv fails, the Docker image build fails entirely — the container never starts and postCreateCommand never runs. The finding describes an impossible scenario and restates a trivially obvious dependency relationship applicable to any Dockerfile, with no project-specific substance.",
+      "severity_justification": "Not a real failure mode given Docker build semantics; the observation is vacuously true of every tool installed in any Dockerfile.",
+      "category_justification": "Ostensibly about error handling/dependency reliability, but the failure mode described cannot actually occur.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 65,
+      "end_line": 65,
+      "message": "This instruction currently overstates what the container setup installs: `uv pip install -e \".[dev]\"` is driven by `pyproject.toml`, which has no `dev` optional dependency, so the dev/test tools listed elsewhere in the repo are not installed automatically. Update the packaging metadata or document/install the actual dev requirements so contributors don't start with a partially configured environment.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "README.md line 65 explicitly cites `uv pip install -e \".[dev]\"` as the install command. pyproject.toml has no `[project.optional-dependencies]` section with a `dev` group, so this command will either fail or silently skip dev dependencies. The devcontainer.json at this SHA also uses `.[dev]` in postCreateCommand, confirming both the docs and the actual config are broken.",
+      "severity_justification": "The postCreateCommand would fail or produce an incomplete environment on first container creation, leaving contributors without test/lint tooling. The dev container's core purpose — a ready-to-code environment — is not fulfilled.",
+      "category_justification": "The README makes a factually incorrect claim about what is installed, and the referenced install command references a non-existent `dev` extras group in pyproject.toml.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

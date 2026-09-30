@@ -1,0 +1,691 @@
+{
+  "pr_key": "reactiveui_Akavache_1174-14146ee2",
+  "pr": {
+    "repo": "https://github.com/reactiveui/Akavache",
+    "pr_number": 1174,
+    "base": "eb0d2c1e54c1b773629d8c5acce58cea1654d8b7",
+    "head": "14146ee22d67a23a33d14bb177a9d511485f14c4"
+  },
+  "findings": [
+    {
+      "file": "src/Akavache.Core/Properties/AssemblyInfo.cs",
+      "start_line": 1,
+      "end_line": 15,
+      "message": "The deleted AssemblyInfo.cs contained `[assembly: Akavache.Core.Preserve(AllMembers = true)]` which tells the Xamarin/MAUI linker to preserve all members of the Akavache.Core assembly. Only the InternalsVisibleTo entries were migrated to the .csproj; the Preserve attribute was silently dropped. Without it, the linker is free to strip reflection-accessed members, which can cause MissingMethodException at runtime on Android/iOS/MAUI targets when linking is enabled.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed via git history: the deleted AssemblyInfo.cs had `[assembly: Akavache.Core.Preserve(AllMembers = true)]` which was not migrated to the .csproj. Only InternalsVisibleTo entries were moved. The .NET Android/iOS linker recognizes PreserveAttribute by name convention; without this assembly-level attribute, all members are eligible for trimming. No trimmer root descriptor or equivalent replacement exists in the project.",
+      "severity_justification": "Could cause MissingMethodException at runtime on Android/iOS/MAUI targets with linking enabled. Mitigated somewhat by RequiresUnreferencedCode annotations on reflection-heavy methods and IsAotCompatible=true for trim analysis, but no blanket protection for non-annotated members remains.",
+      "category_justification": "This is a build/deployment configuration issue affecting runtime reliability on mobile platforms when the linker is active — a classic reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Settings.Tests/Executors/AkavacheTestExecutor.cs",
+      "start_line": 49,
+      "end_line": 56,
+      "message": "Serializers are registered in Splat with a non-null contract (`contract: SerializerTypeName` = the assembly-qualified type name). The executor calls `HasRegistration(typeof(ISerializer))` and `UnregisterAll(typeof(ISerializer))` without specifying a contract. Splat's null-contract check will never match a contract-based registration, so `HasRegistration` always returns false, the `if` block never executes, and contract-based serializer registrations leak from one test into the next. Tests that expect no serializer to be registered will see stale state from previous tests.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in AkavacheBuilder.cs: serializers are registered with `contract: SerializerTypeName` (assembly-qualified name, e.g. 'Akavache.NewtonsoftJson.NewtonsoftSerializer, ...'). The executor's cleanup calls HasRegistration/UnregisterAll with no contract (null), which in Splat only checks null-contract registrations. The if-block never executes and contract-based serializer registrations are never cleaned up between tests.",
+      "severity_justification": "All current tests use NewtonsoftSerializer so the leaked registration is compatible with subsequent tests and WithSerializer's guard check prevents double-registration. No current test failures expected, but the cleanup code is demonstrably ineffective and would cause problems if tests with different serializer types are added.",
+      "category_justification": "This is a defect in test infrastructure (the test executor's cleanup logic), not in production code.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Core/CacheDatabase.cs",
+      "start_line": 244,
+      "end_line": 262,
+      "message": "`ResetForTestsAsync` calls `await Shutdown().LastOrDefaultAsync()` with no timeout or cancellation token. If any cache flush operation hangs (e.g., a SQLite write blocked on a file lock in CI), this will block the test executor indefinitely. Every test that resets state via `AkavacheTestExecutor` passes through this code path before and after each test run.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: ResetForTestsAsync calls `await Shutdown().LastOrDefaultAsync()` with no timeout or CancellationToken. Shutdown() calls Flush() and DisposeAsync() on all caches via Task.WhenAll with no time bound. testconfig.json has no global test timeout. The AkavacheTestExecutor calls ResetStateAsync() before and after every test, so a hung I/O operation in any settings test would block the entire test run indefinitely.",
+      "severity_justification": "Realistic but low-probability risk. The settings tests use SQLite on temp directories unlikely to cause file locks in CI. TUnit may have its own internal mechanism to handle hung tests. This is test infra only, no production impact.",
+      "category_justification": "The concern is about fault tolerance in the test executor - a hung I/O operation causing the test infrastructure to block indefinitely without recovery.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/codeql.yml",
+      "start_line": 19,
+      "end_line": 19,
+      "message": "The reusable CodeQL workflow is pinned to `reactiveui/actions-common/.github/workflows/workflow-common-codeql.yml@main`, a mutable branch reference. The workflow content can change without notice between runs, and a compromise of the `actions-common` repository or a force-push to its `main` branch could inject malicious analysis steps. GitHub recommends pinning to a specific commit SHA for third-party reusable workflows.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "reactiveui/actions-common is the same GitHub organization's own shared workflow repo, not a third-party. All pre-existing workflows (ci-build.yml, release.yml) use the identical @main reference pattern. The finding frames this as a 'third-party' risk, but the trust boundary is intra-org. No concrete exploitation path is demonstrated — a compromise of actions-common requires the same org-level access that would also compromise Akavache. This is a generic 'pin to SHA' template alert.",
+      "severity_justification": "Even if flagged as a concern, the risk is intra-org: the attacker would need to compromise the reactiveui organization's own repository, which would equally threaten the Akavache repo itself.",
+      "category_justification": "The finding raises a supply chain / workflow integrity concern in CI/CD configuration.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Settings/AkavacheBuilderExtensions.cs",
+      "start_line": 301,
+      "end_line": 324,
+      "message": "In `GetSettingsStore<T>(IAkavacheInstance, IBlobCache, overrideDatabaseName)`, the cache is stored in `BlobCaches[validatedKey]` where `validatedKey` is `overrideDatabaseName ?? typeof(T).Name`. However, `new T()` internally calls `SettingsBase.GetBlobCacheForClass(className)` where `className` is the hardcoded class name (e.g. `\"ViewSettings\"`), NOT `overrideDatabaseName`. When `overrideDatabaseName != typeof(T).Name`, the direct lookup `BlobCaches[className]` fails and the code falls back to `BlobCaches.FirstOrDefault(...)`. If multiple caches are registered, the first one in dictionary iteration order is returned rather than the intended cache, causing the settings object to silently use the wrong backing store.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified the full call chain: when overrideDatabaseName != typeof(T).Name, BlobCaches stores the cache under overrideDatabaseName but SettingsBase.GetBlobCacheForClass looks it up by the hardcoded class name. The TryGetValue miss causes a fallback to FirstOrDefault. The existing test passes only because BlobCaches has a single entry at that point, masking the bug in multi-cache scenarios.",
+      "severity_justification": "When multiple caches are registered with different names, the wrong cache is silently used — corrupting settings isolation. No exception is thrown. This is a new public API introduced in this PR, making the silent-mismatch behavior immediately relevant.",
+      "category_justification": "Logic error in the new IBlobCache overload: the cache key used for storage and the key used for lookup are mismatched when overrideDatabaseName differs from typeof(T).Name.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Benchmarks/Akavache.Benchmarks.csproj",
+      "start_line": 5,
+      "end_line": 7,
+      "message": "The `<NoWarn>$(NoWarn);IL2026;IL3050;</NoWarn>` suppression was removed without addressing the root cause. The benchmark code calls methods marked `[RequiresUnreferencedCode]` (e.g. `WithAkavache<T>`), which emit IL2026/IL3050 warnings. These will now appear on every build. The same applies to `Akavache.Benchmarks.V10.csproj`. For a library project that advertises AOT compatibility this makes the build noisy and hides real future regressions.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Directory.Build.props applies IsAotCompatible=true to all non-test net9.0 projects, including the benchmark executable. GlobalSetup() calls WithAkavache<SystemJsonSerializer>() which is [RequiresUnreferencedCode] without being annotated itself. The NoWarn suppression was removed without fixing the caller. IL2026/IL3050 are not in WarningsAsErrors so these become noisy warnings on every build.",
+      "severity_justification": "Only warnings (not errors) in non-production benchmark executables. No user-facing functionality affected. Slightly overstated for V10 which uses external v10 NuGet packages where the issue likely doesn't apply.",
+      "category_justification": "Removing warning suppressions without fixing the root cause makes the build noisy and could hide real future regressions — a maintainability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Settings.Tests/AkavacheBuilderExtensionsTests.cs",
+      "start_line": 909,
+      "end_line": 929,
+      "message": "`RunWithAkavache` passes synchronous callbacks to `WithAkavache`, inside which it calls `configureAsync(builder).GetAwaiter().GetResult()` and `bodyAsync(instance).GetAwaiter().GetResult()`. These synchronous blocks force async work (including awaits in the test body, e.g. `TestHelper.EventuallyAsync` polling loops) to complete synchronously. If any awaited continuation is scheduled to resume on the same thread via a synchronization context, or if a thread-pool work item is blocked waiting for the test thread, this will deadlock. The test at line 773 also calls `instance.DeleteSettingsStore<ViewSettings>().GetAwaiter().GetResult()` inside a synchronous `Action<IAkavacheInstance>` for the same reason.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The deadlock condition requires a SynchronizationContext scheduling continuations back to the blocked thread. TUnit runs on thread-pool threads without installing a SynchronizationContext. EventuallyAsync uses ConfigureAwait(false) throughout. In this environment GetAwaiter().GetResult() blocks one pool thread while continuations run on other pool threads — no deadlock. The 808 passing tests confirm this. The finding restates a general async anti-pattern without demonstrating the specific precondition applies here.",
+      "severity_justification": "Even as an anti-pattern concern, the practical risk is negligible in the TUnit thread-pool context without SynchronizationContext.",
+      "category_justification": "The finding raises a threading/deadlock concern in test code.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Tests/Helpers/TestHttpServer.cs",
+      "start_line": 23,
+      "end_line": 27,
+      "message": "The `_listener` and `_serverTask` fields are declared `readonly` but are only assigned inside the retry loop. If `Task.Run` throws after `_listener` is assigned but before `return` executes (an unlikely but possible failure mode under severe resource exhaustion), the constructor falls through to the next loop iteration. Since `_listener` is `readonly`, assigning it twice in the same constructor is valid C# but results in the previously started (and never closed) `HttpListener` from iteration N being abandoned as `_listener` gets overwritten in iteration N+1, leaking the OS socket binding.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's claim that the old listener is 'never closed' is factually wrong: the catch block calls listener.Close() on the same object stored in _listener, so it IS cleaned up. For the more realistic case where Task.Run throws a non-HttpListenerException (e.g. OOM), the exception is uncaught, the loop exits entirely, and the constructor throws — it does NOT 'fall through to the next loop iteration' as claimed.",
+      "severity_justification": "Even if the finding were correct, this is test infrastructure code with a narrow resource-exhaustion failure mode.",
+      "category_justification": "The concern raised is about resource leaks and cleanup correctness in test infrastructure.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Settings/AkavacheBuilderExtensions.cs",
+      "start_line": 286,
+      "end_line": 290,
+      "message": "The `builder` parameter of type `IAkavacheInstance` is not used in the method `GetSettingsStore`. The method directly accesses the static `AkavacheBuilder.SettingsStores` and `AkavacheBuilder.BlobCaches` instead of using the state from the provided instance. This can lead to incorrect behavior if multiple Akavache instances exist, as it will always operate on a global, shared state.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: in the new IBlobCache GetSettingsStore overload, `builder` is used only for the null guard. No instance properties (SettingsCachePath, Serializer, etc.) are accessed. All writes go to the static AkavacheBuilder.BlobCaches and SettingsStores. Any call to this method from any IAkavacheInstance touches the same global state, regardless of which instance invoked it.",
+      "severity_justification": "The architectural limitation (static shared collections) is pre-existing across the Settings API. In practice a single Akavache instance is used per app. The new IBlobCache overload introduced here makes the parameter even more vestigial than before, but doesn't introduce new incorrect behavior beyond what the rest of the API already has.",
+      "category_justification": "The finding points to an API design issue: an extension method parameter that carries no semantic weight beyond enabling the null guard, with all actual work done against global state.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Core/CacheDatabase.cs",
+      "start_line": 242,
+      "end_line": 247,
+      "message": "The `catch` block in `ResetForTestsAsync` only logs the exception message to `System.Diagnostics.Debug.WriteLine`. In a test environment, especially during CI, debug output is often ignored or not captured. A failed shutdown can lead to state leakage between tests, causing them to be flaky. The exception should be re-thrown or logged to a more prominent output like the console to ensure visibility.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's core claim that 'a failed shutdown can lead to state leakage' is factually wrong: _builder = null, _isInitialized = false, _taskPoolOverride = null all execute outside the try-catch and run unconditionally. The suggestion to re-throw would actually introduce the state leakage it warns about by skipping those cleanup lines. The Debug.WriteLine preference is a generic logging style comment with no code-specific evidence of actual CI visibility issues.",
+      "severity_justification": "Even if the finding were correct, the concern is about test infrastructure diagnostic visibility, not production correctness.",
+      "category_justification": "The finding raises a concern about test isolation and error visibility during shutdown.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Settings.Tests/AkavacheBuilderExtensionsTests.cs",
+      "start_line": 673,
+      "end_line": 679,
+      "message": "In the test `WithSettingsStore_OverrideDatabaseName_UsesCustomKeyAsync`, the `viewSettings` object is disposed of inside a `try-finally` block. If `viewSettings.DisposeAsync()` throws an exception, `instance.DeleteSettingsStore` will not be called, leaving test artifacts on disk. The two cleanup operations should be in separate `try-catch` blocks within the `finally` to ensure both are attempted.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: DisposeAsync() and DeleteSettingsStore() are sequential in a single try-catch block. If DisposeAsync() throws, the catch fires and DeleteSettingsStore is skipped. The finding is factually correct about the control flow.",
+      "severity_justification": "Test infrastructure only. The Teardown() method calls Directory.Delete(_cacheRoot, recursive: true) unconditionally, providing a full safety net for any leftover DB files. DisposeAsync() on in-memory or SQLite caches rarely throws. The same pattern is used consistently throughout the file.",
+      "category_justification": "Cleanup robustness issue in test code - both operations should be independently attempted to ensure test artifacts are cleaned up.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Tests/Helpers/TestHttpServer.cs",
+      "start_line": 32,
+      "end_line": 48,
+      "message": "The `HttpListener` constructor and `Start()` call are inside a loop that retries on `HttpListenerException`. However, the created `listener` is not closed inside the `catch` block. If `listener.Start()` fails, the listener object is abandoned but not disposed, potentially leaking a handle on each failed attempt. The `listener` should be closed or disposed when a port conflict occurs to prevent resource leaks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims the listener is not closed in the catch block, but listener.Close() is explicitly called there at lines 48-51. The finding is factually incorrect about the code.",
+      "severity_justification": "Even if the concern were real, this is test-only infrastructure handling a rare port-conflict scenario.",
+      "category_justification": "The concern raised is about resource leaks in test infrastructure.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Settings.Tests/AkavacheBuilderExtensionsTests.cs",
+      "start_line": 139,
+      "end_line": 141,
+      "message": "The test `GetLoadedSettingsStore_NullSettingsStores_ReturnsNullAsync` modifies global static state (`AkavacheBuilder.SettingsStores`) without proper isolation. Although a `TestExecutor` is used to reset state between tests, this direct manipulation within the test body can interfere with other concurrently running tests if parallel execution is ever enabled. This makes the test fragile and reliant on the assumption of serial execution.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The concern is explicitly conditional ('if parallel execution is ever enabled') and parallel execution is doubly prevented: testconfig.json sets parallel=false globally, and the csproj applies [NotInParallelAttribute] at assembly level. The test also uses a correct save/restore pattern. The finding restates a general best practice about global state without identifying a concrete issue in the current configuration.",
+      "severity_justification": "Even as a hypothetical, the concern would only materialize if both the testconfig.json setting and the assembly-level attribute were removed.",
+      "category_justification": "Concern about test isolation and fragility under parallel execution.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Settings/AkavacheBuilderExtensions.cs",
+      "start_line": 269,
+      "end_line": 269,
+      "message": "The `settings` callback `Action<T?>` is nullable, and the code proceeds to invoke it with `settings?.Invoke(settingsDb)`. However, the documentation for the `WithSettingsStore` method does not specify that the `settings` parameter can be null. This creates an inconsistency between the implementation, which allows null, and the likely expectation of the caller, who might not expect null to be a valid value. The parameter should either be explicitly marked as nullable (`Action<T?>?`) or the null check should be reconsidered if it's not a valid scenario.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "With Nullable=enable, Action<T?> settings is a non-nullable parameter (? applies to T, not Action). The implementation uses settings?.Invoke() treating it as nullable, and tests pass null with null! to suppress warnings. This is a real API contract inconsistency - callers see a non-nullable parameter but null is silently accepted. Correct type should be Action<T?>? or null should be rejected with ArgumentNullException.",
+      "severity_justification": "Runtime behavior is correct (null is safely handled). The issue is a misleading API contract that could confuse callers or generate unexpected nullable warnings. No functional bug.",
+      "category_justification": "The finding identifies a mismatch between the declared parameter type (non-nullable) and the actual behavior (accepts null), which is an API contract/signature design issue.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Settings.Tests/Executors/AkavacheTestExecutor.cs",
+      "start_line": 48,
+      "end_line": 56,
+      "message": "The `catch` block for unregistering `ISerializer` instances from `AppLocator.CurrentMutable` only writes to `System.Diagnostics.Debug.WriteLine`. A failure to clean up serializers could lead to state leakage between tests, causing flaky or incorrect test runs. This error is critical for test isolation and should be logged more visibly (e.g., to the console) or re-thrown to fail the test and signal a problem with the test harness itself.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The comment explicitly marks this as 'Best-effort' and the suggested re-throw would skip AppBuilder.ResetBuilderStateForTests() which is critical for test isolation (all tests poll HasBeenBuilt). Additionally this cleanup is already a no-op (HasRegistration without contract never finds contract-based serializer registrations), so the catch block is never triggered. The finding is a generic logging preference applied to intentionally best-effort code where the suggested fix would be harmful.",
+      "severity_justification": "The code path is already a no-op in practice and the concern about test isolation applies equally to all best-effort cleanup patterns throughout the codebase.",
+      "category_justification": "The finding concerns test infrastructure cleanup and test isolation.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Tests/BackwardCompatibilityTests.cs",
+      "start_line": 95,
+      "end_line": 96,
+      "message": "The method `ResetSqliteProvider` now calls `Akavache.Sqlite3.AkavacheBuilderExtensions.ResetSqliteProviderForTests()`, which correctly resets the provider. However, the method is defined within `AkavacheBuilderTestExtensions`, a private nested static class inside `BackwardCompatibilityTests`. The new `internal` visibility of `ResetSqliteProviderForTests` makes this indirection unnecessary. The tests should call the public `internal` method directly for better clarity and to avoid the extra layer of abstraction.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Akavache.Sqlite3.csproj includes InternalsVisibleTo for Akavache.Tests, and ResetSqliteProviderForTests() is internal. The wrapper AkavacheBuilderTestExtensions.ResetSqliteProvider() is now a trivial one-liner passthrough made redundant by this PR's addition of the internal method. Tests could call the internal method directly.",
+      "severity_justification": "Pure style/simplification concern with no functional impact. The wrapper works correctly. Removing it would marginally improve clarity but has no behavioral effect.",
+      "category_justification": "The finding identifies unnecessary abstraction/indirection that the PR itself introduced by making the internal method directly accessible.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Tests/SerializationCompatibilityTests.cs",
+      "start_line": 34,
+      "end_line": 44,
+      "message": "The `GetSerializerCombinations` method now returns `IEnumerable<(Func<ISerializer>, Func<ISerializer>)>` to create new serializer instances for each test, which is a good improvement for test isolation. However, the implementation reuses the same serializer instances captured in the closure for each yielded `Func`. The LINQ query variables `writeSerializer` and `readSerializer` are captured, but their values change on each iteration of the outer loops. As a result, all created delegates will reference the last serializer pair from the loops. The variables should be copied to local variables within the inner loop before being used in the returned `Func`s to ensure each delegate captures a unique instance.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding says the variables 'should be copied to local variables' before use in the Func, but the code already does exactly that: `var ws = writeSerializer; var rs = readSerializer;` are defined inside the inner loop body and the lambdas capture ws/rs. Each iteration creates fresh local variables, giving each delegate a distinct captured value. The finding describes a fix that is already present in the code.",
+      "severity_justification": "The finding is factually wrong about the code; there is no actual bug here.",
+      "category_justification": "The concern is about closure capture correctness in test data generation code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Tests/Helpers/TestHttpServer.cs",
+      "start_line": 26,
+      "end_line": 47,
+      "message": "The HTTP listener initialization logic for finding a free port is prone to a Time-of-Check Time-of-Use (TOCTOU) race condition. While retries are implemented, there's no guarantee the same issue won't occur repeatedly, making the logic unreliable in high-contention scenarios.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding restates what the code comment already explicitly acknowledges ('Retry loop to handle TOCTOU race...'). The retry-on-bind-failure pattern with OS-assigned ephemeral ports is the standard correct mitigation for HttpListener which doesn't support port 0. No better alternative is proposed. The concern is a generic observation about any port-discovery pattern and offers nothing actionable beyond what the implementation already does.",
+      "severity_justification": "Even as a concern, the 10-retry loop with random ephemeral ports makes failure essentially impossible in a serial test environment on localhost.",
+      "category_justification": "Concerns port binding reliability in test infrastructure.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Samples/AkavacheTodoMaui/ViewModels/EditTodoViewModel.cs",
+      "start_line": 91,
+      "end_line": 93,
+      "message": "Replacing `DisplayAlert` with `DisplayAlertAsync` alters the behavior of the method call and may introduce threading issues or unexpected task behavior in environments not supporting the change. Investigate compatibility and execution path impacts.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The change replaces a CS0618-deprecated MAUI API with its current replacement as documented by MAUI. Both old and new calls are awaited in the same async method context. The finding's concern about 'threading issues or unexpected task behavior' is vague and unsubstantiated — no concrete mechanism or scenario is identified. This is a generic 'investigate API change' comment that doesn't reflect a concrete issue.",
+      "severity_justification": "Even if the concern were real, this is a sample app not a production library API.",
+      "category_justification": "The finding raises a correctness/behavioral concern about an API change.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Sqlite3/AkavacheBuilderExtensions.cs",
+      "start_line": 129,
+      "end_line": 131,
+      "message": "Adding `ResetSqliteProviderForTests` method exposes internal functionality intended for testing. This increases the risk of misuse in production and goes against encapsulation principles. Consider conditional compilation or stricter access control.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The method is `internal` and InternalsVisibleTo only lists test assemblies (Akavache.Tests, Akavache.Settings.Tests). NuGet consumers of Akavache.Sqlite3 cannot access internal members, so the 'risk of misuse in production' claim is factually incorrect. The internal+InternalsVisibleTo pattern is the standard .NET idiom for test-accessible hooks and is used consistently throughout this codebase.",
+      "severity_justification": "Even if the concern were valid, the access is already restricted to named test assemblies.",
+      "category_justification": "The finding raises an encapsulation and API design concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/AkavacheBuilderExtensions.cs",
+      "start_line": 252,
+      "end_line": 304,
+      "message": "The `WithSettingsStore` and `GetSettingsStore` overloads validate input using `ValidateDatabaseName`, but the validation logic for path traversal protection isn't included, leaving the checks unverified against potential injection risks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims path traversal protection 'isn't included' in ValidateDatabaseName, but SecurityUtilities.ValidateDatabaseName explicitly validates against '..', '/', and '\\' via ValidateCacheName, plus invalid filename chars and reserved Windows names. The protection is fully implemented. The finding's file path (src/AkavacheBuilderExtensions.cs) doesn't even exist. The claim is factually wrong.",
+      "severity_justification": "The concern about path traversal would be high if real, but the protection is already in place.",
+      "category_justification": "The finding raises a path traversal/injection concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Samples/AkavacheTodoMaui/ViewModels/MainViewModel.cs",
+      "start_line": 108,
+      "end_line": 112,
+      "message": "Replacing `RxApp.MainThreadScheduler` with `RxSchedulers.MainThreadScheduler` assumes that the new scheduler integrates seamlessly. This assumption needs validation, especially for cross-platform apps where scheduler behavior may differ.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "RxSchedulers.MainThreadScheduler is the documented direct replacement for the deprecated/removed RxApp.MainThreadScheduler in ReactiveUI 23.x. This is a required breaking change migration, not an assumption. The concern about 'cross-platform scheduler behavior' is generic — ReactiveUI's main thread scheduler works cross-platform by design and the replacement API provides identical semantics. No specific incompatibility is identified.",
+      "severity_justification": "Even if the concern were valid, this affects only sample apps, not the library itself.",
+      "category_justification": "The finding raises a behavioral correctness concern about an API migration.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Settings/AkavacheBuilderExtensions.cs",
+      "start_line": 257,
+      "end_line": 263,
+      "message": "Using `AkavacheBuilder.BlobCaches` to store arbitrary IBlobCache instances without constraints may lead to memory leaks or state pollution if the developer does not diligently manage these caches.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The concern is generic and applies equally to the pre-existing GetSecureSettingsStore and GetSettingsStore overloads which use the same BlobCaches pattern. CacheDatabase.Shutdown() already disposes all BlobCache entries. The finding doesn't identify a concrete scenario where the existing cleanup fails — it's a generic resource management best-practice warning applied without codebase-specific evidence.",
+      "severity_justification": "Even if the concern were valid, Shutdown() provides cleanup and DisposeSettingsStore/DeleteSettingsStore provide per-store cleanup paths.",
+      "category_justification": "The concern is about resource management and state lifecycle in the new API.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Sqlite3/AkavacheBuilderExtensions.cs",
+      "start_line": 126,
+      "end_line": 129,
+      "message": "Exposing a method to reset the SQLite provider for tests without conditional compilation risks accidental invocation in production, which can cause undefined behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical to Finding 20. The method is `internal static` and InternalsVisibleTo only lists Akavache.Tests and Akavache.Settings.Tests. NuGet consumers cannot access internal members, so 'accidental invocation in production' is factually impossible. The internal+InternalsVisibleTo pattern is the standard .NET idiom for test-accessible hooks.",
+      "severity_justification": "The access is already properly restricted to named test assemblies only.",
+      "category_justification": "The finding raises an encapsulation concern about test hooks in production code.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Tests/Helpers/TestHttpServer.cs",
+      "start_line": 73,
+      "end_line": 77,
+      "message": "The `InvalidOperationException` thrown when a free port isn't found after multiple retries lacks details about the attempts made and the failure context. This reduces its utility for debugging and operational troubleshooting.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a minor error message verbosity suggestion for an essentially-impossible failure path in test infrastructure. The exception already includes the key context (number of attempts). The finding is a generic 'include more context in exceptions' suggestion that could be applied to any retry loop — it doesn't identify a concrete debugging scenario that would be impacted.",
+      "severity_justification": "Test infrastructure only, near-impossible failure mode, cosmetic improvement at best.",
+      "category_justification": "Concerns error message quality and debuggability.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Samples/AkavacheTodoWpf/Services/NotificationService.cs",
+      "start_line": 38,
+      "end_line": 42,
+      "message": "Replacing `RxApp.MainThreadScheduler` with `RxSchedulers.MainThreadScheduler` modifies scheduler behavior globally. This untested change can affect other parts of the application relying on the prior ReactiveUI scheduler.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Same as Finding 22: RxSchedulers.MainThreadScheduler is the documented direct replacement for the deprecated RxApp.MainThreadScheduler in ReactiveUI 23.x. The concern about 'modifying scheduler behavior globally' is factually wrong — ObserveOn() only affects the specific observable chain. No RxApp. references remain in any samples, confirming complete migration. No specific incompatibility or behavioral difference is identified.",
+      "severity_justification": "Sample app only, required breaking change migration, no production library impact.",
+      "category_justification": "The finding raises a behavioral correctness concern about an API migration.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/src/AkavacheV11Reader/Program.cs",
+      "start_line": 52,
+      "end_line": 69,
+      "message": "The replacement bullet character is missing a space after the dash, producing output like ` -CacheElement (rows=5)` instead of the more readable ` - CacheElement (rows=5)`. Consider using `\" - {t.Name}\"` (with a space after the dash) for consistent, readable list formatting. The same applies to lines 56 and 69.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the PR changed `\" – {t.Name}\"` (space-dash-space) to `\" -{t.Name}\"` (space-dash-no-space), so the console output becomes ` -CacheElement (rows=5)` instead of the more readable ` - CacheElement (rows=5)`. The claim is accurate and the regression was introduced by this PR.",
+      "severity_justification": "This is purely cosmetic — diagnostic console output formatting in a reader utility. No functional impact.",
+      "category_justification": "Readability/formatting issue in console output strings; no behavioral or correctness implications.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/configuration.md",
+      "start_line": 408,
+      "end_line": 408,
+      "message": "This example still references `WithInMemoryProvider()`, but the codebase only exposes `WithInMemory(...)` and `WithInMemoryDefaults()` (see `src/Akavache.Core/IAkavacheBuilder.cs:38-45` and `src/Akavache.Core/AkavacheBuilderExtensions.cs:295`). As written, the documented testing configuration will not compile.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `WithInMemoryProvider()` does not exist anywhere in the codebase (`grep` returns no matches in `src/`). The PR introduced this non-existent method name into docs/configuration.md line 408, replacing the old SQLite-based example. The correct method is `WithInMemory()` (defined in `AkavacheBuilderExtensions.cs:295`). The documented testing configuration would not compile.",
+      "severity_justification": "Documentation shows code that won't compile, directly misleading developers trying to follow the testing configuration guidance introduced by this PR.",
+      "category_justification": "The issue is in docs/configuration.md — a code example that references a non-existent API method.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "docs/configuration.md",
+      "start_line": 415,
+      "end_line": 416,
+      "message": "The encrypted SQLite defaults API requires a password parameter (`WithSqliteDefaults(this IAkavacheBuilder builder, string password)` in the encrypted build), so this production example will not compile as shown after `WithEncryptedSqliteProvider()`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: in the ENCRYPTED build, `WithSqliteDefaults` only has an overload requiring a `string password` parameter. The docs example at lines 415-416 calls `.WithEncryptedSqliteProvider().WithSqliteDefaults()` without a password, which would not compile. This is factually correct.",
+      "severity_justification": "Documentation-only issue in code examples. No runtime behavior affected; a developer copying this snippet would get a compile error rather than a silent data loss or security issue.",
+      "category_justification": "The issue is in a docs/configuration.md code example — incorrect API usage shown in documentation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Core/Akavache.csproj",
+      "start_line": 17,
+      "end_line": 25,
+      "message": "The assembly attributes were moved into the project file for `InternalsVisibleTo`, but the previous assembly-level `Akavache.Core.Preserve(AllMembers = true)` attribute was not carried over. A repository search shows no replacement, so trimming/AOT scenarios may lose the core-wide preservation behavior while this project remains marked AOT-compatible.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The `[assembly: Akavache.Core.Preserve(AllMembers = true)]` attribute was confirmed deleted from `AssemblyInfo.cs` with no replacement in the csproj or elsewhere. The finding is factually accurate. However, the practical trimming impact is negligible for modern .NET 9/10 (ILLink doesn't honor duck-typed preserve attributes); the attribute was only meaningful for the legacy Xamarin Mono linker which is no longer used for the current target frameworks.",
+      "severity_justification": "The custom internal PreserveAttribute is not honored by ILLink (the modern .NET trimmer used for net9.0-android/ios targets), so its removal has no practical impact on current trimming/AOT behavior despite the project being marked IsAotCompatible.",
+      "category_justification": "The concern relates to trimming/AOT correctness — whether code will be preserved at publish time — which falls under reliability in deployment scenarios.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "CLAUDE.md",
+      "start_line": 40,
+      "end_line": 41,
+      "message": "This instruction contradicts both the preceding rule that MTP/TUnit arguments go after `--` and the command shown here, where `--output Detailed` is after the delimiter. Clarify whether `--output` is a `dotnet test` argument or an MTP argument so agents do not copy the wrong invocation.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at lines 40-41 and line 68: the comment says 'place BEFORE --' but the actual command places `--output Detailed` after `--`. Line 68 also incorrectly states 'before `--`'. Since `--output` is an MTP argument it belongs after `--`, so the command is correct but the explanatory comments are wrong — a genuine, confusing contradiction introduced by this PR.",
+      "severity_justification": "Affects only developer/agent usability of the CLAUDE.md instructions. A developer who follows the comment instead of the command will place `--output` before `--`, which may cause it to be parsed as a dotnet test argument and silently ignored or error, but no production code is affected.",
+      "category_justification": "The issue is a contradictory instruction in CLAUDE.md developer documentation — specifically an incorrect comment vs the shown command.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Settings.Tests/EncryptedSettingsCacheTests.cs",
+      "start_line": 475,
+      "end_line": 475,
+      "message": "This comment contains a replacement character, which looks like mojibake and makes the sentence harder to read.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified via hexdump: `ef bf bd` (U+FFFD replacement character) is present at line 475, between 'dispose it' and 'retrying'. The PR diff shows both old and new versions of this line contain the replacement character, confirming it was pre-existing and the PR did not introduce it.",
+      "severity_justification": "Cosmetic issue in a comment inside a test file. No functional or behavioral impact; only readability of the comment is affected.",
+      "category_justification": "A malformed/corrupted character in a code comment is a readability/maintainability issue with no functional consequence.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/Akavache.Settings.Tests/Executors/AkavacheTestExecutor.cs",
+      "start_line": 40,
+      "end_line": 45,
+      "message": "For tests that use the `WithAkavache` builder path, `CacheDatabase.IsInitialized` remains false, but `AkavacheBuilder.BlobCaches` and `SettingsStores` can still contain SQLite-backed settings resources. `ResetForTestsAsync()` then skips shutdown, and these lines replace the dictionaries without disposing their contents, which can leak file handles and make later cleanup/tests flaky after a failed test.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified through code: `WithAkavache` never calls `CacheDatabase.SetBuilder()`, so `_isInitialized` stays false. `ResetForTestsAsync()` then skips shutdown. Lines 40-41 assign new empty dictionaries without disposing the SqliteBlobCache instances previously stored in `AkavacheBuilder.BlobCaches`, leaking SQLite file handles.",
+      "severity_justification": "Undisposed SQLite file handles can cause subsequent tests that try to access the same .db file paths to fail with access or locking errors, making the test suite flaky after any failed test in the `WithAkavache` path.",
+      "category_justification": "Resource leak (file handle leak from undisposed SQLite caches) causing potential test flakiness — an operational/reliability concern in the test infrastructure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "CLAUDE.md",
+      "start_line": 32,
+      "end_line": 38,
+      "message": "`dotnet test` takes the project/solution path as a positional argument; the repository's existing instructions use `dotnet test Akavache.Tests/Akavache.Tests.csproj` (`.github/copilot-instructions.md:84`). Documenting `--project` here will cause agents to run a non-standard/unsupported invocation on SDKs that do not define that option.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "`dotnet test --project <PROJECT>` is a valid, officially documented option added in .NET 9 SDK, introduced specifically to support the Microsoft Testing Platform (which this project uses, as evidenced by `src/global.json`). The finding's claim that it's 'non-standard/unsupported' is factually incorrect for .NET 9+. The inconsistency with copilot-instructions.md is minor style variation, not an incompatibility.",
+      "severity_justification": "Even if there were an inconsistency, it would only affect documentation clarity for agents; no production code is involved.",
+      "category_justification": "The finding concerns the correctness of CLI invocation examples in CLAUDE.md documentation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

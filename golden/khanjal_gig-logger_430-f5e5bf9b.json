@@ -1,0 +1,791 @@
+{
+  "pr_key": "khanjal_gig-logger_430-f5e5bf9b",
+  "pr": {
+    "repo": "https://github.com/khanjal/gig-logger",
+    "pr_number": 430,
+    "base": "b22f30db9db71d86d5934a32db0e9252c1a37461",
+    "head": "f5e5bf9b0730d0326a525e5f37609bdd76c02460"
+  },
+  "findings": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "start_line": 3,
+      "end_line": 32,
+      "message": "The `pull_request` trigger was removed entirely, so CI no longer runs on PRs and branch protection status checks will never be satisfied. Additionally, `npm test` was replaced with `npm run build --if-present` and `npm run lint --if-present` — the test suite no longer runs in CI at all. The `--if-present` flag also means these steps silently pass even if the npm scripts are missing.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: ci.yml only has `push:` trigger with no branches filter and no `pull_request:` event. npm test was replaced by build+lint with --if-present. The separate frontend-tests.yml also only triggers on push, not pull_request, so tests don't run on PRs either. All three claims are factually correct.",
+      "severity_justification": "CI no longer runs on PRs and the --if-present flag silently skips missing scripts. This weakens the safety net for PRs, but tests still run on push events via frontend-tests.yml, limiting immediate risk to PR-time feedback only.",
+      "category_justification": "This is a CI/CD configuration issue that affects build reliability and the ability to catch regressions before merge.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/pages/calculator/uber-calculator/uber-calculator.component.scss",
+      "start_line": 22,
+      "end_line": 22,
+      "message": "`color-mix(in srgb, var(--color-surface) 95%, var(--color-surface))` mixes a color with itself, which is a mathematical no-op — the result is always `var(--color-surface)`. The gradient is now flat (solid surface color). The original intent was `color-mix(in srgb, var(--color-surface) 95%, white)` to produce a very slight tint toward white at the gradient end.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the file: line 22 uses `color-mix(in srgb, var(--color-surface) 95%, var(--color-surface))` which mixes a color with itself, always yielding `var(--color-surface)`. The gradient is mathematically flat. The original `white` was the intended second color to produce a slight tint.",
+      "severity_justification": "This is a purely visual regression — a subtle gradient is lost and the form background becomes a solid surface color. No functional behavior is affected.",
+      "category_justification": "The color-mix expression is mathematically incorrect (a no-op), making it a logic error in the styling computation even though it only manifests visually.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/manifest.json",
+      "start_line": 12,
+      "end_line": 18,
+      "message": "Seven icon sizes (72×72 through 384×384 plus 192×192) were removed and only a 512×512 PNG remains. Chrome's PWA installability criteria require at least a 192×192 icon. Without it, the app will fail the installability check and cannot be installed as a PWA on Android or from Chrome. The 192×192 asset file still exists in the assets directory but is no longer referenced.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "unrelated",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The PR diff does not include any changes to src/manifest.json. The PR merge commit (bd8663f9) preserved all 8 icon sizes including 192x192. The removal happened in a post-PR commit (11840fbc). The finding incorrectly attributes the manifest change to this PR.",
+      "severity_justification": "If the claim were true, removing the 192x192 icon would break PWA installability — a high-impact user-facing regression. But since the claim is factually wrong about which PR caused it, the severity applies only to the FP classification.",
+      "category_justification": "The finding makes a factually incorrect claim about what changed in this PR.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/styles/_modal-mixins.scss",
+      "start_line": 6,
+      "end_line": 34,
+      "message": "The modal backdrop was changed from `rgba(0, 0, 0, $opacity)` (a semi-transparent dark overlay) to `var(--modal-backdrop, color-mix(in srgb, var(--color-bg) 60%, transparent))`. The CSS variable `--modal-backdrop` is never defined anywhere in the codebase, so the fallback fires. In light mode, `--color-bg` resolves to `#f8fafc` (gray-50), making the backdrop `rgba(248, 250, 252, 0.6)` — an essentially invisible white overlay. Dialogs and modals will appear without any dimming of the content behind them in light mode.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: --modal-backdrop is never defined (only used in _modal-mixins.scss). --color-bg in light mode is map.get($gray, 50) = #f8fafc. color-mix(in srgb, #f8fafc 60%, transparent) produces an essentially invisible near-white overlay, replacing the original rgba(0,0,0,0.5) dark backdrop. This is a real visual regression introduced in this PR.",
+      "severity_justification": "Modal dialogs will render without any visible backdrop dimming in light mode, making the UI feel broken (content behind dialogs is fully visible without dimming). It's a visible UX regression but doesn't break functionality.",
+      "category_justification": "The backdrop color computation is logically incorrect — using the page background color (near-white in light mode) as the overlay produces an invisible backdrop instead of the intended dimming effect.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/components/settings/diagnostics/diagnostics.component.scss",
+      "start_line": 70,
+      "end_line": 70,
+      "message": "`box-shadow: var(--shadow-light), var(--shadow-light)` duplicates the same shadow value. The original was `var(--shadow-light), var(--shadow-sm)` which layered two distinct shadows. The deduplication loses the intended two-layer depth effect and also references `--shadow-sm` which was undefined — so this should have been cleaned up rather than duplicated.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the PR changed var(--shadow-light), var(--shadow-sm) to var(--shadow-light), var(--shadow-light), duplicating the same value. --shadow-sm was undefined (grep finds no definition). The duplication claim is accurate, though the finding overstates the original's functionality since --shadow-sm being undefined already made the declaration invalid CSS.",
+      "severity_justification": "The duplicate shadow is a minor visual issue. The box-shadow values here are color-only (no length offsets), making them invalid CSS regardless, so the actual rendered difference is negligible. It's a cleanup issue rather than a regression.",
+      "category_justification": "The shadow value is duplicated (a logic error), though the visual impact is minimal since both the original and replacement forms produce invalid CSS.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.html",
+      "start_line": 292,
+      "end_line": 318,
+      "message": "The application-load-timeout error UI injected into `document.body` after 25 seconds uses CSS custom properties (`var(--error-500)`, `var(--primary-600)`, `var(--color-text-inverse)`, `var(--color-surface)`) that are only defined by Angular's bundled `styles.scss`. When Angular fails to load (the exact scenario this code handles), those CSS vars are undefined and the buttons and headings render with transparent backgrounds and default text color — the recovery UI becomes invisible/unstyled. The original code used hardcoded hex values (`#f44336`, `#2196F3`, `white`) which always rendered correctly.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the PR replaced hardcoded hex values (#f44336, #2196F3, white) with CSS custom properties (var(--error-500), var(--primary-600), var(--color-text-inverse)) in the 25-second load-failure error UI. These vars are defined only in Angular's bundled styles. No fallback values are provided in any var() call. If Angular's CSS fails to load (the precise failure scenario), the error UI would render with transparent/unstyled buttons.",
+      "severity_justification": "The recovery UI for Angular load failures becomes non-functional exactly when it's needed most — when Angular fails to load. Users may see an invisible/unstyled UI with transparent buttons, making the 'Clear Cache & Reload' and 'Hard Refresh' actions hard to find. This is a real regression, though it only affects the rare failure scenario.",
+      "category_justification": "The error recovery UI is logically broken in its primary use case (Angular load failure) because it depends on resources that are unavailable in that scenario.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main.ts",
+      "start_line": 69,
+      "end_line": 78,
+      "message": "The `bootstrapApplication` catch block displays an error fallback UI using `var(--error-500)`, `var(--primary-600)`, and `var(--color-text-inverse)` in inline styles. These CSS variables are defined in Angular's compiled stylesheet which has not loaded when `bootstrapApplication` fails. The error heading text and the Reload button will be transparent/invisible. The original code used `#f44336` and `#2196F3` which rendered correctly regardless of Angular's state.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: PR replaced hardcoded hex values with CSS custom properties in the bootstrapApplication catch block. The claim is factually correct. However, the practical risk is lower than index.html's 25-second timeout because bootstrapApplication being called implies Angular's JS bundle loaded, making the linked CSS stylesheet very likely already applied.",
+      "severity_justification": "By the time bootstrapApplication throws, the Angular CSS bundle (defining the variables) has almost certainly loaded, so the error UI will render correctly in nearly all real-world bootstrap-failure scenarios. The only dangerous edge case (CSS loads but fails, JS succeeds) is extremely rare and would leave all styles broken anyway.",
+      "category_justification": "Using CSS custom properties in an error fallback UI introduces a dependency on resources that may not be available in failure scenarios — a logic/correctness issue in the error handling path.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/header/header.component.ts",
+      "start_line": 187,
+      "end_line": 194,
+      "message": "`updateUnsavedCounts()` was previously guarded by an early return when `!this.isAuthenticated`, which cleared the badge counts and avoided the DB queries. That guard was removed: the method now always calls `this.tripService.getUnsaved()` and `this.shiftService.getUnsavedShifts()` regardless of auth state. This method is polled every 5 seconds via `interval(5000)`. In unauthenticated or local-only mode this causes continuous unnecessary IndexedDB reads and keeps `unsavedTripsCount` / `unsavedShiftsCount` set to whatever is in the local DB, which may mislead the user into thinking there are pending syncs when they cannot sync.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The auth guard in updateUnsavedCounts() was present at the PR merge commit (bd8663f9) and was removed in a subsequent commit (9e47e31a, PR #434). header.component.ts is not in this PR's diff. The finding incorrectly attributes the auth guard removal to this PR.",
+      "severity_justification": "The underlying issue (polling DB without auth guard every 5s, misleading unsaved counts) is a real concern, but it was introduced by a different PR.",
+      "category_justification": "The finding describes a logic error (missing auth guard on a polling function) that affects correctness of the header badge counts.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/guards/auth-guard.service.ts",
+      "start_line": 20,
+      "end_line": 43,
+      "message": "The `canActivate` guard now performs an IndexedDB read (`getSpreadsheets()`) on every route activation for unauthenticated users. Eight routes use this guard via `canActivateAuth`. Navigation while signed out with local data triggers at least one extra async DB call per route change on top of the existing `DefaultSheetGuard` DB call. More importantly, the guard is named `AuthGuardService` but now grants access to auth-protected routes (trips, shifts, expenses, diagnostics, etc.) without any authentication, solely based on local data presence — sync-dependent operations on those pages will silently fail or show confusing error states for unauthenticated users.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "auth-guard.service.ts was last modified in commit 9e47e31a (PR #434, post-merge). At the PR merge commit bd8663f9, the guard still used isAuthenticated() with a simple redirect and no getSpreadsheets() call. The changes described were introduced by a different PR and are not in this PR's diff.",
+      "severity_justification": "The underlying concern about unauthenticated access to protected routes and extra DB reads is a real design issue, but it belongs to the wrong PR.",
+      "category_justification": "The finding describes a semantic change to an auth guard that allows unauthenticated access to protected routes.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/styles.scss",
+      "start_line": 91,
+      "end_line": 112,
+      "message": "`.border-success { border-color: var(--color-success); }` is declared twice: once inside `@layer components` (line 91) and again outside any layer (line 112). Unlayered styles always win over `@layer components` regardless of source order, making the `@layer` declaration permanently dead code. Tailwind's own utilities are also layered; this specificity inversion could cause the unlayered `.border-success` to override Tailwind utilities that would otherwise take precedence inside their layer.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: .border-success is declared at line 91 (inside @layer components) and again at line 112 (unlayered). The @layer version is dead code per CSS Cascade Level 5 — unlayered styles always win over named layers. Both were introduced by this PR; the pre-PR styles.scss had no .border-success at all.",
+      "severity_justification": "Both declarations have identical values (border-color: var(--color-success)), so there is no current rendering difference. The issue is dead code in @layer and drift risk if values diverge, which is a minor maintainability concern.",
+      "category_justification": "The duplicate declaration creates dead code (@layer version is permanently shadowed) and potential future drift if one copy is updated without the other.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main.ts",
+      "start_line": 77,
+      "end_line": 77,
+      "message": "The `color: var(--color-text-inverse);` line is over-indented relative to the surrounding inline-style declarations (4 extra spaces). While this doesn't affect the rendered output since it's inside a CSS string, it makes the inline style block inconsistent with the lines above and below.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at src/main.ts line 77: `color: var(--color-text-inverse);` is indented with 12 spaces while surrounding style declarations use 10 spaces, creating a genuine inconsistency in the inline style block.",
+      "severity_justification": "Purely cosmetic — has no effect on rendered output or behavior, just inconsistent indentation within an inline style string.",
+      "category_justification": "This is a code style/formatting inconsistency with no functional impact.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/error.html",
+      "start_line": 42,
+      "end_line": 42,
+      "message": "The `color: var(--color-text-inverse, #ffffff);` line is over-indented relative to the surrounding declarations in the `button` rule (extra spaces compared to `background:` on the line above and `border:` on the line below). This is inconsistent style for the rest of this stylesheet block.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified at src/error.html line 42: `color: var(--color-text-inverse, #ffffff);` has 16 spaces of indentation while surrounding declarations (`background:`, `border:`, `padding:`, etc.) use 12 spaces, confirming the inconsistency.",
+      "severity_justification": "Purely cosmetic formatting issue with no functional impact.",
+      "category_justification": "Code style/formatting inconsistency within a stylesheet block.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/styles/_tables.scss",
+      "start_line": 1365,
+      "end_line": 1365,
+      "message": "The semantic-token migration replaces a translucent overlay (`rgba(0,0,0,0.1)`) used as a scrollbar track with `var(--shadow-light)`. Shadow tokens are typically intended for `box-shadow` overlays, not as solid background fills; if `--shadow-light` resolves to an opaque color in either theme, the scrollbar track will visually change from a subtle dark tint over the underlying content to a solid swatch. Consider using a surface/border token (e.g. `--color-border-light`) or a dedicated overlay token here instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `--shadow-light` is used as `background:` on a scrollbar track (line 1365 of _tables.scss). The token is semantically wrong for a background — it was designed for box-shadow. Additionally, the value differs significantly between themes: ~5% opacity in light mode vs ~35% opacity in dark mode, potentially making the scrollbar track distractingly visible in dark mode compared to the original consistent rgba(0,0,0,0.1).",
+      "severity_justification": "Affects only scrollbar track appearance, a minor visual detail. The value is still translucent in both themes so there's no full breakage.",
+      "category_justification": "Semantic token misuse — using a shadow token as a background color is inconsistent with the project's token design intent.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/test.ts",
+      "start_line": 120,
+      "end_line": 179,
+      "message": "Most of these `overrideProvider` calls duplicate the provider definitions already added to `configureTestingModule` above (AuthGoogleService, ShiftService, TripService, LoggerService, ThemeService, OAuthService, MatSnackBar). The duplicated mock literals will drift apart over time (for example, the `SpreadsheetService` override at lines 129–135 omits `add`, `update`, and `deleteSpreadsheet` that are defined in the configureTestingModule version on lines 66–76, which can produce inconsistent test behavior depending on whether a spec triggers the override path). Consider extracting each mock into a shared `const` and reusing it in both places, or removing one of the two registrations.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `SpreadsheetService` in `configureTestingModule` includes `add`, `update`, `deleteSpreadsheet` while the `overrideProvider` version at lines 129-135 omits them. The finding is factually correct about both the duplication and the specific drift. The full structure matches what the finding describes.",
+      "severity_justification": "The drift could cause tests to fail with 'not a function' errors for standalone components calling `add`/`update`/`deleteSpreadsheet` on the overridden mock, but no active tests currently appear to hit this path based on the code.",
+      "category_justification": "This is a test infrastructure issue — duplicated mock definitions in test setup that have drifted apart, potentially causing inconsistent test behavior.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.html",
+      "start_line": 37,
+      "end_line": 40,
+      "message": "The CSS variables `--meta-theme-light` and `--meta-theme-dark` are read here from the computed style of `<html>`. Please verify these tokens are actually defined somewhere in the global stylesheet/theme — if they aren't declared, both `getPropertyValue(...)` calls return an empty string and the code will fall back to the hard-coded `#1976d2` / `#0b1221` literals, which defeats the purpose of the semantic-token migration. A quick search of the styles directory for `--meta-theme-light` should confirm.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`--meta-theme-light` and `--meta-theme-dark` are defined in src/styles.scss at lines 155-156 as `var(--primary-600)` and `var(--primary-800)`. The variables will resolve correctly; the fallback literals are not needed in practice but serve as a safety net. The finding's premise that these tokens might not be defined is incorrect.",
+      "severity_justification": "Even if the claim were true, the hardcoded fallbacks (#1976d2 / #0b1221) would engage, which is a minor cosmetic issue.",
+      "category_justification": "The finding is about whether the CSS variables are defined and will produce correct values.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tailwind.config.js",
+      "start_line": 13,
+      "end_line": 33,
+      "message": "Tailwind color values are configured as raw `var(--...)` expressions. With this form, Tailwind's color-opacity modifiers (e.g. `bg-primary-500/50`, `text-error-500/75`) will no longer work, because Tailwind injects an opacity value via `<alpha-value>` substitution only when the variable is referenced through a function (e.g. `'rgb(var(--primary-500) / <alpha-value>)'` with the variable holding space-separated channels). If opacity utilities are used anywhere in the codebase for these colors, they will silently break. Consider switching to the `rgb(var(--token) / <alpha-value>)` pattern if opacity support is desired.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The tailwind.config.js was changed by this PR from hardcoded hex values to `var(--)` expressions. This technically breaks Tailwind's opacity modifier support for these colors (e.g., `bg-primary-500/50`). The finding is factually correct. While the PR removed all existing opacity-modifier usages with these colors, any future use would silently break.",
+      "severity_justification": "Currently no usages of opacity modifiers with these custom Tailwind colors exist (the PR cleaned them all up). The concern is forward-looking — a developer attempting to use `bg-primary-500/50` in the future would get no effect silently.",
+      "category_justification": "This is a design/API concern about the Tailwind color configuration that could cause confusion and silent breakage for future contributors.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.html",
+      "start_line": 156,
+      "end_line": 157,
+      "message": "The dark-mode loading-spinner override now uses `var(--primary-600)` with the comment \"lighter accent in dark\". In the previous code, the dark accent was `#60a5fa` (a lighter blue) specifically to contrast against the dark surface. If `--primary-600` resolves to the same value in both themes (which is typical for a `600` token), the spinner accent will no longer get a lighter variant in dark mode and the comment will be misleading. Consider using a theme-aware token (e.g. `--color-accent` or a `--primary-on-dark`-style token) here.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "In dark mode, `--primary-600` is overridden to `#60a5fa` (a lighter blue) in styles.scss line 252. The finding's central claim — that `--primary-600` typically resolves to the same value in both themes — is factually incorrect for this codebase. The comment 'lighter accent in dark' is accurate.",
+      "severity_justification": "Even if this were a real issue, it would only affect the pre-Angular-bootstrap loading spinner appearance in dark mode.",
+      "category_justification": "The finding makes an incorrect factual claim about how the CSS variable resolves across themes.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/manifest.json",
+      "start_line": 6,
+      "end_line": 7,
+      "message": "CSS custom properties declared on `:root` / `<html>` are not resolved inside Web App Manifest fields — `theme_color` and `background_color` must be static color values, which they already are here. However, hard-coding `#2563eb` / `#e6f3ff` while the rest of the PR migrates to semantic tokens means these values can drift from the design system. Consider adding a comment noting that these literals must be kept in sync with the `--primary-600` / `--color-surface` tokens, or generating the manifest from the token source of truth.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: manifest.json was changed by this PR, setting `theme_color: '#2563eb'` which matches `$primary-600` in color-vars.scss. `background_color: '#e6f3ff'` has no clear corresponding token. The finding correctly identifies that manifest fields must be static values and could drift from the design system. The concern is code-specific and actionable.",
+      "severity_justification": "Drift between manifest colors and design tokens is a cosmetic/brand consistency issue affecting only the PWA chrome color. No functionality is affected.",
+      "category_justification": "This is about keeping hardcoded values in sync with the design token source of truth — a maintainability concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/angular.yml",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "The PR description says `angular.yml` was updated to run headless Chrome tests, but this change deletes the workflow entirely. That discrepancy should be resolved because reviewers will otherwise expect a test workflow that no longer exists.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The PR description says `angular.yml` was 'updated to run tests in headless Chrome mode' but the file was actually deleted. The testing functionality was moved to `frontend-tests.yml`. The finding correctly identifies a discrepancy between the PR description and the actual change.",
+      "severity_justification": "The functional outcome (headless Chrome tests running) is achieved via frontend-tests.yml. The discrepancy is in the PR description only — the old angular.yml only triggered on `workflow_dispatch` anyway, so no test coverage was lost.",
+      "category_justification": "The finding is about a discrepancy between the stated PR changes and the actual code changes — a documentation accuracy issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.html",
+      "start_line": 124,
+      "end_line": 131,
+      "message": "These inline loading styles now rely on CSS variables without fallback values, but the variables are defined in the compiled global stylesheet rather than in this inline block. If the stylesheet is slow to load or fails, the initial loading UI loses its intended background/text/spinner colors; keep literal fallbacks in the `var()` calls for this bootstrap path.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: before the PR, inline loading styles used hardcoded hex values that work without any external stylesheet. The PR replaced them with CSS variables defined in the compiled Angular stylesheet — which is not available during the bootstrap phase when the loading spinner is shown. This causes the loading UI to render with missing colors until Angular loads.",
+      "severity_justification": "The loading indicator is specifically designed as a UX element shown during initial page load before Angular initializes. Using CSS variables that depend on the compiled stylesheet defeats this purpose — the spinner will appear unstyled during the exact window it's meant to be visible.",
+      "category_justification": "The code change causes incorrect behavior (loading UI renders without intended colors) during the bootstrap path, which is a logic/correctness issue for this specific bootstrap use case.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/components/forms/google-address/google-address.component.html",
+      "start_line": 14,
+      "end_line": 21,
+      "message": "Putting `aria-label` on `app-base-icon-button` does not forward it to the actual `<button>` rendered by `BaseButtonComponent`, and `MatIcon` is aria-hidden by default. This clear control can therefore lose its accessible name after replacing the native button.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Before the PR, a native `<button aria-label=\"Clear Address\">` was used. The PR replaced it with `<app-base-icon-button aria-label=\"Clear Address\">` but neither `BaseIconButtonComponent` nor `BaseButtonComponent` has an aria-label input or host binding to forward it to the inner `<button>`. The mat-icon content is aria-hidden, so the button has no accessible name.",
+      "severity_justification": "This is a genuine accessibility regression — the clear button loses its accessible name, making it effectively unlabeled for screen reader users who need to clear the address input.",
+      "category_justification": "The finding is about an accessible name being lost from an interactive button element, a direct a11y issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/pages/trips/trips.component.ts",
+      "start_line": 215,
+      "end_line": 219,
+      "message": "When `confirmSaveTripsDialog()` calls this path it sets `saving = true` before invoking `saveSheetDialog()`. If `canSync()` is false, this early return never clears that flag, leaving the save button/page stuck in a saving state after showing the login snackbar.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `confirmSaveTripsDialog` at line 256 sets `this.saving = true` then calls `saveSheetDialog('save')`. `saveSheetDialog` returns early without resetting `saving` if `canSync()` is false. The bug is real. However, `trips.component.ts` was not changed by this PR — the `canSync()` guard was introduced by commit `9e47e31a` (a different PR), making this pre-existing at this SHA.",
+      "severity_justification": "The save button/UI gets stuck in a saving state after a login-required flow, requiring a page reload to recover. It's a real UX regression that affects logged-out users.",
+      "category_justification": "Logic error where a flag is set but never cleared on a specific early-return code path.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/services/voice-pattern-processor.service.spec.ts",
+      "start_line": 563,
+      "end_line": 564,
+      "message": "This test is still named for the `order #12345` hash-symbol case, but the input was changed to another `order number ...` variant that is already covered above. The `(?:order|delivery|trip)\\s*#` regex branch now has no direct regression coverage.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The PR changed the test input from `'order #12345'` to `'order number 12345'`. This was directly confirmed by the git diff. The test named 'should parse order number with hash symbol' no longer tests the hash-symbol regex branch `(?:order|delivery|trip)\\s*#`. Both remaining tests now cover the same `order number` prefix pattern, leaving the hash branch untested.",
+      "severity_justification": "A missing test case for one regex branch is a minor coverage gap. The regex branch itself works correctly but regressions won't be caught automatically.",
+      "category_justification": "The finding is about test coverage — a specific regex branch losing its direct regression test.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/services/search.service.ts",
+      "start_line": 356,
+      "end_line": 362,
+      "message": "`text-primary` is defined globally as `color: var(--color-text-primary)` (normal body text), not as the brand/primary accent color. Returning it here makes Service/Type category icons render as ordinary text instead of a semantic category color; use the existing accent utility such as `text-info`/another category-specific token if the intent is the old blue/pink distinction.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: before the PR Service was `text-blue-600` and Type was `text-pink-600` — visually distinct. The PR replaced both with `text-primary`, which maps to `var(--color-text-primary)` (the body text color), making them visually indistinct. `text-info` = `var(--color-primary)` (brand blue) would be more appropriate for Service. Type's pink has no semantic equivalent, but `text-primary` is clearly wrong for a category color indicator.",
+      "severity_justification": "Visual regression affecting category icons/indicators in the search view — they lose their color distinction. Functional but degraded UX.",
+      "category_justification": "The semantic token substitution changed the rendered visual output (category colors) rather than preserving behavior, making it a correctness issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/styles/_responsive-utilities.scss",
+      "start_line": 276,
+      "end_line": 276,
+      "message": "`--shadow-light` is defined as an RGBA color token, not a complete box-shadow value. Used by itself, `box-shadow: var(--shadow-light)` is invalid CSS and the card shadow is dropped; keep the offset/blur values and use the token only as the shadow color.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `--shadow-light` is defined as `rgba(0, 0, 0, 0.05)` (light) / `color-mix(in srgb, black 35%, transparent)` (dark) — a bare color, not a complete box-shadow value. `box-shadow: var(--shadow-light)` is invalid CSS (missing x/y offsets). The PR changed this from `box-shadow: 0 1px 3px rgba(0,0,0,0.1)` to `box-shadow: var(--shadow-light)`, dropping the card shadow.",
+      "severity_justification": "The `.card-responsive` class loses its box-shadow entirely, which is a visible regression for any components using this utility class.",
+      "category_justification": "The change produces invalid CSS that causes the box-shadow to be silently dropped by browsers, changing visual output.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/components/base/base-button/base-button.component.scss",
+      "start_line": 63,
+      "end_line": 63,
+      "message": "`--shadow-light` is only a color token (`rgba(...)`), so using it as the entire `box-shadow` value is invalid and removes the secondary button shadow. It needs offset/blur lengths plus the token as the color.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `--shadow-light` = `rgba(0, 0, 0, 0.05)`, a bare color token. `box-shadow: var(--shadow-light)` is invalid CSS — browsers drop the declaration. The pre-PR secondary button had no box-shadow; this PR introduced a shadow that will silently fail to render. Same invalid pattern exists at lines 68 and 144 with `var(--shadow-medium)` and `var(--shadow-light)`.",
+      "severity_justification": "The shadow was newly added by the PR, so there's no visible regression from the user's perspective — the secondary button looks the same as before. The intent (adding a subtle shadow) is simply not achieved.",
+      "category_justification": "Invalid CSS causes the box-shadow to be silently dropped, preventing the intended visual behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/pages/setup/sheet-link/sheet-list/sheet-list.component.scss",
+      "start_line": 171,
+      "end_line": 171,
+      "message": "`--shadow-light` is a color token rather than a full shadow declaration, so this `box-shadow` value is invalid and the pinned action bar loses its shadow.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the PR changed `box-shadow: 0 -6px 18px rgba(2,6,23,0.12)` to `box-shadow: var(--shadow-light)`. `--shadow-light` resolves to `rgba(0,0,0,0.05)`, a bare color value. `box-shadow` requires offset values; a bare color is invalid CSS and is dropped by browsers, removing the pinned action bar shadow.",
+      "severity_justification": "The pinned action bar loses its upward shadow, which visually separates it from the content above. This is a real visible regression for the sheet list UI.",
+      "category_justification": "Invalid CSS causes the box-shadow to be silently dropped, removing a visible UI element.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/components/settings/diagnostics/diagnostics.component.scss",
+      "start_line": 70,
+      "end_line": 70,
+      "message": "Both entries in this comma-separated shadow list are just color tokens. A box-shadow requires length offsets, so the browser will discard the declaration and the card will render without the intended elevation.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `box-shadow: var(--shadow-light), var(--shadow-light)` at line 70. `--shadow-light` = `rgba(0,0,0,0.05)`, a bare color token. Box-shadow requires length offsets; two bare color values produce an invalid declaration that browsers discard. Pre-PR used `var(--shadow-sm)` (undefined) which was also invalid, so this was already broken.",
+      "severity_justification": "The card shadow was already not rendering before this PR (due to undefined `--shadow-sm`). The PR didn't make the visual state worse from the user's perspective, though it obscures the existing bug with a defined but misused variable.",
+      "category_justification": "Invalid CSS syntax causes the box-shadow to be silently dropped by browsers.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/components/trips/trips-table-simple/trips-table-simple.component.scss",
+      "start_line": 31,
+      "end_line": 31,
+      "message": "`--shadow-light` contains only a color, so this standalone `box-shadow` declaration is invalid and the responsive table/card elevation is dropped.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `box-shadow: var(--shadow-light)` at line 31 is invalid CSS since `--shadow-light` is a bare color token. However, this specific line was pre-existing before the PR — the PR only changed the two media query variants from `var(--shadow-sm)` to `var(--shadow-light)`. The bug at line 31 was not introduced by this PR.",
+      "severity_justification": "The table wrapper loses its elevation shadow, a minor visual regression. The component remains functional.",
+      "category_justification": "Invalid CSS causes the box-shadow to be silently dropped by browsers.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/pages/stats/stats.component.scss",
+      "start_line": 33,
+      "end_line": 33,
+      "message": "`--shadow-light` is an RGBA color token, not a complete box-shadow value. This hover state will not get a shadow because the declaration lacks required offset/blur lengths.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `box-shadow: var(--shadow-light)` at line 33 of stats.component.scss. `--shadow-light` is `rgba(0,0,0,0.05)`, a bare color token. Missing x/y offsets make this invalid CSS, browsers drop the declaration. The PR changed `var(--shadow-sm)` (undefined) to `var(--shadow-light)` — both were broken, but this specific invalid form was introduced by the PR.",
+      "severity_justification": "Hover state loses its shadow effect. The pre-PR `--shadow-sm` was also undefined/invalid so no visible regression to the user, but the intended hover shadow is still not achieved.",
+      "category_justification": "Invalid CSS syntax causes the box-shadow to be silently dropped by browsers.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/pages/search/search.component.scss",
+      "start_line": 38,
+      "end_line": 38,
+      "message": "This replaces a valid shadow with `box-shadow: var(--shadow-light)`, but `--shadow-light` is only a color token. The declaration is invalid CSS and the badge shadow will be removed.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the PR changed `box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2)` (valid complete shadow) to `box-shadow: var(--shadow-light)` where `--shadow-light` is `rgba(0,0,0,0.05)`, a bare color token. This is invalid CSS; browsers drop the declaration, removing the badge shadow entirely.",
+      "severity_justification": "A visible regression — the filter badge loses its shadow, which was present before the PR. Unlike some other cases, this replaces a previously working shadow with invalid CSS.",
+      "category_justification": "Invalid CSS causes the box-shadow to be silently dropped, removing a visible UI element that was present before.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/pages/home/home.component.scss",
+      "start_line": 1098,
+      "end_line": 1098,
+      "message": "`--shadow-light` is defined as a color, so using it as the whole `box-shadow` value is invalid and removes the donation card elevation.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the PR changed `box-shadow: 0 2px 12px rgba(255, 193, 7, 0.08)` (valid) to `box-shadow: var(--shadow-light)` at the donation section. `--shadow-light` is `rgba(0,0,0,0.05)`, a bare color token — invalid as a standalone box-shadow value. The donation card elevation is dropped.",
+      "severity_justification": "Removes a subtle decorative shadow from the donation section card, a minor visual regression. The donation section still functions and is readable.",
+      "category_justification": "Invalid CSS causes the box-shadow to be silently dropped, removing a visible UI element that existed before the PR.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/components/voice-input/voice-input.component.scss",
+      "start_line": 14,
+      "end_line": 14,
+      "message": "`--shadow-medium` is also just a color token, so this standalone `box-shadow` declaration is invalid. The floating mic button will lose the elevation it previously had.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the PR changed `box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3)` (valid complete shadow) to `box-shadow: var(--shadow-medium)` at line 14. `--shadow-medium` is `rgba(0,0,0,0.1)`, a bare color token — invalid as a standalone box-shadow value. The floating mic button loses its elevation.",
+      "severity_justification": "The floating mic button is a key UI element that relies on elevation to appear above content. Losing its shadow makes it less visually distinct, which is a noticeable regression.",
+      "category_justification": "Invalid CSS causes the box-shadow to be silently dropped, removing a previously-working visual effect.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/components/voice-input/voice-input.component.scss",
+      "start_line": 36,
+      "end_line": 36,
+      "message": "`--shadow-medium` is a color token, not a full shadow. Used alone it makes the declaration invalid, so the transcript overlay loses its shadow.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 36 has `box-shadow: var(--shadow-medium)` on the transcript overlay. `--shadow-medium` is `rgba(0,0,0,0.1)`, a bare color token. This was changed from `box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15)` (valid) by the PR. The declaration is invalid CSS and the transcript overlay shadow is dropped.",
+      "severity_justification": "The transcript overlay is an important UI element — losing its shadow reduces its visual separation from the background content, making it harder to read. The regression was introduced by the PR.",
+      "category_justification": "Invalid CSS causes the box-shadow to be silently dropped, removing a previously-working visual effect.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/pages/setup/sheet-link/custom-modalbox.scss",
+      "start_line": 9,
+      "end_line": 9,
+      "message": "This changes a valid modal shadow to `box-shadow: var(--shadow-medium)`, but that variable contains only an RGBA color. The browser will discard the declaration and the modal loses its elevation.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the PR changed `box-shadow: 0 4px 24px rgba(0,0,0,0.18)` (valid complete shadow) to `box-shadow: var(--shadow-medium)` at line 9. `--shadow-medium` is `rgba(0,0,0,0.1)`, a bare color token — invalid as a standalone box-shadow value. The modal loses its elevation shadow.",
+      "severity_justification": "Modals rely on elevation to visually separate from the page content. Losing the shadow makes the modal less distinct, which is a noticeable UX regression on a frequently-used component.",
+      "category_justification": "Invalid CSS causes the box-shadow to be silently dropped, removing a previously-working visual effect.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/shared/components/base/base-button/base-button.component.scss",
+      "start_line": 144,
+      "end_line": 144,
+      "message": "`--shadow-medium` is not a complete box-shadow value, so this FAB shadow is invalid CSS and won't render. Use the token as the color part of a full shadow declaration instead.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the PR changed `box-shadow: 0 6px 12px rgba(0,0,0,0.12)` (valid) to `box-shadow: var(--shadow-medium)` at line 144. `--shadow-medium` is `rgba(0,0,0,0.1)`, a bare color token — invalid as a standalone box-shadow value. The FAB's base elevation shadow is dropped, while the hover state correctly uses `0 8px 16px var(--shadow-heavy)`.",
+      "severity_justification": "FABs rely on elevation as a core Material Design visual affordance. Losing the base shadow (while hover still works) creates an inconsistent state that visually degrades the button.",
+      "category_justification": "Invalid CSS causes the box-shadow to be silently dropped, removing a previously-working visual effect.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/app/pages/home/home.component.scss",
+      "start_line": 106,
+      "end_line": 106,
+      "message": "`--shadow-medium` contains only a color, not the offset/blur lengths required for `box-shadow`. This declaration is invalid, so the update notification card loses the shadow that was previously applied.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the PR changed `box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1)` (valid complete shadow) to `box-shadow: var(--shadow-medium)` at line 106. `--shadow-medium` is `rgba(0,0,0,0.1)`, a bare color token — invalid as a standalone box-shadow value. The update notification card loses its elevation shadow.",
+      "severity_justification": "The update notification card is a user-facing notification element; losing its shadow reduces its visual prominence, which is a noticeable regression.",
+      "category_justification": "Invalid CSS causes the box-shadow to be silently dropped, removing a previously-working visual effect.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/error.html",
+      "start_line": 54,
+      "end_line": 57,
+      "message": "In the standalone error page, `--color-border` falls back to a light gray (`#d1d5db`) while the button text remains white. That produces very low contrast for the secondary button in the failure page; use a darker semantic surface/text pairing for this action.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: in the standalone error.html, CSS variables fall back to their literals. The PR changed the secondary button background from `#757575` (medium gray, ~4.6:1 contrast with white) to `var(--color-border, #d1d5db)` (light gray, ~1.5:1 contrast with white text inherited from the button rule). This fails WCAG AA contrast requirements.",
+      "severity_justification": "The error page is specifically shown when the app fails to load — it's critical that this page is fully readable. The secondary action button now has near-unreadable contrast (~1.5:1), making it hard for users to see the alternative action.",
+      "category_justification": "The change introduces a significant color contrast failure on a user-facing action button in the error page.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/index.html",
+      "start_line": 315,
+      "end_line": 315,
+      "message": "`--color-border` is a light border color in the default theme, but this inline fallback button still uses inverse/white text. The “Go to Home” button can become low-contrast on the generated error screen.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the PR changed the 'Go to Home' button from `background: #757575` (adequate contrast ~4.6:1 with white) to `background: var(--color-border)` which resolves to `#e2e8f0` (light gray, ~1.17:1 contrast with white text). This fails WCAG AA contrast requirements (minimum 4.5:1).",
+      "severity_justification": "The 'Go to Home' button on the generated error page becomes nearly invisible in light mode — white text on a very light gray background. This is shown precisely when the app has failed to load, making it critical that recovery actions are clearly visible.",
+      "category_justification": "The change introduces a color contrast failure (below WCAG AA threshold) on a user-facing action button in the error recovery UI.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

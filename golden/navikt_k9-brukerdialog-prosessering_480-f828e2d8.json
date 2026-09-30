@@ -1,0 +1,641 @@
+{
+  "pr_key": "navikt_k9-brukerdialog-prosessering_480-f828e2d8",
+  "pr": {
+    "repo": "https://github.com/navikt/k9-brukerdialog-prosessering",
+    "pr_number": 480,
+    "base": "f396016e3e4517af046049e08b2433f9149423b0",
+    "head": "f828e2d8d4c5ace8c7aa70389e52c7e61761c14d"
+  },
+  "findings": [
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/integrasjon/dokarkiv/dto/YtelseType.kt",
+      "start_line": 192,
+      "end_line": 197,
+      "message": "AKTIVITETSPENGER_INNTEKTRAPPORTERING uses 'FIXME_AVP_INNTEKT_BREVKODE' as the brevkode. This placeholder will be sent to Dokarkiv (journalpost archive) in production, causing journalføring to either fail or produce invalid/misclassified archival records for every income report submitted.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: AKTIVITETSPENGER_INNTEKTRAPPORTERING has brevkode 'FIXME_AVP_INNTEKT_BREVKODE' — a placeholder that will be sent verbatim to Dokarkiv in production. The code at line 193 of YtelseType.kt clearly shows this. This entry is new in this PR (unlike AKTIVITETSPENGER_SØKNAD's FIXME which was pre-existing). It will result in invalid/misclassified archival records for every income report journalised.",
+      "severity_justification": "Every aktivitetspenger income report will be journalised with an invalid brevkode, causing incorrectly classified archival records in the national document archive. This is a data integrity issue affecting a core compliance function.",
+      "category_justification": "The brevkode is incorrect/placeholder data that will be transmitted to the archival system, producing wrong output rather than a code smell or style issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/AktivitetspengerService.kt",
+      "start_line": 95,
+      "end_line": 107,
+      "message": "markerOppgaveSomLøst is called after innsendingService.registrer. If markerOppgaveSomLøst throws (e.g. network failure), the income report has already been published to Kafka and will be fully processed (journalfiled, etc.), but the oppgave remains unsolved. Additionally, the duplicate-check cache key was stored before registrer, so the user cannot retry — they receive a 500 and the system is left in a permanently inconsistent state: task unsolved, data processed.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: markerOppgaveSomLøst is called after innsendingService.registrer and after the duplicate cache key is stored. A failure in markerOppgaveSomLøst leaves income report data published to Kafka (fully processed) while the oppgave stays unsolved, and the duplicate-check cache blocks retries until expiry. The same pattern exists verbatim in UngdomsytelseService, so this PR propagates a pre-existing reliability flaw.",
+      "severity_justification": "The inconsistency is real but temporary — the cache expires and the user can retry, and the income data itself is captured in the system. With the retry logic in UngBrukerdialogApiService, transient failures are partially mitigated. Persistent failures indicate a deeper service outage.",
+      "category_justification": "This is an error-handling/fault-tolerance issue — non-atomic multi-step operations with no compensation logic, leaving the system in an inconsistent state on partial failure.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/AktivitetspengerService.kt",
+      "start_line": 110,
+      "end_line": 115,
+      "message": "hentInntektsrapporteringPeriode throws IllegalStateException if oppgave.oppgavetypeData is not InntektsrapporteringOppgavetypeDataDto. This is a client error (caller provided an oppgaveReferanse pointing to a task of the wrong type), but the uncaught IllegalStateException propagates as HTTP 500. It should throw an appropriate 4xx (e.g. 400 Bad Request) so the client can handle it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: IllegalStateException thrown in hentInntektsrapporteringPeriode falls through to the catch-all Exception handler in ExceptionHandler.kt which maps to 500 INTERNAL_SERVER_ERROR. The scenario (wrong oppgave type) is a client-side mistake that would be better expressed as a 4xx. The same pattern exists in UngdomsytelseService, so this PR propagates a pre-existing flaw into new code.",
+      "severity_justification": "The scenario requires a caller to provide an oppgaveReferanse for the wrong task type, which is unlikely in practice given the controlled UI flow. The consequence is a confusing error code to the caller but no data integrity issues — the request fails cleanly before any mutations occur.",
+      "category_justification": "This is an error-handling concern — an expected validation/type-mismatch condition is surfaced as an unhandled server error rather than an appropriate client error response.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/domene/inntektsrapportering/AktivitetspengerInntektsrapportering.kt",
+      "start_line": 12,
+      "end_line": 13,
+      "message": "The mottatt field has @Schema(hidden=true) and a server-side default, but the Jackson configuration uses PropertyAccessor.FIELD visibility with FAIL_ON_UNKNOWN_PROPERTIES disabled. A client can include 'mottatt' in the request body and override the server-generated timestamp with any arbitrary value, enabling receipt-timestamp spoofing that will propagate through the entire processing pipeline.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: @Schema(hidden=true) only hides the field from Swagger docs; Jackson's PropertyAccessor.FIELD/ANY visibility means 'mottatt' is deserialized from client input. The concrete data flow from client-controlled input to the archival timestamp is real. However, the same pattern exists verbatim across every request DTO in the codebase — it is a systemic pre-existing issue that this PR propagates, not something novel.",
+      "severity_justification": "Callers must be Level4 TOKEN_X authenticated (strong identity verification, citizen submitting own data). The spoofable field is a receipt timestamp metadata field — manipulating it provides no financial benefit, no access to others' data, and no bypass of core business logic. The impact is limited to a user being able to backdate or future-date their own submission metadata.",
+      "category_justification": "This is an input validation / data integrity concern where a field intended to be server-assigned can be controlled by client input, propagating through the processing pipeline.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/domene/inntektsrapportering/OppgittInntekt.kt",
+      "start_line": 7,
+      "end_line": 12,
+      "message": "arbeidstakerOgFrilansInntekt is typed as Int? with only a null-check via @AssertTrue. There is no @Min(0) or @PositiveOrZero constraint, so negative income amounts (e.g. -5000) are accepted and will flow through to journalføring and the RapportertInntektDto sent to markerOppgaveSomLøst.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: arbeidstakerOgFrilansInntekt: Int? has no lower-bound constraint in either OppgittInntekt or OppgittInntektForPeriode. Only a null-check @AssertTrue is present. Negative values would pass validation and flow through to journalføring and RapportertInntektDto. The same gap exists in the pre-existing UngdomsytelseInntektsrapportering model, so this PR propagates a known pattern.",
+      "severity_justification": "The endpoint requires Level4 authentication so the submitter is an identified citizen submitting their own income report. A negative value would only affect their own data, and downstream benefit systems may apply further validation. The domain risk exists but the practical attack surface is limited to authenticated self-submission.",
+      "category_justification": "Missing input validation that allows domain-invalid data (negative income) to pass through the processing pipeline undetected — this is a correctness/validation issue rather than a security or architecture issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/kafka/inntektsrapportering/AktivitetspengerInntektsrapporteringTopologyConfiguration.kt",
+      "start_line": 83,
+      "end_line": 88,
+      "message": "The cleanup topic bean factory method is named aktivitetpengerInntektsrapporteringCleanupTopic (missing 's' in 'aktivitetspenger'). Both AktivitetspengerInntektsrapporteringCleanup and AktivitetspengerInntektsrapporteringJournalføring inject a parameter named aktivitetspengerInntektsrapporteringCleanupTopic (with 's'). Spring resolves this by type today because there is only one bean of that parameterized type, but any future addition of a second Topic bean with the same generic type will cause an ambiguous-bean injection failure that is hard to diagnose.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the @Bean factory method is named aktivitetpengerInntektsrapporteringCleanupTopic (missing 's') in TopologyConfiguration while both Cleanup and Journalføring components inject it as aktivitetspengerInntektsrapporteringCleanupTopic. Spring currently resolves by type since there is only one matching bean, but the name mismatch is a real inconsistency.",
+      "severity_justification": "The application works correctly today due to type-based fallback resolution. The risk of a future second bean of the same parameterized type is low. The primary issue is a naming typo that could confuse maintainers or cause a hard-to-diagnose wiring failure if the bean inventory changes.",
+      "category_justification": "This is a naming inconsistency (typo in bean method name) that creates a latent wiring fragility, categorised as a maintainability/code quality concern rather than a correctness bug since it doesn't affect current behaviour.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/kafka/Topics.kt",
+      "start_line": 38,
+      "end_line": 38,
+      "message": "AKTIVITETSPENGER_INNTEKTSRAPPORTERING_TOPIC duplicates the string 'dusseldorf.aktivitetspenger-inntektsrapportering-mottatt' already defined as AKTIVITETSPENGER_INNTEKTSRAPPORTERING_MOTTATT_TOPIC in AktivitetspengerInntektsrapporteringTopologyConfiguration. Two independent constants for the same topic name means a future rename requires two coordinated edits, and a mismatch would silently publish to the wrong topic.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the same topic string 'dusseldorf.aktivitetspenger-inntektsrapportering-mottatt' is defined in both Topics.kt:38 and AktivitetspengerInntektsrapporteringTopologyConfiguration.kt:34. The same pattern exists for all other topology configurations (ungdomsytelse soknad, ungdomsytelse inntektsrapportering, aktivitetspenger soknad), so this PR propagates a pre-existing DRY violation rather than introducing a novel one.",
+      "severity_justification": "The duplication is a maintainability risk — a rename requires two edits and a mismatch would cause incorrect topic routing — but the same pattern exists throughout the codebase without known incidents. In practice, these constants are rarely changed once set.",
+      "category_justification": "This is a DRY violation: two independent constant definitions for the same value with no single source of truth, creating a realistic drift risk on future changes.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/test/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/kafka/AktivitetspengerInntektRapporteringKonsumentTest.kt",
+      "start_line": 99,
+      "end_line": 100,
+      "message": "deltakelseId is declared and passed to preprosessertSøknadSomJson as the second parameter, but the function body never interpolates it into the JSON template. The assertion therefore does not verify the deltakelseId field at all, making this dead test setup copied from another test and giving false confidence about what is actually being asserted.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: deltakelseId is declared on line 100, passed to preprosessertSøknadSomJson as the second argument, but the JSON template inside the function never interpolates it. The parameter exists in the signature but is never referenced in the body, making it dead test setup. This is clearly copy-pasted from another test that used deltakelseId.",
+      "severity_justification": "The test still exercises the processing pipeline and asserts all other fields correctly. The only impact is that the deltakelseId parameter provides no assertion value — the test doesn't verify that field, but this is a test quality issue rather than a correctness defect in production code.",
+      "category_justification": "Dead test setup code that provides false confidence — the parameter is constructed and passed but never actually asserted, reducing the effective coverage of the test.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/AktivitetspengerService.kt",
+      "start_line": 95,
+      "end_line": 105,
+      "message": "The method `inntektrapportering` makes a network call to `ungBrukerdialogApiService.hentOppgave` before checking for duplicate submissions with `duplikatInnsendingSjekker.forsikreIkkeDuplikatInnsending`. If a user retries a submission, this could lead to multiple identical calls to `hentOppgave` for the same submission before the duplicate check aborts the request. The duplicate check should be performed before any side effects, including network calls.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: hentOppgave (network call) is called before forsikreIkkeDuplikatInnsending. On a duplicate submission, one extra read-only GET call to hentOppgave is made before the duplicate check aborts. The same ordering pattern exists in UngdomsytelseService for both søknad and inntektrapportering, making this a pre-existing pattern being propagated.",
+      "severity_justification": "The extra network call on a duplicate submission is a read-only GET with no mutation. It wastes one network round-trip per duplicate attempt but causes no data integrity issues, no user-visible errors beyond the expected duplicate rejection, and no security concern. The practical impact is negligible.",
+      "category_justification": "This is a sub-optimal ordering of operations — a side-effecting network call before a guard check — but since the call is idempotent and read-only, it is primarily a reliability/efficiency concern rather than a correctness bug.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/domene/inntektsrapportering/AktivitetspengerInntektsrapporteringInnsending.kt",
+      "start_line": 52,
+      "end_line": 52,
+      "message": "The `valider()` method returns an empty mutable list, effectively performing no validation. The `Innsending` interface expects this method to validate the object's state, but it is currently a no-op.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The return value of innsending.valider() is discarded by InnsendingService (line 54 assigns nothing). Returning mutableListOf<String>() is the explicit convention used by 8+ other Innsending implementations including UngdomsytelseInntektsrapporteringInnsending — the direct template for this code. Real validation runs through forsikreValidert via Bean Validation. The finding incorrectly claims the interface 'expects' validation through this method when the calling infrastructure ignores the result.",
+      "severity_justification": "Even if the finding were valid, it would only indicate missing custom cross-field validation; Bean Validation constraints on the fields already handle the primary input validation.",
+      "category_justification": "The finding concerns whether the validation contract is fulfilled — a code quality / correctness concern about the validation layer.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/domene/inntektsrapportering/OppgittInntekt.kt",
+      "start_line": 11,
+      "end_line": 11,
+      "message": "The validation annotation `@AssertTrue` is applied to the `harOppgittInntekt` method, which correctly checks that `arbeidstakerOgFrilansInntekt` is not null. However, `arbeidstakerOgFrilansInntekt` can be an integer, including 0. If `0` is a valid income amount, `harOppgittInntekt` will still return `true`. If the intent is to ensure that a value has been provided, this is correct. If `0` is not a meaningful/valid reported income, a `@Min(1)` or similar constraint on `arbeidstakerOgFrilansInntekt` might be more appropriate to prevent submission of `0` as income.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is explicitly speculative and self-contradictory — it acknowledges the current behavior may be correct. In income reporting (inntektsrapportering), zero income is a legitimate and common value to report. The null-check correctly implements the intent of distinguishing 'field not submitted' from 'zero income submitted'. The same pattern exists identically in the pre-existing UngdomsytelseInntektsrapportering.OppgittInntekt with no issues noted.",
+      "severity_justification": "Even if 0 were invalid, it would be a minor domain validation gap affecting only edge-case submissions — not a correctness defect with system-wide impact.",
+      "category_justification": "The concern, if valid, would be a missing domain validation constraint on an input value.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/pdf/PDFGenerator.kt",
+      "start_line": 266,
+      "end_line": 266,
+      "message": "The PDF template name for `AKTIVITETSPENGER_INNTEKTSRAPPORTERING` is defined as `aktivitetspenger-rapportering-soknad`. The file for this template, however, is named `aktivitetspenger-rapportering-soknad.hbs`. This seems to imply that an income report is a type of application ('soknad'), which might be confusing. A more specific name like `aktivitetspenger-inntektsrapportering` could improve clarity.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The naming pattern '*-rapportering-soknad' is an established convention in this codebase — UNGDOMSYTELSE_INNTEKTSRAPPORTERING already uses 'ungdomsytelse-rapportering-soknad' as its template name. The new code correctly follows this convention. Suggesting a different name ('aktivitetspenger-inntektsrapportering') would actually create inconsistency with the existing pattern. The finding is a pure naming preference with no concrete issue.",
+      "severity_justification": "Even if this were a valid concern, it is purely cosmetic — a template naming convention with no runtime or correctness impact.",
+      "category_justification": "The finding is a naming/style preference about a template filename.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "nais/topics/aktivitetspenger-inntektsrapportering-topics.yml",
+      "start_line": 1,
+      "end_line": 69,
+      "message": "The new Kafka topics defined in `aktivitetspenger-inntektsrapportering-topics.yml` have a `cleanupPolicy` of `delete` and a `retentionHours` of `730` (30 days). This is a long retention period for topics in a processing pipeline that are not intended for long-term storage or compaction. Typically, intermediate topics have much shorter retention periods (e.g., 7 days). Please verify if this long retention is intentional.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Every topic configuration file in the nais/topics/ directory uses retentionHours: 730 (30 days) — this is the universal project-wide convention. The new file follows the exact same configuration as all 14 existing topic files (ungdomsytelse, aktivitetspenger-soknad, pleiepenger, omsorgspenger, etc.). The finding incorrectly characterises this as anomalous when it is the established standard.",
+      "severity_justification": "Even if the retention period were genuinely debatable, it is a configuration choice with minimal operational risk given this is the established project standard.",
+      "category_justification": "The finding concerns infrastructure/operational configuration — topic retention policy.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/test/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/AktivitetspengerControllerTest.kt",
+      "start_line": 194,
+      "end_line": 210,
+      "message": "The `mockMarkerOppgaveSomLøst` test helper function mocks the `markerOppgaveSomLøst` service call to return an `OppgaveDto` with `OppgaveStatus.ULØST`. This is counterintuitive for a method that is supposed to mark a task as solved. The mock should return a DTO with a solved status (e.g., `LØST`) to accurately reflect the expected outcome of the operation it's mocking.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: AktivitetspengerControllerTest.mockMarkerOppgaveSomLøst() returns OppgaveStatus.ULØST, which is counterintuitive and inconsistent with the AbstractIntegrationTest.mockMarkerOppgaveSomLøst() which returns the correct OppgaveStatus.LØST. The service discards the return value so there is no functional impact, but the mock violates the established convention in the base test class.",
+      "severity_justification": "The service discards the return value of markerOppgaveSomLøst, so the wrong status has no effect on test outcomes or assertions. This is a misleading/confusing test mock with no practical impact on what the test verifies.",
+      "category_justification": "This is a test code quality issue — a misleading mock return value that violates the convention established in the base integration test class.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/AktivitetspengerService.kt",
+      "start_line": 59,
+      "end_line": 59,
+      "message": "The `inntektrapportering` method does not handle potential exceptions from the `hentOppgave` method in the `ungBrukerdialogApiService`. Any failure to fetch the task could crash the execution and result in unhandled errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding incorrectly claims exceptions from hentOppgave are 'unhandled'. UngBrukerdialogApiService has class-level @Retryable with three @Recover methods that normalize all failures to a defined IllegalStateException. The global ExceptionHandler catches Exception::class and returns a structured 500 ProblemDetail. The exception is handled at multiple levels — this is the standard pattern across the entire codebase.",
+      "severity_justification": "Even accepting the finding at face value, an unhandled exception propagating to a Spring @RestControllerAdvice results in a 500 response — not a crash or data loss. The concern is minor even hypothetically.",
+      "category_justification": "The finding concerns exception handling and fault tolerance.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/AktivitetspengerService.kt",
+      "start_line": 97,
+      "end_line": 97,
+      "message": "Direct use of `UUID.fromString` on user-controlled input (`oppgaveReferanse`) can lead to runtime exceptions if the input is not a valid UUID. Validate the UUID format beforehand.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The oppgaveReferanse field in AktivitetspengerInntektsrapportering is annotated with @field:UUID (Hibernate Validator), and the controller endpoint uses @Valid @RequestBody. Bean Validation validates the UUID format before the request reaches the service layer, so UUID.fromString cannot receive an invalid UUID. The finding incorrectly claims there is no prior validation.",
+      "severity_justification": "Even without the @field:UUID annotation, an invalid UUID would merely throw an IllegalArgumentException handled by the global exception handler as a 500. The actual risk is negligible.",
+      "category_justification": "The concern is about runtime exception handling from unvalidated input, a reliability/error handling concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/domene/inntektsrapportering/AktivitetspengerInntektsrapportering.kt",
+      "start_line": 10,
+      "end_line": 10,
+      "message": "The `oppgaveReferanse` field is validated as a UUID using an annotation. However, this is runtime validation, and failing to check this earlier in the execution flow could result in additional overhead and leaks to later stages.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The validation occurs at the controller boundary via @Valid @RequestBody before any service logic executes — this is already the earliest practical point. The finding is a generic 'runtime validation has overhead' observation with no concrete issue specific to this code. It could be copy-pasted onto any @field:UUID annotation in any Spring application without modification.",
+      "severity_justification": "No concrete harm is identified. Bean Validation at the controller entry point is the correct and standard approach.",
+      "category_justification": "The finding concerns validation placement and overhead.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/integrasjon/ungbrukerdialogapi/UngBrukerdialogApiService.kt",
+      "start_line": 69,
+      "end_line": 76,
+      "message": "The `hentOppgave` method does not provide any retry mechanism to handle transient network issues or recoverable HTTP errors. This could cause the entire operation to fail unnecessarily.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "UngBrukerdialogApiService has a class-level @Retryable annotation with configurable backoff, maxAttempts, and excludes, applying to all methods including hentOppgave. There are also three @Recover handlers. The finding's claim that 'hentOppgave does not provide any retry mechanism' is directly contradicted by the code.",
+      "severity_justification": "The finding is factually incorrect — retry is fully implemented at the class level.",
+      "category_justification": "The finding concerns retry/fault-tolerance for network calls.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/integrasjon/ungbrukerdialogapi/UngBrukerdialogApiService.kt",
+      "start_line": 105,
+      "end_line": 112,
+      "message": "The `markerOppgaveSomLøst` method does not provide sufficient logging or detailed error response when an operation fails. More diagnostic data could improve debugging and recovery processes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "markerOppgaveSomLøst has an info log at entry with the UUID, an error log on non-2xx responses including status code and body, and three @Recover methods that log the full error response body. The finding vaguely asserts 'more diagnostic data could improve debugging' without identifying any specific gap. This is generic boilerplate that could be copy-pasted onto any service method.",
+      "severity_justification": "The logging present is reasonable and consistent with the rest of the service. Even if logging could be enhanced, the impact on debugging is marginal.",
+      "category_justification": "The finding concerns logging/diagnostics quality, a maintainability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/integrasjon/ungbrukerdialogapi/UngBrukerdialogApiService.kt",
+      "start_line": 88,
+      "end_line": 91,
+      "message": "The `recover` methods log the error and then rethrow it as `IllegalStateException`, losing the original stack trace and context. Consider wrapping or preserving the original exception to enhance diagnosability.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: oppgaveDataFeil is a pre-instantiated singleton IllegalStateException that discards the original cause. The rethrown exception has no cause chain and its stack trace points to companion object initialization. Diagnostic information is partially preserved via the log statement, but any catch-site inspection of the exception loses context. The service file was not modified by this PR — this is pre-existing code.",
+      "severity_justification": "The relevant error details (response body, URL, message) are logged before the rethrow, so operational debugging is largely unaffected. The cause chain loss only matters if something downstream catches and inspects the exception, which is unlikely given the global exception handler pattern.",
+      "category_justification": "This is a diagnosability/maintainability concern about exception cause preservation — not a correctness or security issue.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/domene/inntektsrapportering/AktivitetspengerInntektsrapporteringInnsending.kt",
+      "start_line": 59,
+      "end_line": 59,
+      "message": "Er det riktig at basen til `Aktivitetspenger` er `UngSøknad`",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is a question, not a concrete claim. Whether Aktivitetspenger using ung.v1 types is correct is a design decision in the external k9-format library (version 12.10.0, bumped specifically for this PR). This cannot be verified from the application codebase alone. The code compiles and tests pass, indicating the library supports and presumably intends this usage pattern.",
+      "severity_justification": "If the concern were valid — that the wrong base type is being used — it could produce incorrectly structured k9-format documents sent downstream, which would be a medium-severity correctness issue. However, the finding cannot be substantiated from available code.",
+      "category_justification": "The concern is about the domain model / type hierarchy design in the k9-format library integration.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "ramrock93",
+        "url": "https://github.com/navikt/k9-brukerdialog-prosessering/pull/480#discussion_r3058198372",
+        "created_at": "2026-04-09T13:35:18Z",
+        "alignment": "code_changed",
+        "original_commit": "e21eaae1fb00342fed85160c60a1cf1f37b7236f",
+        "original_start_line": 59,
+        "original_end_line": 59
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/kafka/inntektsrapportering/domene/AktivitetspengerInntektsrapporteringPreprosessert.kt",
+      "start_line": 68,
+      "end_line": 68,
+      "message": "Om jeg husker korrekt, må AKTIVITETSPENGER legges til i k9-dittnav-varsel for at det skal være mulig å sende varsel om mottatt søknad til bruker på mine sider.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The pre-existing AktivitetspengersøknadPreprosessertSøknad already uses ytelse = 'AKTIVITETSPENGER' in its K9Beskjed. If the k9-dittnav-varsel system required AKTIVITETSPENGER to be registered, the existing søknad flow would already be broken. The new code correctly reuses the same value. The finding is explicitly uncertain ('Om jeg husker korrekt') and concerns external system configuration that cannot be verified from this repository.",
+      "severity_justification": "If the concern were valid, notifications for inntektsrapportering submissions would silently fail to appear on Mine Sider for users — a user-facing feature gap. But the evidence (pre-existing code using the same value) makes this unlikely to be an actual problem.",
+      "category_justification": "The concern is about an external system integration — whether the ytelse value is properly registered in the notification service.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "ramrock93",
+        "url": "https://github.com/navikt/k9-brukerdialog-prosessering/pull/480#discussion_r3058237017",
+        "created_at": "2026-04-09T13:41:26Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "f828e2d8d4c5ace8c7aa70389e52c7e61761c14d"
+      }
+    },
+    {
+      "file": "src/test/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/AktivitetspengerControllerTest.kt",
+      "start_line": 18,
+      "end_line": 18,
+      "message": "This import points to `no.nav.brukerdialog.ytelse.ungdomsytelse.utils.InntektrapporteringUtils`, but the test is for the Aktivitetspenger controller. `InntektrapporteringUtils.defaultInntektsrapportering` from the ungdomsytelse package is a `UngdomsytelseInntektsrapportering`, not the new `AktivitetspengerInntektsrapportering` introduced in this PR. It happens to serialize to a similar JSON shape, but this creates a misleading cross-domain test dependency. Switch the import to the new `no.nav.brukerdialog.ytelse.aktivitetspenger.utils.InntektrapporteringUtils` (added in this PR) so the test uses the matching domain type.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The import at line 18 is confirmed to be from `no.nav.brukerdialog.ytelse.ungdomsytelse.utils.InntektrapporteringUtils`, giving a `UngdomsytelseInntektsrapportering` instead of `AktivitetspengerInntektsrapportering`. The correct aktivitetspenger-specific utils class was added in the same PR but not used here.",
+      "severity_justification": "The test still passes because both types serialize to the same JSON shape, but it creates a misleading cross-domain dependency that could mask future divergence.",
+      "category_justification": "The issue is a wrong import in a test utility class that causes the test to use an incorrect domain type.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/AktivitetspengerService.kt",
+      "start_line": 77,
+      "end_line": 77,
+      "message": "The new service method and controller handler are named `inntektrapportering` (missing the 's'), while the rest of the new code consistently uses `inntektsrapportering` (endpoint path `/inntektsrapportering/innsending`, enum `AKTIVITETSPENGER_INNTEKTSRAPPORTERING`, topic/stream/builder names, class names like `AktivitetspengerInntektsrapporteringInnsending`, etc.). Consider renaming the method to `inntektsrapportering` for consistency. The parameter `rapportetInntekt` is also misspelled — should be `rapportertInntekt`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the method at line 77 of AktivitetspengerService.kt is named `inntektrapportering` (missing 's') and the controller handler at line 40 also uses `inntektrapportering`, while all surrounding code (class names, topics, streams, enums, endpoint path) consistently uses `inntektsrapportering`. The parameter `rapportetInntekt` is also a misspelling of `rapportertInntekt`.",
+      "severity_justification": "These are naming/spelling inconsistencies in internal method and parameter names; they don't affect runtime behavior or the API contract, but they violate the consistent naming convention used throughout the rest of the feature.",
+      "category_justification": "Naming inconsistency within the same PR's code — a spelling error in method and parameter names that contradicts the established convention.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/test/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/pdf/AktivitetspengerInntektsrapporteringPdfGeneratorTest.kt",
+      "start_line": 25,
+      "end_line": 25,
+      "message": "`PDF_PREFIX` is set to `\"ung\"`, which is the prefix used by the ungdomsytelse PDF tests (e.g. `UngdomsytelesøknadPdfGeneratorTest` and `UngdomsytelseInntektsrapporteringPdfGeneratorTest`). When this test is run with `writeBytes = true`, generated aktivitetspenger PDFs will be written to file paths that collide with the ungdomsytelse output (and use the wrong prefix). Use an aktivitetspenger-specific prefix such as `\"aktivitetspenger-inntektsrapportering\"`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `PDF_PREFIX = \"ung\"` in the new aktivitetspenger test collides with the same prefix used by `UngdomsytelseInntektsrapporteringPdfGeneratorTest` and `UngdomsytelesøknadPdfGeneratorTest`. `pdfPath` generates `$prefix-pdf-$soknadId.pdf`, and both use matching soknadIds, so they'd write to the same file when `writeBytes = true`.",
+      "severity_justification": "Only affects manual PDF generation tests (writeBytes=true), not automated CI tests. However, when run manually, it silently overwrites the wrong test's output, which is confusing.",
+      "category_justification": "The issue is a wrong constant in a test class that causes file path collisions with another domain's PDF output.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/resources/handlebars/aktivitetspenger-rapportering-soknad.hbs",
+      "start_line": 29,
+      "end_line": 41,
+      "message": "The handlebars template references the variable `inntektForPeriode` (singular) and iterates it with `{{#each ...}}`, but `AktivitetspengerInntektsrapporteringPdfData.pdfData()` puts the list under the key `\"inntektForPeriode\"` via `k9Format.getYtelse<Aktivitetspenger>().inntekter?.somMap()`. That's consistent. However, the bookmark `Lønn` and section heading do not match the model field `arbeidstakerOgFrilansInntekt` shown as \"Lønn (før skatt)\" — verify that this is the intended Norwegian terminology for aktivitetspenger income reporting (the ungdomsytelse template appears to use different wording). If this is intentional, ignore; otherwise align the template with the ungdomsytelse version. (Note: this comment is informational; main concern is to verify consistency with product/UX wording.)",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's factual premise that 'the ungdomsytelse template appears to use different wording' is incorrect — both templates are byte-for-byte identical. The remainder of the finding is an unverifiable suggestion to validate with product/UX, which is generic advisory content not grounded in a specific code defect.",
+      "severity_justification": "Even if the finding were valid, it would be a minor UX/copy concern with no runtime impact.",
+      "category_justification": "The concern is about display wording in a Handlebars HTML template.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/kafka/Topics.kt",
+      "start_line": 61,
+      "end_line": 62,
+      "message": "This adds a new producer topic mapping, but the Kafka producer health check still only probes the existing topics in `KafkaProducerService` and does not include `AKTIVITETSPENGER_INNTEKTSRAPPORTERING_TOPIC`. If the new topic or ACL is missing, the app can report healthy while this endpoint fails when producing income reports.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `KafkaProducerService.health()` probes specific topic partitions including `AKTIVITETSPENGER_SOKNAD_TOPIC` but does not include the new `AKTIVITETSPENGER_INNTEKTSRAPPORTERING_TOPIC` introduced in this PR. The app can report healthy while the new income reporting endpoint fails to produce to Kafka.",
+      "severity_justification": "The health check gap means misconfiguration of the new topic could go undetected by health probes, but many other recently-added topics follow the same pattern without being probed — this is an incremental gap in an already-incomplete health check, not a new class of failure.",
+      "category_justification": "Concerns operational observability: the app health check does not reflect the availability of the new producer topic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/test/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/api/AktivitetspengerControllerTest.kt",
+      "start_line": 121,
+      "end_line": 121,
+      "message": "This controller test is using the ungdomsytelse income-reporting fixture, not the new aktivitetspenger fixture added in this PR. Because the two request models currently serialize similarly the test can still pass, but it will not catch aktivitetspenger-specific request-shape changes or fixture regressions.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: line 121 calls `InntektrapporteringUtils.defaultInntektsrapportering`, which resolves to the ungdomsytelse package's `UngdomsytelseInntektsrapportering` due to the import at line 18. The aktivitetspenger-specific `InntektrapporteringUtils` with `AktivitetspengerInntektsrapportering` was added in this PR but is not used here.",
+      "severity_justification": "The test passes because both types serialize to the same JSON shape, but it does not exercise the actual aktivitetspenger request model, making it a misleading test that won't catch aktivitetspenger-specific regressions.",
+      "category_justification": "The issue is in a test: it uses the wrong domain fixture, reducing the test's value for catching regressions in the aktivitetspenger request model.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/main/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/kafka/inntektsrapportering/AktivitetspengerInntektsrapporteringCleanup.kt",
+      "start_line": 54,
+      "end_line": 54,
+      "message": "Spelling: `viderer` should be `videre` in this log message.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: line 54 contains `viderer` which is a misspelling of `videre` in the Norwegian log message.",
+      "severity_justification": "A typo in a log message with no runtime or behavioral impact.",
+      "category_justification": "Spelling error in a log string — a cosmetic/readability issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/test/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/pdf/AktivitetspengerInntektsrapporteringPdfGeneratorTest.kt",
+      "start_line": 25,
+      "end_line": 25,
+      "message": "This uses the ungdomsytelse PDF prefix for an aktivitetspenger PDF test. The existing aktivitetspenger PDF test uses `aktivitetspenger` as the prefix, so readable PDFs generated by this test will be written under the wrong product prefix.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `AktivitetspengersøknadPdfGeneratorTest` (in the same package) uses `PDF_PREFIX = \"aktivitetspenger\"`, while the new `AktivitetspengerInntektsrapporteringPdfGeneratorTest` uses `PDF_PREFIX = \"ung\"`. This violates the local naming convention established by the sibling test in the same directory.",
+      "severity_justification": "Only affects the manual PDF generation test (writeBytes=true); no runtime or CI test impact.",
+      "category_justification": "Incorrect constant in a test class that violates local naming convention and causes misleading file output.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/test/kotlin/no/nav/brukerdialog/ytelse/aktivitetspenger/utils/InntektrapporteringUtils.kt",
+      "start_line": 68,
+      "end_line": 73,
+      "message": "`gyldigInntektsrapportering` accepts `søkerFødselsnummer`, but the generated K9-format always uses the hard-coded ident here. Any test that overrides the søker ident will produce an inconsistent message where `søker.fødselsnummer` and `k9Format.søker.norskIdentitetsnummer` disagree.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `gyldigInntektsrapportering` passes `søkerFødselsnummer` to the `Søker` object, but `gyldigK9Format` always hardcodes `NorskIdentitetsnummer.of(\"02119970078\")`, creating a potential inconsistency between `søker.fødselsnummer` and the k9Format identity if a test overrides the parameter.",
+      "severity_justification": "No current test overrides `søkerFødselsnummer` with a different value, so there is no active failure. The risk is latent — a future test could produce an inconsistent fixture without realising it.",
+      "category_justification": "The issue is a parameter-handling defect in a test utility that can produce internally inconsistent fixtures.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "pr_key": "rulecom_rule-io-sdk_35-9b3046d9",
+  "pr": {
+    "repo": "https://github.com/rulecom/rule-io-sdk",
+    "pr_number": 35,
+    "base": "0e5589a360bb89f887f214f0b2d81bc2a4ad7fa3",
+    "head": "9b3046d9158445e422d08047b98fd0e5a24c524a"
+  },
+  "findings": [
+    {
+      "file": "src/client.ts",
+      "start_line": 1792,
+      "end_line": 1796,
+      "message": "`deleteBrandStyle` returns `Promise<void>` while every other delete method in the codebase returns `Promise<RuleApiResponse>` (deleteAutomail, deleteMessage, deleteTemplate, deleteDynamicSet, deleteCampaign, deleteSubscriberV3, deleteAccount, deleteApiKey all return `{ success: true }` or a response object). This is an inconsistent public API contract that breaks the established pattern consumers rely on.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `deleteBrandStyle` at line 1792 is the only delete method that returns `Promise<void>`. All other delete methods (deleteAutomail, deleteMessage, deleteTemplate, deleteDynamicSet, deleteCampaign, deleteSubscriberV3, deleteAccount, deleteApiKey, deleteSubscriber, deleteSuppressions, etc.) return `Promise<RuleApiResponse>`. This is a concrete inconsistency in the public API contract introduced by this PR.",
+      "severity_justification": "This is a public SDK API contract inconsistency. Consumers expecting consistent behavior across delete methods will get `undefined` instead of `{ success: true }` from this method. Since this is a published SDK, breaking the pattern also makes it harder to write generic code over delete operations.",
+      "category_justification": "This is about the public API contract and consistency of return types across the SDK's public interface.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1964,
+      "end_line": 1972,
+      "message": "`updateApiKey` uses HTTP PUT, but `RuleApiKeyUpdateRequest` only carries an optional `name` field. PUT semantics imply full resource replacement — if the API key resource has other server-side fields, a PUT with a partial body may silently reset or lose them. `updateBrandStyle` in the same PR correctly uses PATCH for partial updates; `updateApiKey` should be reviewed against the actual API spec to confirm PUT vs PATCH.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The inconsistency is real and verifiable: `updateBrandStyle` uses PATCH while `updateApiKey` uses PUT with an equally partial request body (only optional `name`). The PR description explicitly calls out 'Brand Styles uses PATCH (not PUT) for partial updates' as a design choice, making the inconsistency within the same PR notable. The underlying concern about PUT semantics potentially resetting server-side fields is a real risk when the actual API spec for `/api-keys` is not documented in the repo.",
+      "severity_justification": "If the Rule.io `/api-keys` endpoint only accepts PATCH for partial updates and PUT causes full replacement, this could silently reset fields on the resource. Given the PR explicitly chose PATCH for brand styles for the same reason, the inconsistency warrants review against the API spec.",
+      "category_justification": "Using the wrong HTTP method (PUT vs PATCH) could cause incorrect API behavior — either rejection by the server or silent data loss via full resource replacement.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1821,
+      "end_line": 1831,
+      "message": "`listAccounts` hand-rolls its query string instead of using the existing `RuleClient.buildQueryString()`. The custom code encodes values with `encodeURIComponent` but leaves the key literal (`includes[]=`). This is the only method in the codebase that bypasses `buildQueryString`. While `buildQueryString` doesn't support array values (it only accepts a flat record), the one-off implementation here creates an inconsistency and is not reusable if other array-valued query params are needed in the future.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `buildQueryString` only accepts a flat `Record<string, string | number | boolean | null | undefined>` and cannot handle array params. `listAccounts` is the only method that bypasses it, hand-rolling its own query string. The inconsistency is real and the observation that `buildQueryString` would need to be extended to support array-valued params is accurate.",
+      "severity_justification": "The hand-rolled implementation is functionally correct — values are encoded with `encodeURIComponent` and the `includes[]=` format is intentional for array params. The concern is about maintainability and consistency, not a bug.",
+      "category_justification": "The finding is about code consistency and the bypass of an established utility, creating a one-off pattern that diverges from the rest of the codebase.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 770,
+      "end_line": 776,
+      "message": "`RuleBrandStyleManualRequest` has every field optional, so `createBrandStyleManually({})` compiles and sends an empty JSON body. Other create request types in this codebase (e.g., `RuleAutomailCreateRequest`, `RuleTemplateCreateRequest`) require at minimum a `name`. Since this is the manual path (as opposed to auto-detection from domain), `name` should likely be required to prevent a no-op or API-level error with no client-side signal.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `RuleBrandStyleManualRequest` has all fields optional (`name?: string`, `logo?: string`, `colors?`, `fonts?`), making an empty-object call compile cleanly. The comparison with other create types is accurate — `RuleAutomailCreateRequest`, `RuleTemplateCreateRequest`, `RuleAccountCreateRequest`, and `RuleApiKeyCreateRequest` all require `name`. Additionally, `RuleBrandStyleManualRequest` and `RuleBrandStyleUpdateRequest` are structurally identical, which is a further signal that the create type's `name` was accidentally made optional.",
+      "severity_justification": "This is a type-safety gap that could allow a no-op call that sends an empty body to the API, resulting in an API-level error rather than a compile error. Impact is limited to a runtime API error rather than data corruption or silent failure.",
+      "category_justification": "This is a public API contract issue — the type signature of a create request should enforce required fields to provide useful client-side validation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 885,
+      "end_line": 888,
+      "message": "`RuleApiKeyUpdateRequest` has only one field and it is optional, meaning `updateApiKey(id, {})` compiles and sends `{}` to the API. Since the only meaningful update for an API key is renaming it, `name` should be required here to prevent a silent empty update that the caller likely did not intend.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `RuleApiKeyUpdateRequest` has only `name?: string`, making `updateApiKey(id, {})` valid TypeScript that compiles and sends an empty body. With only one meaningful field in the type, making it optional provides zero type-level enforcement.",
+      "severity_justification": "Results in a runtime API error at worst rather than data corruption or silent failure. The impact is limited to callers who pass an empty object getting an API-level response rather than a compile error.",
+      "category_justification": "Public API contract issue: a single-field update type where that field is optional provides no client-side enforcement and deviates from what callers would expect.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1799,
+      "end_line": 1907,
+      "message": "The Account API (`listAccounts`, `createAccount`, `getAccount`, `deleteAccount`) is documented in JSDoc as requiring user-level API keys rather than account-level keys, but `RuleClient` is initialized with a single API key used for all endpoints. There is no way to configure a user-level key separately. Callers who use an account-level key will silently fail with a 401 at runtime. The PR adds these four public methods without providing any mechanism to supply the correct credential type, and the PR description doesn't mention these methods at all.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Two key claims are factually wrong: (1) 401 responses are not silent — the client throws `RuleApiError('Invalid Rule.io API key', 401)` at lines 213-214 and 261-262; (2) there is a way to use a user-level key — create a separate `RuleClient` instance with it. The real design concern (no first-class multi-key support) has merit but is not what the finding claims, and the JSDoc does explicitly document the key-type requirement.",
+      "severity_justification": "Even if the design concern were valid, it is a developer-experience issue, not a data loss or silent-failure bug. The JSDoc documents the requirement and 401s throw exceptions.",
+      "category_justification": "The concern is about API design and credential management in the public interface.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 783,
+      "end_line": 790,
+      "message": "`RuleBrandStyleManualRequest` and `RuleBrandStyleUpdateRequest` are structurally identical (same four optional fields: name, logo, colors, fonts). One of them should extend or alias the other, or they should be collapsed into one shared type. Having two identical types diverge silently over time means future field additions must be made twice and are likely to be forgotten in one of the two.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: both interfaces are structurally identical — same four fields (`name?`, `logo?`, `colors?`, `fonts?`) with identical types. The duplication is real and future field additions to the brand style resource would need to be made in both places, creating a realistic drift risk.",
+      "severity_justification": "The duplication is a maintainability concern but the impact is limited — the brand style type is unlikely to churn frequently, and the divergence risk is low. No current bug exists.",
+      "category_justification": "This is a DRY violation — two identical types that could extend or alias each other, creating a maintenance burden for future field additions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 1827,
+      "end_line": 1837,
+      "message": "The `deleteApiKey` method has inconsistent behavior compared to other `delete*` methods that handle 404 errors. While `deleteBrandStyle` uses `fetchV3` which throws on 404, `deleteApiKey` also uses `fetchV3` and thus will throw an unhandled `RuleApiError` if the key is not found. However, `getBrandStyle` and `getAccount` explicitly catch 404 errors and return `null`. This inconsistency is confusing. For destructive operations like delete, it's often better to be idempotent and not throw an error if the resource is already gone. This method should handle a 404 status by returning successfully, similar to how it returns `{ success: true }` on a 204.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims inconsistency with 'other delete* methods that handle 404 errors' — but verified that no delete method in the codebase handles 404 gracefully. All delete methods (deleteAutomail, deleteMessage, deleteTemplate, deleteDynamicSet, deleteCampaign, deleteSubscriber, deleteBrandStyle, deleteAccount) throw on 404. The 404-to-null pattern is exclusively used by GET methods. `deleteApiKey` is fully consistent with the established pattern.",
+      "severity_justification": "Even if the idempotent-delete suggestion were adopted, it would be an enhancement not a bug fix. The current behavior (throwing on 404 for deletes) is the consistent pattern throughout the codebase.",
+      "category_justification": "The finding makes a factual claim about behavioral inconsistency that is incorrect.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/types/api.ts",
+      "start_line": 729,
+      "end_line": 735,
+      "message": "The newly added Brand Style type omits fields that this repository already documents for `/brand-styles/from-domain` responses (`images`, `colours`, `font_urls`, and `text_color` in README.md:208-222) and instead exposes a different shape (`logo_url`/`colors`). As written, consumers cannot access the documented API response fields through the SDK types.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: README.md lines 208-222 show the actual Rule.io API response for `/brand-styles/from-domain` uses `images[]`, `colours[]`, `font_urls[]`, and `text_color` fields. The new `RuleBrandStyle` type (lines 729-740) defines `logo_url`, `colors` (structured object), and `fonts[]` — a different shape. Code following the README mapping would produce TypeScript type errors, and consumers cannot access the documented API response fields through the SDK types.",
+      "severity_justification": "Consumers using `createBrandStyleFromDomain()` and trying to access `data.images`, `data.colours`, `data.font_urls`, or `data.text_color` (as documented in the README) will get TypeScript errors and runtime mismatch. The fields the README documents as the actual API response are simply absent from the type.",
+      "category_justification": "The issue is a mismatch between the public type definition (SDK's API contract) and the documented actual API response shape, affecting the SDK's type safety guarantees for consumers.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

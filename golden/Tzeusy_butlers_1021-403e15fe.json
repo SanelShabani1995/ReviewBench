@@ -1,0 +1,471 @@
+{
+  "pr_key": "Tzeusy_butlers_1021-403e15fe",
+  "pr": {
+    "repo": "https://github.com/Tzeusy/butlers",
+    "pr_number": 1021,
+    "base": "b57517a5f8daf3b4e776884589ffedb35018b5d4",
+    "head": "403e15fe7702ac03ac466dedd11e49f9d6ce7d66"
+  },
+  "findings": [
+    {
+      "file": "tests/daemon/test_daemon.py",
+      "start_line": 255,
+      "end_line": 282,
+      "message": "_make_runtime_config_row and _make_fetchrow_side_effect are duplicated verbatim across 6 test files (test_daemon.py, test_graceful_shutdown.py, test_liveness_reporter.py, test_notify_contact_id.py, test_notify_react.py, test_route_execute_trace_decoupling.py, test_route_to_butler_accepted_status.py). If the runtime_config table schema changes (e.g. a new column is added that _row_to_config accesses), all 6 copies need manual updates and any missed copy produces silent incorrect behavior. These should be in a shared tests/daemon/conftest.py.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `_make_runtime_config_row` and `_make_fetchrow_side_effect` are indeed duplicated across all 7 modified test files (finding says 6, actual count is 7, minor miscounting). No `tests/daemon/conftest.py` exists. The code is nearly verbatim with only the default `butler_name` differing in one file. A `runtime_config` schema change requiring a new field in `_row_to_config` would require updating all 7 copies independently.",
+      "severity_justification": "The duplication creates a maintenance risk but no current bug. A schema change would require 7 manual updates, but missing one would cause test failures (not silent production bugs) since these are test-only helpers. The impact is bounded to test maintenance overhead.",
+      "category_justification": "Verbatim code duplication across 7 test files that should be consolidated into a shared conftest.py or helper module — a classic DRY violation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_daemon.py",
+      "start_line": 271,
+      "end_line": 280,
+      "message": "_make_fetchrow_side_effect uses 'runtime_config' in query as the matching heuristic. This is too broad: any future query that references the runtime_config table in a subquery, JOIN, or comment (e.g. 'SELECT column_name FROM information_schema.columns WHERE table_name = 'runtime_config'') would incorrectly return a fake runtime_config row to the mock pool, and any query that needs a real non-None return value but doesn't mention runtime_config would silently get None. A more specific match (e.g. regex anchored to schema-qualified DML) would be safer.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The heuristic `'runtime_config' in query` is factually a substring match that could theoretically match false positives (e.g., information_schema introspection queries mentioning 'runtime_config'). However, no such queries currently exist in the codebase, making this a forward-looking fragility concern. The finding is technically correct about the pattern's imprecision but the risk is currently unrealized.",
+      "severity_justification": "No current query in the codebase would trigger a false positive match. All non-runtime_config pool.fetchrow calls handle None returns gracefully in these test contexts, so there are no silent failures today. The concern is about future drift risk, not a present bug.",
+      "category_justification": "This is about the robustness/precision of a test mock dispatch heuristic — specifically whether the matching logic in a test helper is precise enough to remain correct as production code evolves.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_graceful_shutdown.py",
+      "start_line": 240,
+      "end_line": 245,
+      "message": "mock_audit_db.pool is now set to the same mock_pool object as mock_db.pool. The comment directly above this section ('Separate mock for the audit DB so that its close() does not interfere with call-order assertions on the main DB') was the original motivation for keeping them distinct. With shared pool, pool-level method call counts and await_args interleave interactions from both the main butler pool and the audit pool path. Tests that assert on mock_pool method call counts or call arguments could see unexpected extra invocations from the audit db startup path.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct: mock_audit_db.pool is now set to the same mock_pool object as mock_db, meaning pool-level call counts will be shared. The comment's stated goal (separate close() to avoid interference with call-order assertions) is still achieved since close() remains separate. No current tests assert on mock_pool call counts, so no tests are currently broken. However, the shared pool creates real future fragility if pool-level assertions are added.",
+      "severity_justification": "The original design intent (separate close() calls) is preserved. No current test assertions are affected since none check mock_pool.fetchrow call counts or similar pool-level metrics. The concern is about future test fragility, not a current failure.",
+      "category_justification": "This is a test isolation concern — sharing a mock object between two different code paths reduces the ability to independently assert on each path's pool interactions.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_notify_contact_id.py",
+      "start_line": 233,
+      "end_line": 248,
+      "message": "_make_pool_with_conn sets mock_conn.fetchrow to always return fetchrow_return regardless of query, while mock_pool.fetchrow uses _make_fetchrow_side_effect for runtime_config routing. If any future daemon startup code path calls conn.fetchrow (via acquire) for a runtime_config query — rather than pool.fetchrow directly — it would receive fetchrow_return (e.g. {'value': '123456789'}) instead of a runtime_config row. seed_if_empty currently uses pool.fetchrow directly so this does not bite, but the two-level mock split is fragile and not documented.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct: `_make_pool_with_conn` creates a two-level mock where conn.fetchrow always returns fetchrow_return unconditionally while pool.fetchrow uses the runtime_config routing side_effect. Currently no startup code path calls conn.fetchrow for runtime_config queries (seed_if_empty uses pool.fetchrow directly), so no current test breaks. But the asymmetry is real, barely documented, and creates fragility if the DB access pattern changes.",
+      "severity_justification": "No current test or production behavior is broken by this. The two-level mock works correctly given the current code structure. The risk is future maintenance fragility rather than present defect.",
+      "category_justification": "This is about test mock design fragility — the two-level pool/conn fetchrow split is asymmetric and could produce incorrect behavior in tests if production code access patterns change.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_notify_contact_id.py",
+      "start_line": 308,
+      "end_line": 329,
+      "message": "_make_missing_id_patches creates mock_pool.acquire.return_value.__aenter__ returning mock_conn_inner, whose fetchval is explicitly set to return None. This causes _ensure_owner_entity to see entities_table_exists=None (falsy) and silently skip. However, the test then patches _resolve_contact_channel_identifier and _resolve_default_notify_recipient with explicit mocks, meaning the actual pool is never really exercised for those lookups. The mock setup is over-specified for some paths and under-specified for others, making it unclear which code paths are actually tested.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding makes correct individual observations, but its conclusion ('unclear which code paths are actually tested') is inaccurate. The test is intentionally structured: _ensure_owner_entity silently skipping on None is documented production behavior, and patching out the resolvers is by design for TestNotifyMissingIdentifierAndOwner which tests notify control flow, while TestNotifyContactIdResolution separately tests the actual DB resolver. The test design is coherent and the 'over/under-specified' framing is misleading.",
+      "severity_justification": "No test is broken or incorrect. The concern is primarily about subjective test clarity.",
+      "category_justification": "The finding is about test mock design and which code paths the tests cover.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_route_execute_trace_decoupling.py",
+      "start_line": 123,
+      "end_line": 150,
+      "message": "mock_pool was previously MagicMock() and is now AsyncMock(). The old code set up acquire_ctx as a separate object assigned to mock_pool.acquire.return_value. The new code uses mock_pool.acquire.return_value.__aenter__/__aexit__ directly. Both patterns provide the same mock connection, but the switch from MagicMock to AsyncMock changes the behavior of any attribute access not explicitly set: with AsyncMock, unset attributes return AsyncMock instances (awaitable), whereas with MagicMock they returned MagicMock instances (not awaitable). Any code path that calls an unset pool method and awaits it would behave differently.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding correctly identifies that MagicMock and AsyncMock behave differently for unset attributes, but incorrectly implies the old MagicMock approach was safer. The old tests were FAILING because MagicMock returned non-awaitable objects when pool.execute/fetchrow were called during startup. The switch to AsyncMock (plus explicitly setting all actually-called methods) is the intentional fix. All pool methods invoked during the test execution path are now explicitly set, leaving no 'unset async methods' to trigger the hypothetical concern.",
+      "severity_justification": "The concern is purely theoretical — no unset pool method is actually invoked during the test execution path, and the old MagicMock approach was already causing test failures.",
+      "category_justification": "The finding is about mock object behavior differences between MagicMock and AsyncMock in test infrastructure.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_notify_contact_id.py",
+      "start_line": 69,
+      "end_line": 78,
+      "message": "_make_fetchrow_side_effect is defined at module level and reused by both _patch_infra() (for the default daemon pool) and _make_pool_with_conn() (for the conn-isolation pool). In _make_pool_with_conn, the pool-level fetchrow uses _make_fetchrow_side_effect() while the conn-level fetchrow uses a completely separate return value. When tests assert mock_conn.fetchrow.await_args to verify query patterns (line 297), they rely on the assumption that seed_if_empty never calls conn.fetchrow via acquire. This invariant is not enforced by the mock setup and would silently break if RuntimeConfigAccessor changes to use a connection instead of the pool directly.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's central claim that the assertion at line 297 'would silently break' is incorrect on two counts: (1) if seed_if_empty changed to use conn.fetchrow, it would receive {'value': '123456789'} causing _row_to_config to raise KeyError immediately — an explicit test failure; (2) await_args captures the LAST call, and startup runs before _resolve_contact_channel_identifier, so the contact_info query would still be the last one captured even if seed_if_empty also used conn.fetchrow during startup.",
+      "severity_justification": "No current test is broken; the specific failure mode described is incorrect.",
+      "category_justification": "The finding concerns test mock design and assertion correctness.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_route_to_butler_accepted_status.py",
+      "start_line": 64,
+      "end_line": 73,
+      "message": "_make_fetchrow_side_effect is invoked as _make_fetchrow_side_effect() (no butler_name argument) in _patch_infra(), so the returned row always has butler_name='switchboard'. But daemon.start() calls seed_if_empty with butler_name=self.config.name which comes from the test butler.toml. If the test butler is named something other than 'switchboard', the mock row's butler_name field will be wrong. While RuntimeConfig.butler_name is currently not checked after seed_if_empty returns (daemon.py only checks seeded_at/updated_at), this mismatch creates a latent correctness risk if future code validates the butler_name field.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's concern does not apply to this test file: all tests use _make_switchboard_dir which sets name='switchboard' in the toml, exactly matching the _make_fetchrow_side_effect() default of butler_name='switchboard'. Additionally, RuntimeConfig.butler_name is never accessed by daemon code after seed_if_empty — only seeded_at, updated_at, core_groups, max_concurrent, and max_queued are used — making the 'latent correctness risk' entirely hypothetical even if there were a mismatch.",
+      "severity_justification": "No mismatch exists in this test file and the field is unused post-startup, so there is no actual risk.",
+      "category_justification": "The finding is about test mock data accuracy and potential future fragility.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_route_execute_trace_decoupling.py",
+      "start_line": 100,
+      "end_line": 100,
+      "message": "The mock `fetchrow` implementation in `_make_fetchrow_side_effect` is hardcoded to respond to queries containing `\"runtime_config\"`. This is brittle and will break if the query is changed or uses different casing. The function should instead check for the specific query it's trying to mock, such as the `seed_if_empty` query from `src/butlers/daemon.py`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually correct that `'runtime_config' in query` is a substring heuristic that could theoretically match false positives or miss case-variant queries. This is the same valid concern as Finding 2, just applied to a different file. The finding has a minor inaccuracy (seed_if_empty lives in runtime_config.py, not daemon.py), but the core fragility claim is correct. No current false positive exists since all runtime_config queries use lowercase.",
+      "severity_justification": "No current query triggers false positives, all queries use lowercase 'runtime_config', and the tests pass correctly. The concern is purely about future brittleness, same as Finding 2.",
+      "category_justification": "This is about test mock dispatch heuristic precision — same category as Finding 2.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_graceful_shutdown.py",
+      "start_line": 217,
+      "end_line": 217,
+      "message": "The `provision` method on `mock_audit_db` is mocked, but the `connect` method is called in the code. This inconsistency could lead to unexpected behavior if the provision logic changes. Both should align to either `provision` or `connect`, or the unused mock should be removed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Daemon does await `shared_db.provision()`",
+      "severity_justification": "The unused `provision` mock is harmless — MagicMock auto-creates attributes anyway and no test behavior is affected. The inconsistency is cosmetic/misleading rather than causing incorrect test results.",
+      "category_justification": "The finding is about a test mock that is set but never invoked, creating misleading test infrastructure.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_daemon.py",
+      "start_line": 292,
+      "end_line": 294,
+      "message": "This does not actually make `async with pool.acquire()` work because `mock_pool.acquire` is still an `AsyncMock`, so `pool.acquire()` returns a coroutine rather than an async context manager and the configured `return_value.__aenter__` is never used. The daemon's `_ensure_owner_entity` uses `async with pool.acquire()` directly, so use a synchronous mock/asynccontextmanager for `acquire` to keep the startup mock faithful.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: when `mock_pool` is an `AsyncMock`, calling `mock_pool.acquire()` returns a coroutine object, not an async context manager. The `return_value.__aenter__` configuration is therefore unreachable. `async with pool.acquire() as conn:` raises `AttributeError: __aenter__` — which is silently swallowed by the broad `except Exception` in `_ensure_owner_entity` (line 1380). The comment in the test code claims to support this pattern, but the implementation does not achieve it.",
+      "severity_justification": "Tests pass because `_ensure_owner_entity` catches all exceptions, so the broken mock doesn't cause test failures. However the mock is unfaithful — `_ensure_owner_entity` is never exercised. If the exception handling is ever tightened, these tests would silently break.",
+      "category_justification": "The issue is about incorrect mock setup in test infrastructure — the mock doesn't faithfully simulate the async context manager protocol that the production code uses.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_notify_react.py",
+      "start_line": 82,
+      "end_line": 84,
+      "message": "This does not actually make `async with pool.acquire()` work because `mock_pool.acquire` is still an `AsyncMock`, so `pool.acquire()` returns a coroutine rather than an async context manager and the configured `return_value.__aenter__` is never used. `_ensure_owner_entity` uses `async with pool.acquire()` directly, so this setup still skips that path instead of exercising it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same factually verified issue as Finding 1: `mock_pool` is an `AsyncMock`, so `mock_pool.acquire()` returns a coroutine, not an async context manager. The `return_value.__aenter__` is unreachable. The comment `# Support 'async with pool.acquire() as conn:' for _ensure_owner_entity` is misleading — the pattern doesn't work. Tests pass only because `_ensure_owner_entity` swallows all exceptions.",
+      "severity_justification": "Same as Finding 1 — tests pass due to silent exception swallowing, but the mock doesn't faithfully exercise `_ensure_owner_entity`.",
+      "category_justification": "Incorrect mock setup for the async context manager protocol in test infrastructure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_notify_contact_id.py",
+      "start_line": 91,
+      "end_line": 93,
+      "message": "This does not actually make `async with pool.acquire()` work because `mock_pool.acquire` is still an `AsyncMock`, so `pool.acquire()` returns a coroutine rather than an async context manager and the configured `return_value.__aenter__` is never used. `_ensure_owner_entity` uses `async with pool.acquire()` directly, so this setup still skips that path instead of exercising it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same factually verified issue as Findings 1 and 2: `mock_pool` is `AsyncMock`, `mock_pool.acquire()` returns a coroutine not an async context manager, `return_value.__aenter__` is never reached. The misleading comment is present. Tests pass only because `_ensure_owner_entity` swallows all exceptions via `except Exception`.",
+      "severity_justification": "Tests pass due to silent exception swallowing in `_ensure_owner_entity`, but the mock doesn't faithfully exercise that path.",
+      "category_justification": "Incorrect mock setup for async context manager protocol in test infrastructure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_notify_contact_id.py",
+      "start_line": 317,
+      "end_line": 319,
+      "message": "This does not actually make `async with pool.acquire()` work because `mock_pool.acquire` is still an `AsyncMock`, so `pool.acquire()` returns a coroutine rather than an async context manager and the configured `return_value.__aenter__` is never used. `_ensure_owner_entity` uses `async with pool.acquire()` directly, so this setup still skips that path instead of exercising it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same factually verified issue as Findings 1–3: `mock_pool` is `AsyncMock`, `mock_pool.acquire()` returns a coroutine not an async context manager, `return_value.__aenter__` is never used. This is in the `_make_missing_id_patches` helper in the same file. Tests pass only because `_ensure_owner_entity` silently swallows the resulting `AttributeError`.",
+      "severity_justification": "Tests pass due to silent exception swallowing in `_ensure_owner_entity`, but the mock doesn't faithfully exercise that code path.",
+      "category_justification": "Incorrect mock setup for async context manager protocol in test infrastructure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_route_to_butler_accepted_status.py",
+      "start_line": 84,
+      "end_line": 86,
+      "message": "This does not actually make `async with pool.acquire()` work because `mock_pool.acquire` is still an `AsyncMock`, so `pool.acquire()` returns a coroutine rather than an async context manager and the configured `return_value.__aenter__` is never used. `_ensure_owner_entity` uses `async with pool.acquire()` directly, so this setup still skips that path instead of exercising it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same factually verified issue as Findings 1–4: `mock_pool` is `AsyncMock`, `mock_pool.acquire()` returns a coroutine not an async context manager, `return_value.__aenter__` is never used. Tests pass only because `_ensure_owner_entity` silently swallows the `AttributeError` via `except Exception`.",
+      "severity_justification": "Tests pass due to silent exception swallowing in `_ensure_owner_entity`, but the mock doesn't faithfully exercise that code path.",
+      "category_justification": "Incorrect mock setup for async context manager protocol in test infrastructure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_graceful_shutdown.py",
+      "start_line": 184,
+      "end_line": 185,
+      "message": "This runtime_config row/side-effect helper is duplicated across the daemon test files added in this PR. Because it hard-codes the runtime_config schema fields, future schema or default changes will require updating each copy; consider moving it to a shared test helper/fixture to avoid drift.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `_make_runtime_config_row` and `_make_fetchrow_side_effect` are duplicated verbatim across all 7 test files touched by this PR, and are not present in `src/butlers/testing/shared_fixtures.py`. The helpers hard-code `runtime_config` schema fields; any schema change requires updating 7 identical copies.",
+      "severity_justification": "No current breakage, but the duplication creates real maintenance drift risk if `runtime_config` schema fields or defaults change — all 7 copies must be updated in sync. Low severity because the risk is future maintenance cost, not an immediate bug.",
+      "category_justification": "Classic DRY violation — identical logic duplicated across multiple files with hard-coded schema details that are prone to drift.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_liveness_reporter.py",
+      "start_line": 68,
+      "end_line": 69,
+      "message": "This runtime_config row/side-effect helper is duplicated across the daemon test files added in this PR. Because it hard-codes the runtime_config schema fields, future schema or default changes will require updating each copy; consider moving it to a shared test helper/fixture to avoid drift.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same factually verified duplication as Finding 6: `_make_runtime_config_row` and `_make_fetchrow_side_effect` are duplicated verbatim in this file and 6 others, with no shared location. Hard-coded runtime_config schema fields across all copies create maintenance drift risk.",
+      "severity_justification": "No current breakage; risk is future maintenance cost when runtime_config schema or defaults change requiring all 7 copies to be updated in sync.",
+      "category_justification": "DRY violation — identical logic duplicated across multiple test files with hard-coded schema details prone to drift.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_notify_contact_id.py",
+      "start_line": 53,
+      "end_line": 54,
+      "message": "This runtime_config row/side-effect helper is duplicated across the daemon test files added in this PR. Because it hard-codes the runtime_config schema fields, future schema or default changes will require updating each copy; consider moving it to a shared test helper/fixture to avoid drift.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same factually verified duplication as Findings 6 and 7: `_make_runtime_config_row` and `_make_fetchrow_side_effect` are duplicated verbatim in this file and 6 others, absent from shared_fixtures.py. Hard-coded runtime_config schema fields across all copies create maintenance drift risk.",
+      "severity_justification": "No current breakage; risk is future maintenance cost when runtime_config schema or defaults change requiring all 7 copies to be updated in sync.",
+      "category_justification": "DRY violation — identical logic duplicated across multiple test files with hard-coded schema details prone to drift.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_notify_react.py",
+      "start_line": 45,
+      "end_line": 46,
+      "message": "This runtime_config row/side-effect helper is duplicated across the daemon test files added in this PR. Because it hard-codes the runtime_config schema fields, future schema or default changes will require updating each copy; consider moving it to a shared test helper/fixture to avoid drift.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same factually verified duplication as Findings 6–8: `_make_runtime_config_row` and `_make_fetchrow_side_effect` are duplicated verbatim in this file and 6 others, absent from shared_fixtures.py.",
+      "severity_justification": "No current breakage; risk is future maintenance cost when runtime_config schema or defaults change requiring all 7 copies to be updated in sync.",
+      "category_justification": "DRY violation — identical logic duplicated across multiple test files with hard-coded schema details prone to drift.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_route_to_butler_accepted_status.py",
+      "start_line": 48,
+      "end_line": 49,
+      "message": "This runtime_config row/side-effect helper is duplicated across the daemon test files added in this PR. Because it hard-codes the runtime_config schema fields, future schema or default changes will require updating each copy; consider moving it to a shared test helper/fixture to avoid drift.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same factually verified duplication as Findings 6–9: `_make_runtime_config_row` and `_make_fetchrow_side_effect` are duplicated verbatim in this file and 6 others, absent from shared_fixtures.py.",
+      "severity_justification": "No current breakage; risk is future maintenance cost when runtime_config schema or defaults change requiring all 7 copies to be updated in sync.",
+      "category_justification": "DRY violation — identical logic duplicated across multiple test files with hard-coded schema details prone to drift.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_notify_react.py",
+      "start_line": 45,
+      "end_line": 48,
+      "message": "The mocked runtime_config row defaults to `test-butler`, but this test fixture's `butler.toml` sets the daemon name to `test`. Since `seed_if_empty()` reads back `WHERE butler_name = $1` using the configured name, this mock can return a row that a real database query would not return and makes the startup state inconsistent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: the butler.toml in this test fixture sets `name = 'test'`, but `_make_runtime_config_row` defaults to `butler_name='test-butler'`. The `_make_fetchrow_side_effect` ignores the actual argument passed to `fetchrow`, so `seed_if_empty` gets back a row with the wrong `butler_name`. In a real DB, the `WHERE butler_name = $1` query with `$1='test'` would return nothing until after the INSERT. The mock faithfully simulates 'DB already has a row' but with the wrong butler name.",
+      "severity_justification": "The mismatch between `RuntimeConfig.butler_name` ('test-butler') and the daemon's actual name ('test') doesn't cause test failures because the daemon uses `self.config.name` for identity throughout, and `effective_runtime.butler_name` is not cross-checked downstream in the paths these tests exercise.",
+      "category_justification": "Test mock returns data inconsistent with what the real DB would return for the configured butler name — a test fidelity issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_daemon.py",
+      "start_line": 255,
+      "end_line": 258,
+      "message": "The runtime_config mock always returns a row for `test-butler`, but this helper is also used by tests that start other butlers such as `messenger`. `seed_if_empty()` reads back with `WHERE butler_name = $1`, so returning a row for a different butler is not representative of the real DB behavior and can hide name-specific startup issues.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_patch_infra()` is invoked with `butler_name='messenger'` tests but calls `_make_fetchrow_side_effect()` with default `'test-butler'`. When `seed_if_empty` calls `fetchrow(..., 'messenger')`, the mock returns a row with `butler_name='test-butler'`. In a real DB, this query would return nothing (or a 'messenger' row). The mock is unfaithful for multi-butler-name usage.",
+      "severity_justification": "Tests pass because the daemon uses `self.config.name` for identity and `effective_runtime.butler_name` is not cross-checked downstream. But the mock returns wrong data that could mask name-specific startup bugs.",
+      "category_justification": "Test mock returns incorrect butler_name data that doesn't reflect real DB behavior for the butler names being tested.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/daemon/test_liveness_reporter.py",
+      "start_line": 68,
+      "end_line": 71,
+      "message": "The startup mock always returns a runtime_config row for `test-butler`, but this file starts daemons with other names (for example `switchboard`). Because `seed_if_empty()` reads back `WHERE butler_name = $1`, returning a different butler's row is not representative of real DB behavior and can hide name-specific startup issues.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: line 294 starts a daemon with `name='switchboard'` using the same `_patch_infra()` that returns `butler_name='test-butler'` for all `runtime_config` queries. When `seed_if_empty('switchboard')` calls `fetchrow(..., 'switchboard')`, the mock returns a row with `butler_name='test-butler'` — inconsistent with real DB behavior.",
+      "severity_justification": "Tests pass because `effective_runtime.butler_name` is not cross-checked against `self.config.name` in the tested paths. The inconsistency can mask name-specific startup bugs but causes no current failures.",
+      "category_justification": "Test mock returns incorrect butler_name data for the 'switchboard' daemon, not representative of real DB behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

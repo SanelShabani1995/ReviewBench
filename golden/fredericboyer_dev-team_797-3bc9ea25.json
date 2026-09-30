@@ -1,0 +1,311 @@
+{
+  "pr_key": "fredericboyer_dev-team_797-3bc9ea25",
+  "pr": {
+    "repo": "https://github.com/fredericboyer/dev-team",
+    "pr_number": 797,
+    "base": "5708e07e9626ec3621b8eed703bb6fb08e457c0a",
+    "head": "3bc9ea25d3896d759a6395a585aaf1400ea05c28"
+  },
+  "findings": [
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 98,
+      "end_line": 103,
+      "message": "Sidecar matching uses only filename substring check (`f.includes(sanitizedBranch)`) without reading the JSON `branch` field for exact match. Branch `feat/1` (sanitized: `feat-1`) would match sidecar files for `feat/123`, `feat/10-thing`, etc. — all contain `feat-1` as a substring — giving a false positive and allowing premature implementer shutdown when no valid review exists for the current branch. The `merge-gate.js` solves this by reading each sidecar JSON and checking `data.branch === mergeBranch` first, falling back to substring only if no `branch` field is present. The guard should use the same approach.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in code: implementer-guard uses only `f.includes(sanitizedBranch)` (substring), while merge-gate reads `data.branch === mergeBranch` from sidecar JSON first. Branch `feat/1` (sanitized `feat-1`) would match sidecars for `feat/123` or `feat/10-thing`, falsely satisfying the guard and allowing shutdown before actual review evidence exists for the current branch.",
+      "severity_justification": "The guard's main purpose is to prevent premature implementer shutdown before review; a false-positive match defeats that purpose for short-named branches. Not data-destructive but undermines the workflow enforcement the PR is trying to introduce.",
+      "category_justification": "Logic error in branch sidecar matching — substring check allows false positive matches, producing incorrect behavior (allowing shutdown when it should block).",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 51,
+      "end_line": 55,
+      "message": "`--force-shutdown` escape hatch matches the full JSON.stringify of the message object, not just an explicit flag field. Any field value in the message (e.g., a comment, note, or metadata field) containing the string `--force-shutdown` triggers the bypass. For example, `{ type: 'shutdown_request', reason: 'this is a --force-shutdown test' }` bypasses the guard unintentionally. The check should inspect a dedicated flag field or restrict the match to string messages only (not JSON-serialized objects).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: when message is an object, the code does `JSON.stringify(message)` then tests for `--force-shutdown` anywhere in the result. A message like `{ type: 'shutdown_request', reason: 'this is a --force-shutdown test' }` would bypass the guard even though the intent was not to bypass. The claim is factually correct.",
+      "severity_justification": "This is a quality enforcement hook, not a security boundary. Accidental triggering requires an unlikely message structure (a field value containing exactly `--force-shutdown`). The consequence is only a premature implementer shutdown — annoying but not data-destructive. Low, not negligible, because the whole point of the hook is robust enforcement.",
+      "category_justification": "The escape hatch logic matches against serialized JSON instead of an explicit dedicated field, causing it to fire on unintended inputs.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 51,
+      "end_line": 60,
+      "message": "The `--force-shutdown` escape hatch is evaluated before the `target` (agent name) check on line 59. If any non-implementer agent receives a shutdown_request with `--force-shutdown` in the message, the hook prints 'WARNING: --force-shutdown used — guard bypassed' even though it would have exited 0 anyway (the target isn't an implementer). The warning is misleading and may alarm operators. The target check should run before the escape hatch, or the warning should only fire when the guard was actually active.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in code: the `--force-shutdown` check (lines 51–55) runs before the target/implement check (lines 58–60). A shutdown_request with --force-shutdown sent to a non-implementer agent triggers the misleading 'WARNING: --force-shutdown used — guard bypassed' message, even though the guard would have exited 0 anyway once it checked the target name.",
+      "severity_justification": "The guard still exits 0 (correct behavior), so there is no functional regression. The only harm is a spurious warning that may confuse operators. Minor in practice but it undermines operator trust in the warning signal.",
+      "category_justification": "Ordering of checks causes a misleading warning to fire in cases where the guard was never applicable, producing incorrect diagnostic output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 100,
+      "end_line": 103,
+      "message": "Unlike `merge-gate.js`, the guard does not validate that matched sidecar files are regular files (it doesn't call `lstatSync`). A symlink in `.dev-team/.reviews/` whose name includes the sanitized branch and ends in `.json` would satisfy the check. `merge-gate.js` explicitly filters out symlinks with `stat.isFile() && !stat.isSymbolicLink()`. The guard should apply the same validity check.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: merge-gate.js uses lstatSync to filter out symlinks (lines 139-143) before matching sidecar files. implementer-guard.js has no such check — it only tests filename substring and `.json` extension. A symlink matching the branch name pattern would satisfy the guard. The inconsistency is real.",
+      "severity_justification": "Exploiting this requires placing a symlink in .dev-team/.reviews/ with a matching filename — an unlikely scenario in normal use since that directory is managed by dev-team tooling. The consequence is only a false-positive review evidence check. Real-world risk is minimal, but it's an inconsistency with the established pattern in merge-gate.js.",
+      "category_justification": "Missing validation step causes the guard to accept invalid evidence (symlinks), inconsistent with the sidecar validation pattern used in merge-gate.js.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 89,
+      "end_line": 92,
+      "message": "Only `main` and `master` are excluded from the guard. Common shared/long-lived branches like `develop`, `staging`, and `release/*` are not excluded, so the guard will fire on those branches and block implementer shutdown when no review sidecars exist — which is the normal state on those branches. Additionally, the `branch === 'HEAD'` check on line 91 is dead code: `git symbolic-ref --short HEAD` exits non-zero in detached HEAD state (confirmed by testing), so the catch block fires and exits 0 before this comparison is ever reached.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both claims verified: (1) `git symbolic-ref --short HEAD` exits non-zero in detached HEAD, so `branch === 'HEAD'` is dead code — the catch exits 0 first. (2) Only `main`/`master` are excluded; `develop`, `staging`, `release/*` are not, which could cause false blocks on projects using those branches with implementing agents.",
+      "severity_justification": "Dead code is cosmetic. The missing branch exclusions matter only if implementing agents actually run on those integration branches — an unusual pattern since implementing agents typically work on feature branches. Low impact in practice but a real design gap for teams not using main/master as their only protected branches.",
+      "category_justification": "Dead code and missing branch exclusions both result in incorrect behavior (dead comparison, potential false block on integration branches).",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 95,
+      "end_line": 100,
+      "message": "The script attempts to read from a hardcoded `.dev-team/.reviews` directory. However, the directory name for review sidecars is configurable via `.dev-team/config.json` in the `output.reviews` field. The hook should read this configuration and use the specified directory path instead of a hardcoded one to avoid incorrect behavior in projects with custom configurations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claim that the reviews directory is configurable via `output.reviews` in config.json is unverifiable — the actual config.json has no `output` field, and no hook in the codebase reads a configurable reviews path from config. merge-gate.js also hardcodes `.dev-team/.reviews`. The finding invents a config field that doesn't exist.",
+      "severity_justification": "Even if the finding were true, it would be a consistency/configurability concern with low immediate impact.",
+      "category_justification": "The finding incorrectly claims a configuration contract exists that doesn't.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 39,
+      "end_line": 42,
+      "message": "The message parsing logic assumes that if `message` is an object, it will have a `type` property. If `message` is an object without a `type` property (e.g., `{}`), `isShutdown` becomes `false`, and the hook exits cleanly. This could allow an agent to bypass the guard by sending an empty object as a message, which might be interpreted as a shutdown request by some agent implementations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The described scenario requires an unverifiable assumption: that some agent treats `{}` as a shutdown_request. The entire codebase consistently uses `{ type: 'shutdown_request' }` as the shutdown protocol. The hook correctly ignores `{}` — it's not a shutdown request. The finding invents a hypothetical mismatch with no evidence in the codebase.",
+      "severity_justification": "Even if the speculative concern were valid, it would be a minor gap in an internal quality enforcement hook.",
+      "category_justification": "The claim is about incorrect message-type matching logic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 68,
+      "end_line": 68,
+      "message": "The target agent name check uses `/implement/i.test(target)`. This can lead to false positives by matching agent names that coincidentally contain \"implement\", such as `voss-reimplement-task`, which may not be a primary implementing agent that this guard is intended for. Using a more specific pattern, like `/implement(er)?(-\\d+)?$/i`, would more accurately target agents like `voss-implement` or `voss-implementer-773`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The concern is theoretical — `voss-reimplement-task` doesn't follow the established naming convention (documented as `-implement`, `-review`, `-research`, etc.). More critically, the proposed fix `/implement(er)?(-\\d+)?$/i` would break legitimate agents like `deming-implement-auth`. The current `/implement/i` is a deliberate broad match that correctly handles all real implementing agent names per convention.",
+      "severity_justification": "Even if the concern were valid, a false positive would only cause the guard to fire on a non-implement agent — low impact since it would just delay a shutdown.",
+      "category_justification": "The finding is about incorrect pattern matching logic and agent name targeting.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 96,
+      "end_line": 96,
+      "message": "The branch name is sanitized with `branch.replace(/[^a-zA-Z0-9-]/g, \"-\")`. While this is a reasonable approach, it doesn't match the sanitization logic used by other parts of the system, such as the review skill, which uses a different method. This discrepancy can lead to the hook being unable to find review files for branches with special characters, as it would be looking for a filename that doesn't match what was created.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "All three hooks that sanitize branch names for sidecar file matching use the identical regex `replace(/[^a-zA-Z0-9-]/g, '-')`. The claim that the review skill uses a 'different method' is unverifiable — the review skill is a Markdown file with no filename sanitization code. No sanitization discrepancy exists in the codebase.",
+      "severity_justification": "If the discrepancy were real it would cause false negatives in review evidence detection, which would block implementer shutdown unnecessarily — annoying but not harmful. The claim is moot since no discrepancy exists.",
+      "category_justification": "The claim is about inconsistent sanitization logic producing incorrect filename matching.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 79,
+      "end_line": 106,
+      "message": "The guard derives the branch from the orchestrator's `process.cwd()` (the cwd of whatever process invokes `SendMessage`), not from the implementer being shut down. In the real flow described in issue #795, the orchestrator (Drucker) sends `shutdown_request` while sitting on `main`/`master` or its own coordination branch — not on the implementer's feature branch (which lives in a separate worktree). Because lines 91–94 explicitly `exit(0)` for `main`/`master`/`HEAD`/empty branches, the guard will silently allow every implementer shutdown in the exact scenario it is meant to prevent, and the only test that exercises the \"block\" path passes only because the test fixture artificially `git checkout -b feat/123-test`s the orchestrator's cwd.\n\nThe target agent name (e.g. `voss-implement-773`) is the only reliable signal of which branch/issue is at risk. Consider extracting the trailing issue/task identifier from `input.tool_input.to`, mapping it to the implementer's branch (e.g. `feat/773-*`), and looking up sidecars by that key instead of by `git symbolic-ref HEAD` in the orchestrator's cwd. Otherwise this hook provides essentially no protection in production while appearing to be guarded by tests.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The hook determines the branch via `git symbolic-ref --short HEAD` in `process.cwd()`, which is the orchestrator's directory. In production, implementing agents use `isolation: \"worktree\"` (separate worktrees on feature branches) while Drucker coordinates from main. So when Drucker sends shutdown_request, the hook sees `main` and exits(0) at line 92 — silently allowing the exact scenario it exists to prevent. The test only passes because beforeEach artificially puts the tmpDir on a feature branch (`git checkout -b feat/123-test`), not because the logic is sound.",
+      "severity_justification": "The hook provides zero protection in the primary production use case (worktree-isolated implementers being shut down by an orchestrator on main). The feature is entirely neutered, and the passing tests create a false sense of security.",
+      "category_justification": "The guard's core logic is wrong — it checks the orchestrator's current branch rather than the implementer's branch, causing it to silently allow every shutdown in the exact scenario it's designed to prevent.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 44,
+      "end_line": 46,
+      "message": "`message.includes(\"shutdown_request\")` will match any free-form text that merely mentions the phrase — for example a status update like \"I will not send a shutdown_request yet\" or a routed review finding that quotes the term. Combined with the loose `/implement/i` check on the recipient name, benign messages to implementing agents may be blocked. Consider matching a more specific token (e.g. an exact word boundary or a structured field) so that only actual shutdown payloads are intercepted.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `message.includes('shutdown_request')` check is confirmed at line 46 — it matches any string containing that substring, not just actual shutdown payloads. A text message routed to an implementing agent (e.g. review findings that quote or mention the phrase) would be incorrectly blocked. The finding correctly identifies the specific variable and condition and the fix is straightforward.",
+      "severity_justification": "The primary shutdown signal path uses the object check (message.type === 'shutdown_request') which is precise. The string path is a fallback. Real false positive scenarios require a text message to an implement-named agent containing 'shutdown_request' verbatim, which is uncommon in practice but plausible (e.g. review findings quoting the term).",
+      "category_justification": "The matching logic can incorrectly classify non-shutdown messages as shutdown requests, leading to spurious blocking of legitimate agent communication.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 82,
+      "end_line": 85,
+      "message": "This lookup uses the orchestrator process's current git branch, not the branch/PR owned by the target implementer. In parallel mode the task skill says Drucker tracks one branch per implementing agent in conversation context, so the lead may be on `main` or another feature branch when sending this shutdown request; the guard then allows on `main` or checks the wrong branch and fails to enforce the intended target agent's review state.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Confirmed duplicate of Finding 1 in substance, but independently verifiable: lines 82-87 use `execFileSync('git', ['symbolic-ref', '--short', 'HEAD'])` without a `cwd` override, so it reads the orchestrator's branch. dev-team-process.md confirms implementing agents run in separate worktrees. The guard checks the wrong branch.",
+      "severity_justification": "Same as Finding 1 — the hook is entirely ineffective in the primary production scenario (orchestrator on main, implementers in worktrees). The guard provides no protection.",
+      "category_justification": "The branch resolution logic uses the wrong working directory, causing the guard to check the orchestrator's branch instead of the implementer's branch, defeating its purpose.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/unit/hooks.test.js",
+      "start_line": 2864,
+      "end_line": 2865,
+      "message": "This fixture does not follow the review sidecar contract used by the review gate (`<agent>--<content-hash>.json`), so the test only proves the new branch-in-filename heuristic works and misses the production case where valid review evidence is keyed by content hash. Add coverage for the actual sidecar shape so the guard cannot regress against real review artifacts.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified against ADR-029 and dev-team-review-gate.js: production sidecars are named `<agent>--<content-hash>.json`. The implementer guard checks `files.some((f) => f.includes(sanitizedBranch))`, which would never match real sidecars (whose filenames contain a SHA256 hash, not a branch name). The test fixture `knuth--feat-123-test.json` is synthetic — it embeds the branch name so the guard finds it, but this shape doesn't exist in production.",
+      "severity_justification": "The guard's sidecar-matching logic is incompatible with the real sidecar naming convention. Even if Finding 1 (wrong cwd) were fixed, the guard would still always block legitimate shutdown requests because it cannot recognize real review evidence. The passing test provides false confidence.",
+      "category_justification": "The evidence-matching logic uses a filename heuristic incompatible with the production sidecar naming contract, causing the guard to misidentify the presence or absence of review evidence.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 153,
+      "end_line": 153,
+      "message": "This description overstates the new guard: the hook only checks for review sidecar evidence, not whether findings were routed to or acknowledged by the implementer. As written, users may expect shutdowns to remain blocked during finding routing even though any matching sidecar allows shutdown.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the README at line 153 says the guard blocks 'before review findings are routed', but the hook only checks sidecar file existence. It has no logic to verify routing or acknowledgment. The description implies a stronger guarantee than the implementation provides.",
+      "severity_justification": "This is a documentation inaccuracy in a README table row. It creates a false expectation about the guard's behavior but does not affect runtime behavior. The practical impact is minor — a reader may expect more than they get, but this is a documentation fix.",
+      "category_justification": "The finding is about the README description overstating the hook's actual behavior, not about a bug in the code itself.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "templates/hooks/dev-team-implementer-guard.js",
+      "start_line": 8,
+      "end_line": 10,
+      "message": "The hook does not enforce that findings have been routed and acknowledged; it only checks whether a review sidecar exists. This comment is misleading and can cause future maintainers to rely on a guarantee the implementation does not provide.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Lines 8-10 state the hook 'enforces' that findings are 'routed and acknowledged', but the implementation only checks for sidecar file existence. A sidecar is written when a reviewer completes their pass, well before Drucker routes findings to the implementer. The comment misrepresents what the code does.",
+      "severity_justification": "Misleading inline documentation for a maintainer, but no runtime impact. The gap between stated intent and actual behavior could mislead future contributors into thinking the contract is stronger than it is, but it's a doc fix.",
+      "category_justification": "The finding is about a misleading JSDoc/comment in the hook file overstating the enforcement guarantee, not a runtime bug.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

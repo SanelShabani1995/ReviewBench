@@ -1,0 +1,291 @@
+{
+  "pr_key": "konturio_disaster-ninja-fe_1237-09807d0d",
+  "pr": {
+    "repo": "https://github.com/konturio/disaster-ninja-fe",
+    "pr_number": 1237,
+    "base": "e42573e7366165d9a100406d746c210fa0febe99",
+    "head": "09807d0d604613e8b301f6bc2930878b0688ff48"
+  },
+  "findings": [
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.tsx",
+      "start_line": 89,
+      "end_line": 97,
+      "message": "The useEffect reads timelineRef.current but timelineRef is not in the dependency array. If the Timeline component remounts while selectedEpisode is already set (e.g., a parent forces remount via key change), onRefChange(null) then onRefChange(newApi) fire updating timelineRef.current, but selectedEpisode has not changed so the effect won't re-run. The new Timeline instance never gets focused or selected.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The useEffect only depends on `selectedEpisode`, so mutations to `timelineRef.current` via `onRefChange` are invisible to React's effect system. If Timeline remounts while selectedEpisode is already set, the new API reference is stored in `timelineRef.current` but the effect never re-runs, leaving the new Timeline instance without focus/selection.",
+      "severity_justification": "Only manifests on Timeline remount while an episode is already selected — a relatively uncommon scenario — but the resulting desync (no focus/selection on the new instance) is a real bug introduced by this PR.",
+      "category_justification": "The effect has an incomplete dependency that causes incorrect behavior (missing imperative API calls on remount).",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.tsx",
+      "start_line": 95,
+      "end_line": 103,
+      "message": "Both the declarative selected prop (line 103) and the imperative api.setSelection call (line 95) manage the timeline's selection state, creating dual ownership. Every selectedEpisode change (including those originating from user clicks via onSelect) triggers a redundant api.setSelection call. If the underlying timeline library fires its onSelect callback when setSelection is called programmatically, this creates an infinite update loop: onSelect → setCurrentEpisode → selectedEpisode changes → useEffect → api.setSelection → onSelect → …",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Dual ownership of selection state is verifiable: both `selected={timelineSelection}` prop and `api.setSelection` in useEffect are used simultaneously. Every user click via `onSelect` changes `selectedEpisode`, which triggers the effect to call `api.setSelection` again redundantly. The infinite loop risk is conditional on library behavior but the dual ownership and redundant calls are real issues introduced by this PR.",
+      "severity_justification": "Redundant setSelection calls on every user interaction are real. If the Timeline library fires onSelect for programmatic setSelection calls, this creates an infinite update loop. Even without the loop, dual ownership creates unnecessary calls and potential state conflicts.",
+      "category_justification": "The design creates redundant or potentially conflicting state updates between declarative and imperative APIs, which can cause incorrect behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.tsx",
+      "start_line": 27,
+      "end_line": 27,
+      "message": "timelineRef is typed as useRef<unknown>(null), requiring an unsafe cast on lines 91-94. The imperative API shape (setSelection, focus) is only verified at the cast site, not at the ref assignment site. A proper interface declared once and used as the generic parameter would catch mismatches at compile time.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `useRef<unknown>(null)` at line 27 requires an unsafe `as` cast at lines 91-94. The API shape (setSelection, focus) is only declared at the cast site, not enforced at assignment, so TypeScript cannot catch mismatches. The finding is factually correct and identifies a concrete type safety gap.",
+      "severity_justification": "This is a type safety/maintainability issue with no runtime impact. The cast is optional-chained so runtime errors are safe, but compile-time guarantees are lost. A named interface would be better but the immediate risk is low.",
+      "category_justification": "The issue is about TypeScript type precision and code structure — using `unknown` with a cast instead of a properly typed interface reduces maintainability and compile-time safety.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.test.tsx",
+      "start_line": 13,
+      "end_line": 14,
+      "message": "focus and setSelection are module-level vi.fn() declarations with no beforeEach/afterEach reset and no clearMocks: true in the vitest config. Any subsequent tests added to this file will observe calls accumulated from prior tests, producing false positives.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `focus` and `setSelection` are module-level `vi.fn()` with no beforeEach/afterEach reset in the test file, and the vitest config has no `clearMocks: true`. Any future tests added to this file will see accumulated calls from prior tests, producing false positives.",
+      "severity_justification": "Currently only one test exists so no actual false positives occur yet. The risk is forward-looking — as the test file grows, stale mock state could cause misleading test results. Low severity since it doesn't break anything today.",
+      "category_justification": "The issue is about test isolation — missing mock reset between tests is a test design problem that can produce false positive test results.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.test.tsx",
+      "start_line": 51,
+      "end_line": 62,
+      "message": "setSelection and focus are asserted in two sequential, independent waitFor blocks. If setSelection is called but focus is not (or vice versa), the first waitFor resolves and the test proceeds to the second. This is correct, but the two checks should be in a single waitFor to guarantee both calls happened in the same render cycle and avoid a race between assertions. As written, there is a window where the first assertion passes on a partial update and the second then times out rather than failing immediately.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct that two sequential waitFor blocks produce slow timeout failures instead of immediate failures if one assertion passes and the other doesn't. This is a real test design weakness. Though in this specific case both calls happen synchronously in the same effect making the partial-update scenario unrealistic, the pattern is still suboptimal.",
+      "severity_justification": "Both calls happen synchronously in the same useEffect so the partial-update failure mode is effectively impossible here. The concern is about test quality and diagnostic clarity rather than correctness, and the current single test works correctly.",
+      "category_justification": "The finding is about test design — the assertion structure could produce misleading failure diagnostics, which is a test quality issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.tsx",
+      "start_line": 90,
+      "end_line": 93,
+      "message": "The `useEffect` that calls the timeline's imperative API has `selectedEpisode` in its dependency array, but doesn't handle the case where `selectedEpisode` becomes `null`. If an episode is deselected, this effect will not run to clear the selection in the timeline component, causing the UI to show a stale selection.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The deselection case is handled by the declarative `selected={timelineSelection}` prop, which evaluates to `[]` when `selectedEpisode` is null. The useEffect's early return on null is correct — the imperative API calls are supplemental scroll/zoom behavior, and clearing the declarative selection is already handled by the prop.",
+      "severity_justification": "The finding describes a bug that doesn't actually exist given the declarative prop handling deselection.",
+      "category_justification": "The finding claims incorrect behavior on deselection, which would be a UI correctness bug if true.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.tsx",
+      "start_line": 58,
+      "end_line": 64,
+      "message": "The 'onRefChange' callback directly sets 'timelineRef.current' with 'api' and relies on all users of the 'timelineRef' to ensure the data's consistency. This could lead to hard-to-debug issues if the consumer of 'onRefChange' provides an invalid or unexpected API object.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `onRefChange` is a React ref callback called only by the Timeline library component via `useImperativeHandle`. The 'invalid or unexpected API object' scenario has no realistic path — the caller is controlled library code, not user input. The useEffect also already uses optional chaining to handle missing methods. The finding is too generic and doesn't identify a concrete issue.",
+      "severity_justification": "Even if the concern were valid, optional chaining on all API method calls already mitigates the runtime risk.",
+      "category_justification": "The concern is about defensive programming and data validation, which is a code quality/maintainability topic.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.tsx",
+      "start_line": 36,
+      "end_line": 54,
+      "message": "The 'dataSet' memoization logic employs equality comparisons for 'episodes'. If 'episodes' is replaced with a new array instance having the same content in the parent component, this could recalculate 'dataSet' unnecessarily due to shallow comparisons.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "This is a generic restatement of how React's `useMemo` reference equality works, applicable to any React component with array props. The finding doesn't identify a specific instance where the parent creates unnecessary new array references, and the data comes from a Reatom atom which provides stable references. No concrete issue is identified.",
+      "severity_justification": "Even if the concern were valid, an unnecessary dataSet recalculation is a minor performance issue with negligible impact.",
+      "category_justification": "The concern is about unnecessary recalculations due to reference equality in memoization.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.tsx",
+      "start_line": 89,
+      "end_line": 100,
+      "message": "The 'onSelect' callback interprets clusters (selection arrays with more than one id) by ignoring them. This behavior may be insufficient if clusters are valid inputs since the selection of clusters might require additional handling logic.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is pre-existing, intentionally designed behavior documented with a code comment (`// its cluster`). The finding is speculative ('may be insufficient') without identifying any concrete bug, missing requirement, or regression. The cluster-ignore logic was not changed by this PR.",
+      "severity_justification": "Even if cluster handling were desired, ignoring cluster selections is a contained, documented design decision with no demonstrated impact.",
+      "category_justification": "The finding questions whether the selection handling logic is complete, which is a correctness/behavior concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.test.tsx",
+      "start_line": 11,
+      "end_line": 16,
+      "message": "The test relies on a mocked implementation of '@konturio/ui-kit'. If the actual implementation differs significantly (e.g., context usage or required props), the real behavior in production could diverge, making these tests unreliable.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The mock accurately simulates the `useImperativeHandle` pattern the component relies on. The finding is a generic statement about mocking tradeoffs applicable to any test that mocks any external dependency — it doesn't identify a concrete mismatch or specific issue with this test's mock design.",
+      "severity_justification": "The concern is theoretical and applies universally to any unit test using mocks, with no concrete evidence of a real divergence risk here.",
+      "category_justification": "The finding questions test reliability due to mocking of external dependencies.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.test.tsx",
+      "start_line": 41,
+      "end_line": 60,
+      "message": "The test only validates 'setSelection' and 'focus', which are part of the mocked Timeline's imperative API. Additional assertions (e.g., on rendering consistency when 'selectedEpisode' changes) are necessary to ensure proper state synchronization.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic test coverage suggestion — 'add more assertions' — without identifying a specific missing case that would catch a real bug. The test was explicitly written to verify the new useEffect behavior (imperative focus/setSelection calls on episode change), which is exactly what this PR introduces. Suggesting additional assertions about 'rendering consistency' is vague and applicable to any test in any codebase.",
+      "severity_justification": "The existing test correctly covers the specific behavior introduced by this PR. The suggestion to add more assertions is speculative and doesn't identify a concrete gap that would allow a real bug to go undetected.",
+      "category_justification": "The finding is about test coverage and the scope of assertions in the new test.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.test.tsx",
+      "start_line": 9,
+      "end_line": 9,
+      "message": "This test imports `currentEpisodeAtom` via a deep relative path, but the rest of the codebase consistently uses the `~core/shared_state` path alias for this module (see e.g. `src/features/events_list/index.tsx:4-5`, `src/features/geometry_uploader/index.tsx:1,6,10`, `src/components/ConnectedMap/ScaleControl/ScaleControl.tsx:3`, and the production component being tested here also imports the model that wraps this atom). Consider switching to `import { currentEpisodeAtom } from '~core/shared_state';` for consistency.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the test imports `currentEpisodeAtom` via `'../../../../core/shared_state'` (deep relative path) at line 9, while all other files in the codebase that reference this atom use the `~core/shared_state` path alias (controller.ts, model.ts, autoClearCurrentEpisode.ts, episodeToFocusedGeometry.ts). The test file itself already uses `~core/types` on line 11, making the inconsistency within the same file.",
+      "severity_justification": "Pure style/convention inconsistency with no behavioral impact — both paths resolve to the same module. However, it violates an established and consistent convention in the codebase.",
+      "category_justification": "This is a code style/convention issue about import path consistency, not a bug or functional concern.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.tsx",
+      "start_line": 84,
+      "end_line": 97,
+      "message": "The imperative API is already routed through `eventEpisodesController.setTimelineImperativeApi` into the `episodesTimeline` atom (see `controller.ts:12` and `atoms/episodesTimeline.ts:30`), where actions like `resetZoom` live. Storing the API a second time in a local `timelineRef` and consuming it directly from the component bypasses that abstraction and splits the imperative-API consumers across two locations. Consider exposing a `focusEpisode`/`zoomToEpisode` action on the `episodesTimeline` atom (alongside `resetZoom`) and reacting to `currentEpisodeAtom` from there, keeping the component declarative.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Confirmed: the `episodesTimeline` atom stores the imperative API under `timelineKey` (line 30), but that Symbol is file-private and never read back — `resetZoom` has no `onAction` handler, making the atom-stored API dead code. The PR adds a second storage (`timelineRef`) that actually invokes the API, splitting consumers across two locations and bypassing the existing abstraction. The finding correctly identifies this architectural inconsistency.",
+      "severity_justification": "The duplication creates real drift risk: future callers may use the atom's `resetZoom` path (which is a no-op) or the ref path inconsistently. It's not an immediate bug but represents genuine architectural confusion that will complicate maintenance.",
+      "category_justification": "This is an architectural/abstraction inconsistency — dual storage of the imperative API, one path dead-coded and one bypassing the atom model — rather than a correctness or security issue.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/features/event_episodes/components/EpisodesTimeline/EpisodesTimeline.test.tsx",
+      "start_line": 16,
+      "end_line": 18,
+      "message": "This Vitest mock factory closes over top-level bindings (`forwardRef`, `useImperativeHandle`, `focus`, and `setSelection`). `vi.mock` calls are hoisted before these variables are initialized, so the test can fail during module mocking with Vitest 3.x. Define the functions inside the factory or use `vi.hoisted`/dynamic imports for values needed by the mock.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding incorrectly claims the test 'can fail' due to vi.mock hoisting. (1) `forwardRef` and `useImperativeHandle` are ES module import live bindings, which are available even in hoisted factory context — no TDZ issue. (2) `focus` and `setSelection` are only READ inside the lazily-executed `useImperativeHandle` inner callback during component render, not during factory execution. Creating a closure over an uninitialized `const` does not trigger a TDZ error — only reading it does. By the time the inner callback executes during `render()`, both variables are fully initialized.",
+      "severity_justification": "Even if the concern were valid, it would only manifest as a test failure rather than a production issue. But the concern is factually incorrect for this specific pattern.",
+      "category_justification": "The finding is about test code correctness and Vitest's vi.mock hoisting behavior.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

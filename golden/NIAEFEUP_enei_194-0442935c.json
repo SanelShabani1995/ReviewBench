@@ -1,0 +1,519 @@
+{
+  "pr_key": "NIAEFEUP_enei_194-0442935c",
+  "pr": {
+    "repo": "https://github.com/NIAEFEUP/enei",
+    "pr_number": 194,
+    "base": "a74461de5337f3618effdcdb6f115dccd2f94a15",
+    "head": "0442935c8fe466a2f1115b76240c9ad9df2be1e5"
+  },
+  "findings": [
+    {
+      "file": "apps/website/app/controllers/events_controller.ts",
+      "start_line": 106,
+      "end_line": 109,
+      "message": "Missing `await` on `this.eventService.isRegistered(user!, event)`. The method is async and returns a Promise<boolean>. Without await, the condition checks the truthiness of a Promise object, which is always true. As a result, `!Promise` is always `false` and the check never fires — any user can be checked in regardless of whether they are actually registered for the event.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `eventService.isRegistered` is declared `async` and returns `Promise<boolean>`. The call at the check-in guard lacks `await`, so the condition evaluates `!Promise<boolean>` which is always `false`. The guard never fires and unregistered users can be checked in.",
+      "severity_justification": "A core business logic check — whether a user is registered before allowing check-in — is completely bypassed, allowing unauthorized check-ins for any participant.",
+      "category_justification": "Logic error: missing await causes the async guard condition to always evaluate to false, producing wrong runtime behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/controllers/events_controller.ts",
+      "start_line": 104,
+      "end_line": 116,
+      "message": "`User.findBy` can return `null` if no user has that `participantProfileId`, but there is no null guard before the `user!` non-null assertions on lines 106, 111, and 116. If a participant profile exists but has no associated user row, all three calls will throw a runtime exception.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `User.findBy` returns `User | null`. The code has no null guard on `user` before using `user!` on lines 106, 111, and 116. If a ParticipantProfile has no associated User, all three calls will throw a runtime exception.",
+      "severity_justification": "This would cause a 500 error in a data integrity edge case (orphaned ParticipantProfile), but requires a specific DB inconsistency to trigger. Still a real runtime crash path that should be guarded.",
+      "category_justification": "Missing null guard leads to a runtime exception when `User.findBy` returns null.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/inertia/components/events/event_check_in_dialog.tsx",
+      "start_line": 18,
+      "end_line": 26,
+      "message": "React hooks (`useTuyau`, `useForm`) are called after a conditional `return null` on line 19, violating the Rules of Hooks. React requires hooks to be called unconditionally on every render. When `isOpen` transitions between true and false, the number of hooks called changes and React will throw an error at runtime.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `useTuyau` and `useForm` are called after `if (!isOpen) return null` on line 19, directly violating the Rules of Hooks. The hook call count changes between renders depending on `isOpen`, which React will flag as an error at runtime.",
+      "severity_justification": "This violates a fundamental React invariant and will throw a runtime error when the dialog transitions between open and closed states, breaking the check-in UI entirely.",
+      "category_justification": "Violating the Rules of Hooks is a correctness issue that causes runtime errors in React.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/inertia/pages/events/show/page.tsx",
+      "start_line": 290,
+      "end_line": 315,
+      "message": "The QR-code check-in button is placed inside the `{!isRegistered && ...}` block, so it only appears to a staff user who is not themselves registered for the event. A staff user who is registered (or viewing events where registration is irrelevant) will never see the check-in button. The check-in trigger should be rendered independently of the current user's registration status.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the QrCode check-in button is nested inside `{!isRegistered && ...}`, so a staff user who is personally registered for the event will never see it. Check-in capability should be independent of the staff member's own registration status.",
+      "severity_justification": "Staff members who are also registered for an event lose access to the check-in button entirely, which breaks a core workflow for those users.",
+      "category_justification": "The check-in button is incorrectly gated by the wrong condition, causing it to be unavailable in a valid use case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/database/migrations/1743633554088_create_create_event_checkins_table.ts",
+      "start_line": 9,
+      "end_line": 11,
+      "message": "The foreign keys on `event_id` and `user_id` have no `onDelete` rule. If a referenced event or user is deleted, the database will either reject the delete (constraint error) or leave orphaned checkin rows, depending on the DB engine. At minimum, `.onDelete('cascade')` should be specified to keep referential integrity consistent with how the rest of the schema handles this.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the existing `event_users` pivot table (the direct analog for registrations) uses `.onDelete('CASCADE')` on both `event_id` and `user_id`. The new `event_checkins` migration omits `onDelete` entirely, which is inconsistent with the established pattern and leaves referential integrity undefined.",
+      "severity_justification": "Without cascade delete, deleting an event or user would either fail with a constraint error or leave orphaned check-in rows, depending on DB engine defaults. This is a data integrity issue consistent with a medium severity.",
+      "category_justification": "Missing onDelete rules create referential integrity inconsistency that can cause constraint errors or orphaned data.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/services/event_service.ts",
+      "start_line": 33,
+      "end_line": 38,
+      "message": "`event.save()` is called inside `checkin` after attaching the pivot record, but no fields on the `event` model are modified before the save. This is a no-op and is misleading — it implies an event-level field is being persisted when it isn't. If the intent is to eventually update a `checkin_count` column or similar, that logic is missing; otherwise the call should be removed.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: in `checkin`, no event model fields are modified before `event.save()`. The `attach` call handles the pivot table directly. Compare with `register` where `event.ticketsRemaining--` makes the save meaningful. The `event.save()` in `checkin` is a no-op and misleading.",
+      "severity_justification": "A no-op save call has no functional impact but creates misleading code that implies state change. It's a minor maintainability issue.",
+      "category_justification": "The unnecessary `event.save()` call is misleading and implies a side effect that doesn't exist, reducing code clarity.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/models/user.ts",
+      "start_line": 113,
+      "end_line": 115,
+      "message": "`isStaff()` now returns `this.staffProfileId` which has type `number | undefined`. Callers that relied on a boolean-like return still work due to JS truthiness, but if `staffProfileId` were ever `0` the check would silently fail. The return type should be explicitly boolean with a `!= null` / `!= undefined` coercion to avoid misleading callers and prevent a potential edge-case bug.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `isStaff()` returns `this.staffProfileId` typed as `number | undefined` instead of a boolean. The `staffProfileId === 0` edge case is negligible with auto-increment IDs, but the return type is genuinely misleading and a boolean coercion (`return this.staffProfileId != null`) would be cleaner and type-safe.",
+      "severity_justification": "Auto-increment IDs never produce 0 so the bug risk is negligible, but the misleading return type is a real maintainability concern.",
+      "category_justification": "The function returns a raw ID value instead of a proper boolean, creating a misleading return type for a predicate method.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/database/seeders/mock_staff_profile_seeder.ts",
+      "start_line": 11,
+      "end_line": 11,
+      "message": "The seeder creates a `StaffProfile` without associating it with a `Department`, but `departmentId` is a required foreign key on the `staff_profiles` table. This will cause the seeder to fail.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the `staff_profiles` migration defines `department_id` without `.notNullable()`, making it nullable by default in Knex. The seeder creating a `StaffProfile` without a department association will not fail.",
+      "severity_justification": "The finding is factually wrong — the column is nullable so there is no actual failure scenario.",
+      "category_justification": "The finding makes an incorrect claim about a database constraint.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/inertia/components/events/event_check_in_dialog.tsx",
+      "start_line": 40,
+      "end_line": 40,
+      "message": "The `handleCheckIN` function optimistically closes the dialog on success (`setOpen(false)`). However, `post` is asynchronous, and closing the dialog immediately might not reflect the true state if the user navigates away or another action happens. Consider removing `setOpen(false)` and letting the redirect handle the UI update, as this might be a more robust approach.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`setOpen(false)` is called inside the `onSuccess` callback, which fires only after the server confirms success — not optimistically. The finding mischaracterizes this as a race condition. The suggestion to rely on a redirect instead is vague and not clearly better in an Inertia SPA context.",
+      "severity_justification": "No real bug or reliability issue identified.",
+      "category_justification": "The finding attempts to identify a reliability concern but the characterization is incorrect.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/inertia/components/events/event_check_in_dialog.tsx",
+      "start_line": 34,
+      "end_line": 34,
+      "message": "The `try...catch` block around the Inertia `post` call is ineffective. Inertia's `post` method does not throw exceptions for failed HTTP requests (like 4xx or 5xx responses); instead, it handles them through the `onError` callback. This `try...catch` will only catch errors that occur during the synchronous setup of the request, not network or server errors.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: Inertia's `useForm` `post` method routes HTTP errors through `onError` callback, not thrown exceptions. The `try/catch` only catches synchronous errors from the URL construction, not network/server failures, giving a false sense of complete error coverage.",
+      "severity_justification": "The `onError` callback already handles server errors, so the gap in the try/catch doesn't leave errors truly unhandled — it's misleading rather than functionally broken.",
+      "category_justification": "The error handling pattern is misleading and doesn't provide the coverage the developer likely intended.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/models/user.ts",
+      "start_line": 104,
+      "end_line": 104,
+      "message": "The `isStaff()` method now relies on `this.staffProfileId` being present. However, loading `staffProfile` no longer automatically loads `staffProfileId`. This means `user.isStaff()` can return a false negative if `staffProfileId` is not explicitly selected or loaded, which could lead to incorrect authorization checks. The previous implementation (`return this.staffProfile;`) was more robust as it checked for the loaded relation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`staffProfileId` is a `@column()` field that is always fetched with the User row in any standard Lucid query. The old `this.staffProfile` (a `@belongsTo` relation) was less reliable as it required explicit preloading. The finding has the reliability argument backwards.",
+      "severity_justification": "The finding is factually incorrect so no real issue exists.",
+      "category_justification": "The finding makes an incorrect claim about how ORM columns vs relations are loaded.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/models/user.ts",
+      "start_line": 98,
+      "end_line": 98,
+      "message": "The order of checks in the `role` getter is `staff`, `participant`, `promoter`. This differs from the apparent priority in other parts of the codebase (e.g., `role` in `use_auth.tsx` is `participant`, `promoter`, `staff`). While not a bug now, this inconsistency could lead to subtle issues later if a user can have multiple roles. It's better to standardize the role priority across the application.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding claims `use_auth.tsx` has a different role priority order (`participant`, `promoter`, `staff`), but the actual `use_auth.ts` file contains no role ordering logic at all — it just returns the auth object from Inertia's shared props. The premise of the finding is factually wrong.",
+      "severity_justification": "The finding is based on a false claim about the codebase.",
+      "category_justification": "The finding attempts to flag a consistency issue but is based on an incorrect claim.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/controllers/events_controller.ts",
+      "start_line": 93,
+      "end_line": 95,
+      "message": "The 'checkin' function uses the 'eventID' request input directly without validating its existence or type, potentially leading to unhandled errors if 'eventID' is missing or invalid.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `eventID` input is used without validation. If missing, `findOrFail(null)` throws a ModelNotFoundException handled by AdonisJS as a 404. The concern is real but the finding overstates it as 'unhandled' — AdonisJS's exception handler manages these cases. Still a valid missing-validation observation.",
+      "severity_justification": "AdonisJS's `findOrFail` and global exception handler prevent truly unhandled errors; the risk is limited to inconsistent error responses rather than crashes.",
+      "category_justification": "Missing input validation can lead to inconsistent error handling behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/controllers/events_controller.ts",
+      "start_line": 98,
+      "end_line": 100,
+      "message": "The 'profile' lookup relies on the 'slug' parameter but assumes it exists and is formatted correctly without validating, which could result in a runtime error or unintended behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`params.slug` is guaranteed by the route pattern `/:slug/check-in` — a missing slug won't match the route. Any slug value (regardless of format) causes `findBy` to return null, which is already handled by the explicit null check. No concrete failure scenario exists.",
+      "severity_justification": "No actual failure scenario identified — the finding is generic advice about validation without a concrete issue.",
+      "category_justification": "The finding attempts to flag input validation but the existing null guard already covers the case.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/middleware/staff_middleware.ts",
+      "start_line": 7,
+      "end_line": 10,
+      "message": "Flash errors are added to the session with a generic message 'Unauthorized', which could confuse the end-user about the exact reason for lack of access.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic UX/copy suggestion with no concrete code issue. The message 'Unauthorized' is factually accurate for a staff-only middleware rejecting a non-staff user. The finding offers no specific alternative tied to the codebase context and could be copy-pasted onto any project using generic error messages.",
+      "severity_justification": "No functional issue; purely a cosmetic/UX preference about error message wording.",
+      "category_justification": "The finding is about user-facing message clarity, which is a UX concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/models/event.ts",
+      "start_line": 55,
+      "end_line": 57,
+      "message": "The 'checkedInUsers' relation is defined, but potential concurrency conflicts between check-in operations on the same event-user pair aren't addressed explicitly.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is too generic to be actionable — it vaguely mentions 'concurrency conflicts' without identifying the specific TOCTOU race, the actual failure mode (unhandled unique constraint violation), or a concrete remediation. The unique DB constraint does provide protection. This could be copy-pasted onto any check-then-insert pattern in any codebase.",
+      "severity_justification": "Even if a race occurred, the unique constraint would prevent duplicate check-ins at the DB level; the worst outcome is an unhandled exception rather than data corruption.",
+      "category_justification": "The finding attempts to raise a concurrency/reliability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/services/event_service.ts",
+      "start_line": 10,
+      "end_line": 12,
+      "message": "The 'isCheckedIn' function directly queries for 'user_id' but does not validate the 'user' object before performing the operation, potentially causing mismatched assumptions of input validity.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The method is typed `user: User` so TypeScript enforces a valid User is passed. The null-safety concern at call sites (using `user!`) is a separate finding already covered. This finding is generic advice about validating typed parameters that could apply to any TypeScript method.",
+      "severity_justification": "No concrete failure path in this specific method.",
+      "category_justification": "The finding attempts to flag input validation but is too generic to be actionable.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/start/routes.ts",
+      "start_line": 203,
+      "end_line": 206,
+      "message": "The 'check-in' route assumes staff privileges without verifying the entirety of the required authorization context, which could lead to improper access control.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The check-in route uses `middleware.staff()` which calls `getUserOrFail()` (enforces authentication) and checks `isStaff()`. This matches the existing pattern for the `product/collect` staff route. The finding doesn't identify a specific missing authorization check or concrete exploit path — it's a vague generic claim.",
+      "severity_justification": "No concrete security gap identified.",
+      "category_justification": "The finding attempts to flag an access control issue.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/database/seeders/8_staff_seeder.ts",
+      "start_line": 23,
+      "end_line": 25,
+      "message": "The seed data includes a hardcoded department ID '99', which may conflict with existing data or violate uniqueness constraints in a production scenario.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The seeder hardcodes `id: 99` without an environment guard, unlike other seeders in the project that check environment or use the `.dev.ts` naming convention. Running this against a DB with an existing department ID 99 would cause a unique constraint failure.",
+      "severity_justification": "Seeders are primarily development tools, so the risk is limited. However, the lack of an environment guard (inconsistent with the codebase pattern) makes it a real concern.",
+      "category_justification": "Hardcoded ID in a seeder without environment protection can cause constraint failures when re-run or run in unexpected environments.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/services/event_service.ts",
+      "start_line": 19,
+      "end_line": 19,
+      "message": "Shouldn't this be\r\n```suggestion\r\n      .where(\"user_id\", user.id)\r\n```\r\n?",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at line 19 already reads `.where(\"user_id\", user.id)`, which is identical to the suggestion. There is no difference between the current code and the proposed change.",
+      "severity_justification": "The finding is factually incorrect — the code already matches the suggestion.",
+      "category_justification": "The finding makes an incorrect claim about what the code currently contains.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "Naapperas",
+        "url": "https://github.com/NIAEFEUP/enei/pull/194#discussion_r2028593515",
+        "created_at": "2025-04-04T10:57:20Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "0442935c8fe466a2f1115b76240c9ad9df2be1e5"
+      }
+    },
+    {
+      "file": "apps/website/app/controllers/events_controller.ts",
+      "start_line": 95,
+      "end_line": 95,
+      "message": "```suggestion\r\n    const profile = await ParticipantProfile.findBy(\"slug\", params.slug)\r\n    // FIXME: change this to User when slug in user is ready\r\n```",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggestion only removes a trailing semicolon from line 95. This is a purely cosmetic change with no functional impact, making it sub-threshold.",
+      "severity_justification": "Removing a semicolon has no functional impact whatsoever.",
+      "category_justification": "Pure style/formatting suggestion.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "tomaspalma",
+        "url": "https://github.com/NIAEFEUP/enei/pull/194#discussion_r2038340614",
+        "created_at": "2025-04-10T21:07:54Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "0442935c8fe466a2f1115b76240c9ad9df2be1e5"
+      }
+    },
+    {
+      "file": "apps/website/inertia/pages/events/show/page.tsx",
+      "start_line": 313,
+      "end_line": 315,
+      "message": "Attaching an `onClick` handler directly to the `QrCode` Lucide icon (an SVG) creates a non-accessible control: it is not focusable via keyboard, exposes no role/name to assistive technology, and lacks the visual affordances of a button. Please wrap it in a `<Button>` (matching the surrounding usage of `~/components/ui/button`) or another semantically appropriate interactive element with an `aria-label`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the file: the QrCode icon has a bare onClick handler with no wrapper Button, no role attribute, no aria-label, and no tabIndex. The surrounding code consistently uses the Button component for interactive elements. The icon is not keyboard-accessible and exposes no semantic role to assistive technology.",
+      "severity_justification": "Affects accessibility for staff users only, and only in this specific UI element. It's a real issue but staff-facing and non-blocking for core functionality.",
+      "category_justification": "The finding is about keyboard accessibility, semantic roles, and assistive technology — all a11y concerns.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/app/middleware/staff_middleware.ts",
+      "start_line": 9,
+      "end_line": 10,
+      "message": "If a non-staff but authenticated user lands on this route, `response.redirect().back()` will redirect them to the previous page, which may itself be protected by this middleware (or be the same page), creating a redirect loop or simply being a no-op when no referrer is available. Consider redirecting to a safe public route (e.g. the home page) as a fallback when there's no usable referrer.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Both staff-protected routes are POST action endpoints called from non-staff-protected GET pages, so a redirect loop is not possible with the current route structure. The 'no-op when no referrer available' claim is also inaccurate: AdonisJS redirect().back() defaults to '/' when no Referer header is present. The finding is a generic caution that doesn't apply to the actual code.",
+      "severity_justification": "Even if the concern were valid, the impact would be limited UX friction for staff users hitting an unauthorized endpoint directly.",
+      "category_justification": "The concern is about redirect behavior and potential loops/dead-ends in the HTTP flow.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/inertia/pages/events/show/page.tsx",
+      "start_line": 313,
+      "end_line": 315,
+      "message": "This interactive QR icon is rendered as a bare SVG with only a mouse `onClick`, so it is not keyboard-focusable and has no accessible name for assistive technologies. Use an actual button (or equivalent keyboard and ARIA handling) for the scanner trigger.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same issue as Finding 1, verified against the file: QrCode Lucide icon has a bare onClick with no Button wrapper, no tabIndex, no role, and no aria-label, making it inaccessible to keyboard users and assistive technologies.",
+      "severity_justification": "Real accessibility gap but limited to staff users in a specific UI element; non-blocking for core functionality.",
+      "category_justification": "The finding is specifically about keyboard focusability and ARIA/assistive technology exposure.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/website/inertia/components/events/event_check_in_dialog.tsx",
+      "start_line": 28,
+      "end_line": 30,
+      "message": "`CredentialScanner` is configured to emit repeated scans (`allowMultiple` with zero delay), but this handler posts every scan without any processing guard or debounce. A single QR code can therefore submit multiple concurrent check-in requests before the dialog closes, racing the unique `event_checkins` constraint and surfacing duplicate/500 errors instead of one successful check-in.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: scanner has allowMultiple=true and scanDelay=0, handleCheckIN has no processing guard (useForm's processing state is not even destructured), and the dialog only closes on onSuccess. Multiple concurrent POSTs will race past the isCheckedIn check and hit the DB unique constraint, producing 500 errors.",
+      "severity_justification": "The race is easily triggered in normal use — a camera scanning a QR code will fire many events at 0ms delay. The result is error toasts/500s instead of a clean check-in, degrading the primary staff workflow.",
+      "category_justification": "Concurrent request race condition caused by missing processing guard and aggressive scan settings.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

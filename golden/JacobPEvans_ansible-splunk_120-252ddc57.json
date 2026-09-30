@@ -1,0 +1,271 @@
+{
+  "pr_key": "JacobPEvans_ansible-splunk_120-252ddc57",
+  "pr": {
+    "repo": "https://github.com/JacobPEvans/ansible-splunk",
+    "pr_number": 120,
+    "base": "7605ceb952066b3e0d2825ec26e42caf1f6cd68b",
+    "head": "252ddc5745e35ff113181c51520891048e348efc"
+  },
+  "findings": [
+    {
+      "file": "CLAUDE.md",
+      "start_line": 7,
+      "end_line": 9,
+      "message": "Reference to `~/git/CLAUDE.md` is a home-directory-relative path that only works on the author's personal machine. CI environments and any other contributor's machine will not find this file, making the pointer to the global LXC-first rule non-functional for everyone but the author.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `~/git/` path convention is intentional and used consistently throughout this project — in AGENTS.md, inventory YAML, and shell scripts with actual executable paths. CLAUDE.md is an AI-assistant instructions file, not executed by CI. This is a single-developer personal homelab project where this convention is the established norm.",
+      "severity_justification": "Even if the reference were problematic, it's in a documentation/AI-instructions file with no runtime impact.",
+      "category_justification": "The finding concerns a cross-reference path in a documentation/AI-instructions file.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "CLAUDE.md",
+      "start_line": 47,
+      "end_line": 47,
+      "message": "Same `~/git/CLAUDE.md` machine-specific path problem in the Sources of Truth table. 'Pipeline architecture' is pointed at a path that doesn't exist in CI or on other machines.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Identical claim to Finding 1 — the `~/git/CLAUDE.md` path in the Sources of Truth table is the same intentional project-wide `~/git/` convention used throughout this single-developer personal homelab repo. Not a real issue in this context.",
+      "severity_justification": "Documentation reference in an AI-instructions file with no runtime impact; the convention is intentional.",
+      "category_justification": "The finding concerns a cross-reference path in a documentation table.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "CLAUDE.md",
+      "start_line": 12,
+      "end_line": 12,
+      "message": "\"There is no supported native install path\" for Splunk is factually incorrect. Splunk publishes official .deb, .rpm, and .tgz native Linux packages. Stating Docker is the only option is misleading and weakens the actual justification for this exception, which should be operational consistency with the image-based deployment already in place.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The diff hunk (which instructions say to trust when it disagrees with checkout) shows the new CLAUDE.md text as 'Native Linux package and tarball installs exist, but they are out of scope here.' — which correctly acknowledges native installs exist. The text 'There is no supported native install path' that the finding critiques does not appear in the diff's new version of CLAUDE.md.",
+      "severity_justification": "Even if the problematic text were present, it is in an AI-instructions documentation file and would be low-impact.",
+      "category_justification": "The finding is about factual accuracy of a statement in documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".claude/rules/nix-tool-execution.md",
+      "start_line": 1,
+      "end_line": 15,
+      "message": "This file is deleted, but the stated replacement (nix-ai#420) is listed as a 'Blocking' dependency — meaning it is not yet merged. If this PR lands before nix-ai#420, AI sessions working in this repo will have no nix tool execution rules at all, creating a window where tools could be installed globally via pip/pipx or prefixed with `uv run`, exactly the failure mode the rule existed to prevent.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `.claude/rules/` directory is confirmed absent at SHA 252ddc57 and no equivalent pip/pipx/uv-run restriction exists in CLAUDE.md or AGENTS.md. The PR description explicitly marks nix-ai#420 as 'Blocking' (not yet merged), confirming a real window where the rule is absent.",
+      "severity_justification": "The gap affects AI agent behavior in a dev environment only. The worst case is a broken tool after nix garbage collection — an operational inconvenience, not a production or security issue.",
+      "category_justification": "The risk is an operational one: dev tooling could be misconfigured during the window between these two PRs landing.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "roles/splunk_docker/README.md",
+      "start_line": 98,
+      "end_line": 98,
+      "message": "The token derivation snippet `python3 -c \"import uuid; print(uuid.uuid5(uuid.UUID('$HEC_NAMESPACE'), ...))\"` does not use `doppler run --` to populate the environment. If $HEC_NAMESPACE is unset (i.e., Doppler is not loaded), `uuid.UUID('')` raises a ValueError. The same HEC section added by this PR uses `doppler run --` for the setup command (line 88) but omits it here, creating an inconsistency that will cause silent failures.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The snippet will fail with a ValueError if $HEC_NAMESPACE is unset, and it's inconsistent with adjacent commands in the same section that use `doppler run --`. The 'silent failure' characterization is inaccurate (ValueError is visible), but the core issue — missing `doppler run --` creating an inconsistency — is verifiable and real.",
+      "severity_justification": "This is a documentation snippet. Failure is visible (ValueError traceback, not silent). The impact is minor friction for users following the README.",
+      "category_justification": "The issue is an inconsistency/omission in a documentation code snippet rather than production code.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "roles/splunk_docker/README.md",
+      "start_line": 105,
+      "end_line": 105,
+      "message": "`~/git/nix-ai/main/modules/mcp/default.nix` is a machine-specific home directory path. This reference, added by this PR in the new MCP Server Verification section, will not resolve on any machine other than the author's and gives no actionable path to operators in CI or on different workstations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `~/git/` convention is intentional and consistent across the entire project. The exact same path `~/git/nix-ai/main/modules/mcp/default.nix` already exists in AGENTS.md (pre-existing). This PR merely relocates the reference from CLAUDE.md to the role README. Single-developer personal homelab project where this convention is the norm.",
+      "severity_justification": "Documentation reference in an AI-instructions/README file with no runtime impact.",
+      "category_justification": "The finding concerns a cross-reference path in a documentation file.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "roles/splunk_docker/README.md",
+      "start_line": 71,
+      "end_line": 98,
+      "message": "The new HEC Token Setup section added by this PR describes HEC_NAMESPACE as the primary mechanism, but the existing Requirements section at line 24 (unchanged in this PR) still says `SPLUNK_HEC_TOKEN` is required. This PR creates an internal contradiction in the same file it edits: an operator following the Requirements section will set the wrong secret, while the new HEC section describes a different approach. The Requirements section needed updating as part of this change.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The Requirements section (line 23) still says `SPLUNK_HEC_TOKEN` is required, while the new HEC Token Setup section added by this PR describes `HEC_NAMESPACE` as the derivation mechanism without mentioning `SPLUNK_HEC_TOKEN`. AGENTS.md confirms `HEC_NAMESPACE` is primary and `SPLUNK_HEC_TOKEN` is a legacy fallback. This PR created an internal contradiction by adding the HEC section without updating the Requirements section.",
+      "severity_justification": "It's a documentation contradiction in a role README. An operator following it would set the wrong secret but the fallback mechanism still exists, so it's misleading rather than breaking.",
+      "category_justification": "The issue is a stale/contradictory requirement statement in a role README introduced by this PR's partial update.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "roles/splunk_docker/README.md",
+      "start_line": 14,
+      "end_line": 14,
+      "message": "The SPLUNK_HEC_TOKEN is stated as required, but its fallback mechanism or validation process is not described here. This could lead to deployment failures if the variable is missing or incorrectly set.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The line reference (14) is incorrect — SPLUNK_HEC_TOKEN appears at line 23. That line was not touched by this PR. The claim is also generic boilerplate: 'required variable lacks fallback documentation could cause deployment failures' could be applied to any project's required variable without referencing anything specific to this code.",
+      "severity_justification": "Even if valid, it's a minor documentation gap on a pre-existing line in a role README.",
+      "category_justification": "The finding concerns documentation completeness for a required variable.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "roles/splunk_docker/README.md",
+      "start_line": 40,
+      "end_line": 40,
+      "message": "The default value of 'splunk_docker_firewall_enabled' is false, which disables the guest firewall. This might pose a security risk as the default behavior could leave the container exposed in cases where Proxmox firewall configuration is not correctly applied.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The firewall-disabled default is a pre-existing, intentional design decision documented in both the role's variable table and CLAUDE.md's Critical Constraints (Docker DNAT conflicts with iptables FORWARD chain). The line is not modified by this PR. The finding is generic boilerplate security advice with no concrete exploit path demonstrated.",
+      "severity_justification": "Even if worth noting, this is a pre-existing intentional design decision with documented rationale, not a new risk.",
+      "category_justification": "The finding concerns a firewall configuration default.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "roles/splunk_docker/README.md",
+      "start_line": 52,
+      "end_line": 54,
+      "message": "The example for 'splunk_docker_addons' includes a variable 'splunk_docker_unifi_ta_version' without sufficient context on where and how to define it, potentially leading to confusion or an undefined variable error.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The section is pre-existing and not touched by this PR. The variable `splunk_docker_unifi_ta_version` has a defined default in `defaults/main.yml` (value: `1.0.2+00b9ecb`), so there's no undefined variable risk. The README already points to `defaults/main.yml` for variable definitions.",
+      "severity_justification": "No actual runtime risk — the variable has a default. The complaint is cosmetic documentation completeness.",
+      "category_justification": "The finding is about documentation clarity in a code example in a role README.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "roles/splunk_docker/README.md",
+      "start_line": 89,
+      "end_line": 89,
+      "message": "The command to set HEC_NAMESPACE in Doppler does not verify if the namespace is already set or provide any guidance on how to handle overlaps, leading to potential token derivation issues.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The section is explicitly titled 'One-time Doppler Setup', signaling it should not be re-run. The finding's concern (no idempotency check) is generic best-practice advice applicable to any one-time setup command, not a specific issue with this code.",
+      "severity_justification": "The risk is theoretical and already mitigated by the 'One-time' section label.",
+      "category_justification": "The finding is about documentation completeness for a setup command snippet.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "roles/splunk_docker/README.md",
+      "start_line": 127,
+      "end_line": 129,
+      "message": "The example curl command for verifying MCP connectivity exposes Splunk admin credentials in plaintext within the URL, which could lead to potential security risks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's core claim is factually wrong: curl's `-u` flag sends credentials via HTTP Basic Auth header, not in the URL. The password is also an environment variable reference (`$SPLUNK_PASSWORD`), not a hardcoded value. No actual credentials are exposed.",
+      "severity_justification": "Even if the concern were valid, it's a documentation example snippet using env vars, not production code with hardcoded secrets.",
+      "category_justification": "The finding concerns credential exposure in a command example.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "roles/splunk_docker/README.md",
+      "start_line": 121,
+      "end_line": 123,
+      "message": "This direct REST test uses `$SPLUNK_PASSWORD` outside a Doppler-injected command even though the document and repo convention say secrets live in Doppler. Users who follow the verification steps from a normal shell will send an empty password; either run the curl command under Doppler or show an explicit secret export step.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The curl command at lines 121-123 uses `$SPLUNK_PASSWORD` without a `doppler run --` prefix, unlike the ansible-playbook command directly above it. In a normal shell, `$SPLUNK_PASSWORD` would be empty since Doppler doesn't inject secrets unless invoked via `doppler run --`. This is a factually correct observation about a concrete usability/correctness issue in the newly added documentation.",
+      "severity_justification": "This is a documentation/example issue that would cause a confusing authentication failure for users following the verification steps, but it doesn't affect the actual deployment or security posture — it's a command example in a README.",
+      "category_justification": "The issue is in a documentation snippet (README.md command example) showing incorrect usage that contradicts the repo's stated convention of using Doppler for secrets.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

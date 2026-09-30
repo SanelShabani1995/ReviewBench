@@ -1,0 +1,551 @@
+{
+  "pr_key": "NKUST-ITC_NKUST-AP-Flutter_349-9586cd0a",
+  "pr": {
+    "repo": "https://github.com/NKUST-ITC/NKUST-AP-Flutter",
+    "pr_number": 349,
+    "base": "e6954505205e110648ebb1487ed2b69c137a5942",
+    "head": "9586cd0abc7db9ca86686e592c2a808f0f26b32f"
+  },
+  "findings": [
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 373,
+      "end_line": 385,
+      "message": "Once a service session is marked `ready`, `_ensureServiceSession` short-circuits and returns immediately for all non-stdsys services (leave, mobile, oosaf) — the condition `service != WebApServiceType.stdsys` is always `true` for those types, so the early return always fires. The previous code always re-ran the full handshake on every call. `LeaveHelper.leavesSubmit()` explicitly calls `loginToLeave()` with the comment 'force relogin to avoid error' to refresh the leave session before submission; that refresh no longer happens once the state is `ready`. If the service-side session expires (server timeout, restart, etc.) independently of the WebAp session, callers will proceed with stale cookies and see unexplained request failures with no retry path.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: for non-stdsys services, `service != WebApServiceType.stdsys` is always `true`, so the early return always fires once state is `ready`. There is no time-based expiry or server-side rejection recovery path for these service sessions. `LeaveHelper.leavesSubmit()` explicitly calls `loginToLeave()` with comment 'force relogin to avoid error' — that contract is silently broken by this change.",
+      "severity_justification": "Callers like `leavesSubmit()` that depended on mandatory re-authentication will silently proceed with stale leave-service cookies after server-side session expiry, causing unexplained failures with no automatic recovery. User-visible workflow (leave submission) is affected.",
+      "category_justification": "Logic error: refactoring changed intended behavior — mandatory re-handshake on each `loginToLeave()` call from `leavesSubmit()` — without preserving the semantic guarantee that callers relied on.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 335,
+      "end_line": 350,
+      "message": "`_verifyWebApSession` catches all exceptions and returns `false`, treating every transient network error (timeout, DNS failure, server hiccup) as a failed session. A login that succeeds correctly is then invalidated by a flaky network hit on the verification step, causing `_authenticateWithVerify` to call `_markWebApExpired` and throw 'verify webap session failed'. The session ends up in `failed` state due to a transient condition, forcing callers to surface a hard error rather than retrying.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `_verifyWebApSession` catches all exceptions and returns `false`, with no distinction between a genuine expired session (parser code == 2) and a transient network error. `_authenticateWithVerify` then calls `_markWebApExpired()` and throws, setting the state to `failed` — treating a transient network fault as a hard session failure.",
+      "severity_justification": "A real login success can be silently treated as a session failure when there's any transient network issue during the verification step, causing the user to see an error they shouldn't. The session lands in `failed` state with no in-path retry for the verify step itself.",
+      "category_justification": "The issue is about inadequate error handling of transient conditions — a network timeout or fluke during verification incorrectly triggers the same code path as a genuine session expiry, undermining fault tolerance.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 629,
+      "end_line": 644,
+      "message": "Concurrent `apQuery` callers each maintain their own local `retryCount` and write to the shared `_backoffUntil` field independently. If caller A is on retryCount=2 (backoff=600ms) and caller B is on retryCount=1 (backoff=300ms), B's later write overwrites A's, so the login future waits only 300ms instead of the 600ms the exponential strategy intended. The static `reLoginReTryCounts` assignment has the same race: the last writer wins, leaving an inconsistent retry count visible to other code that inspects it.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `_backoffUntil` and the static `reLoginReTryCounts` are shared fields written by concurrent `apQuery` callers using their own local `retryCount`. Last writer wins, so a low-retryCount caller can shorten the backoff set by a higher-retryCount caller. The finding is factually correct.",
+      "severity_justification": "The functional impact is limited: `reLoginReTryCounts` isn't used for apQuery's loop control (local `retryCount` is), and `_backoffUntil` being shortened only reduces intended backoff duration rather than bypassing auth entirely. The single-flight mechanism still prevents duplicate logins.",
+      "category_justification": "This is a concurrency/race condition affecting shared mutable state — a reliability concern rather than a correctness or security issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 180,
+      "end_line": 189,
+      "message": "`login()` handles parser code 4 ('stay old password') by calling `stayOldPwd()` and then recursively calling `login()` with the same `retryCounts` value, not decrementing it. If the server repeatedly returns code 4 (e.g., `stayOldPwd` doesn't fix the condition), the recursion is unbounded and will overflow the stack. The PR explicitly modifies this code path (threading `sessionEpoch` through the recursion) without fixing the termination gap.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the recursive `login()` call for code 4 passes the same `retryCounts` without decrement, leaving the recursion unbounded if the server repeatedly returns code 4. The finding is factually correct. The PR modified this code path (adding sessionEpoch threading) without addressing the termination gap.",
+      "severity_justification": "Code 4 is a one-time 'stay old password' prompt and `stayOldPwd()` is expected to resolve it on the next attempt. Repeated code-4 responses would be a server-side anomaly, making this a highly theoretical edge case. No stack overflow in practice.",
+      "category_justification": "Missing termination condition in a recursive call — a logic/correctness issue in the retry/loop control flow.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 303,
+      "end_line": 307,
+      "message": "`_authenticateWithVerify` force-unwraps `Helper.username!` and `Helper.password!` without a null guard. If `ensureAuthenticated()` is called before the user has logged in (credentials are null), this throws a null-check runtime error that propagates as a `TypeError`, not a `GeneralResponse`. Callers expecting only `GeneralResponse` for auth failures will receive an unexpected exception type. The `_authenticateWithVerify` catch block re-throws it after setting `sessionState = failed`, so the session ends up failed without a useful error message surfaced.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `Helper.username` and `Helper.password` are nullable static fields. `_authenticateWithVerify` force-unwraps them without a null guard, throwing a `TypeError` if null rather than a `GeneralResponse`. The PR removes prior `isLogin` guards at multiple call sites and routes all paths through `ensureAuthenticated()`, making the null case easier to reach than before.",
+      "severity_justification": "This causes a TypeError crash (not a graceful GeneralResponse) when credentials are null, which can happen after clearSetting() is called while a background apQuery is pending. The session lands in failed state with an opaque exception, degrading user experience.",
+      "category_justification": "Error handling gap — an unexpected exception type propagates to callers that expect only GeneralResponse, breaking graceful degradation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 732,
+      "end_line": 736,
+      "message": "`scores()` calls `ensureAuthenticated()` directly and then immediately calls `apQuery()`, which calls `ensureAuthenticated()` again on every loop iteration. The first call is redundant: if the session was already authenticated it returns in O(1), but if not, it triggers authentication, and then `apQuery` calls it again (fast-path hit). The extra call is harmless when authenticated but creates a confusing double-entry into the auth gate.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `scores()` calls `ensureAuthenticated()` then `apQuery()`, which also calls `ensureAuthenticated()` at the top of its loop. The redundant call is introduced by the PR (replacing the old `checkLogin()` call with `ensureAuthenticated()` without noticing `apQuery` already handles it). Other methods like `getCourseTable`, `midtermAlerts`, and `rewardAndPenalty` do not have this redundant call.",
+      "severity_justification": "The extra call is harmless — it's an O(1) fast-path return when authenticated, and correctly dedupes via the single-flight mechanism when not. No behavioral impact.",
+      "category_justification": "Redundant call introducing inconsistency with other similar methods in the same class — a code clarity/consistency issue with no functional consequence.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 387,
+      "end_line": 392,
+      "message": "When joining an in-flight handshake via `_serviceHandshakeFutures[service]`, the caller returns the future directly without any epoch validation. If the existing future was started in a previous session epoch (before a `resetSessionMachine` call that cleared the map), a new concurrent caller would not find it. However, there is a narrow window: between `_serviceHandshakeFutures.clear()` inside `resetSessionMachine` and the old future completing its `finally` block that removes itself, a new caller could never see the old future (since `clear()` already removed it). The real risk is that a caller that obtained `existingHandshake` before a reset, and is now awaiting it, gets back a `LoginResponse` referencing cookies that were wiped by `dioInit()` (which creates a new `cookieJar`). The caller then proceeds to make requests with invalid session state.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `_ensureServiceSession` returns `existingHandshake` directly without any post-await epoch or state validation — unlike `ensureAuthenticated()` which checks state after joining an in-flight future. A caller grabbing the future reference before a resetSessionMachine()+dioInit() gets back a LoginResponse referencing cookies in the old (discarded) cookieJar, then proceeds with invalid session state.",
+      "severity_justification": "Requires a concurrent reset (e.g., logout) during an in-flight service handshake — a plausible race in a mobile app. The result is silent incorrect behavior (requests with stale cookies) rather than a crash.",
+      "category_justification": "Logic error — missing epoch/state validation when joining an in-flight future, inconsistent with the pattern used in ensureAuthenticated().",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 251,
+      "end_line": 297,
+      "message": "When multiple callers are waiting on an in-flight `_loginFuture` via the `await existingLoginFuture` path and the future fails (throws), the exception from the inner auth operation propagates directly to all waiters — they never reach the `GeneralResponse(networkConnectFail)` normalization path below the await. The initiating caller also gets the raw inner exception (e.g., a `DioException` or `GeneralResponse` with a more specific code). The error type received by concurrent waiters is therefore inconsistent with what callers of `ensureAuthenticated()` are documented to expect.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "If login succeeds post-invalidation, it's a genuinely valid new session",
+      "severity_justification": "All callers still receive an exception signaling failure — no silent incorrect state. The raw exception is typically more informative than the normalized one. Impact is limited to callers that explicitly catch only GeneralResponse(networkConnectFail) and are unprepared for other types.",
+      "category_justification": "Inconsistent error propagation across concurrent callers of the same auth gate — an error handling / fault tolerance concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 190,
+      "end_line": 196,
+      "message": "When `login()` succeeds (case 0) and `sessionEpoch` matches, `isLogin = true` and `sessionState = WebApSessionState.authenticated` are set inside `login()`. `_authenticateWithVerify` then immediately overrides the state to `verifying`. In the brief synchronous window between `login()` returning and the next line `sessionState = WebApSessionState.verifying`, the session appears fully authenticated. A concurrent caller checking `sessionState == authenticated && isLogin` in `ensureAuthenticated()` during this window would take the fast path and return as if auth is complete, bypassing the pending verification that might still invalidate the session.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Dart single-threaded event loop — no intervening yield",
+      "severity_justification": "The window is a single microtask slot with extremely tight timing requirements. Even if a caller slips through, subsequent requests would detect the expired session and retry. Practical likelihood is very low.",
+      "category_justification": "Logic error — intermediate authentication state is briefly visible to concurrent callers, potentially bypassing a pending verification that could invalidate the session.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 29,
+      "end_line": 30,
+      "message": "`reLoginReTryCounts` is declared `static`, meaning it is shared across all instances of `WebApHelper`. The `apQuery` retry loop writes `reLoginReTryCounts = retryCount` using a local `retryCount`, and multiple concurrent `apQuery` calls (on the same singleton instance, with their own local `retryCount`) overwrite each other. The result is that `reLoginReTryCounts` reflects whichever concurrent call wrote last, making it unreliable as a global retry indicator and incorrectly resetting (to 0) when any successful request completes even if another is still retrying.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `reLoginReTryCounts` is static and written by concurrent `apQuery` callers using their local `retryCount` values (last writer wins). However, in the new code after this PR, the field is never read for control flow — the while loop uses local `retryCount`. The finding is factually correct about concurrent overwrites but overstates impact: it only affects observability, not actual retry behavior.",
+      "severity_justification": "The actual retry limit is enforced by the local `retryCount` variable, not the static field. `reLoginReTryCounts` is purely a metrics/observation field after this PR's changes, and WebApHelper is a singleton making cross-instance confusion moot.",
+      "category_justification": "The static field is written but never read for control flow — it's dead-write state that misleads readers about how retry limits are enforced, creating a code clarity issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 218,
+      "end_line": 235,
+      "message": "The `createdLoginFuture`'s anonymous function is not marked `async`. While it returns a `Future`, and Dart might handle this, explicitly marking the function `async` would make the intent clearer and prevent potential subtle issues if the implementation of the returned `Future` changes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually wrong. The anonymous function assigned to `createdLoginFuture` is explicitly marked `async` at line 270 (`createdLoginFuture = () async {`). The concern about missing `async` does not apply.",
+      "severity_justification": "Even if the claim were true, the function returns a Future and uses `await` internally, so the behavioral difference would be negligible. The finding itself acknowledges it as a clarity suggestion.",
+      "category_justification": "The finding is framed as a code clarity suggestion about async marking.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 285,
+      "end_line": 287,
+      "message": "The `_markWebApExpired` method sets `sessionState` to `expired` but doesn't handle the `_loginFuture`. If a login is in progress when the session is marked expired from another path (e.g., `apQuery`), the in-flight login might proceed and incorrectly set the state back to `authenticated`, overriding the `expired` state.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `_markWebApExpired()` does not increment `_sessionEpoch`, so an in-flight login's epoch guard still matches and it can set `sessionState = authenticated` after `_markWebApExpired()` sets it to `expired`. The design inconsistency with `resetSessionMachine()` (which increments epoch) is real.",
+      "severity_justification": "In practice, an in-flight login overriding `expired` with `authenticated` after a successful re-auth is the desired outcome. `_markWebApExpired()` is a soft signal, not a hard cancel. Hard resets use `resetSessionMachine()` with epoch increment. The harmful scenario requires a stale in-flight login succeeding, which is unlikely.",
+      "category_justification": "A design inconsistency in the epoch/state machine — `_markWebApExpired()` lacks the epoch increment that would make in-flight future guards work correctly against it.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 252,
+      "end_line": 255,
+      "message": "If `_verifyWebApSession` returns `false`, `_markWebApExpired` is called, which sets `isLogin = false`. However, a successful call to `login()` inside `_authenticateWithVerify` would have already set `isLogin = true`. The `_markWebApExpired` method correctly sets it back to `false`, but this creates a brief inconsistent state that could be avoided by setting `isLogin = true` only after successful verification.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `login()` sets `isLogin = true` before verification completes. If verification fails, `_markWebApExpired()` corrects it back to false. The brief window where `isLogin = true` but session is unverified is real, and setting `isLogin = true` only after verification would be a cleaner design.",
+      "severity_justification": "The actual fast-path exposure window (where both `isLogin=true` AND `sessionState=authenticated`) is only during a single synchronous continuation slot (same concern as the concurrent state visibility race), making practical impact very low. The verification state (`verifying`) prevents the fast path during the longer async verification window.",
+      "category_justification": "Logic ordering issue — authentication success flag is set before the verification step that could revoke it, creating an inconsistent intermediate state.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 268,
+      "end_line": 269,
+      "message": "The `markSessionInvalid` method is an public API to invalidate the session, but it doesn't cancel or nullify the `_loginFuture`. If `markSessionInvalid` is called while an authentication attempt is in progress, the ongoing login will continue and may incorrectly set the session state back to `authenticated`, overriding the invalidation.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: `markSessionInvalid()` calls `_markWebApExpired()` which does not increment `_sessionEpoch`. An in-flight `_authenticateWithVerify` with matching authEpoch can override the `expired` state by setting `sessionState = authenticated` and `isLogin = true` after login() completes. The finding is factually correct and raises a valid public API contract concern.",
+      "severity_justification": "Same as Finding 12 — an in-flight login overriding `expired` with `authenticated` after success is typically the desired outcome. Hard reset uses `resetSessionMachine()` with epoch increment. The scenario requires exact concurrent timing of an in-progress login and an external invalidation call.",
+      "category_justification": "Public API contract issue — `markSessionInvalid()` does not fully invalidate in-flight auth state, inconsistent with the epoch-based guarantees provided by `resetSessionMachine()`.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 481,
+      "end_line": 483,
+      "message": "In `checkLogin`, if a login was not already in progress (`wasAlreadyAuthenticated` is false), it returns a `LoginResponse` with a fixed 6-hour expiration. This bypasses the actual expiration time that might have been returned by the underlying `login` call, potentially providing a misleading expiration time to the caller.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's premise is wrong. `login()` always returns `LoginResponse(expireTime: DateTime.now().add(const Duration(hours: 6)))` — there is no variable expiration time that could be bypassed. The old `checkLogin()` returned `login()`'s result (always 6 hours), and the new `checkLogin()` also returns exactly 6 hours. The behavior is equivalent.",
+      "severity_justification": "Even as a TP, the impact would be negligible since checkLogin() is deprecated and the old and new return values are functionally identical (6-hour expiry computed at slightly different moments).",
+      "category_justification": "The finding claims incorrect behavior about expiration time calculation — a correctness concern if true.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/leave_helper.dart",
+      "start_line": 208,
+      "end_line": 208,
+      "message": "The method `getRecords` catches a generic 'NullThrownError' string. The underlying `loginToLeave` call can throw `GeneralResponse` objects on failure. Catching a specific string is brittle and will likely miss actual exceptions, preventing proper error handling for login failures.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is factually incorrect: there is no `getRecords` method in `leave_helper.dart`, and the `'NullThrownError'` string is THROWN (not caught) by `getLeaves`/`getLeavesSubmitInfo` for null credential checks. No code in the codebase catches this string. The finding reverses the direction of the operation.",
+      "severity_justification": "Even if reframed as 'throwing a string instead of a typed exception is brittle', this is a pre-existing code smell with no new behavior introduced by this PR.",
+      "category_justification": "The finding makes an incorrect claim about control flow direction (catch vs throw).",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/leave_helper.dart",
+      "start_line": 230,
+      "end_line": 230,
+      "message": "The method `getLeaveApplication` catches a generic 'NullThrownError' string. The underlying `loginToLeave` call can throw `GeneralResponse` objects on failure. Catching a specific string is brittle and will likely miss actual exceptions, preventing proper error handling for login failures.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same issue as Finding 16: there is no method called `getLeaveApplication` in `leave_helper.dart`. The method at line 225 is `getLeavesSubmitInfo`. The `'NullThrownError'` string is THROWN (not caught) as a null credentials guard. The finding reverses the direction and uses a non-existent method name.",
+      "severity_justification": "Throwing a bare string is pre-existing bad practice, but the finding's factual claim about catching is incorrect and no new behavior was introduced by this PR.",
+      "category_justification": "The finding makes an incorrect claim about control flow direction (catch vs throw) and names a non-existent method.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 159,
+      "end_line": 243,
+      "message": "In `login` function, retry logic only catches and logs exceptions, then proceeds to the next loop iteration without rethrowing or returning errors. This may obfuscate legitimate network or logic failures causing retries and make diagnosing issues difficult.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the `catch (e, s)` block swallows all exceptions including intentional GeneralResponse throws (wrong password, locked account), logs them, and retries. After all retries, a misleading 'captcha error or unknown error' is thrown. The finding is factually correct about obfuscated errors.",
+      "severity_justification": "This is a diagnostic/observability issue rather than a functional bug. Auth still fails and the session ends up in failed state, but the error message surfaced may be incorrect. Pre-existing behavior the PR did not worsen.",
+      "category_justification": "Error handling design issue — legitimate non-retriable failures (bad credentials, locked account) are swallowed and retried unnecessarily, with the final error being misleading.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 451,
+      "end_line": 470,
+      "message": "The `_verifyWebApSession` method assumes a successful `dio.post` will always have a valid `response.data` to process. There is no proper handling for unexpected network responses or null response data, which would lead to runtime errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The entire `dio.post` and `apLoginParser` call is wrapped in `try { ... } catch (_) { return false; }`. Any runtime error from null response data would be caught and cause `false` to be returned — no runtime error propagates. The finding's claim that null data 'would lead to runtime errors' is factually incorrect.",
+      "severity_justification": "Even if the concern were valid, the impact would be the method returning false and treating a null response as a session failure — same as the transient-error concern already identified elsewhere.",
+      "category_justification": "The finding is about error handling and null safety in a network response path.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 509,
+      "end_line": 518,
+      "message": "The `_markWebApExpired` function updates all service states to `expired` without checking if their previous states were different. This might lead to unnecessary resets, especially when certain services are unaffected.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually wrong. `_markWebApExpired` explicitly checks `if (_serviceStates[service] == WebApServiceSessionState.ready)` before setting a service to `expired`. Services not in `ready` state are not modified. The claim that it updates states 'without checking if their previous states were different' directly contradicts the code.",
+      "severity_justification": "The concern about unnecessary resets would be low-impact even if true, as it would just cause an extra re-handshake for a service that wasn't ready.",
+      "category_justification": "The finding makes a factually incorrect claim about conditional logic in state management.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 567,
+      "end_line": 572,
+      "message": "In the `_ensureServiceSession` method, there is no validation of `handshake` before calling it. If an invalid function is passed, it will cause runtime failures that are not wrapped in this retry logic.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `handshake` parameter is typed as non-nullable `Future<LoginResponse> Function()` — Dart's sound null safety prevents passing null or an incompatible function at compile time. Runtime exceptions from `handshake()` are caught by the `catch (_)` block in the future lambda. There is no realistic 'invalid function' scenario that requires additional validation.",
+      "severity_justification": "Even if there were a runtime failure from handshake(), it would be caught and the service state set to failed — the existing error handling covers this.",
+      "category_justification": "The finding is framed as an input validation / error handling concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 627,
+      "end_line": 649,
+      "message": "In `apQuery`, the retry logic for session expiration (`_sessionExpiredParserCode`) only increments `retryCount` upon detecting a specific error code. However, other transient failure cases or unhandled exceptions (e.g., timeout) may not trigger retries, potentially leading to unexpected failures.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: exceptions from `dio.post()` (timeouts, network errors) propagate immediately through `apQuery` without retry — only `_sessionExpiredParserCode` triggers the retry path. The finding is factually correct about the limited retry scope.",
+      "severity_justification": "This is the same behavior as the old code — network-level reliability retries were never the purpose of this loop. The retry loop is specifically for session expiry re-authentication. Transient network errors would propagate to callers, which is standard behavior for this type of API helper.",
+      "category_justification": "Limited retry coverage — transient network failures bypass the retry mechanism, a reliability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 436,
+      "end_line": 443,
+      "message": "The `_authenticateWithVerify` function logs 'verify webap session failed' and throws `GeneralResponse` on invalid sessions, but it does not log or categorize distinct failure scenarios such as network issues vs parser errors, making debugging authentication issues harder.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's claim that `_authenticateWithVerify` 'logs verify webap session failed' is factually incorrect — there is no `log()` call in the method. The string only appears as a `GeneralResponse` message field. The remainder of the finding is a generic 'add better logging' suggestion with no specific code issue.",
+      "severity_justification": "Even if reframed as a valid logging gap, missing diagnostic logging in a private method is a minor maintainability concern with no functional impact.",
+      "category_justification": "The core suggestion is about adding diagnostic logging to distinguish failure modes — a code observability/maintainability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 734,
+      "end_line": 741,
+      "message": "The `checkLogin` method is marked deprecated with `ensureAuthenticated` as a replacement, but it directly calls `ensureAuthenticated` anyway. This makes the deprecation unnecessary unless there's additional unused logic requiring delegation.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding misunderstands the purpose of a deprecated compatibility shim. `checkLogin()` returns `Future<LoginResponse?>` while `ensureAuthenticated()` returns `Future<void>` — different signatures requiring callers to migrate. A deprecated wrapper delegating to the replacement method is the standard and correct migration pattern. The `@Deprecated` annotation serves a clear purpose.",
+      "severity_justification": "Even if the finding were valid, the impact would be purely cosmetic — the code functions correctly either way.",
+      "category_justification": "The finding is about the appropriateness of a deprecation annotation and API design.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 930,
+      "end_line": 980,
+      "message": "The `roomCourseTableQuery` function does not validate `roomId`, potentially leading to malformed queries or runtime errors if `null` or invalid values are passed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The method is pre-existing and unmodified by this PR. `roomId` is typed `String?` intentionally. The finding is a generic 'validate nullable inputs' suggestion with no demonstrated concrete bug, no specific failure path shown, and the referenced line numbers (930-980) don't even match the actual location (808-820).",
+      "severity_justification": "No concrete runtime error path is demonstrated. The parameter is intentionally nullable and passes to a server-side query where null handling depends on the API contract.",
+      "category_justification": "Framed as an input validation / null safety concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 902,
+      "end_line": 926,
+      "message": "The `roomList` function does not validate `cmpAreaId` values being passed, allowing possibly invalid or unexpected values to propagate and result in incorrect or unexpected requests to the server.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The method is pre-existing, unmodified by this PR, and already deprecated. `cmpAreaId` is a non-nullable `String` with documented valid values (1-5 in the comment). The finding is a generic 'validate inputs' suggestion with no demonstrated concrete bug or regression, and the referenced line numbers (902-926) don't match the actual location (785-805).",
+      "severity_justification": "No concrete failure path is demonstrated. The method is deprecated and slated for removal, making input validation improvements here a low-value investment.",
+      "category_justification": "Framed as an input validation concern for a server-side API parameter.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/api/ap_helper.dart",
+      "start_line": 251,
+      "end_line": 255,
+      "message": "The new single-flight authentication path is not covered by the existing WebApHelper tests: there are tests for direct login and crawlers, but no tests for concurrent `ensureAuthenticated()` callers, failed verification, or backoff/retry state transitions. Given this replaces the core login gate, add targeted tests for these state-machine branches to avoid regressions.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the test directory has only crawler_monitor_test.dart (live integration tests for login/crawler calls), api_parser_test.dart, model_test.dart, and widget_test.dart. None cover the new ensureAuthenticated() single-flight deduplication, _verifyWebApSession(), backoff scheduling, sessionEpoch invalidation, or concurrent caller behavior introduced by this PR.",
+      "severity_justification": "The new state-machine logic is the core of this PR and includes non-trivial concurrency and epoch-tracking paths. Without targeted unit tests, regressions in backoff, deduplication, or epoch handling would be silent.",
+      "category_justification": "The finding is about missing test coverage for newly introduced state-machine branches.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

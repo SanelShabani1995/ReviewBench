@@ -1,0 +1,351 @@
+{
+  "pr_key": "EdV4H_usketch_534-719aa834",
+  "pr": {
+    "repo": "https://github.com/EdV4H/usketch",
+    "pr_number": 534,
+    "base": "ff729b7dce02efaf7d1054780536289f86e8a5e7",
+    "head": "719aa8340584e714552d132a9ec6971582673a8b"
+  },
+  "findings": [
+    {
+      "file": "plugins/usketch-plugin-shape-text/src/plugin.tsx",
+      "start_line": 249,
+      "end_line": 249,
+      "message": "Direct call to the raw `hitTest` function (not the `withRotation`-wrapped version) is used to detect which text shape was clicked for double-click-to-edit. For a rotated text shape, this tests against the unrotated AABB, so a user clicking on the visually-rotated shape may fail to enter edit mode, while clicking on empty canvas (in the unrotated position) incorrectly triggers it. The registered `hitTest` at line 270 is correctly wrapped, but this internal handler at line 249 is not.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: at the canvas:pointerdown handler (line ~249), `hitTest(shape, event.worldPoint)` is called directly without rotation correction. The registered `hitTest` at line ~267 is correctly wrapped with `withRotation(hitTest)`, but this internal event handler uses the raw function, causing broken double-click-to-edit for rotated text shapes.",
+      "severity_justification": "Users won't be able to enter edit mode by clicking on a rotated text shape (click lands in wrong AABB), which breaks a core interaction for rotated text. Medium rather than high because it only affects the subset of users who rotate text shapes.",
+      "category_justification": "A logic error where the wrong (non-rotation-aware) hitTest function is used for the double-click-to-edit detection path, causing incorrect behavior for rotated text shapes.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plugins/usketch-plugin-shape-sticky/src/plugin.tsx",
+      "start_line": 448,
+      "end_line": 448,
+      "message": "Same issue as the text plugin: the double-click-to-edit event handler calls the unwrapped `hitTest` directly. For a rotated sticky shape, the pointer-down handler tests against the unrotated AABB, so clicking the rotated shape will not reliably trigger edit mode. The registered `hitTest` at line 478 uses `withRotation`, but this handler does not.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the canvas:pointerdown event handler at ~line 448 calls `hitTest(shape, event.worldPoint)` directly (no rotation wrapping), while the registered shape hitTest at ~line 478 correctly uses `withRotation(hitTest)`. Rotated sticky shapes will have broken double-click-to-edit behavior.",
+      "severity_justification": "Breaks click-to-edit for rotated sticky shapes — a core interaction — but only affects the subset of users who rotate sticky notes.",
+      "category_justification": "Logic error: the wrong (non-rotation-aware) hitTest is used for the pointer-down edit detection path, causing incorrect behavior for rotated sticky shapes.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/server/src/rooms/yjs-sync.ts",
+      "start_line": 99,
+      "end_line": 109,
+      "message": "`applyClientUpdate` returns `true` (accepted) when `doc` is `null`, without actually validating the Yjs payload. In practice `doc` is null on every Durable Object restart until `getOrCreateDoc()` is called — and `getOrCreateDoc` is never called in the WebSocket message path, only from the HTTP thumbnail/AI endpoints. So the new `applied` guard in `board-room.ts` is effectively dead code for all normal WebSocket traffic: corrupt updates still get buffered, persisted, and broadcast to every other connected client.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `applyClientUpdate` returns `true` unconditionally when `doc` is null (lines 99–109). `doc` is only initialized by `getOrCreateDoc()`, which is never called in the MSG_YJS_UPDATE WebSocket path in board-room.ts. The new `applied` guard introduced by this PR therefore provides no protection for normal WebSocket traffic — corrupt updates will still pass validation, get buffered, persisted via `scheduleSave`, and broadcast to all other clients.",
+      "severity_justification": "The intended fix (rejecting corrupt Yjs updates) is silently ineffective for all normal WebSocket traffic, meaning corrupt updates still propagate and get persisted. This could corrupt the shared document state for all connected users.",
+      "category_justification": "The guard logic is functionally a no-op due to the doc-null path always returning true, making the new error-rejection feature non-functional in the common case.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/server/src/rooms/yjs-sync.ts",
+      "start_line": 29,
+      "end_line": 31,
+      "message": "Concurrent callers that join while `loadPromise` is pending will `await` the same promise. If the first caller's load fails (storage error), `loadPromise` is set to `null` and the error is rethrown by the first caller — but the second caller, already suspended on `await loadPromise`, also receives the rejection and propagates it with no catch handler, causing the second request to fail with an unhandled error even though it had no fault. The same pattern exists in `partition-manager.ts`. The fix is to wrap the secondary `await loadPromise` in a try/catch and retry if `loaded` is still false.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: Caller B suspended at `await loadPromise` (line 30-31) awaits the same Promise object as Caller A. When that promise rejects, both callers receive the rejection. Caller A's try/catch handles it and nulls `loadPromise`, but Caller B has no catch handler at all — the rejection propagates to B's caller unconditionally. The code is documented as 'concurrent-call safe' but isn't in the failure path.",
+      "severity_justification": "Requires two conditions simultaneously: concurrent callers hitting loadUpdates AND a storage error. Cloudflare DO storage failures are rare. When it does occur, both requests fail — not catastrophically worse than just the first failing. Low severity but real.",
+      "category_justification": "Error handling in the concurrent load pattern fails to properly isolate failures between callers, potentially causing cascading failures from a single storage error.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/server/src/rooms/partition-manager.ts",
+      "start_line": 136,
+      "end_line": 138,
+      "message": "Same concurrent-caller rejection-propagation bug as in `yjs-sync.ts`: secondary callers awaiting `loadPromise` will have the error thrown directly at them with no recovery path if the storage read fails.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in partition-manager.ts: the secondary-caller path at `await loadPromise` (within the `if (loadPromise)` block) has no try/catch. If the promise rejects, the error propagates to the secondary caller with no recovery path — identical to the yjs-sync.ts pattern described in Finding 4.",
+      "severity_justification": "Same low-severity assessment as Finding 4: requires concurrent callers AND a storage error simultaneously. Both callers fail, which is suboptimal but not catastrophic.",
+      "category_justification": "Error handling in the concurrent load pattern fails to isolate failures between callers — same class of reliability issue as in yjs-sync.ts.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/store/src/collision-utils.ts",
+      "start_line": 18,
+      "end_line": 20,
+      "message": "`collision-utils.ts::shapeToBounds` still returns the raw unrotated bounding box, while `board-store.ts::shapeToBounds` was updated in this PR to return the expanded rotated AABB. The collision utilities (`findIntersecting`, `findContainers`, `findContained`) are now inconsistent with the spatial index: two shapes that visually overlap after rotation may be reported as non-intersecting because the collision check uses the pre-rotation rectangles. This affects frame containment detection and connector logic.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `collision-utils.ts` line 18–20 has its own `shapeToBounds` returning the raw unrotated bounding box (unchanged by this PR), while `board-store.ts::shapeToBounds` was updated to return the rotated AABB. `findIntersecting`, `findContainers`, and `findContained` all use the unrotated version, creating an inconsistency where the spatial index considers rotation but collision/containment checks do not.",
+      "severity_justification": "Frame containment detection and connector logic will produce wrong results for rotated shapes — shapes visually inside a rotated frame won't be detected as contained, and visually intersecting rotated shapes won't be detected as intersecting. This affects real user-facing functionality.",
+      "category_justification": "Inconsistent rotation handling between two parallel `shapeToBounds` implementations causes wrong results in collision detection and frame containment logic.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/shared/src/utils/rotation.ts",
+      "start_line": 84,
+      "end_line": 86,
+      "message": "`snapAngle` can return 360 for angles just below 360 (e.g. `snapAngle(352.5, 15)` → 360). The result is not normalized to [0, 360). Since `normalizeAngle` exists in the same file, callers that pass the result directly to rotation storage or comparisons (e.g. `if (rotation === 0)` in `withRotation`/`safeRotation` paths) will treat 360 as a non-zero rotation and apply a no-op CSS transform rather than skipping it, wasting work. More importantly, stored shape data could contain `rotation: 360`, which won't match the `rotation === 0` fast-path and will run through `getRotatedAABB` unnecessarily.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The math is verified: `snapAngle(352.5, 15)` returns 360, and `normalizeAngle` exists in the same file but isn't called. However, `snapAngle` has zero production callers at this SHA — it's only exported and tested. The described downstream effects (stored rotation:360, missed fast-paths) are speculative future concerns, not current bugs.",
+      "severity_justification": "The function has a real API design flaw (output not normalized to [0,360)), but since there are no production callers at this SHA, the actual impact is zero. Low severity — worth fixing before callers are added.",
+      "category_justification": "The function produces out-of-range output (360) for edge-case inputs, inconsistent with the `normalizeAngle` contract established in the same file.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/server/src/board-room.ts",
+      "start_line": 120,
+      "end_line": 124,
+      "message": "A client update is broadcast to other clients *before* it's added to the list of updates to be persisted. If the server crashes after broadcasting but before `yjsSync.scheduleSave()` completes, the update will be lost, causing clients to become desynchronized. The `pushUpdate` call should happen before `broadcast`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect about the operation order. In the actual code, `pushUpdate(payload)` is called before `broadcast(ws, data)`, so the update is already in the in-memory buffer before it is sent to other clients. The finding claims broadcast happens before pushUpdate, which is wrong.",
+      "severity_justification": "The described ordering bug does not exist. The actual pre-existing risk of a 5-second debounce window for persistence is a known architectural trade-off unrelated to this claim.",
+      "category_justification": "The finding claims a specific ordering bug in data flow logic that does not exist in the code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/shared/src/utils/rotation.ts",
+      "start_line": 28,
+      "end_line": 34,
+      "message": "The JSDoc for `angleRad` says it's in radians, but the calculation `(angleDeg * Math.PI) / 180` in `getRotatedAABB` and `withRotation` suggests the original value (`angleDeg`) is in degrees. The function name `rotatePoint` doesn't specify units. The parameter should be renamed to `angleRad` and callers should consistently pass radians, or the function should be changed to accept degrees and convert internally to avoid confusion.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is factually incorrect: the `rotatePoint` parameter is already named `angleRad` and the JSDoc explicitly states radians. All callers correctly convert degrees to radians before passing to `rotatePoint`. There is no naming inconsistency or unit confusion in the actual code.",
+      "severity_justification": "The described issue does not exist in the code.",
+      "category_justification": "The finding concerns parameter naming and unit conventions.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/server/src/rooms/thumbnail-handler.ts",
+      "start_line": 29,
+      "end_line": 32,
+      "message": "The style object from `s.style` is not safely accessed. If `s.style` is `null` or not an object, `(s.style as Record<string, unknown>)` will cause an error when its properties are accessed. It would be safer to define a `style` variable with a check like `typeof s.style === 'object' && s.style !== null` before accessing its properties.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding describes an unsafe access pattern and suggests adding `typeof s.style === 'object' && s.style !== null` as the fix — but this PR already implements exactly that fix. The current code at this SHA defines `const style = typeof s.style === 'object' && s.style !== null ? (s.style as Record<string, unknown>) : undefined` before accessing any properties. The issue the finding describes was present in the old code and was fixed by this very PR.",
+      "severity_justification": "The issue does not exist at this SHA — it was already fixed by the PR.",
+      "category_justification": "The finding concerns unsafe property access on a potentially null/non-object value.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/server/src/board-room.ts",
+      "start_line": 118,
+      "end_line": 122,
+      "message": "The PR description states this PR adds rotation foundations (utilities, rendering, hit-test, spatial index). However, the diff also contains substantial unrelated server-side changes in `apps/server/src/rooms/yjs-sync.ts`, `apps/server/src/rooms/thumbnail-handler.ts`, `apps/server/src/rooms/partition-manager.ts`, and `apps/server/src/board-room.ts` (concurrency-safe load promise, debounced partition save, applyClientUpdate returning a boolean, etc.). These should either be split into a separate PR or added to the PR description so reviewers understand the scope.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The claim is factually correct: the diff includes substantial server-side changes (yjs-sync concurrency safety, partition-manager debouncing, applyClientUpdate return value, thumbnail type safety) that are not mentioned in the PR title or description. Reviewers unaware of these changes could miss reviewing them.",
+      "severity_justification": "The code changes themselves appear correct and functional; the issue is purely about PR scope and description completeness, with no impact on runtime behavior.",
+      "category_justification": "The finding is about the PR description being incomplete — it doesn't document the server-side changes bundled with the rotation feature work.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/canvas-engine/src/components/shape-layer.tsx",
+      "start_line": 33,
+      "end_line": 34,
+      "message": "This applies rotation only to the deprecated `ShapeLayer`, but the app registers and uses `createDomRendererPlugin()`/`DomShapeLayer` for normal rendering (for example `apps/web/src/app.tsx:64-65` and `packages/dom-renderer/src/dom-shape-layer.tsx:25-34`). As a result, the main DOM renderer still ignores `shape.rotation`, so rotated HTML shapes will not visually rotate in production.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: apps/web/src/app.tsx registers createDomRendererPlugin() which uses DomShapeLayer. The DomShapeLayer ShapeWrapper has no rotation transform/safeRotation. The PR added rotation only to canvas-engine's ShapeLayer, which is exported but not used in production. Rotated shapes will not visually rotate in the production app.",
+      "severity_justification": "The core feature of this PR (visual rotation of shapes) will not work in the production app because the wrong renderer component was updated. The DomShapeLayer, which is actually used, lacks the rotation CSS transform.",
+      "category_justification": "The PR's stated goal of rendering rotation is not achieved because the rotation transform was applied to the unused ShapeLayer instead of the production DomShapeLayer.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/server/src/rooms/yjs-sync.ts",
+      "start_line": 61,
+      "end_line": 67,
+      "message": "Because `saveScheduled` stays true until after `storage.put` completes, updates that arrive after `data` is computed but before the put finishes will call `scheduleSave()`, see the flag as true, and not schedule a follow-up write. Those updates remain only in memory until a later update happens, so they can be lost if the Durable Object is evicted after this save.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified against the diff: the old code set saveScheduled=false before the await (allowing new updates to schedule a follow-up save), but the PR moved it to the finally block after await, creating a window where updates arriving during storage.put see saveScheduled=true, skip scheduling, and are not included in the current save. Those updates can be lost on DO eviction.",
+      "severity_justification": "The window is only the duration of a single storage.put call (milliseconds), making data loss rare in practice. However, it is a real regression — the old code was correctly ordered and the new code has a genuine potential for in-flight updates to be lost.",
+      "category_justification": "This is a data persistence/durability concern — updates can be lost if the Durable Object is evicted after a save completes but before another update triggers a new scheduleSave().",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "apps/server/src/rooms/partition-manager.ts",
+      "start_line": 48,
+      "end_line": 56,
+      "message": "This debounce has the same lost-update window as the main Yjs save: while `storage.put` is in flight, `saveScheduled` remains true, so any new update for this partition will not schedule another flush after the already-computed `data` is written. If the object is evicted before another update arrives, that partition update is never persisted.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: schedulePartitionSave sets saveScheduled(partitionName)=false in the finally block, after storage.put completes. Updates arriving during the put will see the flag as true, not schedule a follow-up save, and can be lost on DO eviction — the same regression pattern as in yjs-sync.ts.",
+      "severity_justification": "Same class as Finding 3 — the data-loss window is only the duration of storage.put (milliseconds), making it rare, but it is a real regression introduced by this PR.",
+      "category_justification": "Data persistence/durability concern: partition updates can be permanently lost if the DO is evicted in the narrow window after a save completes but before another update reschedules the flush.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "plugins/usketch-plugin-shape-basic/src/plugin.tsx",
+      "start_line": 46,
+      "end_line": 48,
+      "message": "The rotated hit tests make these GPU-backed shapes selectable as if rotated, but their GPU rendering path still ignores `rotation`: `rectGpuPrimitive`/`ellipseGpuPrimitive` are claimed by `createGpuRendererPlugin()` in the app, and `packages/gpu-renderer/src/pipelines/shape-sdf-pipeline.ts:119-122` stores only corner radius, stroke width, opacity, and shape kind. Rectangles/ellipses can therefore hit-test as rotated while still drawing unrotated.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: rectGpuPrimitive/ellipseGpuPrimitive pass rotation into GpuPrimitive, but shape-sdf-pipeline.ts ignores it (slots 12-15 store cornerRadius/strokeWidth/opacity/kind with no rotation field). renderer.ts routes rect/ellipse to this pipeline. Hit tests now use withRotation but GPU rendering stays unrotated, causing hit-test/visual mismatch for GPU-claimed shapes.",
+      "severity_justification": "Rectangle and ellipse are the most common shape types. A user rotating them would see correct hit detection (the cursor highlights the rotated position) but the visual rendering stays unrotated, creating a confusing and broken UX for the primary shapes.",
+      "category_justification": "The hit test and visual rendering are inconsistent — the shape responds to clicks as if rotated but is drawn in its original orientation, which is a direct logic/behavioral defect.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/shared/src/utils/rotation.ts",
+      "start_line": 84,
+      "end_line": 85,
+      "message": "`step` is a public input here, but `0` (or a non-finite value) produces `NaN`/`Infinity` because the function divides by it and then multiplies it back. Either validate that the snap interval is a positive finite number or define a safe fallback; otherwise callers can accidentally store an invalid rotation angle.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is mathematically correct (step=0 produces NaN), but snapAngle has zero callers in application code at this SHA — it is a newly exported utility with no wiring yet. safeRotation() already guards downstream against NaN/Infinity. This is a generic defensive-programming suggestion for a utility function with a self-evident contract (step must be positive), not a concrete exploitable issue.",
+      "severity_justification": "Even if step=0 were passed, safeRotation() would catch the resulting NaN before it affects rendering or hit-testing. No production path currently calls snapAngle.",
+      "category_justification": "The concern is about the function producing an incorrect NaN result for an edge-case input.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/shared/src/__tests__/rotation.test.ts",
+      "start_line": 205,
+      "end_line": 210,
+      "message": "This test uses a 100×100 square, so a 90° rotation has the same AABB and the assertions would pass even if `withRotation` did not unrotate the point at all. Add a non-square rectangle case with a point that is inside only after applying the inverse rotation to cover the behavior being introduced.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified by tracing the math: for a 100x100 square rotated 90°, both test assertions (hit at center, miss at x=150) produce identical results with or without the unrotation logic. The test passes even with a completely broken withRotation that simply delegates to the original function, making it unable to catch regressions.",
+      "severity_justification": "withRotation itself is correctly implemented; this is a test coverage gap that could allow future regressions to slip through, but carries no current runtime impact.",
+      "category_justification": "The finding identifies a specific test case that does not exercise the behavior it claims to test, due to the symmetric choice of a square shape.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

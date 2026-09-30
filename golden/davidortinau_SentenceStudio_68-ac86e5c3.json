@@ -1,0 +1,491 @@
+{
+  "pr_key": "davidortinau_SentenceStudio_68-ac86e5c3",
+  "pr": {
+    "repo": "https://github.com/davidortinau/SentenceStudio",
+    "pr_number": 68,
+    "base": "ccc8680560e5aeebc4594ce840cd41f87674bf0e",
+    "head": "ac86e5c3f872e80651ef5ca46eabb62ddf7361d9"
+  },
+  "findings": [
+    {
+      "file": "src/SentenceStudio.AppHost/AppHost.cs",
+      "start_line": 21,
+      "end_line": 21,
+      "message": "Auth__UseEntraId is hardcoded to \"false\" as an environment variable. In .NET configuration, environment variables take higher precedence than appsettings files, so this permanently locks Entra ID off when running through Aspire regardless of any appsettings.json or user-secrets override. Enabling Entra ID auth now requires a code change to AppHost.cs rather than a config change, defeating the purpose of the flag.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: AppHost.cs line 21 hardcodes `.WithEnvironment(\"Auth__UseEntraId\", \"false\")`. In .NET's default config pipeline, environment variables (EnvironmentVariables provider) load after appsettings files and override them. This means the flag cannot be flipped to true via appsettings or user-secrets when running through Aspire — only a code change to AppHost.cs enables it.",
+      "severity_justification": "It prevents toggling Entra ID auth without a code change, defeating the flag's purpose. Not a security bug per se, but it blocks future steps (#44+) that rely on enabling the flag and creates operational friction.",
+      "category_justification": "This is a configuration precedence issue that makes the auth mode flag non-overridable without a code change, an operational/build configuration concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Program.cs",
+      "start_line": 37,
+      "end_line": 53,
+      "message": "The named authorization policies (RequireUserRead, RequireUserWrite, RequireAiAccess, RequireSyncReadWrite) are only registered in the Entra ID branch. In dev mode (DevAuthHandler), these policies do not exist. Any endpoint that opts into a named policy with .RequireAuthorization(\"RequireUserRead\") will throw an InvalidOperationException at runtime in dev, creating a dangerous divergence between dev and production auth paths that will only be discovered at deploy time.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: named policies are registered only in the Entra ID branch (lines 37-48); the else/dev branch uses plain AddAuthorization() (line 53). No current endpoint uses a named policy, but the asymmetry is real and would cause a runtime InvalidOperationException when any developer adopts the policies in dev mode, as the PR explicitly intends.",
+      "severity_justification": "No immediate runtime bug since no endpoint uses named policies yet. But the divergence is a latent trap — the next PR that applies a scope policy to an endpoint will silently break dev mode, and the failure only manifests at runtime, not startup.",
+      "category_justification": "The issue is an asymmetric auth configuration between dev and production paths that will cause runtime failures when the intended next-step usage is adopted.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Auth/TenantContextMiddleware.cs",
+      "start_line": 36,
+      "end_line": 38,
+      "message": "Microsoft.Identity.Web 3.x disables JWT inbound claim mapping by default (MapInboundClaims=false). This means the JWT claim named \"email\" from Entra ID tokens is stored under the key \"email\", not under ClaimTypes.Email (the long SOAP URI form). FindFirstValue(ClaimTypes.Email) will always return null in Entra ID mode, so the code silently falls through to preferred_username every time. The Entra ID JWT \"email\" optional claim is never actually consulted. To fix, add context.User.FindFirstValue(\"email\") as the first candidate.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Microsoft.Identity.Web 3.x sets MapInboundClaims=false by default, meaning JWT claim 'email' is stored as 'email' not as ClaimTypes.Email (the SOAP URI http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress). FindFirstValue(ClaimTypes.Email) will always return null in Entra ID mode; no MapInboundClaims override exists in the codebase. The code then silently uses preferred_username as the email fallback, ignoring any configured email optional claim.",
+      "severity_justification": "Functional behavior is acceptable in most cases since preferred_username is typically an email-like value, but the explicitly configured 'email' optional claim is silently ignored. Affects edge cases like B2B guest accounts.",
+      "category_justification": "The wrong claim key is used to look up email, causing silent fallback behavior that deviates from intent.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Auth/TenantContextMiddleware.cs",
+      "start_line": 36,
+      "end_line": 38,
+      "message": "preferred_username in Entra ID tokens is the User Principal Name (UPN), not the user's actual email address. For B2B guest accounts or tenants using a custom UPN suffix (e.g., user@contoso.onmicrosoft.com vs. user@contoso.com), these differ. Using preferred_username as a fallback for the Email field will silently populate it with an incorrect address for a meaningful portion of users.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Factually correct: preferred_username is the Entra ID UPN, not necessarily the SMTP email. For B2B guests the UPN is a synthetic #EXT# address that is clearly wrong. The code uses this as the Email fallback without any caveat. Verified in TenantContextMiddleware.cs line 38.",
+      "severity_justification": "Email is only surfaced in the bootstrap response for display/informational purposes; no email-sending or critical identity operations use it in the current codebase. Wrong email displayed is a minor UX issue.",
+      "category_justification": "The wrong value is populated for the Email field for a well-defined class of Entra ID accounts.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Auth/TenantContextMiddleware.cs",
+      "start_line": 32,
+      "end_line": 34,
+      "message": "preferred_username is a UPN (formatted like an email address), not a human-readable display name. If the \"name\" claim is absent from the Entra ID token (omitted by token configuration or optional-claims settings), DisplayName will be set to the UPN string rather than a display name. The fallback should go directly to ClaimTypes.Name, skipping preferred_username for DisplayName purposes.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Factually correct: preferred_username is the Entra ID UPN, not a display name. The fallback chain in TenantContextMiddleware.cs lines 31-34 would set DisplayName to a UPN string if the 'name' claim is absent. Verified in the code.",
+      "severity_justification": "The 'name' claim is included in Entra ID tokens by default, making the fallback scenario uncommon. Impact is purely cosmetic (UPN displayed instead of full name) since DisplayName is only used in the bootstrap response for display purposes.",
+      "category_justification": "The fallback value for DisplayName is semantically incorrect (UPN ≠ display name), producing wrong output under specific token configurations.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/appsettings.Development.json",
+      "start_line": 8,
+      "end_line": 13,
+      "message": "Real Azure AD TenantId (49c0cd14-bc68-4c6d-b87b-9d65a56fa6df) and ClientId (8c051bcf-bd3a-4051-9cd3-0556ba5df2d8) are committed to a version-controlled file. While not client secrets, committing real registration IDs allows anyone with repo access to enumerate the Azure tenant and craft targeted phishing or reconnaissance against this specific Entra ID app registration. Standard practice is to use placeholder values in tracked files and inject real IDs via user-secrets or CI environment variables. The same IDs are also committed in AppHost.cs lines 23-25.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "TenantId and ClientId are public OAuth2 identifiers, not secrets. They appear in JWT tokens, browser traffic, and OIDC discovery endpoints — committing them adds no real attack surface. No client secret or certificate is present. The claimed phishing/enumeration risks don't demonstrate a concrete exploitable path enabled by these values being in source control. The project explicitly documents these as safe to commit.",
+      "severity_justification": "Even as a FP, the underlying concern is low: these are public identifiers with no authentication capability on their own.",
+      "category_justification": "The finding makes a security claim about committed identifiers.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Program.cs",
+      "start_line": 305,
+      "end_line": 316,
+      "message": "The /weatherforecast endpoint has no .RequireAuthorization() call and is unauthenticated in both dev and production modes. All other API endpoints are protected. This appears to be a scaffolded test endpoint that was never secured or removed, and will remain a publicly accessible endpoint in any production deployment.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: /weatherforecast at line 305 lacks .RequireAuthorization() while every other endpoint has it. It returns only random scaffolded data with no real functionality or sensitive information, but it is an unprotected public endpoint in an otherwise fully-authenticated API.",
+      "severity_justification": "The endpoint exposes only random placeholder data (weather forecasts) — no sensitive data, business logic, or exploitable functionality. The concern is consistency and hygiene: a dead scaffolded endpoint that should be removed from a production API.",
+      "category_justification": "This is an unremoved scaffolded test artifact that creates inconsistency with the rest of the API's auth posture. While it has a minor security dimension, the real issue is that dead template code wasn't cleaned up.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Program.cs",
+      "start_line": 34,
+      "end_line": 36,
+      "message": "The `AddMicrosoftIdentityWebApi` call uses `builder.Configuration.GetSection(\"AzureAd\")` which doesn't automatically bind to the `AzureAdOptions` class used by Microsoft.Identity.Web. This can lead to configuration issues if not all properties are correctly mapped. The recommended pattern is to use `builder.Services.AddMicrosoftIdentityWebApi(builder.Configuration, \"AzureAd\");`, which handles binding correctly.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The IConfigurationSection overload of AddMicrosoftIdentityWebApi is a fully supported, documented first-class overload that binds MicrosoftIdentityOptions correctly. Both patterns (GetSection overload vs. IConfiguration + section name) are equivalent. Microsoft's own samples use GetSection as the primary pattern. The claim that it 'doesn't automatically bind' is factually incorrect.",
+      "severity_justification": "The finding is incorrect — no actual configuration issue exists with the current code.",
+      "category_justification": "The finding makes an incorrect factual claim about an API's binding behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.AppHost/AppHost.cs",
+      "start_line": 22,
+      "end_line": 26,
+      "message": "The configuration for Entra ID is hardcoded in AppHost.cs. This duplicates the values from `appsettings.Development.json` and makes them difficult to manage for different environments (like staging or production). This configuration should be managed through `appsettings.json` files or user secrets, and not be hardcoded in the AppHost.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Duplication confirmed: identical TenantId/ClientId/Audience values hardcoded in both AppHost.cs lines 23-25 and appsettings.Development.json. These env vars have higher config precedence and cannot be overridden per-environment without changing AppHost.cs. The recommended fix (appsettings/user-secrets) is wrong for the Aspire orchestrator model, but the core diagnosis of hardcoded values creating environment management friction is valid.",
+      "severity_justification": "These are public identifiers (not secrets) that change infrequently. The immediate risk is low; the concern is maintainability when moving to staging/production environments.",
+      "category_justification": "Hardcoded config values duplicated across files with no environment-parameterization strategy, making multi-environment management harder.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Program.cs",
+      "start_line": 28,
+      "end_line": 32,
+      "message": "The policy names 'RequireUserRead', 'RequireUserWrite', 'RequireAiAccess', and 'RequireSyncReadWrite' are hardcoded strings. Introduce constants for these names to ensure consistency and avoid typos when used elsewhere.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Policy name strings appear exactly once each in the codebase (definition only, no reference sites). No typo risk, no drift risk, no inconsistency exists. The suggestion is a generic best-practice template that doesn't identify a concrete issue in the actual code.",
+      "severity_justification": "Even if valid, this would be a minor naming/style concern with negligible impact.",
+      "category_justification": "The suggestion is about using constants instead of inline strings for consistency.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Auth/TenantContextMiddleware.cs",
+      "start_line": 17,
+      "end_line": 42,
+      "message": "Claim handling in 'TenantContextMiddleware' assumes the existence of specific claims ('tid', 'oid', etc.), but does not account for scenarios where claims might be missing entirely. This could cause persistent null values in 'TenantId', 'UserId', etc., leading to potential downstream issues. Add explicit checks or default values.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "FindFirstValue is null-safe and returns null when claims are absent. The middleware uses ?? chains for fallbacks, ITenantContext properties are string? (nullable by design), and downstream callers explicitly check for null where it matters. The finding doesn't identify any specific unhandled failure path — it's a generic 'handle nulls' suggestion that doesn't match what the code actually does.",
+      "severity_justification": "Even if valid, null TenantContext values are already the intended behavior for unauthenticated requests, and the downstream code handles them.",
+      "category_justification": "The finding makes a factual claim about missing null handling in the middleware.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Auth/TenantContextMiddleware.cs",
+      "start_line": 17,
+      "end_line": 42,
+      "message": "'TenantContextMiddleware' combines multiple methods of extracting claims values, but does not log or alert when expected claims are missing. Debugging runtime issues could be harder if mappings silently fail. Add logging for missing claims values.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The suggestion to 'add logging for missing claims' is a generic best-practice recommendation that could be applied verbatim to any claim-reading middleware without change. It does not identify a specific scenario where silent failure creates a concrete debugging problem unique to this code's dual-claim-mapping logic.",
+      "severity_justification": "No concrete debugging scenario is identified; this is a general observability improvement suggestion.",
+      "category_justification": "The finding is about logging/observability for easier debugging.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/SentenceStudio.Api.csproj",
+      "start_line": 12,
+      "end_line": 13,
+      "message": "The addition of the 'Microsoft.Identity.Web' library is fine for JWT Bearer authentication, but its version '3.8.2' should be verified against compatibility with the other dependencies (e.g., ASP.NET Core framework version in use).",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding states no concrete compatibility issue — it's a generic 'verify the version' reminder that could be applied to any NuGet package addition on any project. No specific incompatibility between Microsoft.Identity.Web 3.8.2 and net10.0 is identified. The project already uses net10-specific packages, and NuGet would catch hard framework incompatibilities at restore time.",
+      "severity_justification": "No actual compatibility problem is identified; this is speculative advisory advice.",
+      "category_justification": "The concern is about dependency compatibility affecting build or runtime reliability.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".squad/agents/jayne/history.md",
+      "start_line": 21,
+      "end_line": 23,
+      "message": "These two lines are duplicates of lines 18 and 19 immediately above. The \"It compiles\" / `InvalidateVocabSummary` / `pressSequentially` learnings appear twice in the Learnings list. Please remove the duplicate block (lines 21–23).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the file: lines 18-20 ('It compiles is NOT sufficient', 'Must call CacheService.InvalidateVocabSummary()', 'Playwright must use pressSequentially') are exact duplicates of lines 21-23. The PR introduced the Work Sessions section and the duplicated lines appear immediately before the Test users entry, confirming this duplication was introduced (or already existed) at this SHA.",
+      "severity_justification": "Purely a documentation/content duplication in an internal agent history file with no impact on code behavior.",
+      "category_justification": "The finding is about duplicate entries in a markdown history/notes file used by an AI agent.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".squad/agents/wash/history.md",
+      "start_line": 19,
+      "end_line": 20,
+      "message": "Line 20 duplicates line 19 (\"Server DB at: …\"). Please remove the duplicate entry.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the file: the 'Server DB at:' entry appears twice consecutively in the Learnings section. The duplicate is clearly present at this SHA.",
+      "severity_justification": "Purely a documentation duplication in an internal agent history file with no impact on code behavior.",
+      "category_justification": "The finding is about a duplicate entry in a markdown history/notes file used by an AI agent.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Program.cs",
+      "start_line": 30,
+      "end_line": 32,
+      "message": "The auth switch defaults to DevAuth for any environment when `Auth:UseEntraId` is absent or false. That means a non-development deployment can silently accept the fake DevAuth identity instead of failing closed or requiring Entra ID, which conflicts with the intended dev/CI-only fallback. Gate DevAuth on `IsDevelopment()`/CI explicitly and default production to JWT validation.",
+      "tp_fp": "fp",
+      "severity": "high",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The PR diff shows the code uses `else if (builder.Environment.IsDevelopment())` to guard DevAuth and a follow-on `else { throw new InvalidOperationException(...) }` for non-dev environments. Per the instruction to trust the diff hunk over the checked-out file for lines under review, the finding's claim that DevAuth is ungated for non-dev environments is factually incorrect at the reviewed snapshot.",
+      "severity_justification": "If the finding were true, an ungated DevAuth fallback in production would be a critical security bypass — but it is not true per the diff.",
+      "category_justification": "The concern is about unauthenticated/fake identity being accepted in production environments.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/appsettings.Development.json",
+      "start_line": 15,
+      "end_line": 15,
+      "message": "The configured audience uses `api://{clientId}`, while the PR's documented exposed scopes use `api://sentencestudio/...`. Tokens requested for those documented scopes will have the `api://sentencestudio` audience and be rejected by JWT validation against this value; align the Audience with the actual App ID URI.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The appsettings.Development.json configures Audience as `api://8c051bcf-bd3a-4051-9cd3-0556ba5df2d8` (api://{clientId}) while decisions.md explicitly documents scopes as `api://sentencestudio/user.read` etc., implying App ID URI `api://sentencestudio`. If the app registration is created per the architecture docs, tokens will have aud=api://sentencestudio which won't match the configured Audience, causing all JWT validation to fail.",
+      "severity_justification": "Would cause all Entra ID JWT validation to fail when the feature is first enabled, but is a config-only fix and Entra ID is not yet active (UseEntraId defaults to false).",
+      "category_justification": "The audience value in the config is inconsistent with the documented App ID URI, which would produce a token validation mismatch at runtime.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.AppHost/AppHost.cs",
+      "start_line": 25,
+      "end_line": 25,
+      "message": "This AppHost audience has the same mismatch as the development appsettings: the PR documents scopes under `api://sentencestudio/...`, but this config validates `api://{clientId}`. Tokens for the documented resource URI will be rejected by the API.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Per the PR diff, AppHost.cs passes the audience via `azureAdAudience = builder.AddParameter(\"AzureAdAudience\", secret: false)` and `.WithEnvironment(\"AzureAd__Audience\", azureAdAudience)` — a runtime parameter, not a hardcoded api://{clientId} value. The finding's claim that this file hardcodes an api://{clientId} audience is factually incorrect for the lines shown in the diff.",
+      "severity_justification": "If the claim were true it would cause JWT validation failures, but it is not accurate per the diff.",
+      "category_justification": "The concern is about a config value causing token audience validation mismatches.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/SentenceStudio.Api/Auth/TenantContextMiddleware.cs",
+      "start_line": 23,
+      "end_line": 29,
+      "message": "This mapping only checks raw `tid`/`oid` claim names. With JWT inbound claim mapping enabled, Entra ID tenant and object IDs are exposed under the Microsoft claim URI types instead, leaving `TenantContext` without tenant/user IDs for otherwise valid tokens. Include the mapped Entra claim types or explicitly disable claim mapping consistently.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Microsoft.Identity.Web's AddMicrosoftIdentityWebApi explicitly sets MapInboundClaims=false, preserving original JWT claim names (tid, oid, etc.) exactly as issued. The finding's concern about inbound claim type mapping is valid for plain JwtBearerHandler but does not apply when using Microsoft.Identity.Web, which is what this PR uses.",
+      "severity_justification": "If the finding were true, TenantContext would silently have null tenant/user IDs for valid Entra ID tokens — a real auth integrity issue. But the library addresses this.",
+      "category_justification": "The concern is about claim name resolution producing wrong or null values in TenantContext.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".squad/decisions.md",
+      "start_line": 23,
+      "end_line": 23,
+      "message": "The Phase 1 issue count is inaccurate: `#42-47` is six issues, not seven.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the file: the table lists Phase 1 (Auth) with count 7 but issues #42-47, which is only 6 issues (42, 43, 44, 45, 46, 47). The count is factually wrong.",
+      "severity_justification": "This is a documentation-only error in an internal planning file with no impact on code behavior.",
+      "category_justification": "The finding is about an incorrect count in a planning/decisions markdown file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".squad/decisions.md",
+      "start_line": 25,
+      "end_line": 25,
+      "message": "The Phase 3 issue count is inaccurate: `#48-53, #55` is seven issues, not eight.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the file: Phase 3 (Infrastructure) lists count 8 but issues #48-53, #55 — that is 6 issues in the range plus 1 more = 7 total, not 8. The count is factually wrong.",
+      "severity_justification": "Documentation-only error in an internal planning file with no impact on code behavior.",
+      "category_justification": "The finding is about an incorrect count in a planning/decisions markdown file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".squad/agents/wash/history.md",
+      "start_line": 20,
+      "end_line": 20,
+      "message": "This learning duplicates the previous line, which makes the agent history noisier without adding information.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the file: the 'Server DB at: /Users/davidortinau/Library/Application Support/sentencestudio/server/sentencestudio.db' entry appears on two consecutive lines in the Learnings section. This is the same duplicate identified in Finding 2, but each finding is evaluated independently on its own merit.",
+      "severity_justification": "Purely a documentation duplication in an internal agent history file with no impact on code behavior.",
+      "category_justification": "The finding is about a duplicate entry in a markdown history/notes file used by an AI agent.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".squad/agents/jayne/history.md",
+      "start_line": 21,
+      "end_line": 23,
+      "message": "These three learnings duplicate lines 18-20 exactly, which makes the agent history noisier without adding information.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the file: the three entries ('It compiles is NOT sufficient', 'Must call CacheService.InvalidateVocabSummary()', 'Playwright must use pressSequentially') at lines 18-20 are exactly duplicated at lines 21-23. Same issue as Finding 1, evaluated independently on its own merit.",
+      "severity_justification": "Purely a documentation duplication in an internal agent history file with no impact on code behavior.",
+      "category_justification": "The finding is about duplicate entries in a markdown history/notes file used by an AI agent.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".squad/agents/zoe/history.md",
+      "start_line": 37,
+      "end_line": 40,
+      "message": "This work session predates the project creation date shown at the top of the file (`Created: 2026-03-07`) and duplicates the 2026-03-13 issue-creation entry above. Keeping both dates makes the agent history contradictory.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the file: a second work session dated 2025-07-22 appears after a session dated 2026-03-13, and the project creation date is 2026-03-07. The 2025-07-22 date predates project creation by ~7 months, making it contradictory. Both sessions also describe creating the same 27 GitHub issues (#39-#65) for the same Azure plan, making them substantively duplicate.",
+      "severity_justification": "Documentation inconsistency in an internal agent history file with no impact on code behavior.",
+      "category_justification": "The finding is about contradictory dates and duplicate content in a markdown agent history file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

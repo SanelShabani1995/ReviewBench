@@ -1,0 +1,551 @@
+{
+  "pr_key": "fentas_b_136-6423e610",
+  "pr": {
+    "repo": "https://github.com/fentas/b",
+    "pr_number": 136,
+    "base": "57d153d72000867b04db6b94b968834a33cddd0d",
+    "head": "6423e61023ae918e04fdbc80541991f180062397"
+  },
+  "findings": [
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 310,
+      "end_line": 312,
+      "message": "Extension check uses `m.SourcePath` (the upstream/source path) instead of `destPath` (the local file being read and modified). If a user maps a source `.yaml` to a dest with a different extension (e.g., renamed via `dest:` config), the check incorrectly classifies the destination. More critically, if source is `.json` and dest is `.yaml`, pins are never applied to the YAML destination file. The check on line 310 and the `filePath` passed on line 326 to `applyPinsYAML` should both use `destPath`.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code at lines 310 and 326 does use `m.SourcePath` (upstream path) instead of `destPath` (local file) for extension checking and the filePath argument to `applyPinsYAML`. This is conceptually wrong. However, `DestPath` is only ever produced by `computeDest`, which always preserves the source filename and extension, so the described scenarios (extension mismatch) cannot occur in practice with current code. Still, using the wrong variable is a real bug in principle and would break if dest configuration ever allowed full filename overrides.",
+      "severity_justification": "In current usage, `DestPath` always has the same extension as `SourcePath` due to how `computeDest` works, so this causes no real misbehavior today. It is a latent correctness issue.",
+      "category_justification": "The wrong path variable is used for extension-based logic that determines whether pins are applied, which would produce incorrect behavior if source and dest extensions ever diverged.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 412,
+      "end_line": 435,
+      "message": "In dry-run mode, `status = \"unchanged\"` is never set because the entire hash-comparison block is inside `if !cfg.DryRun`. For pinned files where upstream changed but pins absorb the difference (content on disk would be unchanged), dry-run always reports `\"replaced (dry-run)\"` instead of `\"unchanged (dry-run)\"`. This is a new regression: before this PR, a file that was actually being overwritten with different content would report \"replaced\". Now there's a case (pinned file, no drift) where nothing would be written but dry-run says it would be. Users relying on dry-run to preview changes see false positives.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `status = \"unchanged\"` is inside `if !cfg.DryRun`, so dry-run mode always exits this block with `status = \"replaced\"`. For a pinned file where pin restoration absorbs all upstream changes (finalHash == localHash), dry-run reports `\"replaced (dry-run)\"` when nothing would actually be written. This is a regression introduced by this PR.",
+      "severity_justification": "Dry-run is a safety/preview feature; false positives (reporting 'replaced' when nothing would change) erode user trust and may cause unnecessary concern. Actual sync behavior is unaffected, but the expected use-case of dry-run to confidently preview changes is broken for pinned files.",
+      "category_justification": "The dry-run status output is factually incorrect — it reports 'replaced' for files that would not be written, which is a logic error in the status computation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 165,
+      "end_line": 168,
+      "message": "`setPath` and `addPath` insert raw `*yaml.Node` pointers from `localDoc` directly into `pendingDoc` without deep-copying them. In yaml.v3, AliasNodes (from YAML anchors like `*foo`) carry a `Value` field with the anchor name and are emitted verbatim by the encoder (`yaml_alias_event_initialize`). If a pinned subtree contains an AliasNode that references an anchor defined outside the pinned subtree (e.g., `kubectl: *defaults` where `&defaults` is at document root), encoding `pendingDoc` will emit the alias without its anchor definition, producing syntactically invalid YAML that fails on the next parse.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified with a working test: inserting a localDoc yaml.Node containing an AliasNode into pendingDoc without deep-copying causes the encoder to emit `*defaults` without the `&defaults` anchor definition when the anchor is not in pendingDoc. Re-parsing the output fails with 'yaml: unknown anchor referenced'. The code in setPath/addPath directly assigns `*yaml.Node` pointers from localDoc into pendingDoc without resolving aliases.",
+      "severity_justification": "Produces syntactically invalid YAML that corrupts the destination file and will fail on the next parse. However, the scenario (YAML anchors in a pinned subtree referencing anchors outside that subtree) is unusual for the intended use-case of version pinning, so real-world impact is moderate.",
+      "category_justification": "The node sharing between documents causes the encoder to produce structurally invalid output — a concrete logic error in how yaml.Node trees are manipulated.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 413,
+      "end_line": 413,
+      "message": "`lock.SHA256File(destPath)` error is silently discarded with `_`. If the file exists but cannot be read (e.g., a permissions issue introduced between the earlier `applyPins` read and this read), `localHash` is `\"\"`, which is always unequal to `finalHash`, so the write is attempted and fails — but the error from the write (`writeFile`) is less informative than the original read failure. The earlier `applyPins` call already correctly surfaces read errors; this second read should too.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The error IS discarded, but falling through to the write on SHA256File failure is the correct safe behavior — when you can't determine current state, writing the correct content is right. Errors are still surfaced if writeFile fails. The finding conflates 'discarding an optimization check error' with 'hiding an error'. The pattern also matches line 442 in the same file (pre-existing). The 'less informative error message' concern is trivially minor.",
+      "severity_justification": "Even if treated as a concern, the behavioral impact is negligible: fallback is to write (correct), and write errors are still surfaced.",
+      "category_justification": "The finding is about error handling and surfacing of I/O failures.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 67,
+      "end_line": 71,
+      "message": "Redundant extension check on `filePath` (which callers always pass as `m.SourcePath`). This mirrors the bug in the `applyPins` closure: both checks gate on source-file extension rather than the destination file's extension. If source is `.json` and dest is `.yaml`, `applyPinsYAML` returns `pending` unchanged before even looking for pins, silently breaking pin support for users who rename files via `dest:` config.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the ext check inside `applyPinsYAML` (lines 67-69) is redundant given `applyPins` already pre-filters, and it uses the passed `filePath` which is always `m.SourcePath` — the same source-vs-dest extension confusion as Finding 1. Both occurrences of the bug are in the same call chain.",
+      "severity_justification": "Same reasoning as Finding 1: `computeDest` always preserves file extensions so source and dest extensions never differ in practice. This is a latent/theoretical issue.",
+      "category_justification": "Using the wrong path variable for extension classification would cause incorrect filtering if source and dest extensions ever diverged.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 519,
+      "end_line": 523,
+      "message": "In the `StrategyReplace` branch (local changes detected), `applyPins` is called before the status is set to `\"replaced (local changes overwritten)\"`. This means pinned keys from the local file ARE preserved despite the strategy nominally replacing them, but the status message tells the user all local changes were overwritten. When a user has both pinned and non-pinned local edits, the pinned edits survive while the message says otherwise — misleading behavior that could cause confusion about which keys were actually restored.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `applyPins` is called in the StrategyReplace branch (line 519) before status is set to 'replaced (local changes overwritten)' (line 523). Pinned keys from local ARE preserved by design (PR explicitly states pins work across all strategies), but the status message incorrectly claims all local changes were overwritten. This is a factual inaccuracy in the reported status.",
+      "severity_justification": "The behavior itself is correct and intentional (pinning is designed to survive replace strategy). The misleading status is a UX concern that could cause confusion but has no impact on actual file content or sync correctness.",
+      "category_justification": "The status string reported to the user is factually incorrect — it says local changes were overwritten when pinned ones were actually preserved.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 265,
+      "end_line": 270,
+      "message": "`collectPinnedPaths` recurses into every map-valued child, including those whose key is `b.pin` itself (e.g., if a user accidentally writes `b.pin: {key: val}`). The recursion would then discover and return a path like `[..., \"b.pin\"]`, which `applyPinsYAML` would then try to apply via `setPath`/`addPath`, inserting the `b.pin` sub-map from local into the pending document at path `[..., \"b.pin\"]`. This can corrupt the pending YAML with junk subtrees that were never intended as pins. The recursion loop should skip keys whose name equals `PinAnnotation`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified by test: `b.pin: {key: val}` produces zero pin paths — the recursion enters the map but finds no `b.pin: true` annotation, so nothing is returned. The path `[..., 'b.pin']` is only produced by the absurdly contrived `b.pin: {b.pin: true}` pattern. The finding's stated trigger ('accidentally writes `b.pin: {key: val}`') does not cause the described problem.",
+      "severity_justification": "The actual trigger requires double-nested annotation abuse which would almost never occur accidentally.",
+      "category_justification": "The finding claims a logic error in path discovery but the described scenario does not produce the claimed behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 235,
+      "end_line": 235,
+      "message": "The documentation for `yamlNodesStructurallyEqual` states that `yaml.NewEncoder` is used. However, the implementation does not use `yaml.NewEncoder` but instead uses a custom `yamlStringWriter` directly with `yaml.Encoder`. While this works, it's inconsistent with the documentation and can be confusing. It's better to use `yaml.NewEncoder` with an `io.Writer` as is standard practice.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding claims the code 'does not use yaml.NewEncoder' but line 202 explicitly calls `yaml.NewEncoder(&yamlStringWriter{&buf})`. The `yamlStringWriter` is simply the `io.Writer` argument passed to `yaml.NewEncoder` — this is standard usage. The finding is factually incorrect.",
+      "severity_justification": "Even if valid, this would be a minor style observation with no behavioral impact.",
+      "category_justification": "The finding frames itself as a documentation-vs-implementation discrepancy.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 223,
+      "end_line": 223,
+      "message": "`yamlStringWriter` is an unnecessary custom type that implements `io.Writer`. Go's `strings.Builder` already implements `io.Writer`, so it can be passed directly to `yaml.NewEncoder`, simplifying the code.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`strings.Builder` implements `io.Writer` (verified), so the `yamlStringWriter` wrapper at line 223 is unnecessary. Both `yamlStringWriter.Write` and `strings.Builder.Write` return `(len(p), nil)`. Passing `&buf` directly to `yaml.NewEncoder` would work identically and remove the custom type entirely.",
+      "severity_justification": "No behavioral impact; purely a dead-code/simplification concern with negligible effect.",
+      "category_justification": "Unnecessary custom type adds code complexity without any functional benefit.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 204,
+      "end_line": 211,
+      "message": "`yaml.NewEncoder` returns an `*yaml.Encoder`. `enc.Close()` is not necessary when using `strings.Builder` as the writer, because `strings.Builder`'s `Write` method does not return errors and there's nothing to flush or close. The call to `enc.Close()` can be safely removed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code explicitly uses the error return from `e.Close()` in its control flow (returning nil on Close error to force safe 'not equal' path). Removing Close() would drop this error check. Additionally, yaml.Encoder.Close() emits the stream-end event and is part of the encoder lifecycle contract. The finding incorrectly claims it can be safely removed.",
+      "severity_justification": "The recommendation, if followed, would silently drop the Close error check that the code intentionally uses for safety, which is a minor behavioral regression.",
+      "category_justification": "The finding makes an incorrect claim about what can be safely removed from the code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 349,
+      "end_line": 353,
+      "message": "In `setPath`, the `goto` statement is unnecessary and makes the code harder to follow. The logic can be simplified by removing the `goto` and restructuring the loop slightly. This would improve readability and maintainability.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `goto next` pattern is a recognized Go idiom for continuing an outer loop from inside a nested loop. The label sits at the end of the outer loop body making flow clear. The alternatives (labeled break + bool flag) are not objectively simpler or more readable. The finding is a generic style preference without demonstrating a concrete improvement.",
+      "severity_justification": "Purely cosmetic; no behavioral impact.",
+      "category_justification": "The finding is about code readability and control flow style.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 453,
+      "end_line": 456,
+      "message": "In the `replace` strategy for new files, `applyPins` is called before `writeFile`. This is incorrect because for a new file, there's no existing local file to read pins from. The `applyPins` function correctly handles this by returning the pending content as-is if the local file doesn't exist, but calling it is unnecessary work and clutters the logic for this path.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Lines 453-456 are in the StrategyMerge error fallback, not StrategyReplace. This entire branch only executes when localChanged==true, which requires SHA256File to succeed — meaning the file must already exist. New files never reach this path. The applyPins call is correct and intentional: pins should be honored even in merge-failed-fallback scenarios.",
+      "severity_justification": "The finding misidentifies the code path and makes an incorrect claim about when it runs; no real issue exists.",
+      "category_justification": "The finding makes factually incorrect claims about which code path executes and when.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 393,
+      "end_line": 396,
+      "message": "In `addPath`, there's a defensive check to see if a node already exists. If it does, it iterates through `n.Content` again to find and replace the node. This second loop is redundant. The outer loop in `addPath` has already identified whether `found` is `nil` or not. This logic can be simplified by using the information from the first loop.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the first loop finds `found = n.Content[j+1]` but discards `j`, so when `found != nil` a second loop re-scans to find the same key to perform the replacement. Tracking the index in the first loop would eliminate the second scan entirely. The finding is factually correct and code-specific.",
+      "severity_justification": "The redundant loop is in a defensive code path explicitly noted as unlikely ('should have been handled by setPath'). No correctness or performance issue in practice.",
+      "category_justification": "Redundant loop scan is a code quality/simplification concern with no behavioral impact.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 115,
+      "end_line": 117,
+      "message": "Inconsistent handling of document root when pending is empty: the code synthesizes a mapping document but does not handle scalars or sequences, which could result in unexpected behavior.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Empty pending (0 bytes) has no document type — there is no scalar or sequence to handle. A mapping is the only correct starting point for attaching map-based pin annotations. The non-empty path correctly guards against non-mapping roots because actual content must be preserved; the empty path has nothing to protect. The finding does not identify a concrete problematic scenario.",
+      "severity_justification": "No concrete scenario where this causes incorrect behavior has been identified.",
+      "category_justification": "The finding claims inconsistent or unexpected behavior in document root handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 162,
+      "end_line": 170,
+      "message": "The yaml.v3 `Unmarshal` error path for pending documents with conflict markers silently skips pin restoration. This might cause user-intended pins to be ignored if the document had temporary merging errors.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The behavior is intentional and explicitly documented in the code comment: unparseable pending (conflict markers) cannot be structurally edited, so pins defer to the next clean sync. The finding restates this documented limitation without identifying a viable alternative. Returning pending unchanged preserves conflict markers for user resolution, which is the correct behavior.",
+      "severity_justification": "Documented limitation with a clear resolution path (next sync after conflict resolution). No data is lost and the user sees the conflict markers.",
+      "category_justification": "The finding claims pins are incorrectly skipped, but the behavior is intentional and documented.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 245,
+      "end_line": 249,
+      "message": "The `yamlNodesStructurallyEqual` function assumes encoding errors always yield non-equality. A legitimate encoding failure could cause an unnecessary substitution, potentially masking a real issue.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The behavior is explicitly documented and intentional — on encoding failure, the function falls through to the 'not equal' branch to run the substitution (safe fallback). The code comment already acknowledges this tradeoff. The finding restates documented behavior as a bug. 'Masking a real issue' is overstated: an unnecessary substitution still produces correct output.",
+      "severity_justification": "Even if treated as a concern, the worst case is an unnecessary substitution that produces correct output, not incorrect behavior.",
+      "category_justification": "The finding is about error handling and what happens when encoding fails.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 328,
+      "end_line": 333,
+      "message": "Local pin restoration does not handle edge cases where `os.ReadFile(destPath)` fails due to transient issues (e.g., I/O too busy), potentially aborting the pin process unnecessarily.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The behavior is intentional and documented: surfacing I/O errors is correct because silently skipping pin restoration would cause pinned keys to be overwritten with no indication. 'I/O too busy' on a regular local file is essentially impossible in practice. The finding is a generic 'what about transient errors' concern that could apply to any file read in any codebase, without a specific viable improvement.",
+      "severity_justification": "Hypothetical scenario (transient EBUSY on regular file) that is essentially impossible in practice.",
+      "category_justification": "The finding is about I/O error handling and transient failure resilience.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 420,
+      "end_line": 426,
+      "message": "The pin application at this stage appears redundant, given its earlier application. This could lead to multiple passes of the same application logic, impacting performance.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The four `applyPins` calls are in mutually exclusive branches (localChanged vs !localChanged, and different strategy cases within localChanged). Only one executes per file per sync — there is no redundant double-application. Lines 420-426 contain no `applyPins` call at all; the finding misreads the code structure.",
+      "severity_justification": "The finding is factually incorrect; no redundancy or performance issue exists.",
+      "category_justification": "The finding frames the concern as unnecessary work impacting performance.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin_test.go",
+      "start_line": 52,
+      "end_line": 61,
+      "message": "TestApplyPinsYAML_NoPinsIsNoOp lacks validation for verifying that YAML comments and formatting are preserved in no-op scenarios.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test already verifies byte-for-byte equality (`out == pending`), which would catch any comment or formatting loss regardless of what pending contains. The no-pin code path returns `pending` verbatim by definition. Adding comments to the test input would not exercise any additional code path or catch any additional failure mode.",
+      "severity_justification": "No behavioral gap exists; this is a suggestion to enrich test inputs without any corresponding code path that could fail.",
+      "category_justification": "The finding is about test coverage and validation completeness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 255,
+      "end_line": 273,
+      "message": "`collectPinnedPaths` records a `pinnedPath` for the outer map and then unconditionally recurses into its children, so a nested `b.pin: true` inside an already-pinned subtree will produce a second `pinnedPath`. `applyPinsYAML` will then call `setPath`/`addPath` again for that inner path, doing redundant work and (since `replacement` is shared by reference) re-installing the same `localNode` subtree a second time. It's harmless today but wasteful and a latent footgun if any future mutation runs between substitutions. Consider stopping the recursion once a pin is recorded at this level.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: collectPinnedPaths unconditionally recurses after recording a pin, producing redundant child pinnedPaths. In applyPinsYAML the equality check prevents double-substitution, but each redundant pin still incurs lookupPath + yamlNodesStructurallyEqual (which encodes the node twice via yaml.Encoder). The behavior is correct today but stopping recursion when a pin is found would be cleaner semantics and avoid the overhead.",
+      "severity_justification": "No incorrect behavior today — the equality check guards against actual double-substitution. The overhead is a constant per redundant nested pin and would only matter with deep/complex pinned hierarchies.",
+      "category_justification": "The core issue is unnecessary work: redundant path collection and equality checks for inner pins that are already covered by a pinned ancestor.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 491,
+      "end_line": 493,
+      "message": "This applies pin restoration only after the text merge. When a pinned subtree and upstream edit overlap, `doMerge` uses `git merge-file --diff3` and can produce conflict markers; `applyPinsYAML` then returns the unparseable pending content unchanged, so the pinned value is not preserved under `strategy: merge`. Pinned paths need to bypass or override the merge result even when the merge introduces conflict markers for that subtree.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually verified: Merge3Way uses git merge-file --diff3 and can produce conflict markers when local and upstream both changed the same YAML region. applyPinsYAML explicitly returns pending unchanged when yaml.Unmarshal fails (conflict markers make it invalid YAML), acknowledged in a code comment. This means b.pin: true does not protect the key under strategy: merge when the pinned subtree overlaps with upstream changes — the file ends up on disk with conflict markers for the supposedly-pinned key.",
+      "severity_justification": "Violates the core pin guarantee ('ignore upstream for this entry') under strategy: merge with overlapping edits — a realistic combination. The user ends up with conflict markers in a key they explicitly said should not change. Requires manual intervention to recover, and the 'next clean sync' promise in the comment is misleading.",
+      "category_justification": "The behavior contradicts the documented pin semantics — a key annotated b.pin: true can still end up with conflict markers written to disk under strategy: merge.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 355,
+      "end_line": 357,
+      "message": "When an upstream change turns an intermediate parent of a pinned path into a scalar or sequence, `setPath` fails and `addPath` also returns as soon as it reaches that non-mapping node. That silently drops the pinned subtree even though pins are supposed to replace whatever upstream produced for the same path; this path should replace the incompatible parent with a mapping so the pinned child can be restored.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: when an intermediate parent on a pinned path is a scalar or sequence in the pending document, setPath returns false, and addPath silently returns early at the `n.Kind != yaml.MappingNode` check. The `changed` flag is set anyway, so the document is re-encoded but without the pinned subtree — a silent pin failure.",
+      "severity_justification": "Requires an upstream schema-breaking change (mapping → scalar/sequence at an intermediate path segment), which is unusual. When it does occur the failure is silent — pin restoration is skipped without error — but the scenario is rare enough that most users won't encounter it.",
+      "category_justification": "Pin restoration silently fails for a specific structural case, violating the pin feature's guarantee that local pinned values are preserved across syncs.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 401,
+      "end_line": 403,
+      "message": "The new pin behavior is only covered at the `applyPinsYAML` helper level; the `SyncEnv` integration paths that call it are not tested. Existing sync tests exercise strategy/lock behavior in this package, so this needs coverage for at least replace/merge/client (including lock hash/status updates) to verify pins are actually honored when syncing real files.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: pin_test.go tests only the applyPinsYAML and collectPinnedPaths helpers in isolation. None of the SyncEnv integration test files contain any reference to pin or b.pin — the applyPins closure wired into the sync loop, the new lock hash skip logic, the status=unchanged path, and all three strategy branches go completely untested at the integration level.",
+      "severity_justification": "The new sync-level wiring (status updates, hash comparison skip, chmod fallback, four distinct applyPins call sites across branches) is untested at the integration level. A regression in any of these paths — wrong hash recorded in lock, incorrect status, file not written — would not be caught by the existing test suite.",
+      "category_justification": "The finding is about missing integration test coverage for the SyncEnv code paths that wire in the new pin feature.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/pin.go",
+      "start_line": 181,
+      "end_line": 184,
+      "message": "This re-emits the document through `yaml.v3` whenever a pin has to be restored, which means the pinned content is not preserved verbatim (comments/spacing/style can be rewritten). That conflicts with the PR behavior claim that pinned local YAML nodes are preserved verbatim across syncs; if byte preservation is required, the restore path needs to splice the original local bytes rather than marshal the whole document.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: when pin substitution is needed, the whole document goes through yaml.NewEncoder with SetIndent(2), which normalizes indentation/whitespace and does not guarantee byte-identical output — directly contradicting the PR description's 'preserved verbatim' claim. The code itself acknowledges this in the Formatting caveat comment, but the PR-level claim is misleading to users who rely on formatting/comment preservation in pinned sections.",
+      "severity_justification": "The limitation only affects formatting (indentation, whitespace normalization) when actual substitution occurs — values are always preserved correctly. The code already documents the caveat. Impactful mainly for users with hand-formatted YAML or inline comments inside pinned subtrees that drift from upstream.",
+      "category_justification": "The core issue is the gap between what the PR description claims ('verbatim') and actual behavior. The code comment already documents the caveat, so this is primarily a documentation/communication accuracy concern rather than a code correctness bug.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 491,
+      "end_line": 494,
+      "message": "After pin restoration, `spliced` can be identical to the current local file (for example, when the only local drift is a pinned subtree). This branch still proceeds with `merged`/`conflict` status and writes the file later, so the plan and mtime do not reflect that pins made the effective target unchanged. Consider performing the target-vs-local check after `applyPins` here as well.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the !localChanged branch explicitly checks localHash==finalHash after applyPins and skips the write+sets status=unchanged, with an explanatory comment. The StrategyMerge successful branch applies applyPins but unconditionally sets status=merged/conflict and writes the file without a post-pin on-disk check. The scenario (all local drift is in pinned subtrees, merge restores them) is realistic and produces the described behavior difference.",
+      "severity_justification": "Functional behavior is correct — the right content is written and the lock hash is accurate. Impact is limited to unnecessary mtime churn, spurious 'merged' status in sync plans, and file watcher triggers. Requires a narrow condition (all local drift in pinned subtrees) to manifest.",
+      "category_justification": "The plan/status output and file-write behavior are inconsistent with the !localChanged branch for the same effective outcome, though the underlying data is correct.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 462,
+      "end_line": 468,
+      "message": "If `applyPins` restores the local pinned content exactly, this fallback can leave `target` identical to the on-disk file but still reports a merge-failed overwrite and writes the file. That is misleading for pinned-only drift and can churn files unnecessarily; the target-vs-local unchanged check should be applied after pin restoration here too.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the merge-failed fallback applies applyPins(target) but unconditionally writes and sets status='replaced (merge failed:...)' with no post-pin on-disk check. The !localChanged branch explicitly does localHash==finalHash after applyPins and skips the write + sets status=unchanged. The scenario (user's only local change was adding b.pin, merge fails, pin restores local values) would make target identical to on-disk while reporting a spurious overwrite.",
+      "severity_justification": "Same impact profile as Finding 6: functional correctness is unaffected (right content on disk, correct lock hash), but status reporting is misleading and file is written unnecessarily. Requires a narrow condition to manifest.",
+      "category_justification": "Incorrect status reported in sync plan and unnecessary file write when pin restoration makes the effective target unchanged — inconsistent with the !localChanged branch's handling of the same situation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pkg/env/env.go",
+      "start_line": 424,
+      "end_line": 427,
+      "message": "A root-level pin returns the local bytes, but this unchanged-content path still applies the upstream file mode. The helper documents root `b.pin: true` as equivalent to `strategy: client` for the file; `StrategyClient` preserves the local mode, so root-pinned files can unexpectedly have permissions changed by upstream here.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: root b.pin: true causes applyPinsYAML to return local bytes verbatim, making finalHash==localHash and routing to the chmod-only branch. That branch applies upstream fileMode (line 424-427) via os.Chmod. StrategyClient never applies upstream mode. The pin.go docstring explicitly says root b.pin is 'equivalent to strategy: client at the per-file level', so applying upstream permissions directly contradicts the stated semantics.",
+      "severity_justification": "Mode changes on upstream YAML files are rare in practice, and the impact (wrong permissions on a config file) is noticeable and recoverable. The content is always preserved correctly — only permissions can be incorrectly updated.",
+      "category_justification": "Behavior contradicts documented semantics: root b.pin is stated to be equivalent to strategy: client, but unlike strategy: client, it still applies upstream file mode changes.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

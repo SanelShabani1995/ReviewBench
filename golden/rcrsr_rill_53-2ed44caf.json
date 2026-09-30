@@ -1,0 +1,211 @@
+{
+  "pr_key": "rcrsr_rill_53-2ed44caf",
+  "pr": {
+    "repo": "https://github.com/rcrsr/rill",
+    "pr_number": 53,
+    "base": "237cccc6a7726c10b01fc547cfbacf281dc0b7e3",
+    "head": "2ed44cafed83491d4f58902d478b23cbc0fd01ef"
+  },
+  "findings": [
+    {
+      "file": "packages/core/src/runtime/core/callable.ts",
+      "start_line": 63,
+      "end_line": 63,
+      "message": "`RuntimeContextLike.hostContext` is declared optional (`?: ... | undefined`), but `RuntimeContext.hostContext` is required. `CallableFn` passes `ctx: RuntimeContextLike` to every host function, so TypeScript requires optional chaining or a null check to access `ctx.hostContext`. The tests demonstrate this is broken in practice: every test that accesses `hostContext` uses an unsafe `(ctx as RuntimeContext).hostContext` cast to avoid the undefined. If the invariant is that `hostContext` is always set (enforced by `?? {}` in `createRuntimeContext`), `RuntimeContextLike` should declare it as required too, eliminating the need for casts and making the feature ergonomic for host function authors.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in the actual file: `RuntimeContextLike.hostContext` is declared as optional (`readonly hostContext?: Record<string, unknown> | undefined`) while `RuntimeContext.hostContext` is required. The tests confirm the consequence — every access uses `(ctx as RuntimeContext).hostContext` cast. The inconsistency is real and introduced by this PR.",
+      "severity_justification": "Not a runtime bug since the value is always set, but it makes the feature ergonomically broken for host function authors — the primary use case — forcing unsafe type casts everywhere.",
+      "category_justification": "The issue is an inconsistency in type contracts between `RuntimeContextLike` and `RuntimeContext` that degrades the public interface for host function authors.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/core/src/runtime/core/context.ts",
+      "start_line": 314,
+      "end_line": 314,
+      "message": "`hostContext` is assigned by reference and never frozen, yet it is shared across all child contexts (`createChildContext` propagates `parent.hostContext` directly). Any host function that mutates `ctx.hostContext` in-place — e.g. `(ctx as RuntimeContext).hostContext['key'] = value` — will affect every other host function call in the same execution tree, including parent and sibling scopes. Other shared context state such as `typeMethodDicts` is explicitly frozen with `Object.freeze`; `hostContext` has no equivalent protection. Either the object should be frozen at creation time (`Object.freeze(options.hostContext ?? {})`), or the documentation must clearly warn that the bag is mutable-shared.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: typeMethodDicts and other shared state are explicitly frozen with Object.freeze at context creation, but hostContext is not. It is propagated by reference to all child contexts with no freeze or documentation warning. The TypeScript readonly modifier only prevents reassignment, not in-place mutation like ctx.hostContext['key'] = value, which would silently affect all sibling and parent scopes.",
+      "severity_justification": "Silent cross-scope mutation of a shared bag is a subtle correctness hazard, but it only bites if a host function happens to mutate the object in-place. The design intent is read-only access, making the real-world risk moderate rather than high.",
+      "category_justification": "Shared mutable state across execution scopes without protection risks subtle, hard-to-debug side effects, a reliability concern rather than a pure API contract issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/core/src/runtime/core/context.ts",
+      "start_line": 150,
+      "end_line": 167,
+      "message": "The creation of dynamic functions in the `functions` map does not sanitize the output of `definition.fn` or enforce strong validation of its properties. This could allow potentially unsafe `fn` implementations to pass into the runtime.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The referenced code is pre-existing host function registration logic, not touched by this PR. Host-provided `fn` callbacks are intentionally trusted developer code in an embedded runtime design. The finding makes no concrete claim about an exploitable vulnerability — it just asserts that unvalidated callbacks could be unsafe, which is generically true of any callback system and provides no actionable finding.",
+      "severity_justification": "No concrete vulnerability is identified. The concern is generic and applies equally to any embedded scripting runtime by design.",
+      "category_justification": "The finding frames itself as a security concern about unsafe function implementations.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/core/src/runtime/core/context.ts",
+      "start_line": 253,
+      "end_line": 277,
+      "message": "The logic for validating type registrations (lines 253-277) does not handle duplicate type methods correctly in complex scenarios where `reg.protocol.format` depends dynamically on external configurations.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding references `reg.protocol.format` as relevant to lines 253-277, but that property does not appear in that code section — it is validated in a separate block at lines 219-227. The duplicate detection logic at the cited lines is straightforward and operates on a static `BUILT_IN_TYPES` constant, not on dynamic external configurations. The claimed failure scenario is vague and unverifiable against the actual code.",
+      "severity_justification": "No concrete bug is identified; the claim is unverifiable against the actual code at the referenced lines.",
+      "category_justification": "The finding is framed as a correctness issue with duplicate type method handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/core/src/runtime/core/context.ts",
+      "start_line": 282,
+      "end_line": 306,
+      "message": "While creating `leafTypes` (lines 282-306), the mandatory `any` is statically hardcoded and not derived from upstream or configurable resources, raising a bug-prone hardcoded assumption.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The code explicitly documents why `any` is hardcoded: it has no registration in BUILT_IN_TYPES but must reject type arguments per AC-4. This is intentional language design, not an oversight. The finding restates a generic 'hardcoded values are bad' principle without demonstrating any concrete failure mode. The code is also pre-existing and unrelated to the PR.",
+      "severity_justification": "No concrete bug is identified. The hardcoding is intentional, documented, and stable — `any` is a fundamental language primitive that will not change.",
+      "category_justification": "The finding is a stylistic concern about hardcoded values, not a correctness or security issue.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/core/tests/runtime/host-context.test.ts",
+      "start_line": 45,
+      "end_line": 60,
+      "message": "This host function definition omits the required `returnType` field from `RillFunction`. The `run` helper's options are typed as `Record<string, RillFunction>` (`packages/core/tests/helpers/runtime.ts:21-23`), and existing similar test fixtures include `returnType`, so this new test file will fail typechecking unless the field is provided.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The RillFunction interface requires `returnType: RillTypeValue` as a non-optional field (callable.ts line 101). Every function definition in host-context.test.ts omits this field. Existing test fixtures consistently include `returnType: anyTypeValue`. This is a genuine typecheck violation introduced by the PR.",
+      "severity_justification": "Typecheck failure in new test code means the PR's stated claim of 'Typecheck clean' is incorrect, and tests may not type-compile. The runtime tests themselves would still execute (JS doesn't enforce types at runtime), but it violates the project's typecheck CI gate.",
+      "category_justification": "Missing required field on an interface is a type correctness issue in the test code.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/core/tests/runtime/host-context.test.ts",
+      "start_line": 75,
+      "end_line": 90,
+      "message": "This host function fixture is missing the required `returnType` property for `RillFunction`. Because `run` accepts `TestOptions` with `functions?: Record<string, RillFunction>`, this object literal will not typecheck as written.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `useRouter` function definition at lines 75-90 omits the required `returnType: RillTypeValue` field from RillFunction. This is the same typecheck violation as Finding 1, but applied to a different function definition in the same file. The claim is factually correct and independently verifiable.",
+      "severity_justification": "Same severity as Finding 1 — a typecheck error in new test code, violating the project's typecheck contract for RillFunction definitions.",
+      "category_justification": "Missing required interface field is a type correctness issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/core/tests/runtime/host-context.test.ts",
+      "start_line": 103,
+      "end_line": 116,
+      "message": "This `RillFunction` object omits the required `returnType` field. The surrounding test helpers and existing runtime tests consistently provide `returnType`, so this new fixture will break TypeScript checking.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `readCtx` function definition at lines 103-116 also omits the required `returnType: RillTypeValue` field from the RillFunction interface. Factually correct and consistent with Findings 1 and 2.",
+      "severity_justification": "Same typecheck violation as the other instances — required field missing on RillFunction in new test code.",
+      "category_justification": "Missing required interface field is a type correctness issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/core/tests/runtime/host-context.test.ts",
+      "start_line": 128,
+      "end_line": 140,
+      "message": "This function definition is not a valid `RillFunction` because it does not provide `returnType`. Since `run` contextually types `functions` as `Record<string, RillFunction>`, this should be added to keep the test suite typechecking.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `checkCtx` function definition at lines 128-140 omits the required `returnType: RillTypeValue` field from RillFunction. Factually correct, same pattern as Findings 1-3.",
+      "severity_justification": "Same typecheck violation — required field missing on RillFunction in new test code.",
+      "category_justification": "Missing required interface field is a type correctness issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "packages/core/tests/runtime/host-context.test.ts",
+      "start_line": 160,
+      "end_line": 172,
+      "message": "This `capture` fixture also omits `returnType`, which is required by `RillFunction` and used when `createRuntimeContext` wraps application functions. The new test file should match the existing fixture pattern by declaring a return type.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `capture` function definition at lines 160-172 omits the required `returnType: RillTypeValue` field from RillFunction. Factually correct, same pattern as Findings 1-4.",
+      "severity_justification": "Same typecheck violation — required field missing on RillFunction in new test code.",
+      "category_justification": "Missing required interface field is a type correctness issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

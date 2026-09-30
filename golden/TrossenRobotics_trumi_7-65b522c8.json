@@ -1,0 +1,731 @@
+{
+  "pr_key": "TrossenRobotics_trumi_7-65b522c8",
+  "pr": {
+    "repo": "https://github.com/TrossenRobotics/trumi",
+    "pr_number": 7,
+    "base": "360fae55862616a61f31252a42a4ecb38838f171",
+    "head": "65b522c8c401c21783e0239a7bab6413e0e6b344"
+  },
+  "findings": [
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 951,
+      "end_line": 951,
+      "message": "The script uses integer division `//` where float division `/` is likely intended. `(video_end - video_start) // slam_frame_stride` will truncate the frame count, potentially leading to an underestimation of episode length and causing a `frame count mismatch` error if other cameras in the same episode calculate a different length.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The `video_start_end` values are computed as `start * slam_frame_stride + vid_start_frame` and `end * slam_frame_stride + vid_start_frame`, so their difference is always `(end - start) * slam_frame_stride` — exactly divisible by `slam_frame_stride`. `//` and `/` produce the same integer result. All cameras share the same `start`/`end` values, so no inter-camera mismatch is possible from this operation. The finding is factually wrong.",
+      "severity_justification": "Even if the claim were correct, the impact would be an off-by-one on episode length, not silent data corruption.",
+      "category_justification": "The finding claims incorrect arithmetic leading to wrong frame counts.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "diffusion_policy/common/replay_buffer.py",
+      "start_line": 139,
+      "end_line": 139,
+      "message": "The method `create_empty_zarr` unconditionally overwrites the `overwrite` parameter to `False` when calling `root.require_group`. This prevents callers from being able to overwrite existing data when intended, making the method less flexible.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The method is explicitly named `create_empty_zarr` and is designed to create fresh empty storage. Hardcoding `overwrite=False` is intentional: `require_group` will get-or-create, not clobber. The method has no `overwrite` parameter being overridden — there is simply no such parameter. No concrete harm scenario is demonstrated, and the typical usage always provides a fresh store.",
+      "severity_justification": "Even if this were a valid concern, it would only affect advanced callers who pass a pre-populated store to a method named 'create_empty'.",
+      "category_justification": "The finding is about method signature / API flexibility.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "diffusion_policy/common/replay_buffer.py",
+      "start_line": 684,
+      "end_line": 684,
+      "message": "The `chunk_size` property assumes that all data arrays have the same chunk size along the first dimension and only checks the last array returned by `self.data.arrays()`. If arrays have different chunk sizes, this can return a misleading value without any warning.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding incorrectly states the property 'only checks the last array'. The code `next(iter(self.data.arrays()))[-1].chunks[0]` gets the first (name, array) tuple from the iterator and then indexes `-1` of the tuple to get the array object — it reads the first array's chunk size, not the last. Additionally, `chunk_size` is never called anywhere in the codebase, so no actual misleading value is ever returned.",
+      "severity_justification": "The property is never used; even if the factual error were corrected, the impact is limited to an informational-only property.",
+      "category_justification": "The finding is about incorrect behavior of a property.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "diffusion_policy/common/replay_buffer.py",
+      "start_line": 851,
+      "end_line": 854,
+      "message": "In `rechunk_recompress_array`, if a rechunk is triggered, the metadata for `episode_ends` is resized, but the array itself is never rechunked to use the new size. It will be repeatedly re-allocated on each `add_episode` call, causing unnecessary overhead.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`rechunk_recompress_array` does rechunk the array: it moves the old array to `_temp`, copies it back with `chunks=(int(N*1.5),)`, and deletes `_temp`. The next `add_episode` call accesses `self.meta[\"episode_ends\"]` fresh and sees the new, larger-chunked array. Rechunking is not triggered on every call — only when `shape[0]` has grown past the chunk size, after which the new chunk is 1.5× the current length. The finding's core claim is factually incorrect.",
+      "severity_justification": "Even if the finding were correct about unnecessary overhead, it would be a minor performance concern, not a correctness issue.",
+      "category_justification": "The finding is about unnecessary reallocations/overhead.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/07_generate_replay_buffer.py",
+      "start_line": 361,
+      "end_line": 363,
+      "message": "The code processes every Nth raw frame to match the SLAM FPS. However, it uses `frame_idx // slam_frame_stride` to get the index into `tag_detection_results`. This is incorrect because `frame_idx` is from the full-rate video, so it should be `(frame_idx - tasks[curr_task_idx][\"frame_start\"]) // slam_frame_stride` to get the correct index relative to the start of the current task's segment.",
+      "tp_fp": "fp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`tag_detection_results` is indexed from frame 0 of the entire video (built by `detect_aruco.py` which processes the whole video). `frame_idx // slam_frame_stride` correctly maps an absolute video frame index to the corresponding SLAM-rate detection entry. The proposed fix `(frame_idx - frame_start) // slam_frame_stride` would index relative to the task start, looking up detections from the wrong (earlier) frames in the video.",
+      "severity_justification": "The finding incorrectly suggests a fix that would introduce a real bug: wrong ArUco detection data would be used for inpainting, causing tag artifacts at incorrect positions in the output images.",
+      "category_justification": "The finding makes an incorrect claim about array indexing logic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/trumi/utils/interpolation_util.py",
+      "start_line": 65,
+      "end_line": 70,
+      "message": "The `get_gripper_calibration_interpolator` function calculates `aruco_min_width` from `aruco_actual_width`, but then doesn't use it. It subtracts this minimum from `aruco_actual_width` to create `gripper_actual_width` which is then used in the interpolator. The intent seems to be to create an interpolator that outputs values relative to the minimum width (i.e., opening width from closed), but the variable naming is confusing and the description is not clear. `aruco_min_width` should be used or the logic clarified.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`aruco_min_width` is used directly on the line `gripper_actual_width = aruco_actual_width - aruco_min_width`. The finding's claim that it 'doesn't use it' is factually incorrect; the finding even contradicts itself by noting the subtraction. The docstring also clearly describes the intended behavior.",
+      "severity_justification": "No actual code issue exists; the function behaves exactly as documented.",
+      "category_justification": "The finding amounts to a variable naming / readability concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 673,
+      "end_line": 673,
+      "message": "The code uses `math.ceil` on `(start_timestamp - row[\"start_timestamp\"]) / dt` to calculate `video_start_frame`. This can result in a negative start frame if the episode's `start_timestamp` is before the video's `start_timestamp`, which can lead to incorrect indexing and data processing downstream. The logic should handle this case, for example by taking `max(0, ...)`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code immediately follows the `math.ceil` call with an explicit `if video_start_frame < 0:` block that adjusts `video_n_frames` and resets `video_start_frame = 0`. The negative-start-frame case is already handled; the finding's suggestion to add `max(0, ...)` is redundant.",
+      "severity_justification": "No actual issue; the scenario is already handled correctly.",
+      "category_justification": "The finding claims incorrect behavior (unhandled negative frame index).",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 948,
+      "end_line": 957,
+      "message": "The `video_start_end` tuple for each camera is calculated using `slam_frame_stride` to determine the start and end frames from the raw video. However, the calculation for the number of frames (`n_frames`) for low-dimensional data uses integer division (`//`). This discrepancy can lead to `n_frames` being slightly smaller than the duration implied by `video_start_end`, causing an off-by-one error or inconsistent lengths between image data and low-dimensional data in the final dataset.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`video_start_end` is computed as `start * slam_frame_stride + vid_start_frame` and `end * slam_frame_stride + vid_start_frame`, so their difference is `(end - start) * slam_frame_stride`, which is always exactly divisible by `slam_frame_stride`. Both the low-dim slice (`end - start`) and the image frame count (`(video_end - video_start) // slam_frame_stride = end - start`) are identical integers. No off-by-one or length discrepancy exists.",
+      "severity_justification": "No actual issue; the arithmetic is exact and consistent.",
+      "category_justification": "The finding claims a length inconsistency between image and low-dim data.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 71,
+      "end_line": 75,
+      "message": "The script assumes all videos have the same average frame rate (`fps`). If `fps` varies between videos, an exception is raised, which reduces resilience. Consider handling this gracefully by adapting processing for differing fps values.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The entire pipeline is built around a single fps value used for all timing calculations. Supporting differing fps would require major redesign and could produce silently corrupted data. The fail-fast exception is intentional and correct for this domain. The finding is a generic resilience suggestion without a concrete, actionable alternative.",
+      "severity_justification": "Even if the suggestion were accepted, there is no clear safe 'graceful' path — silently adapting could produce worse outcomes than failing loudly.",
+      "category_justification": "The finding is about error handling and resilience to unexpected inputs.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 764,
+      "end_line": 768,
+      "message": "In `pose_interp_from_df`, pose timestamps are assumed to be correct after adding `start_timestamp`. This could lead to inconsistencies if the `start_timestamp` is misaligned or if the data has gaps. Consider validating timestamp alignments.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is a generic suggestion ('consider validating timestamp alignments') without identifying a concrete failure scenario. The `start_timestamp` comes from the video's actual wall-clock start datetime, and the addition of relative SLAM timestamps to it is the correct design. Gaps are already filtered via `is_lost` checks. The finding could be copy-pasted onto any time-series processing code without modification.",
+      "severity_justification": "No concrete failure mode is identified.",
+      "category_justification": "The finding is about temporal data validation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/07_generate_replay_buffer.py",
+      "start_line": 398,
+      "end_line": 405,
+      "message": "When defining `get_image_transform` in `video_to_zarr`, there is no fallback or safeguard for cases where input image dimensions (`iw` and `ih`) are invalid or unexpected. This could lead to crashes. Validate dimensions before proceeding.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The `iw` and `ih` values come from PyAV's `in_stream.width` and `in_stream.height` — video container metadata that is always a valid positive integer for any openable video file with a video stream. The finding identifies no concrete scenario where these would be zero, negative, or otherwise invalid. This is generic 'validate your inputs' boilerplate.",
+      "severity_justification": "No realistic failure path is identified.",
+      "category_justification": "The finding is about input validation and potential crashes.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/trumi/utils/interpolation_util.py",
+      "start_line": 13,
+      "end_line": 21,
+      "message": "The `get_interp1d` function assumes the input array `t` is sorted and has no duplicate values. If these preconditions are not met, the interpolation may produce incorrect results or fail. Validate the input array `t` before constructing the interpolator.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`scipy.interp1d` already validates that x is sorted and raises a ValueError on violation. The two call sites use inherently ordered data (SLAM timestamps and explicit [min, max] calibration pairs). The finding is generic 'validate your inputs' boilerplate with no concrete failure scenario demonstrated.",
+      "severity_justification": "The library itself enforces the sorting precondition, so no silent failure would occur.",
+      "category_justification": "The finding is about input validation.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 415,
+      "end_line": 415,
+      "message": "[python.lang.security.deserialization.pickle.avoid-pickle] Avoid using `pickle`, which is known to lead to code execution vulnerabilities. When unpickling, the serialized data could be manipulated to run arbitrary code. Instead, consider serializing the relevant data as JSON or a similar text-based serialization format.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is a generic static-analysis boilerplate alert. The `tag_detection.pkl` files are produced by the same pipeline's own scripts and read from local trusted paths within the session directory. No concrete attack path (untrusted input → pickle.loads) is demonstrated. The finding could be copy-pasted onto any Python script that uses pickle without modification.",
+      "severity_justification": "No realistic attack vector exists in this local research pipeline context.",
+      "category_justification": "The finding is about deserialization security risk.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.security.deserialization.pickle.avoid-pickle"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 798,
+      "end_line": 798,
+      "message": "[python.lang.security.deserialization.pickle.avoid-pickle] Avoid using `pickle`, which is known to lead to code execution vulnerabilities. When unpickling, the serialized data could be manipulated to run arbitrary code. Instead, consider serializing the relevant data as JSON or a similar text-based serialization format.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical generic SAST boilerplate as Finding 13. Line 798 loads `tag_detection.pkl` produced by the same pipeline from local trusted paths. No concrete attack path from untrusted input to pickle.loads is demonstrated.",
+      "severity_justification": "No realistic attack vector in a local research pipeline.",
+      "category_justification": "Deserialization security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.security.deserialization.pickle.avoid-pickle"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 977,
+      "end_line": 977,
+      "message": "[python.lang.security.deserialization.pickle.avoid-pickle] Avoid using `pickle`, which is known to lead to code execution vulnerabilities. When unpickling, the serialized data could be manipulated to run arbitrary code. Instead, consider serializing the relevant data as JSON or a similar text-based serialization format.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 977 is `pickle.dumps` (serialization/write), not `pickle.loads` (deserialization/read). No code execution risk exists in serializing data to disk. Same generic SAST boilerplate as Findings 13 and 14; no concrete exploitable vulnerability is demonstrated.",
+      "severity_justification": "Writing a pickle file poses no deserialization risk at the write site.",
+      "category_justification": "Deserialization security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.security.deserialization.pickle.avoid-pickle"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/07_generate_replay_buffer.py",
+      "start_line": 184,
+      "end_line": 184,
+      "message": "[python.lang.security.deserialization.pickle.avoid-pickle] Avoid using `pickle`, which is known to lead to code execution vulnerabilities. When unpickling, the serialized data could be manipulated to run arbitrary code. Instead, consider serializing the relevant data as JSON or a similar text-based serialization format.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical generic SAST boilerplate. Line 184 loads `dataset_plan.pkl` produced by the previous pipeline step from a local trusted path. No concrete attack path from untrusted input to pickle.loads is demonstrated. This is the fourth instance of the same template alert.",
+      "severity_justification": "No realistic attack vector in this local research pipeline.",
+      "category_justification": "Deserialization security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.security.deserialization.pickle.avoid-pickle"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/07_generate_replay_buffer.py",
+      "start_line": 303,
+      "end_line": 303,
+      "message": "[python.lang.security.deserialization.pickle.avoid-pickle] Avoid using `pickle`, which is known to lead to code execution vulnerabilities. When unpickling, the serialized data could be manipulated to run arbitrary code. Instead, consider serializing the relevant data as JSON or a similar text-based serialization format.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Fifth instance of the identical generic SAST boilerplate. Line 303 loads `tag_detection.pkl` produced by the same pipeline from a local trusted path. No concrete attack path is demonstrated.",
+      "severity_justification": "No realistic attack vector in this local research pipeline.",
+      "category_justification": "Deserialization security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.security.deserialization.pickle.avoid-pickle"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/07_generate_replay_buffer.py",
+      "start_line": 410,
+      "end_line": 410,
+      "message": "we never call result() on any completed future. If video_to_zarr raises, the exception will be silently discarded.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`f.result()` is called on every completed future in two places (the mid-loop drain at lines 405-407 and the post-loop cleanup at lines 413-415), with explicit comments 're-raise any exception from video_to_zarr'. The claim that exceptions are silently discarded is factually incorrect.",
+      "severity_justification": "No actual issue; exception propagation is correctly implemented.",
+      "category_justification": "The finding is about exception handling in concurrent code.",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "shantanuparab-tr",
+        "url": "https://github.com/TrossenRobotics/trumi/pull/7#discussion_r3095328484",
+        "created_at": "2026-04-16T18:01:08Z",
+        "alignment": "on_chosen_head",
+        "original_commit": "65b522c8c401c21783e0239a7bab6413e0e6b344"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 734,
+      "end_line": 734,
+      "message": "file is never closed after opening.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Line 734 uses `with check_path.open(\"r\") as f:`, which is a context manager that guarantees the file is closed on exit from the block, including on exceptions. The claim that the file is never closed is factually incorrect.",
+      "severity_justification": "No actual resource leak exists.",
+      "category_justification": "The finding is about resource management (file handle leaks).",
+      "producer": "human_review",
+      "source": {
+        "type": "review_comment",
+        "author": "shantanuparab-tr",
+        "url": "https://github.com/TrossenRobotics/trumi/pull/7#discussion_r3095343492",
+        "created_at": "2026-04-16T18:03:57Z",
+        "alignment": "code_changed",
+        "original_commit": "f95d147338acdce8fcae0833ff3b7bd790252f1a",
+        "original_start_line": 734,
+        "original_end_line": 734
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 540,
+      "end_line": 550,
+      "message": "`is_lost` is consumed here (and on lines 547, 550, 753, 756, 776, 777) without first being coerced to `bool`. As the comment in `scripts/visualize_trajectory.py` notes (\"CSV may load it as 0/1 int\"), `pd.read_csv` typically loads this column as `int64`. When that happens:\n\n- `~csv_df[\"is_lost\"]` performs bitwise NOT on integers (0 → -1, 1 → -2), so `(~csv_df[\"is_lost\"]).sum()` on lines 547 and 753 returns a negative number rather than the count of tracked frames, making the early-exit checks meaningless.\n- `df.loc[~csv_df[\"is_lost\"]]` (line 550) and `df.loc[df[\"is_lost\"], …]` (lines 776–777) are not valid boolean masks when the series is int dtype and may raise or produce unexpected slices.\n\nPlease coerce `csv_df[\"is_lost\"]` to `bool` immediately after loading the CSV (matching the pattern used in `visualize_trajectory.py`).",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: pd.read_csv produces int64 for a 0/1 column. ~int64_series gives [-1, -2] values (bitwise NOT), not booleans. This makes (line 547) (~csv_df['is_lost']).sum() always negative → always < 60 → always breaks, silently dropping all episodes. Line 550 uses the int series as a .loc mask causing label-based lookup with labels -1/-2 (KeyError). Lines 776-777 use int values as row labels rather than boolean mask. The sibling script visualize_trajectory.py explicitly documents and applies .astype(bool) to fix exactly this issue.",
+      "severity_justification": "The missing bool coercion causes the dataset plan generator to silently drop every valid demo episode (line 547 check always fires) or raise a KeyError, making the script completely non-functional with typical CSV inputs.",
+      "category_justification": "Bitwise NOT on int64 instead of boolean negation produces wrong logical values, breaking episode filtering and mask-based row selection.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/07_generate_replay_buffer.py",
+      "start_line": 142,
+      "end_line": 144,
+      "message": "Calling `click.confirm(..., abort=True)` either returns `True` (user confirmed) or raises `click.Abort` (user declined). The returned value can never be `False`, so the surrounding `if ...: pass` is dead code. The whole `if pathlib.Path(output).is_file(): if click.confirm(...): pass` block can be simplified to just calling `click.confirm(...)` when the file exists.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: click.confirm with abort=True either returns True or raises click.Abort — it never returns False. The outer `if click.confirm(..., abort=True): pass` structure is logically equivalent to just calling `click.confirm(...)` directly. The `if...: pass` wrapper is dead code.",
+      "severity_justification": "Purely a code clarity issue — the runtime behavior is correct. The file-overwrite guard works as intended; only the surrounding structure is unnecessarily verbose.",
+      "category_justification": "Dead code / redundant branching structure that could mislead readers into thinking the if-branch does something meaningful.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 693,
+      "end_line": 715,
+      "message": "`n_frames` is mutated inside this loop via `n_frames = min(n_frames, video_n_frames)`. Because the second per-camera loop below (starting at line 723) uses the post-loop value of `n_frames` to slice `csv_df`, `tag_detection_results`, and to validate `pose_tag_tcp`/`gripper_widths` lengths, any per-camera `video_n_frames` shrinks the global window. The `cam_start_frame_idxs`/`cam_slam_frame_idxs` lists, however, were already computed with the original `n_frames`, so for cameras processed earlier in this loop the recorded raw-frame range may exceed the actual `n_frames` used later. Consider computing the minimum `n_frames` in a first pass and then computing the per-camera frame indices in a second pass, so that all indices are consistent with the final `n_frames`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "cam_start_frame_idxs only stores per-camera start positions computed purely from timestamps, with no dependency on n_frames. The 'range' is never encoded in these lists — it is dynamically computed at use time from the final (minimum) n_frames. In both the csv slicing (line 752) and the video_start_end output (line 947), the final n_frames correctly bounds the window. The finding's premise that the indices 'were already computed with the original n_frames' and might 'exceed the actual n_frames' is factually wrong about what these lists contain.",
+      "severity_justification": "Even if there were an inconsistency, the effect would be minor timing misalignment; however, no inconsistency exists.",
+      "category_justification": "The finding alleges an index-consistency bug in data window computation.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 239,
+      "end_line": 247,
+      "message": "`gripper_range_data` only contains `min_width` and `max_width`, and both are passed for both `aruco_measured_width` and `aruco_actual_width`. `get_gripper_calibration_interpolator` then subtracts `min(aruco_actual_width)` from `aruco_actual_width`, yielding `[0, max_width - min_width]`, and interpolates `measured → [0, max_width - min_width]`. With `measured == actual` this is just the identity shifted by `-min_width`, so the \"calibration\" step is effectively redundant here and the resulting widths will all start from 0 regardless of the actual gripper geometry. If this is intentional (because real calibration data is not yet available), please add a comment noting that this is a placeholder; otherwise the two width arrays should come from distinct measurements.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: aruco_measured_width and aruco_actual_width are both set to [min_width, max_width] from gripper_range.json. get_gripper_calibration_interpolator subtracts min_width, yielding [0, max-min] as output. The 'calibration' produces only an identity-shift-by-min with no measurement correction. The finding's factual description is correct.",
+      "severity_justification": "The gripper width output is still physically meaningful (0=closed, max-min=open) and the downstream consumer gets a normalized range. No crash, data loss, or wrong behavior results — it's missing a potential systematic ArUco distortion correction and lacks a comment explaining the choice.",
+      "category_justification": "The code works but the intent is unclear without a comment — a reader would wonder whether the identical measured/actual values are a placeholder, a deliberate simplification, or an oversight.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/trumi/utils/interpolation_util.py",
+      "start_line": 16,
+      "end_line": 19,
+      "message": "The local variable is named `gripper_interp` even though this is a generic 1-D interpolator used for both pose components (in `PoseInterpolator`) and gripper calibration. Renaming it to something neutral like `interp` would make the helper's intent clearer and avoid a misleading name in non-gripper call sites.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the variable `gripper_interp` is used inside the generic `get_interp1d` function, which is called for both position interpolation in PoseInterpolator and gripper calibration. The name is misleading for non-gripper use. The finding is factually correct.",
+      "severity_justification": "Purely a local variable name in a 3-line function body with no impact on callers, behavior, or public API. The function name and docstring already communicate the generic intent.",
+      "category_justification": "A naming inconsistency — the local variable name implies domain-specific use inside a generic utility function.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "pyproject.toml",
+      "start_line": 32,
+      "end_line": 32,
+      "message": "The new `diffusion_policy` package imports `numcodecs` unconditionally (here and in `replay_buffer.py`) and uses `numba` lazily inside `ReplayBuffer.get_episode_idxs`. Neither package is listed in `pyproject.toml`'s `dependencies`. As a result, the wheel will install but importing `diffusion_policy.codecs.imagecodecs_numcodecs` or `diffusion_policy.common.replay_buffer` will fail at module load time on a fresh environment. Please add `numcodecs` (and `numba`, if `get_episode_idxs` is intended to be callable) to the project dependencies.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: numcodecs is imported unconditionally at module load in replay_buffer.py and is absent from pyproject.toml dependencies (available only transitively via zarr v2). numba is imported lazily inside get_episode_idxs with no transitive path — it would fail on a fresh install. Both are direct runtime dependencies of the newly added diffusion_policy package included in the wheel.",
+      "severity_justification": "numba missing causes a hard ImportError when get_episode_idxs is called; numcodecs missing could break on zarr version bumps. The wheel installs but portions of the API silently fail at runtime on a fresh environment.",
+      "category_justification": "Missing declared dependencies cause installation/runtime failures rather than correctness bugs in the logic itself.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/07_generate_replay_buffer.py",
+      "start_line": 167,
+      "end_line": 167,
+      "message": "The replay buffer is built in a `MemoryStore`, so the entire generated dataset (including all compressed image chunks) must fit in RAM before it is saved. For multi-video sessions this can easily exhaust memory; write directly to a disk-backed/Zip store or stream chunks to disk instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: all data is written to zarr.MemoryStore() and only flushed to disk at the end. For large multi-video sessions (many cameras, many episodes), this can exhaust RAM. The finding accurately identifies the constraint.",
+      "severity_justification": "This is an offline data processing script, not a service. The compressed images (JpegXl) are much smaller than raw. The MemoryStore choice was deliberate for thread-safe concurrent chunk writes; the suggested fix introduces thread-safety complexity. For typical small-to-medium robotics datasets this works fine, but could fail on large sessions.",
+      "category_justification": "The issue is about memory usage — building the entire dataset in RAM before writing to disk — rather than a functional correctness or reliability bug.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 970,
+      "end_line": 971,
+      "message": "If no overlapping demo episodes are found, `total_available_time` remains 0 and this division crashes with `ZeroDivisionError` instead of reporting that no usable episodes were generated. Add an explicit check for an empty/zero-duration plan before computing the ratio.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: total_available_time initializes to 0.0 and is only updated inside the demo_data_list loop. If demo_data_list is empty, the division at line 970 raises ZeroDivisionError. This is a reachable edge case (e.g., misconfigured session directory with no synchronized multi-camera recordings).",
+      "severity_justification": "Causes an unhandled crash instead of a clear error message. A user with a misconfigured session or partial data gets a confusing ZeroDivisionError rather than a helpful 'no usable episodes found' message.",
+      "category_justification": "Unhandled edge case causing a runtime crash rather than graceful error reporting.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 700,
+      "end_line": 702,
+      "message": "This subtracts one after flooring the available SLAM-frame count, so a video with exactly 120 raw frames at stride 2 contributes 59 frames even though frames 0,2,...,118 are available (60 frames). That drops the last valid low-dim/image sample from every planned segment; compute the available count without the extra `- 1` unless there is a documented frame that must be skipped.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: math.floor((end_ts - start_ts) / dt_slam) - 1 does reduce by exactly 1 SLAM frame. For a 120-frame/2-stride case, 60 frames are available but 59 are used. The last valid frame is systematically excluded. No comment documents why -1 is needed, and it's not required to prevent out-of-bounds access.",
+      "severity_justification": "Loses exactly one valid sample per episode boundary, slightly reducing episode length. No crash or data corruption. For typical 30-second episodes at 60Hz this is a ~0.016s loss; negligible but technically an off-by-one in the absence of documentation justifying the safety margin.",
+      "category_justification": "Arithmetic formula produces a count that's one less than the actual available frames, causing a systematic off-by-one in data extraction.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/07_generate_replay_buffer.py",
+      "start_line": 227,
+      "end_line": 228,
+      "message": "Unlike the other low-dimensional arrays in this episode, `demo_start_pose` and `demo_end_pose` are written without casting to `float32`. Since the poses are produced from JSON/NumPy operations they will typically be `float64`, increasing dataset size and creating inconsistent dtypes for otherwise similar pose fields.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified via dtype chain: tcp_pose is float64 (tx_slam_tag loaded from JSON without explicit dtype propagates through matrix multiplications). eef_pos/eef_rot/gripper_width are explicitly cast to float32, but demo_start_pose and demo_end_pose use np.empty_like(eef_pose) which inherits float64 and are stored uncast — creating a real dtype inconsistency.",
+      "severity_justification": "Results in float64 storage (2× size) for two pose arrays while all other pose arrays are float32. No crash or incorrect behavior, but inconsistent dtypes and increased dataset size.",
+      "category_justification": "Unintended dtype inconsistency: similar fields (poses) have different numeric precision across the episode_data dict, diverging from the explicit float32 conversions applied to adjacent arrays.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 477,
+      "end_line": 479,
+      "message": "Correct the typo in this comment: \"disambiguiate\" should be \"disambiguate\".",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: 'disambiguiate' appears at lines 479 and 509 (the finding cites 477-479). The correct spelling is 'disambiguate'. The typo is factually present and the finding correctly identifies it.",
+      "severity_justification": "Purely a comment spelling error with no impact on runtime behavior, but it's a real typo in source code that should be corrected.",
+      "category_justification": "Spelling error in a source code comment.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 509,
+      "end_line": 509,
+      "message": "Correct the typo in this comment: \"disambiguiate\" should be \"disambiguate\".",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Already verified in Finding 11: 'disambiguiate' appears at both lines 479 and 509. Line 509 is the second occurrence of the same typo confirmed by grep.",
+      "severity_justification": "Purely a comment spelling error with no runtime impact.",
+      "category_justification": "Spelling error in a source code comment.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 900,
+      "end_line": 904,
+      "message": "`demo_start_poses`/`demo_end_poses` are captured before short valid segments are removed below. If the first or last valid run is shorter than `min_episode_length`, the saved start/end pose can refer to a frame that is not included in any emitted episode; compute these poses after the final valid segmentation, ideally per emitted segment.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: demo_start_poses/demo_end_poses are computed before short-segment removal (lines 900-907), then the segment filtering can invalidate the segment containing first_valid_step or last_valid_step (lines 909-919). The emitted episode uses these stale poses that may refer to frames outside any emitted segment.",
+      "severity_justification": "Results in incorrect robot conditioning poses (demo_start_pose/demo_end_pose) being stored with emitted episodes when the boundary valid segment is short. These are used as policy conditioning signals; wrong values could degrade training quality or cause incorrect robot behavior, though no crash occurs.",
+      "category_justification": "Logic ordering error: start/end poses captured from pre-filtered validity mask may reference frames that are ultimately excluded from all emitted episodes.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/07_generate_replay_buffer.py",
+      "start_line": 335,
+      "end_line": 339,
+      "message": "If decoding ends before the last task reaches `frame_end` (for example because the metadata frame count is wrong or the plan points past the video), the function exits without error and leaves the corresponding image chunks as zeros. Check after the decode loop that `curr_task_idx == len(tasks)` and that each task wrote the expected number of frames.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: if container.decode exhausts frames before curr_task_idx reaches len(tasks), the function returns without error. Image chunks for unwritten frames remain zero (zarr default). No post-loop assertion checks that all tasks completed. The failure mode is silent dataset corruption with zero-filled frames.",
+      "severity_justification": "Silent data corruption — zero-filled image frames mixed into the dataset degrade training quality with no error or warning. The failure scenario (plan pointing past actual video length) is plausible given the off-by-one issues noted elsewhere in the pipeline.",
+      "category_justification": "Missing post-condition check allows silent failure — incomplete processing with no error signal, leaving corrupt data in the output.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "diffusion_policy/common/replay_buffer.py",
+      "start_line": 569,
+      "end_line": 571,
+      "message": "This method imports undeclared dependency `numba` (not listed in `pyproject.toml`), and the jitted helper is later called with `self.episode_ends`; for the zarr backend that is a `zarr.Array`, not a NumPy array, so the method will fail at runtime. Load `episode_ends[:]` or avoid numba here, and declare any required dependency.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: episode_ends property returns self.meta['episode_ends'] which is a zarr.Array for the zarr backend. Passing this to @numba.jit(nopython=True) would raise a TypingError at runtime. Additionally numba is not declared in pyproject.toml. Both claims are factually correct.",
+      "severity_justification": "Hard runtime failure (TypingError) when get_episode_idxs() is called on any zarr-backed ReplayBuffer, which is the primary use case. The function fails with an unhelpful numba error rather than working correctly.",
+      "category_justification": "Passing a zarr.Array to a numba nopython JIT function is a type incompatibility that causes a hard runtime failure, beyond just a missing dependency declaration.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "scripts/scripts_slam_pipeline/06_generate_dataset_plan.py",
+      "start_line": 603,
+      "end_line": 607,
+      "message": "If every demo is excluded from left/right disambiguation, `cam_serial_right_to_left_idx_map` stays empty and gripper camera serials never get a `camera_idx`. The later `set_index(\"camera_idx\")` then produces NaN indices and the planner fails obscurely; abort here with a clear error when any gripper camera was not assigned.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: if every demo is excluded from disambiguation, cam_serial_right_to_left_idx_map stays empty, gripper cameras never enter cam_serial_cam_idx_map, and video_meta_df['camera_idx'] = NaN for all gripper camera rows. The subsequent set_index('camera_idx') at line 666 then has NaN indices causing obscure failures rather than a clear error message.",
+      "severity_justification": "When triggered (e.g., all videos have too many lost SLAM frames, exacerbated by the is_lost bool-coercion bug in Finding 1), the script fails with a confusing pandas error instead of a clear 'failed to disambiguate gripper left/right' message. The failure scenario is plausible.",
+      "category_justification": "Missing guard for an empty-disambiguation edge case leads to obscure downstream failure rather than graceful error handling.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

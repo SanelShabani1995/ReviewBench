@@ -1,0 +1,151 @@
+{
+  "pr_key": "Alan-Jowett_sonde_148-c58a06a5",
+  "pr": {
+    "repo": "https://github.com/Alan-Jowett/sonde",
+    "pr_number": 148,
+    "base": "eb6fa2805d4dcc8de0494ce06f82ea3d8a5132f1",
+    "head": "c58a06a5a4eb45ccfffb8c0ba75306d559482b39"
+  },
+  "findings": [
+    {
+      "file": "crates/sonde-node/src/sleep.rs",
+      "start_line": 91,
+      "end_line": 95,
+      "message": "`will_wake_early()` was not updated to account for the new MIN_SLEEP_INTERVAL_S clamp in `effective_sleep_s()`. When `base_interval_s == 1` (= MIN_SLEEP_INTERVAL_S) and `set_next_wake(0)` is called, `will_wake_early()` returns `true` (0 < 1) but `effective_sleep_s()` also returns 1 (clamped). wake_cycle.rs then sets the early-wake flag, causing the next boot to observe `WakeReason::Early` instead of `WakeReason::Scheduled` even though the node did not actually sleep less than the base interval. The fix should compare `effective_sleep_s() < base_interval_s`, or equivalently guard `will_wake_early()` with a check that the clamped effective sleep is strictly less than the base interval.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `will_wake_early()` checks `override_s < base_interval_s` using raw values, but `effective_sleep_s()` now clamps to MIN_SLEEP_INTERVAL_S=1. When base_interval_s==1 and set_next_wake(0), will_wake_early() returns true (0<1) but effective_sleep_s() returns 1 (clamped, equal to base). wake_cycle.rs line 394 uses will_wake_early() to set the early-wake flag, so the next boot gets WakeReason::Early incorrectly. The inconsistency was introduced by adding the clamp to effective_sleep_s without updating will_wake_early.",
+      "severity_justification": "Only triggers when base_interval_s == MIN_SLEEP_INTERVAL_S (1 second), an unusual edge case. The consequence is an incorrect WakeReason::Early on the next wake, which could affect BPF program behavior that inspects wake reason, but won't cause battery drain or data loss.",
+      "category_justification": "The two methods in the same struct compute inconsistent answers about whether an early wake is actually occurring, leading to incorrect WakeReason state on the next boot.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/sonde-node/src/pairing.rs",
+      "start_line": 325,
+      "end_line": 339,
+      "message": "`factory_reset_clears_key` initialises `FakeStorage::paired` with `channel: None` and only asserts `read_key() == None` after the reset. It does not start with a non-default channel (e.g. `Some(6)`) and does not assert `read_channel() == Some(1)`, so the test provides no regression coverage for the channel-clearing behaviour introduced by this PR. A future regression that omits `write_channel(1)` from `factory_reset` would not be caught at the integration level.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: `factory_reset_clears_key` in pairing.rs uses `FakeStorage::paired(0x0001, [0xBB; 32])` which sets `channel: None`, and the test only asserts `read_key() == None` — no channel assertion. The key_store.rs unit test does cover channel clearing, but the pairing-layer integration test has a real gap: it wouldn't catch a regression that drops `write_channel(1)` from `factory_reset` called via the pairing path.",
+      "severity_justification": "The channel-clearing behavior is covered at the unit level in key_store.rs (test_factory_reset sets channel=Some(6) and asserts Some(1)). The gap is at the integration/pairing layer only, so a regression would be caught by the unit test. Minor testing coverage gap.",
+      "category_justification": "The finding identifies a specific missing assertion in a test for PR-introduced behavior, reducing regression coverage for the channel-clearing fix.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/sonde-modem/src/bridge.rs",
+      "start_line": 770,
+      "end_line": 807,
+      "message": "`usb_reconnect_clears_decoder_state` injects bytes `[0x01, 0x02, 0x03, 0xFF, 0xFE]` which are interpreted as a 258-byte length-prefixed frame (len = 0x0102 = 258). The test assumes these stay as a *partial* frame in the decoder buffer, relying on `SERIAL_MAX_LEN >= 258` (currently 512). If `SERIAL_MAX_LEN` were reduced below 258, the first `poll()` would trigger `FrameTooLarge`, which *already* calls `decoder.reset()` and breaks the loop. The decoder state would be cleared before the simulated reconnect, so the test would pass without ever exercising the reconnect path's new `decoder.reset()` call, defeating its purpose.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: bytes [0x01, 0x02, 0x03, 0xFF, 0xFE] parse as big-endian len=258 which is < SERIAL_MAX_LEN=512, so no FrameTooLarge fires and the bytes stay as a partial frame. If SERIAL_MAX_LEN were reduced below 258, FrameTooLarge would fire and the bridge's own error handler (line 143) already calls decoder.reset(), clearing the state before the simulated reconnect — the test would pass but not exercise the new reconnect code path.",
+      "severity_justification": "SERIAL_MAX_LEN is currently 512 and defined in the protocol crate — reducing it below 258 would be an unusual change. The fragility is real but unlikely to be triggered in practice. Low-severity test quality issue.",
+      "category_justification": "The finding identifies a hidden dependency in a new test that could cause it to silently stop exercising the code path it was written to cover.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/sonde-node/src/bpf_dispatch.rs",
+      "start_line": 322,
+      "end_line": 325,
+      "message": "Rejecting `write_len == 0` in `helper_i2c_write_read` is a silent breaking change. Some I2C devices are probed with a zero-byte write (address-only transaction) followed by a read. These transactions return -1 after this change where they previously reached the HAL. Since `helper_i2c_write` also rejects zero-length writes, there is now no helper available to BPF programs for I2C address probing. If this is intentional, the verifier/ABI documentation should be updated; if not, only `read_len == 0` should be rejected.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: before this PR write_len=0 reached the HAL in write_read, now it returns -1. This is a silent ABI change. The finding correctly identifies that I2C address probing (zero-byte write + read) is a valid hardware pattern. However, all documentation (bpf-environment.md, sonde_helpers.h) describes the function as 'write register address, then read value' — a pattern that always needs non-zero write_len — and no test programs use zero write_len. Still, the documentation doesn't explicitly state write_len=0 is rejected, making this a legitimate API clarity concern.",
+      "severity_justification": "The undocumented constraint affects an unusual use case (I2C address probing) not covered by any existing test programs or docs. The i2c_write helper already rejected zero-length writes, limiting the practical impact. The documentation gap is the primary actionable issue.",
+      "category_justification": "The finding is about a silent change to the BPF helper ABI contract — specifically whether write_len=0 is a valid input — and whether the documentation reflects the new constraint.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/sonde-node/src/program_store.rs",
+      "start_line": 197,
+      "end_line": 199,
+      "message": "The tombstone comment `// NOTE: resolve_map_references was removed in the sonde-bpf migration. LDDW src=1 map reference relocation is now handled at runtime by the sonde_bpf interpreter backend.` is narration about a past change, not an invariant or constraint needed to understand the surrounding code. It belongs in a commit message, not in source. More concretely, if the sonde_bpf backend ever stops handling LDDW src=1 at runtime, this comment gives no signal that anything is wrong — there is no code to read and no assertion to fail.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the comment at lines 192-194 is historical narration ('was removed in the sonde-bpf migration') that adds no constraint or invariant. The same architectural fact is already documented as a proper invariant in the LoadedProgram struct doc comment (lines 8-11). The project's own AGENTS.md explicitly prohibits this type of 'why we did this narration' in source code, calling for it to go in commit messages instead.",
+      "severity_justification": "Pure documentation/style issue. Removing the comment loses nothing since the same information is captured in the struct-level doc comment as a proper invariant, and the deletion history is in git. No behavior is affected.",
+      "category_justification": "Unnecessary tombstone comment that violates the project's explicit no-narration coding convention and is redundant with existing documentation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/sonde-node/src/key_store.rs",
+      "start_line": 54,
+      "end_line": 58,
+      "message": "The `factory_reset` function writes the default channel, which might fail. However, the result of `self.storage.write_channel(1)?` is not checked, and the enclosing function `factory_reset` returns `NodeResult<()>`, so an error would not be propagated. Consider handling the potential error from `write_channel`.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code at line 60 reads `self.storage.write_channel(1)?;` — the `?` operator is present and errors are propagated via the `NodeResult<()>` return type. The finding's claim that the result is not checked and not propagated is factually incorrect.",
+      "severity_justification": "The finding is incorrect, so there is no actual issue. Severity is low since even if the ? were missing it would only matter on platforms where write_channel can fail.",
+      "category_justification": "The finding alleges missing error propagation, which would be a correctness/reliability issue, but the claim is wrong.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "crates/sonde-node/src/sleep.rs",
+      "start_line": 16,
+      "end_line": 19,
+      "message": "The PR description says this change fixes issue #127, but that issue tracks per-frame heap allocations in `esp_transport.rs` and `espnow.rs`. Those files still contain the `payload.to_vec()` allocation paths, so merging this with `Fixes #127` would incorrectly close the issue without addressing it.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding's central claim — that issue #127 tracks per-frame heap allocations in esp_transport.rs and espnow.rs — cannot be verified from the repository. The GitHub issue content is external metadata not available in the codebase. While `payload.to_vec()` calls do exist in those files, whether that is the subject of issue #127 is unverifiable. The finding is also incorrectly filed against sleep.rs:16-19, which is the MIN_SLEEP_INTERVAL_S constant and entirely unrelated to the claim.",
+      "severity_justification": "Even if the issue link were wrong, incorrectly auto-closing a GitHub issue is a minor administrative inconvenience, not a code correctness or reliability problem.",
+      "category_justification": "The finding concerns the PR description's `Fixes #127` issue linkage, not the code logic itself.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

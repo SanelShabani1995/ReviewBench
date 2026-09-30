@@ -1,0 +1,453 @@
+{
+  "pr_key": "handlebars-lang_handlebars.js_2132-dcaafb42",
+  "pr": {
+    "repo": "https://github.com/handlebars-lang/handlebars.js",
+    "pr_number": 2132,
+    "base": "70b8f1145dbbb6c925dc1e52c81673cacea8cfa1",
+    "head": "dcaafb425e64e5587d500a9175542756ab2b6417"
+  },
+  "findings": [
+    {
+      "file": "tests/bench/compare.mjs",
+      "start_line": 199,
+      "end_line": 199,
+      "message": "allNames.size === 0 will never be true because allNames is an Array (spread from a Set), not a Set itself. Arrays have .length, not .size. This property is always undefined, so the guard never fires and empty sections are never skipped — they render with just a header and no rows.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in the code: allNames is created as [...new Set(...)].sort() — a plain Array. Arrays have no .size property, so allNames.size is always undefined and the guard `allNames.size === 0` never fires. The correct check would be allNames.length === 0.",
+      "severity_justification": "The broken guard only matters when a section has no benchmark rows, which requires an unusual edge case in parsed files. If it does happen, the output is cosmetically wrong (empty table header) but no crash or data corruption occurs.",
+      "category_justification": "Using .size on an Array instead of .length is a factual logic error — the guard condition is always false.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/size.mjs",
+      "start_line": 16,
+      "end_line": 16,
+      "message": "join(__dirname, '..', 'dist') resolves to tests/dist/ because __dirname is tests/bench/. The project-root dist/ directory is two levels up, so this should be join(__dirname, '..', '..', 'dist'). The bench:size command will always print 'dist/ directory not found' even after a successful build.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: __dirname in tests/bench/size.mjs is tests/bench/. join(__dirname, '..', 'dist') resolves to tests/dist/, but the actual dist directory is at the project root. The path should be join(__dirname, '..', '..', 'dist'). This causes bench:size to always warn that dist/ is not found.",
+      "severity_justification": "The bench:size command's dist file measurement feature is completely broken — it always shows the warning and skips the distribution file size table. The precompile size section still works, but an entire section of the tool is non-functional.",
+      "category_justification": "Wrong relative path resolves to a directory that never exists, causing a feature of the script to always silently skip.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "README.md",
+      "start_line": 122,
+      "end_line": 125,
+      "message": "The README refers to bench/results/ in both the example command (bench/results/bench-*-main.md) and the description, but results are actually saved to tests/bench/results/ (report.mjs:85 uses join(__dirname, 'results')). The example glob will match nothing since the path is wrong, breaking the documented explicit-file workflow.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: report.mjs uses join(__dirname, 'results') where __dirname resolves to tests/bench/, so results are saved to tests/bench/results/. The README describes the path as bench/results/ in both the description and the example command, which is incorrect. The explicit-file example glob bench/results/bench-*-main.md will match nothing.",
+      "severity_justification": "The auto-select workflow (running bench:compare with no arguments) still works correctly. Only the documented explicit-file invocation example is wrong, which is a documentation error that would confuse users trying to specify files manually.",
+      "category_justification": "The wrong path in README.md is a documentation error — the actual runtime behavior is defined correctly in the code; only the documented example is misleading.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/compare.mjs",
+      "start_line": 35,
+      "end_line": 35,
+      "message": "Error message says 'No benchmark results found in bench/results/.' but the actual search path is tests/bench/results/ (resultsDir = join(__dirname, 'results')). Users following the error message will look in the wrong directory.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: resultsDir = join(__dirname, 'results') where __dirname = tests/bench/, so results live at tests/bench/results/. The error message on line 35 says 'bench/results/' which is wrong — users following it will look in the wrong place. The usage hint also says 'node bench/compare.mjs' when the actual path is tests/bench/compare.mjs.",
+      "severity_justification": "This only affects the error message shown when no results exist yet — the actual runtime behavior is unaffected. It's a cosmetic mismatch that could momentarily confuse a new user looking for the results directory.",
+      "category_justification": "The issue is an incorrect path in a user-facing error/diagnostic message, not in functional code logic.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/handlebars/compiler/javascript-compiler.js",
+      "start_line": 177,
+      "end_line": 177,
+      "message": "this.context.environments.length = 0 truncates the shared context's environments array. While the root compiler is done at this point, this is a mutating side effect on context.environments — a property that is structurally parallel to context.programs and context.decorators which are NOT cleared. If any consumer of the returned ret object or the context ever calls matchExistingProgram afterwards (e.g. via a retained reference), it would silently find no existing programs and re-compile duplicates. The cleanup has no test coverage and is unsafe to add inside a shared-context design.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The truncation at environments.length = 0 is safe. compileChildren() is called synchronously before this point; all matchExistingProgram calls happen inside compileChildren and are complete before the root compiler reaches the !isChild block. The context object is not included in the returned ret (only programs[i]/decorators[i] values are copied). There are no retained external references to context that could trigger matchExistingProgram after the truncation.",
+      "severity_justification": "Even if the concern were valid, it would only affect deduplication (causing redundant recompilation), not correctness. But the concern is factually wrong.",
+      "category_justification": "The finding claims a mutation could cause incorrect behavior at runtime.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/perf.mjs",
+      "start_line": 125,
+      "end_line": 135,
+      "message": "The COMPILATION section benchmarks compile+first-render correctly (each hb.compile() call returns a new uncached closure), but a single shared hb instance is reused across all iterations of the same benchmark task. Any state accumulated on hb (e.g. partial or helper registrations from previous iterations, though unlikely here) would persist. More critically, the 'arguments' template registers helpers on hb; if Handlebars.create() is called only once before bench.add() but the benchmark runs thousands of iterations, any mutation of hb inside compilation would accumulate. This is a latent contamination risk as new templates or helpers are added.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "createEnv() registers helpers/partials once before bench.add(), not inside the benchmark lambda. Each iteration of hb.compile(def.template)({}) creates a fresh closure with its own compiled variable — no state accumulates on hb. The concern about accumulation across iterations is not supported by the current code; it's a speculative future risk only.",
+      "severity_justification": "Even if new templates were added that mutate the hb environment during compilation (hypothetically), it would only affect benchmark accuracy, not production code.",
+      "category_justification": "The finding claims a contamination/state accumulation bug in benchmark logic.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/compare.mjs",
+      "start_line": 17,
+      "end_line": 20,
+      "message": "When auto-selecting files, if there is exactly one result file, the error message says 'Only one benchmark result found' — but the files array was built without sorting by mtime. A subsequent sort(by mtime) for the else-branch happens later; the files used in the mainFile search are unsorted, which is fine. However, if mainFile is found but others is empty (only one non-main file exists alongside the main file), currentPath = others[0] will be undefined, causing readFileSync to throw an unhandled TypeError ('path must be a string') rather than a clean error.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The guard `if (files.length < 2)` ensures we only reach the mainFile branch when files.length >= 2. Filtering out mainFile (one file) leaves at least 1 element in others, so others[0] is always defined. The described scenario requires others.length === 0, which requires files.length === 1, which is impossible here since the guard already exited in that case.",
+      "severity_justification": "The scenario is impossible given the existing guard, so there is no actual bug.",
+      "category_justification": "The finding claims a runtime error from undefined path, which would be a correctness/reliability issue if true.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "package.json",
+      "start_line": 54,
+      "end_line": 56,
+      "message": "The bench, bench:compare, and bench:size scripts are registered under tests/bench/*.mjs, but the .gitignore adds /tests/bench/results/ (not /bench/results/). While consistent with the actual paths, the npm script names (bench, bench:compare, bench:size) don't reflect that these are in tests/ — which is non-standard: benchmark tooling is typically at the project root (bench/) rather than inside tests/. This creates confusion with README examples using bench/results/ paths.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "All claims are factually correct: scripts run from tests/bench/*.mjs, .gitignore adds /tests/bench/results/, but the README documents paths as bench/results/. The PR description also calls them 'new (bench/)' though they live in tests/bench/. This structural inconsistency is the root cause of the README path errors verified in finding 3.",
+      "severity_justification": "The issue is organizational — benchmarks work correctly, but users following README examples will use wrong paths. No production code is affected.",
+      "category_justification": "The finding is about project structure and naming inconsistency between where files actually live (tests/bench/) and how they're documented (bench/), affecting developer experience.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/compare.mjs",
+      "start_line": 34,
+      "end_line": 42,
+      "message": "The script may fail with an unhandled error if no benchmark results are found. `readdirSync` will throw if the `results` directory does not exist, but the script only handles the case where it returns an empty array. This will cause an uncaught exception instead of showing the user-friendly error message.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The readdirSync call is wrapped in a try/catch block (lines 25-30) that catches all exceptions including ENOENT (directory not found) and sets files = []. This triggers the user-friendly 'No benchmark results found' error message via the files.length < 2 guard. The finding's claim of an unhandled exception is incorrect.",
+      "severity_justification": "Even if the finding were correct, it would only affect a developer tool (not production) and produce a slightly worse error message.",
+      "category_justification": "The finding makes a factual claim about error handling behavior that is wrong.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/compare.mjs",
+      "start_line": 70,
+      "end_line": 75,
+      "message": "When `mainFile` is not found, the script selects the two most recent files for comparison. However, due to sorting by modification time ascending (`a - b`), it incorrectly selects the two *oldest* files by taking `files[files.length - 2]` and `files[files.length - 1]`. The sort should be descending to select the newest files.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "With ascending sort (a - b), files[files.length-1] is the newest and files[files.length-2] is the second-newest. The code correctly selects the two most recent files as baseline and current. The finding incorrectly claims these are the two oldest files — the two oldest would be files[0] and files[1].",
+      "severity_justification": "The finding is factually wrong; there is no actual bug here.",
+      "category_justification": "The finding claims incorrect file selection logic.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/size.mjs",
+      "start_line": 61,
+      "end_line": 61,
+      "message": "The `knownHelpers` object is constructed incorrectly for `Handlebars.precompile`. It expects an object where keys are helper names and values are `true`. The current code creates an empty object because `def.helpers` is an object of functions, and iterating over its keys with `for...of` does not work as intended. A `for...in` loop or `Object.keys()` should be used.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code uses `for (const k of Object.keys(def.helpers))` which is correct. Object.keys() returns an array of own enumerable property names, and for...of iterates that array, setting helpers[k] = true for each key. The finding incorrectly claims this doesn't work — it works perfectly. The suggested for...in would be less correct as it includes inherited properties.",
+      "severity_justification": "The finding is factually incorrect; the code works as intended.",
+      "category_justification": "The finding makes a false claim about iteration behavior.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/perf.mjs",
+      "start_line": 150,
+      "end_line": 152,
+      "message": "The first execution of a compiled template is included in the compilation benchmark. Handlebars compilation is lazy and only completes on the first render. While this is noted in a comment, it conflates compilation time with a single execution time. A more accurate measurement would be to call `hb.compile(def.template)` and then time a separate, no-op first execution `compiled({})` to isolate the final compilation cost from the cost of rendering with a real context.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The code is deliberately designed this way — the benchmark is labeled 'COMPILATION (Handlebars.compile + first render)' and the comment explicitly explains the lazy evaluation behavior. The finding is a design preference/methodology opinion, not a bug. The suggestion provides no clear accuracy benefit since compilation happens during first invocation regardless.",
+      "severity_justification": "This is a benchmark tool methodology preference with no impact on production code. The benchmark already correctly documents what it measures.",
+      "category_justification": "The finding is about benchmark measurement methodology/accuracy.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/compare.mjs",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "The file is missing a Node.js shebang (`#!/usr/bin/env node`). While it's executed with `node tests/bench/compare.mjs`, making it directly executable would be more conventional for a CLI tool.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "All three bench scripts consistently lack shebangs and are invoked via `node tests/bench/*.mjs` in npm scripts. The finding is a generic best-practice suggestion (add shebang to CLI tools) with no specific code issue — it could be pasted verbatim onto any script file. The documented workflow explicitly uses `node` invocation, not direct execution.",
+      "severity_justification": "No functional impact; the scripts work correctly as-is via npm run bench*.",
+      "category_justification": "A style/convention suggestion about adding a shebang line.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/perf.mjs",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "The file is missing a Node.js shebang (`#!/usr/bin/env node`). While it's executed with `node tests/bench/perf.mjs`, making it directly executable would be more conventional for a CLI tool.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Same as finding 13 — all three bench scripts consistently lack shebangs and are invoked via `node tests/bench/*.mjs` in npm scripts. Generic best-practice suggestion with no specific code issue; could be pasted verbatim onto any script file.",
+      "severity_justification": "No functional impact; the script works correctly as-is via npm run bench.",
+      "category_justification": "A style/convention suggestion about adding a shebang line.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/size.mjs",
+      "start_line": 1,
+      "end_line": 1,
+      "message": "The file is missing a Node.js shebang (`#!/usr/bin/env node`). While it's executed with `node tests/bench/size.mjs`, making it directly executable would be more conventional for a CLI tool.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Identical to findings 13 and 14 — all three bench scripts consistently lack shebangs and are invoked via `node tests/bench/*.mjs` in npm scripts. Generic best-practice suggestion with no specific code issue; could be pasted verbatim onto any script file.",
+      "severity_justification": "No functional impact; the script works correctly as-is via npm run bench:size.",
+      "category_justification": "A style/convention suggestion about adding a shebang line.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/report.mjs",
+      "start_line": 46,
+      "end_line": 46,
+      "message": "[javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring] Detected string concatenation with a non-literal variable in a util.format / console.log function. If an attacker injects a format specifier in the string, it will forge the log message. Try to use constant values for the format string.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "This is a generic static analysis template alert. task.name in a local developer benchmark tool comes from hardcoded strings in perf.mjs, not from any external/user-controlled input. There is no attacker who could inject format specifiers here. The finding does not demonstrate a concrete exploitable data flow — it is a boilerplate warning applied to any non-literal console.log argument.",
+      "severity_justification": "Even if taken at face value, this is a developer-only benchmark tool with no external inputs, so the theoretical attack surface is nonexistent.",
+      "category_justification": "The finding is categorized as a security/format-string injection concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring"
+      }
+    },
+    {
+      "file": "tests/bench/compare.mjs",
+      "start_line": 48,
+      "end_line": 52,
+      "message": "When several reports are labelled `main`, this picks the first directory entry as the baseline instead of the newest `main` report. Repeated benchmark runs can therefore compare against an arbitrary stale baseline before the non-main files are sorted below.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the `files` array in compare.mjs is not sorted before `files.find()` is called to locate a 'main'-labelled baseline. On filesystems where readdirSync returns entries in non-chronological order, an older 'main' file would be selected as the baseline instead of the most recent one. The finding is factually accurate.",
+      "severity_justification": "This is a dev-only benchmarking tool with no production impact. The issue only manifests when multiple 'main'-labelled files accumulate in the results directory, which is outside the documented typical workflow. Users can always specify files explicitly as a workaround.",
+      "category_justification": "The baseline selection logic produces incorrect results (stale baseline) under a specific condition — multiple 'main'-labelled files — contrary to the documented intent.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/compare.mjs",
+      "start_line": 58,
+      "end_line": 61,
+      "message": "This filters out only the selected file, not all files labelled `main`. Additional main reports can remain in `others` and be chosen as the current result, producing a misleading main-vs-main comparison instead of reporting that no non-main result is available.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the filter at line 59 is `f !== mainFile` (identity check), not a label check. Any other files labelled 'main' would remain in `others` and could be selected as `currentPath`, producing a misleading main-vs-main comparison. The comment says 'non-main file' but the implementation doesn't enforce that.",
+      "severity_justification": "Dev-only benchmark tooling with no production impact. Requires multiple 'main'-labelled result files to trigger, which is outside the documented typical workflow. Impact is a confusing comparison output rather than data corruption.",
+      "category_justification": "The code's behavior contradicts its stated intent (the comment says 'most recent non-main file' but the filter doesn't exclude other main-labelled files), producing a potentially misleading main-vs-main comparison.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/templates.mjs",
+      "start_line": 68,
+      "end_line": 69,
+      "message": "The benchmark name says it covers both `@index` and `@key`, but the template only references `@index`. This makes the report claim coverage for a data variable that is not actually measured.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the template '{{#each names}}{{@index}}:{{name}} {{/each}}' only references @index, not @key. The benchmark name 'each with @index/@key' falsely claims coverage of @key. The finding is factually correct.",
+      "severity_justification": "This is a naming inaccuracy in a dev-only benchmark suite. No behavior is broken — the benchmark still runs and measures something meaningful — but the report label is misleading about what is being tested.",
+      "category_justification": "The mismatch is between the benchmark's name/description and its actual content, which is a documentation/labelling issue rather than a logic error.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/templates.mjs",
+      "start_line": 139,
+      "end_line": 139,
+      "message": "`hasItems` is left over from the removed Mustache benchmark and is not referenced by the Handlebars template in this entry. Keeping unused context fields makes it harder to tell which data shape the benchmark actually exercises.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `hasItems: true` exists in the context of the 'complex (if/each/helpers)' benchmark but is never referenced in the template, which uses `{{#if items}}` instead. The unused field is factually confirmed.",
+      "severity_justification": "This is a cosmetic issue in a dev-only benchmark file — an unused context property that doesn't affect benchmark correctness or output. It only mildly obscures the intended data shape.",
+      "category_justification": "An unused field in a benchmark context object is a minor cleanliness issue that makes the data shape slightly harder to reason about, but has no behavioral impact.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/bench/perf.mjs",
+      "start_line": 100,
+      "end_line": 104,
+      "message": "`printResults` only logs failed tasks and `saveMarkdownReport` later filters to completed tasks, so a benchmark task can fail while `runSection` still returns normally and the process exits successfully with an incomplete report. This should surface as a failed run instead of silently dropping failed benchmarks from the saved results.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: printResults only logs failed tasks to stderr without throwing; runSection returns normally regardless; saveMarkdownReport filters to completedTasks only, silently dropping failures; the process exits 0. A benchmark task failure produces an incomplete report with no process-level failure signal.",
+      "severity_justification": "This is dev-only benchmark tooling. A failed benchmark task is unusual and would produce visible stderr output, so it's unlikely to be completely missed. But for automated regression tracking, a non-zero exit on failure would be more correct.",
+      "category_justification": "Silent failure — tasks can fail without causing the process to exit non-zero or the report to be flagged as incomplete — is a reliability/error-handling concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "lib/handlebars/compiler/javascript-compiler.js",
+      "start_line": 176,
+      "end_line": 177,
+      "message": "The PR description frames this as a benchmark-only modernization, but this changes production compiler behavior by mutating the compiler context after compilation. That should be called out in the PR description (or split into a separate change) because it is unrelated to the benchmark port and carries different review/test risk.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: the PR adds `this.context.environments.length = 0` to the production javascript-compiler.js, which is not mentioned in the PR description that frames the change as benchmark-only. The production code change is real and bundled without disclosure. The change itself appears to be a benign post-compilation memory release, but the PR framing omits it entirely.",
+      "severity_justification": "The compiler change appears functionally safe (environments is cleared after all child programs are extracted into ret). The risk is primarily that reviewers may not scrutinize a production change buried in a benchmark PR, but there is no demonstrated bug or behavioral change.",
+      "category_justification": "This is a PR scope/organization concern — unrelated production code is mixed with tooling changes without disclosure in the PR description, creating review risk and obscuring the change history.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

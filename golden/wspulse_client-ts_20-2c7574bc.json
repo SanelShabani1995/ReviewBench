@@ -1,0 +1,261 @@
+{
+  "pr_key": "wspulse_client-ts_20-2c7574bc",
+  "pr": {
+    "repo": "https://github.com/wspulse/client-ts",
+    "pr_number": 20,
+    "base": "62334471fc96815e541552365dad3acda964982e",
+    "head": "2c7574bcd1ad0a4962d6e6271c7389714163afe3"
+  },
+  "findings": [
+    {
+      "file": "src/client.ts",
+      "start_line": 677,
+      "end_line": 679,
+      "message": "When `shutdown(null)` is called while a reconnect is in progress (`this.reconnecting` is true), `onTransportDrop(null)` is correctly suppressed. However, `this.opts.onDisconnect` is then called with `null`, which may be misleading. The user is calling `close()` which resolves to a clean shutdown, but the disconnect reason should probably reflect the original transport drop error that initiated the reconnection attempt.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The behavior is intentional and correct per the documented contract. `onDisconnect(null)` on user-initiated close() is the specified semantic, even mid-reconnect. The transport drop error was already surfaced via `onTransportDrop`. The finding contradicts the contract documented in options.ts and verified by existing scenario 5 tests.",
+      "severity_justification": "Even if taken seriously, this would be a design philosophy disagreement, not a functional bug.",
+      "category_justification": "The finding claims incorrect behavior, but the behavior is in fact correct per the documented contract.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/reconnect.test.ts",
+      "start_line": 236,
+      "end_line": 249,
+      "message": "The test `throwing onTransportDrop does not hang the client` doesn't accurately test what it claims. It calls `testClient.close()`, which triggers `onTransportDrop(null)`. The test should instead simulate an unexpected transport drop by calling `t1.injectClose()`, which would trigger `onTransportDrop(Error)`, to ensure that a throwing callback during a transport drop event doesn't prevent `onDisconnect` from being called.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The test calls `testClient.close()` which fires `onTransportDrop(null)` through the `shutdown()` code path. The test name 'throwing onTransportDrop does not hang the client' implies testing the `handleTransportDrop()` path (unexpected transport drop with Error), but that path is not exercised. The `handleTransportDrop` try/catch — the more regression-relevant code added in this PR — goes untested by this scenario.",
+      "severity_justification": "Both code paths have independent try/catch protection and both work correctly. The gap is in test coverage completeness for a named scenario, not a functional bug.",
+      "category_justification": "The finding is about a test not covering the code path its name implies.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 670,
+      "end_line": 677,
+      "message": "The conditional logic around `this.reconnecting` in `shutdown` assumes it is always correctly reset, but `this.reconnecting = false` is only called in the transport restoration path. If restoration fails or isn't reached, the flag may remain stale, preventing correct `onTransportDrop(null)` firing on subsequent shutdowns.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claim that `reconnecting = false` is only set in the transport restoration path is factually wrong. It is also unconditionally set in `shutdown()` at line 688, immediately after the conditional onTransportDrop(null) block. Furthermore, `shutdown()` is guarded by `if (this.closed) return` and sets `this.closed = true`, making it a one-shot operation — there are no 'subsequent shutdowns'.",
+      "severity_justification": "Even if the claim were correct, the consequence would be a minor behavioral deviation, not data loss or security issue.",
+      "category_justification": "The finding makes a factual claim about incorrect state management logic.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/reconnect.test.ts",
+      "start_line": 668,
+      "end_line": 703,
+      "message": "Scenario 7 tests a synchronous `close()` within `onTransportDrop`, but does not explicitly assert the final client state or `client.done` resolution upon complete shutdown. This leaves open the risk of hidden lifecycle consistency issues if `onTransportDrop` alters client state asynchronously.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The test explicitly calls `await testClient!.done` (line 231), which directly asserts the client reaches CLOSED state. The finding's claim that the test does not assert `client.done` resolution is factually wrong.",
+      "severity_justification": "Even as a TP this would be a minor testing observation, but it's factually incorrect.",
+      "category_justification": "The finding is about test completeness/correctness.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/client.ts",
+      "start_line": 361,
+      "end_line": 369,
+      "message": "The `try-catch` in `handleTransportDrop` suppresses exceptions from `onTransportDrop` but only logs them. This can leave unexpected callback behavior unnoticed or improperly handled in production environments, leading to silent failures in user-defined error metrics or recovery flows.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The try/catch pattern is intentional, consistent across all callbacks in the library, and documented ('do not block inside callbacks'). Not catching would break the reconnect/shutdown state machine. The finding is generic boilerplate that could apply to any library wrapping user callbacks — it identifies no concrete failure scenario specific to this code.",
+      "severity_justification": "The design choice is reasonable for a library; no concrete harm is demonstrated.",
+      "category_justification": "The finding concerns error handling and fault isolation in callback dispatch.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/reconnect.test.ts",
+      "start_line": 728,
+      "end_line": 752,
+      "message": "Scenario 10 (`onTransportDrop` firing once for no auto-reconnect + synchronous `close`) is unclear on whether multiple calls to `handleTransportDrop` could re-enter overlappingly when the flag `this.reconnecting` is addressed incorrectly. The gap is in not explicitly isolating this property assumption.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The concern about multiple concurrent `handleTransportDrop` calls is already handled by the `if (this.closed) return` guard and explicit `onclose = null` nulling at call sites. The test does verify the exact scenario it claims to. The finding is too vague ('not explicitly isolating this property assumption') to be a concrete, actionable finding.",
+      "severity_justification": "No concrete bug or gap is demonstrated — purely speculative.",
+      "category_justification": "The finding is about test coverage and isolation of assumptions.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "test/component/reconnect.test.ts",
+      "start_line": 183,
+      "end_line": 183,
+      "message": "[javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket] Insecure WebSocket Detected. WebSocket Secure (wss) should be used for all WebSocket connections.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The URL `ws://mock/ws` is a placeholder string passed to a MockDialer that intercepts it before any real network connection is made. No actual insecure WebSocket connection is opened. This is a generic static-analysis pattern match that cannot distinguish test code using mock URLs from production code connecting to real servers.",
+      "severity_justification": "No real network connection is made; the finding has zero exploitability.",
+      "category_justification": "The finding is a security alert about WebSocket scheme.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket"
+      }
+    },
+    {
+      "file": "test/component/reconnect.test.ts",
+      "start_line": 216,
+      "end_line": 216,
+      "message": "[javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket] Insecure WebSocket Detected. WebSocket Secure (wss) should be used for all WebSocket connections.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same as Finding 7: `ws://mock/ws` at line 216 is a placeholder URL consumed by MockDialer with no real network connection. Generic static-analysis pattern match that cannot distinguish test mock URLs from production connections.",
+      "severity_justification": "No real network connection is made; zero exploitability.",
+      "category_justification": "The finding is a security alert about WebSocket scheme.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket"
+      }
+    },
+    {
+      "file": "test/component/reconnect.test.ts",
+      "start_line": 248,
+      "end_line": 248,
+      "message": "[javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket] Insecure WebSocket Detected. WebSocket Secure (wss) should be used for all WebSocket connections.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same as Findings 7 and 8: `ws://mock/ws` at line 248 is a placeholder URL consumed by MockDialer with no real network connection opened. Generic static-analysis pattern match on `ws://` scheme regardless of context.",
+      "severity_justification": "No real network connection is made; zero exploitability.",
+      "category_justification": "The finding is a security alert about WebSocket scheme.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket"
+      }
+    },
+    {
+      "file": "test/component/reconnect.test.ts",
+      "start_line": 284,
+      "end_line": 284,
+      "message": "[javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket] Insecure WebSocket Detected. WebSocket Secure (wss) should be used for all WebSocket connections.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same as Findings 7, 8, and 9: `ws://mock/ws` at line 284 is a placeholder URL consumed by MockDialer with no real network connection opened. Generic static-analysis pattern match on `ws://` scheme regardless of context.",
+      "severity_justification": "No real network connection is made; zero exploitability.",
+      "category_justification": "The finding is a security alert about WebSocket scheme.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket"
+      }
+    },
+    {
+      "file": "test/component/reconnect.test.ts",
+      "start_line": 309,
+      "end_line": 309,
+      "message": "[javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket] Insecure WebSocket Detected. WebSocket Secure (wss) should be used for all WebSocket connections.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Same as Findings 7–10: `ws://mock/ws` at line 309 is a placeholder URL consumed by MockDialer with no real network connection opened. Generic static-analysis pattern match on `ws://` scheme regardless of context.",
+      "severity_justification": "No real network connection is made; zero exploitability.",
+      "category_justification": "The finding is a security alert about WebSocket scheme.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket"
+      }
+    },
+    {
+      "file": "test/component/reconnect.test.ts",
+      "start_line": 285,
+      "end_line": 286,
+      "message": "This test intentionally triggers the client's `console.warn` path but does not stub or restore `console.warn`, so the test suite will emit noisy output when it passes. Other tests that exercise expected warnings suppress them with a spy (for example, `test/client.test.ts:451` and `test/client.test.ts:612`), so this should follow the same pattern.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: 'Scenario 9: throwing onTransportDrop does not hang the client' at line 278 in reconnect.test.ts intentionally throws inside onTransportDrop, which triggers the console.warn path in client.ts. The test has no console.warn spy/mock. test/client.test.ts lines 451 and 612 both use `vi.spyOn(console, 'warn').mockImplementation(() => {})` for the same scenario type, establishing a clear local convention that this test violates.",
+      "severity_justification": "The issue is noisy test output rather than a correctness or reliability problem. It does not affect test pass/fail status, but it does create inconsistency with established local conventions for suppressing expected warn output.",
+      "category_justification": "This is a consistency/style issue about following an established local convention for test output suppression, not a correctness or testing logic problem.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

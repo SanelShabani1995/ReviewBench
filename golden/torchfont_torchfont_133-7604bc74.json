@@ -1,0 +1,351 @@
+{
+  "pr_key": "torchfont_torchfont_133-7604bc74",
+  "pr": {
+    "repo": "https://github.com/torchfont/torchfont",
+    "pr_number": 133,
+    "base": "5a2c993caa9c1183f58b1cc50aea6a2609d96959",
+    "head": "7604bc745c38d151e23b8f7528a65f74c2613545"
+  },
+  "findings": [
+    {
+      "file": "src/dataset/entry.rs",
+      "start_line": 139,
+      "end_line": 142,
+      "message": "Silent axis-count truncation: `axis_tags.iter().cloned().zip(inst.user_coords())` stops at whichever iterator is shorter. If a named instance's `user_coords()` count differs from `font.axes()` count (possible in malformed fonts), tail axis values are silently dropped and callers receive incomplete axis metadata with no error or warning.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "skrifa parses each instance with exactly axisCount coords; mismatch is impossible",
+      "severity_justification": "Only affects malformed fonts — well-formed OpenType fonts maintain the invariant that instance user_coords aligns with font axes. The debug_assert_eq in the diff version catches this during development and testing. No correctness impact for valid inputs.",
+      "category_justification": "This is a robustness/fault-tolerance concern about how the code handles malformed or unexpected input data, not a logic error in the normal flow.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "torchfont/datasets.py",
+      "start_line": 365,
+      "end_line": 365,
+      "message": "`locate()` calls `_style_axes()` which materialises and caches the full style-axes list for all N styles by pulling the entire `_dataset.style_axes` allocation from Rust. The first call to `locate()` therefore has O(N) cost proportional to total styles × axes per style, even when the caller only wants the font path or codepoint. This is an unexpected performance cliff that contradicts the PR description's claim of per-sample Rust lookups.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "performance",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: the actual code at line 365 calls `_style_axes()`, which on first call fetches all `_dataset.style_axes` from Rust, builds Python `StyleAxis` objects for every style, and caches them — O(N) on first `locate()`. This contradicts the PR description's stated intent of per-sample Rust axis lookup. The diff's test `test_glyph_dataset_locate_variable_font_does_not_build_style_axis_view` was not committed and would fail against the actual implementation.",
+      "severity_justification": "The O(N) cost is paid once and then cached; subsequent `locate()` calls are O(1). For typical dataset sizes this is a negligible one-time cost. The main concern is the contradiction with the stated design intent, not a real runtime problem.",
+      "category_justification": "The finding is about an O(N) warm-up cost triggered unexpectedly on the first `locate()` call, contradicting the claimed per-sample Rust lookup design.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/dataset/mod.rs",
+      "start_line": 65,
+      "end_line": 83,
+      "message": "`style_classes` derives instance count via `named_instance_names()`, which re-reads the font through `GlyphReader` and silently returns `[]` on any I/O failure (`unwrap_or_default()`). `style_axes` and `style_sources` are both sized by `instance_count()` (= `style_axes.len()` = N named instances, fixed at `from_face` time). If `named_instance_names()` fails for a variable font, `style_classes` emits 1 name while the other two emit N entries each. `build_dataset_metadata()`'s strict zip then raises a confusing `ValueError` that gives no indication the root cause was a failed font re-read.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "exacerbated-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Factually verified: `named_instance_names()` silently returns `[]` via `unwrap_or_default()` on I/O failure; the `style_classes` getter would emit 1 name for a variable font in that case; `style_axes` and `style_sources` are sized by `instance_count()` = N from construction time; the PR-added strict 3-way zip raises a `ValueError` with a message that gives no indication of the font re-read root cause.",
+      "severity_justification": "Requires a real but unusual edge case: font file becoming inaccessible after dataset construction but before metadata access. No data corruption — just a confusing error message. Normal usage (stable filesystem) is unaffected.",
+      "category_justification": "This is about fault tolerance — a silent failure in font re-reading causing a misaligned state that surfaces as an unhelpful error in a downstream operation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/dataset/entry.rs",
+      "start_line": 57,
+      "end_line": 59,
+      "message": "`instance_count()` now returns `self.style_axes.len()`. For a static font `style_axes = vec![vec![]]` (length 1), which is correct, but the semantics of that sentinel value mean an empty inner vec represents \"no axes\" for a non-variable font. Any code that iterates `style_axes` entries and further iterates the inner vec behaves correctly today, but the meaning of that one-element outer vec for a static font is implicit and not documented, making it easy to misinterpret in future callers.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: `vec![vec![]]` is used as an undocumented sentinel for static fonts (1 outer element, empty inner vec) with no comment explaining the design choice. All current callers work correctly by relying on `is_variable()` rather than inspecting the inner vec, but the implicit semantics are a real maintainability concern for future callers.",
+      "severity_justification": "No current behavior is wrong. The risk is limited to future callers misreading the sentinel. The `is_variable()` guard used consistently by all existing callers provides a natural boundary that makes misuse less likely.",
+      "category_justification": "The finding is about an undocumented design convention (the one-element outer vec sentinel for static fonts) that could mislead future contributors, not a behavioral bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "torchfont/datasets.py",
+      "start_line": 446,
+      "end_line": 453,
+      "message": "`_style_axes_cache` is built from `self._dataset.style_axes` but `_dataset` is excluded from the pickle state while `_style_axes_cache` is preserved. After `__setstate__` a fresh `_dataset` is created; if font files changed on disk between pickling and unpickling (valid in long-lived processes or distributed training setups), the cached axes are now stale relative to the new backend, with no mechanism to detect or invalidate the mismatch.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: `__getstate__` only pops `_dataset`, so `_style_axes_cache` is included in the pickle. `__setstate__` uses `if not hasattr(...)` which preserves a populated cache (since the key exists after `update(state)`), leaving it potentially stale relative to the fresh `_dataset`. The `_style_axes_cache` field is new in this PR.",
+      "severity_justification": "Requires both a populated cache before pickling AND font files changing on disk between pickle and unpickle. DataLoader workers primarily call `__getitem__` which doesn't use the axes cache. The same stale-cache pattern pre-exists for `_metadata` without apparent issues.",
+      "category_justification": "This is a cache-invalidation / stale state issue after deserialization — a reliability concern about correctness of cached data across process boundaries.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/dataset/entry.rs",
+      "start_line": 133,
+      "end_line": 133,
+      "message": "The `locations` field is now redundant. `style_axes` is populated from named instances, similar to how `locations` was, and its length is used for `instance_count`. The `locations` field is no longer used for any calculation in `FontEntry` and can be removed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding incorrectly claims `locations` is unused. It is actively used: passed to `draw_glyph()` for variable glyph rendering (line 56) and as the source of `is_variable()` (line 64). `style_axes` holds user-space metadata tuples and serves a different purpose than the skrifa `Location` structs needed for rendering.",
+      "severity_justification": "The claim is simply wrong — removing `locations` would break glyph rendering and the `is_variable()` check.",
+      "category_justification": "The finding makes an incorrect factual claim about whether a field is used.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/dataset/entry.rs",
+      "start_line": 128,
+      "end_line": 155,
+      "message": "When constructing the `style_axes`, if the font has named instances but no defined axes, the logic defaults to an empty vector. This may result in ambiguity and potentially incorrect behavior for variable fonts in such edge cases.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding uses hedged language ('may result in ambiguity', 'potentially incorrect behavior') without identifying any concrete bug. Tracing the code path for this edge case: each named instance maps to vec![] via the empty zip, all callers in mod.rs handle it correctly (N empty-axes instances, each with Some(inst_idx)), and this case is distinguishable from static fonts. The scenario itself (named instances without axes) is a malformed OpenType font that cannot occur with real fonts.",
+      "severity_justification": "No concrete incorrect behavior demonstrated, and the scenario requires a malformed font that violates OpenType spec constraints.",
+      "category_justification": "The finding is about an edge-case in font construction, loosely related to fault tolerance with unusual inputs.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "torchfont/metadata.py",
+      "start_line": 107,
+      "end_line": 115,
+      "message": "The `build_dataset_metadata` function uses `strict=True` in `zip`, which raises an error if the input lists have differing lengths. However, the error message assumes all three lists are the issue, potentially masking the specific cause (e.g., length mismatch in `style_names`, `style_sources`, or `style_axes`).",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: the error message says all three must match but doesn't identify which specific pair is mismatched, and `from None` suppresses the original exception. The finding is code-specific, naming the exact three variables involved.",
+      "severity_justification": "The message does name all three variables, pointing callers to the right place. The function is internal and a mismatch is an internal bug, not a user-driven input error. The improvement would be minor diagnostic quality-of-life.",
+      "category_justification": "This is about the quality and specificity of an error message — a developer experience / debugging concern rather than a correctness or reliability issue.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "torchfont/metadata.py",
+      "start_line": 108,
+      "end_line": 115,
+      "message": "The `_style_label_id` function does not validate instance indices for potential inconsistencies in `style_axes`. This could lead to incorrect style labels for variable-font styles with misaligned instance values.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "`_style_label_id` does not receive or use `style_axes` — it only takes `root, font_path, face_idx, instance_idx`. There is no mechanism by which `style_axes` data could cause this function to produce an incorrect label. The strict zip already ensures alignment between `style_sources` (containing instance_idx) and `style_axes` before the generator calls `_style_label_id`. The finding is vague and doesn't identify a concrete bug.",
+      "severity_justification": "No real issue identified — the function operates correctly and independently of axis data.",
+      "category_justification": "The finding claims incorrect style labels could be produced, which would be a correctness issue if true.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "tests/test_dataset.py",
+      "start_line": 163,
+      "end_line": 178,
+      "message": "The test `test_glyph_dataset_locate_tracks_variable_font_instance_index` assumes specific axis tags ('wght', 'wdth') exist. If the available axes do not include these or are absent, the test will fail, potentially causing false negatives.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The test uses committed, version-controlled test fixtures (`Roboto[wdth,wght].ttf`) whose axes are encoded in the filename. Hardcoding expected axis values against a fixed test font is standard practice. The 'false negatives' claim is logically incorrect — if axes changed, the test would fail loudly (a true positive failure), not silently pass. The concern does not apply to stable committed fixtures.",
+      "severity_justification": "No real issue — this is standard test design with committed fixtures.",
+      "category_justification": "The finding concerns test design and whether hardcoded expected values against test fixtures are appropriate.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "torchfont/metadata.py",
+      "start_line": 75,
+      "end_line": 121,
+      "message": "Error messages in `build_dataset_metadata` do not specify which specific input (e.g., `style_names`, `style_sources`, or `style_axes`) caused failure, which makes debugging harder than necessary.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct: the strict-zip ValueError at line 100-102 raises a message naming all three variables ('style_names, style_sources, and style_axes must have the same length') but does not identify which specific pair has a length mismatch, making debugging harder. The only other error in the range (from _style_label_id) already names specific values.",
+      "severity_justification": "The message does name all three involved variables; a developer can quickly inspect lengths to find the mismatch. This is an internal function not directly called by end users. Minor DX improvement only.",
+      "category_justification": "This is about the quality and specificity of an error message — a developer debugging aid rather than a correctness or reliability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "src/dataset/entry.rs",
+      "start_line": 146,
+      "end_line": 147,
+      "message": "The `location` vector computation relies on the `skrifa` library, but potential parsing errors in non-obvious font variations are not explicitly handled.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The skrifa API methods called here (`named_instances()`, `inst.location()`, `inst.user_coords()`) are infallible by design — the consistent pattern in `from_face` shows only `font.head()` requires error handling, while all metadata accessor calls are used without `?`. The `FontRef` is already successfully parsed before `from_face` is called. The finding is vague and incorrectly assumes fallibility where the API guarantees infallibility.",
+      "severity_justification": "No actual unhandled error path exists — the claim is incorrect about the API contract.",
+      "category_justification": "The finding concerns missing error handling for library calls, which would be a reliability issue if true.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "torchfont/metadata.py",
+      "start_line": 101,
+      "end_line": 111,
+      "message": "The `_style_label_id` relies on `quote()` heavily. If paths exceed validity string lengths imposed or contain unusual errors—e.g., encodings—it seems debugging roots aren't handled from leading implementations cleanly.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "`urllib.parse.quote()` is an infallible standard library function for str inputs with no length limit and handles Unicode natively. `relative_path.as_posix()` always returns a valid str. The finding is incoherent ('debugging roots aren't handled from leading implementations cleanly'), names no concrete failure path, and cannot be acted upon.",
+      "severity_justification": "No actual issue exists — the claim is factually incorrect about quote()'s behavior.",
+      "category_justification": "The finding loosely concerns error handling in a string operation, making reliability the closest category.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "torchfont/datasets.py",
+      "start_line": 104,
+      "end_line": 104,
+      "message": "Adding a required field to this public `NamedTuple` changes its tuple arity, so existing users who unpack `GlyphLocation` positionally (the type is documented as the return value of `GlyphDataset.locate`) will now get too many values to unpack. Consider a compatibility-preserving shape, or explicitly handle this as a breaking API change.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: adding `axes` to the GlyphLocation NamedTuple changes its arity from 6 to 7, breaking any caller that positionally unpacks the locate() return. The claim is verifiable at line 75-104 of datasets.py. Even though the project is explicitly beta (AGENTS.md: 'do not preserve compatibility'), the finding correctly identifies a breaking API change that a competent reviewer would flag.",
+      "severity_justification": "The project is explicitly beta with no compatibility guarantees (AGENTS.md), so breaking changes are an accepted design posture. The impact of this specific change is limited to positional unpackers, while named-field access (the idiomatic NamedTuple usage) is unaffected.",
+      "category_justification": "The concern is about a public API contract: the tuple arity of GlyphLocation as returned by locate() is a public interface used by downstream consumers.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "torchfont/metadata.py",
+      "start_line": 21,
+      "end_line": 21,
+      "message": "This public `StyleLabel` is a `NamedTuple`, so adding `axes` as a required field changes both its constructor and positional unpacking shape for existing consumers of `dataset.style_labels`/`metadata.styles`. If this release is intended to be backward-compatible, avoid changing the tuple arity or provide a migration path.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "api-architecture",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct: `StyleLabel` at metadata.py:21 is a NamedTuple that gains a required `axes` field in this PR, changing its constructor arity from 3 to 4 and breaking any positional unpacking of `dataset.style_labels` or `metadata.styles`. Verified against the checked-out code.",
+      "severity_justification": "The project is explicitly beta (AGENTS.md: 'do not preserve compatibility'), so breaking changes are an accepted posture. The finding correctly identifies the mechanical consequence but it is intentional. Impact is limited to positional unpackers; named-field access is unaffected.",
+      "category_justification": "The concern is about a public API contract — the constructor and positional shape of the StyleLabel NamedTuple as exposed through dataset.style_labels and metadata.styles.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "torchfont/datasets.py",
+      "start_line": 463,
+      "end_line": 463,
+      "message": "The new axis metadata path is not covered for stability across different `codepoints` filters. Existing tests only compare `label_id`s across filters, but the issue also requires axis metadata to remain stable, so a regression test should assert that matching styles expose the same `axes` when the filter changes.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The test gap is real: test_style_label_ids_are_stable_across_codepoint_filters (line 721) only checks label_id equality, not axes stability. No other test exercises axes across different codepoint filters. The implementation is structurally safe (axes come from font-level named-instance metadata, independent of codepoints), but the invariant is untested — a future refactor could break it without a failing test.",
+      "severity_justification": "The implementation is inherently stable because style_axes is derived from font.axes() and font.named_instances() which are codepoint-independent. No regression is likely, but documenting the invariant with a test would be useful hygiene.",
+      "category_justification": "The finding is about a missing regression test for a specific invariant of the new feature.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "torchfont/datasets.py",
+      "start_line": 549,
+      "end_line": 549,
+      "message": "`StyleAxis` is being added to the public `torchfont.datasets` surface, but the dataset reference docs in `docs/en/reference/datasets.md` and `docs/ja/reference/datasets.md` still omit `StyleAxis`, `GlyphLocation.axes`, and `StyleLabel.axes`. This leaves the new public API undocumented while the surrounding dataset APIs are documented there.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: docs/en/reference/datasets.md and docs/ja/reference/datasets.md both omit StyleAxis entirely, and neither the locate() method section nor the style_labels section mentions the new axes field. StyleAxis is added to __all__ (line 549) and axes is added to both GlyphLocation and StyleLabel in this PR, but the reference docs weren't updated to match.",
+      "severity_justification": "The new API is self-documented in Python docstrings and type annotations. The reference docs omission is a gap but doesn't affect runtime correctness or usability for users relying on the Python-level docs. Low urgency but a real inconsistency between the documented and actual public surface.",
+      "category_justification": "The finding is about reference documentation lagging behind a new public API addition.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

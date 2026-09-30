@@ -1,0 +1,511 @@
+{
+  "pr_key": "Nixbug_entebus-android-operator_67-21b50bbb",
+  "pr": {
+    "repo": "https://github.com/Nixbug/entebus-android-operator",
+    "pr_number": 67,
+    "base": "c76abda7c3a3df4a03bf6544957e183edfe71353",
+    "head": "21b50bbbb0d95c95b0f0f69f3f713cbff06d1fde"
+  },
+  "findings": [
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreenViewModel.kt",
+      "start_line": 298,
+      "end_line": 344,
+      "message": "validateFullName and validatePhone both return null (no error) for blank/null input. This means a user can clear the Full Name or Phone Number field entirely and click Save without seeing any validation error. The code then constructs FieldUpdate.Value(null) for those fields (via toFieldUpdateIfChanged / the explicit phone branch), and SerializeNullsGson serializes that as \"full_name\": null or \"phone_number\": null in the PATCH body. This silently sends an explicit null to the API for fields that appear required, either clearing real data or triggering a 422 with a generic error message rather than a user-facing validation hint.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: validateFullName and validatePhone both return null (no error) for blank input. toFieldUpdateIfChanged produces FieldUpdate.Value(null) when a previously-set field is cleared to blank. The phone branch also produces FieldUpdate.Value(null) for blank input. The repository uses @SerializeNullsGson (.serializeNulls()), so map[\"full_name\"] = null serializes to \"full_name\": null in the PATCH body — silently sending an explicit null to the API with no user-facing validation error.",
+      "severity_justification": "Clearing a user's full name or phone silently either wipes server data or produces a 422 with no helpful client-side message — a real data-integrity and UX issue, but not immediately catastrophic.",
+      "category_justification": "The validation logic incorrectly treats blank input as valid, causing the code to construct and send an explicit null payload that contradicts the intended behavior of preventing accidental data deletion.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreenViewModel.kt",
+      "start_line": 240,
+      "end_line": 245,
+      "message": "toFieldUpdateIfChanged compares trimmed values but this?.trim() is \"\" while old?.trim() is null when the edited field is an empty string and the original was null. \"\" != null evaluates to true, so FieldUpdate.Value(null) is returned and \"full_name\": null (or \"email_id\": null) is included in the PATCH body even though both the old and new states represent \"field not set\". This sends a superfluous explicit-null update to the server and, combined with SerializeNullsGson, may unexpectedly clear a field that was already absent.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: toFieldUpdateIfChanged compares this?.trim() (empty string \"\") against old?.trim() (null) — these are not equal in Kotlin, so FieldUpdate.Value(null) is returned when a user types then deletes text in a field that was originally null. hasChanges() uses the same faulty comparison so the no-changes guard also fires incorrectly. With @SerializeNullsGson, this sends \"full_name\": null (or \"email_id\": null) to the server even though neither state represents an intentional change.",
+      "severity_justification": "Can cause an explicit null patch to the API for a field the user never intended to change, potentially clearing server data or triggering a 422. It's a corner case (requires a null original value and a type-then-delete interaction) but the impact on data integrity is real.",
+      "category_justification": "The equality check between empty string and null is logically incorrect: both represent 'field not set' in this context, but the code treats them as different, producing an unintended API mutation.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreen.kt",
+      "start_line": 52,
+      "end_line": 107,
+      "message": "When isUpdating is true the BackHandler is disabled (line 52), the app-bar back button shows a snackbar and returns without navigating (lines 88-96), and the Cancel button is disabled (line 281). There is no timeout configured on the OkHttpClient (confirmed in NetworkModule.kt) and no coroutine cancellation exposed to the user. If the PATCH request hangs indefinitely the user has no way to exit the screen or cancel the operation — they are permanently trapped in edit mode.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: BackHandler is disabled when isUpdating=true, the app-bar back button shows a snackbar and returns early, and the Cancel button is disabled. NetworkModule has no explicit timeouts configured on OkHttpClient (OkHttp defaults apply at ~10s, so truly indefinite hang is unlikely in practice, but no explicit control exists). The user is fully locked from exiting edit mode for the duration of any hung/slow request, with no cancellation path exposed.",
+      "severity_justification": "OkHttp's default 10s timeouts limit the worst-case lock duration, so permanent entrapment is unlikely in practice. Still, the deliberate blocking of all escape routes (back, cancel) during in-flight requests is a UX reliability concern worth addressing, especially since no explicit timeout is configured.",
+      "category_justification": "The issue is about fault tolerance and graceful degradation — the UI offers no escape when the network operation is slow or stuck, which is an operational/reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreen.kt",
+      "start_line": 111,
+      "end_line": 119,
+      "message": "The Edit button in AppHeader is not guarded by isLoading. If the user taps Edit before the initial fetch completes, onStartEdit() copies all null/empty fields into editedFullName, editedGender, etc. When the fetch later succeeds, the init coroutine updates fullName, gender, etc. in state, but onStartEdit() has already fixed the edited copies to null. The edit form is then pre-filled with empty fields instead of the loaded data, and any save attempt with those empty values will send nulls to the API (see issue 1).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the Edit button's onPrimaryActionClick only guards against isEditMode, not isLoading. Tapping Edit during the initial fetch calls onStartEdit() which snapshots all null fields into editedFullName etc. The loading skeleton disappears (isLoading && !isEditMode becomes false) showing an empty form. The subsequent fetch success only updates the canonical fields, not the edited copies, leaving the form permanently pre-filled with nulls. Any save attempt then sends explicit null values to the API.",
+      "severity_justification": "Race condition that produces a form pre-filled with nulls, making the user's save silently wipe their data or receive a 422. Requires unfortunate timing (tapping Edit during loading) but is a realistic user interaction with concrete data-integrity consequences.",
+      "category_justification": "A race condition in state management — onStartEdit() snapshots state before the fetch completes, and the subsequent fetch update never propagates to the edited copies, leading to incorrect form data and potentially destructive API calls.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreenViewModel.kt",
+      "start_line": 123,
+      "end_line": 133,
+      "message": "onStartEdit copies genderText into editedGenderText. When a user has no gender set, mapGenderToText(null) returns \"N/A\", so editedGenderText is initialized to \"N/A\". The GenderDropdownRow in edit mode displays this as the current selection, but the options list is [\"Male\", \"Female\", \"Other\", \"Transgender\"] — \"N/A\" is not among them. The user sees an invalid selection in the dropdown, and after selecting a valid option they can never revert to \"no gender selected\" through the UI.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: mapGenderToText(null) returns \"N/A\"; onStartEdit copies genderText (\"N/A\") to editedGenderText; GenderDropdownRow receives \"N/A\" as its value in edit mode while options = [\"Male\",\"Female\",\"Other\",\"Transgender\"] — \"N/A\" is not among them. Users with no gender set see a non-selectable value displayed, and after picking a valid option they have no path back to the unset state.",
+      "severity_justification": "Does not cause data corruption or crashes — a user with no gender can still set one, and the API/save path works correctly for the happy path. The inability to clear gender once set and the display of \"N/A\" in a dropdown are UX issues that are noticeable but not blocking.",
+      "category_justification": "The mapping logic produces a display value (\"N/A\") that is inconsistent with the dropdown's option set, creating an incorrect UI state for users who have no gender set.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreenViewModel.kt",
+      "start_line": 199,
+      "end_line": 213,
+      "message": "The success branch of onSaveClick sets isEditMode = false and updates the source-of-truth fields (fullName, gender, etc.) but does not clear editedFullName, editedGender, editedPhoneNumber, editedEmailId, editedGenderText, fullNameError, emailError, or phoneError. onStartEdit() does re-initialise the edited fields but does not touch the error fields. In a scenario where validation errors are set, the user cancels instead of fixing (onCancelEdit clears errors), re-enters edit mode, triggers a successful save in a later session — the prior error strings remain in the state object indefinitely. If any code path reads these stale error fields outside of the edit-mode guard they will surface incorrectly.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The success branch factually does not clear editedX or error fields, but the stated consequence (stale errors surfacing incorrectly) is not achievable. Errors can only be non-null if validation failed; for a save to succeed, validation must pass; if an invalid field is corrected, onChange fires and clears the error before re-validation. Additionally, error fields are rendered exclusively inside isEditMode=true guards in EditableInfoRow, so they cannot display when isEditMode=false regardless of state contents.",
+      "severity_justification": "Even if the code quality concern (not clearing state on success) is valid as a cleanliness issue, there is no observable incorrect behavior reachable through the current UI.",
+      "category_justification": "The core issue is that the success branch leaves stale fields in the state object — a code cleanliness concern — rather than a correctness or security issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/data/remote/operator/api/OperatorAccountApi.kt",
+      "start_line": 88,
+      "end_line": 96,
+      "message": "The typed AppApiOperatorAccountUpdateForm DTO was deleted and replaced with a raw okhttp3.RequestBody. Field names are now hardcoded strings in OperatorAccountRepositoryImpl (\"full_name\", \"email_id\", \"phone_number\", \"gender\"). A misspelling or a future API field rename will compile successfully but silently send a wrong or empty key in the JSON, with no type-checker or serialization framework to catch the mismatch. The deleted DTO provided compile-time safety and SerializedName-based correctness that is now lost.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: AppApiOperatorAccountUpdateForm.kt is deleted and the API endpoint now accepts raw RequestBody. Field names 'full_name', 'email_id', 'phone_number', 'gender' are hardcoded strings in a mutableMapOf in OperatorAccountRepositoryImpl. The deleted DTO used @SerializedName annotations providing a compile-time binding; any future rename/misspelling in the strings now compiles silently and sends incorrect JSON keys with no framework-level catching.",
+      "severity_justification": "The current hardcoded strings match the API's expected keys so there is no active bug; the risk is future drift or typos during maintenance that would silently produce wrong PATCH bodies. Legitimate motivation for the change (partial updates) exists, making this a known trade-off rather than an oversight.",
+      "category_justification": "Loss of compile-time safety for API field names is a code quality / drift-risk concern — specifically a DRY/type-safety issue with no immediate behavioral impact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreenViewModel.kt",
+      "start_line": 154,
+      "end_line": 191,
+      "message": "onSaveClick reads _uiState.value into a local snapshot (line 155) before setting isUpdating = true (line 193) and launching the coroutine. There is no guard against concurrent calls: if the user somehow triggers onSaveClick a second time (e.g., via the header action while the button is momentarily enabled during a recomposition lag), a second API request can be dispatched with the same request body and both coroutines will race to update the UI state on completion, potentially applying one response's data on top of the other's or showing duplicate snackbars.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The specific mechanism cited — 'via the header action' — is factually wrong; the header's onPrimaryActionClick calls onStartEdit(), not onSaveClick(). The only call site for onSaveClick() is the Save button, which is properly guarded with enabled = !uiState.isUpdating. The theoretical double-tap race (second tap within the ~16ms recomposition window) is extremely unlikely in practice. The absence of a ViewModel-level guard is a minor cleanliness concern but does not constitute a realistic concurrency vulnerability.",
+      "severity_justification": "Even in the theoretical double-tap scenario the race window is one rendering frame, the two concurrent requests would produce identical updates, and the visible effect (duplicate snackbar) is cosmetic rather than data-corrupting.",
+      "category_justification": "The concern is about concurrent coroutines racing to update state — a reliability/concurrency issue — though the practical risk is negligible.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreen.kt",
+      "start_line": 70,
+      "end_line": 75,
+      "message": "The discard confirmation dialog has inconsistent behavior. When triggered from the system back gesture, confirming the dialog only pops the back stack. However, when triggered from the top app bar's back arrow, it calls `viewModel.onCancelEdit()` but does not navigate away, leaving the user on the same screen in view mode. The confirmation action should be consistent, and likely should always result in navigating back.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding's central claim — that back gesture confirm pops the stack while app-bar back confirm does not — is factually incorrect. Both paths set showDiscardDialog = true and share a single DialogBox instance with the same onConfirmClick callback (viewModel.onCancelEdit() + dismiss, no navController.popBackStack()). The behavior is consistent between the two paths. The PR deliberately replaced popBackStack() with onCancelEdit() in the confirm handler, making both paths exit edit mode without navigating.",
+      "severity_justification": "There is a real UX question about whether Discard when pressing back should also navigate away, but the inconsistency claim is wrong. The actual behavior (staying on screen in view mode after discard) may be debatable UX but is not a correctness bug.",
+      "category_justification": "The finding asserts a behavioral inconsistency between two code paths that does not exist in the code.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreen.kt",
+      "start_line": 401,
+      "end_line": 405,
+      "message": "The phone number input field only allows up to 10 digits and checks if all characters are digits. This prevents users from being able to paste a phone number that contains formatting like spaces or hyphens, which is a poor user experience. The input validation should strip non-digit characters before checking the length.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: onValueChange for phone fields rejects the entire input if any character is non-digit (it.all { ch -> ch.isDigit() }). Pasting a formatted number like '98765-43210' or '98765 43210' silently fails — the field does not update and there is no error message shown to the user.",
+      "severity_justification": "Minor UX friction — users can work around it by typing manually or pasting an unformatted number. No data loss or correctness impact.",
+      "category_justification": "A UI/UX usability issue affecting clipboard paste interaction with the phone input field.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreenViewModel.kt",
+      "start_line": 218,
+      "end_line": 222,
+      "message": "Full name validation is overly restrictive and may reject valid names. It checks for leading/trailing spaces, which is good, but also disallows multiple spaces between names (e.g., 'Mary Anne  Jones'), and incorrectly rejects names containing digits, which could be valid in some cultures or for legal names. It also uses a regex `^[A-Za-z]+( [A-Za-z]+)*$` which will fail for names with hyphens, apostrophes, or non-ASCII characters.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: nameRegex = ^[A-Za-z]+( [A-Za-z]+)*$ at line 31. Hyphenated names (Mary-Anne), names with apostrophes (O'Brien, D'Souza), and non-ASCII names (André) all fail this regex. The double-space rejection and digit rejection are also confirmed in the validation function. These checks reject legitimate real-world names.",
+      "severity_justification": "Affects users with hyphenated or apostrophe-containing names preventing profile updates, but a workaround (simplified spelling) exists and the target audience (Indian operators) has relatively lower incidence of these name formats.",
+      "category_justification": "The validation logic incorrectly rejects valid inputs — real legal names — due to an overly narrow character set in the regex and explicit digit/space checks.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/data/repository/OperatorAccountRepositoryImpl.kt",
+      "start_line": 46,
+      "end_line": 50,
+      "message": "When constructing the JSON body for the PATCH request, `request.gender` is added to the map if it's a `FieldUpdate.Value`. However, `FieldUpdate.Value` can wrap a `null` value, which indicates the user wants to clear the gender field. With `serializeNulls()` enabled on the Gson instance, this will correctly serialize as `\"gender\": null`. The potential issue is that `request.gender` is of type `FieldUpdate<Int>`, and the API might not accept `null` for an integer field, expecting it to be omitted instead if not set.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "FieldUpdate.Value(null) for gender is not reachable through current UI flows. The only source of editedGender change is onGenderChange(), whose else->null branch is dead code since the dropdown only passes the four fixed option strings. onSaveClick only produces FieldUpdate.Value(state.editedGender) when editedGender != gender, but editedGender starts as gender's value and can only be set to 1/2/3/4 via the dropdown — the null case is structurally unreachable. The finding's concern is entirely speculative.",
+      "severity_justification": "Even as a theoretical concern, the stated risk (API rejecting null gender) is not reachable from the current code paths.",
+      "category_justification": "The finding is about an incorrect claim of a potential null value reaching the API for the gender field.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreen.kt",
+      "start_line": 427,
+      "end_line": 435,
+      "message": "The `isPhoneField` parameter controls several UI behaviors, including showing a `+91` prefix. When not in edit mode, the view correctly prepends `+91` to the displayed phone number. However, the placeholder text `Enter Your Phone Number` is displayed without the `+91` prefix, which is inconsistent with the formatted value and the edit mode behavior.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "accessibility",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the placeholder visibility condition (!(isPhoneField && (isFocused || !value.isNullOrEmpty()))) and the +91 prefix visibility condition (isPhoneField && (isFocused || !value.isNullOrEmpty())) are mutually exclusive. The placeholder 'Enter Your Phone Number' is shown without any +91 hint when the field is empty and unfocused, but +91 appears when the user taps into the field, creating a visual jump.",
+      "severity_justification": "Purely cosmetic inconsistency — no functional impact, no data loss. The user can still enter their number correctly; they just don't see the +91 prefix in the placeholder hint.",
+      "category_justification": "A UI/UX consistency issue affecting how the phone input field communicates its expected format to the user.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreenViewModel.kt",
+      "start_line": 75,
+      "end_line": 83,
+      "message": "The `formatPhoneForUI` function is implemented to strip common prefixes and non-digit characters to get a 10-digit number. However, it only handles `+91` and `tel:`. This logic is not robust enough to handle other common formats, such as `(123) 456-7890` or numbers with different country codes, which might be pasted by the user. A more comprehensive parsing logic would improve usability.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "formatPhoneForUI is called only on API-returned phoneNumber data (lines 53, 207), never on user-pasted input. The finding incorrectly claims this function should handle user-pasted formats like (123) 456-7890. For its actual purpose — normalising API phone strings like 'tel:+91-XXXXXXXXXX' — the function is adequate: .filter { it.isDigit() } strips all non-digit chars and .takeLast(10) handles varying lengths. Non-+91 country codes and North American formats are irrelevant to this India-specific operator app.",
+      "severity_justification": "The finding misidentifies the function's purpose; there is no actual robustness gap for the real use case of parsing API-returned phone data.",
+      "category_justification": "The finding makes an incorrect factual claim about what the function handles and what input formats it needs to support.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreenViewModel.kt",
+      "start_line": 257,
+      "end_line": 260,
+      "message": "The logic to check for changes compares the trimmed new value with the trimmed old value for `fullName` and `emailId`. This is incorrect because it means that a user who only removes whitespace from the beginning or end of a field will not have their change detected, and `hasChanges()` will incorrectly return `false`, preventing the update.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct that hasChanges() won't detect whitespace-only changes due to .trim() comparison. However, the claimed consequence ('prevents the update') is wrong — validateFullName and validateEmail both explicitly reject leading/trailing spaces, so any whitespace-only change would be blocked by validation before reaching the API. The only actual effect is that pressing back with a whitespace-only change skips the discard dialog, which is arguably correct behavior since no meaningful data changed.",
+      "severity_justification": "No data is lost or incorrectly sent; validation blocks whitespace-only saves. The only effect is the absence of a discard dialog for a change that would fail validation anyway.",
+      "category_justification": "The finding makes an incorrect claim about the consequence of the trimmed comparison in hasChanges().",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsUiState.kt",
+      "start_line": 15,
+      "end_line": 20,
+      "message": "The UI state for original and edited values is confusing. Fields like `fullName` hold the original value, while `editedFullName` holds the value during editing. This separation is repeated for multiple fields. A cleaner approach would be to use a single data class to represent the user's editable profile, with one instance for the original state and another for the edited state, which would simplify state management and change detection.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding correctly identifies that the state class mixes original and edited field copies (fullName/editedFullName, emailId/editedEmailId, etc.), and that a nested data class approach would be cleaner. However, this is a generic architectural preference — the same comment could be copy-pasted onto any form-editing screen in any project. It does not point to a concrete bug, inconsistency, or convention violation in this codebase. The current approach is a common and functional pattern for edit-form state in MVVM.",
+      "severity_justification": "No correctness, performance, or user-facing impact. Purely a structural preference with no behavior difference.",
+      "category_justification": "The finding is about code organization and state class structure — a pure maintainability/readability suggestion.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/data/repository/OperatorAccountRepositoryImpl.kt",
+      "start_line": 34,
+      "end_line": 40,
+      "message": "The method assumes the operator ID is stable within the scope of the update but reads it anew after the session check. This can lead to potential mismatches if the token changes mid-execution.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "operatorId is read exactly once into a local val before the null check and that same val is used throughout the method including the API call. There is no re-read of tokenManager.operatorId after the session check. The finding's premise — 'reads it anew after the session check' — is factually wrong. A single captured local val cannot produce the mid-execution mismatch described.",
+      "severity_justification": "The described scenario is not possible given the code structure; no real risk exists.",
+      "category_justification": "The finding makes an incorrect factual claim about how many times operatorId is read from the token manager.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreenViewModel.kt",
+      "start_line": 295,
+      "end_line": 432,
+      "message": "The error messages for input validation are hardcoded strings instead of localized resources. This limits the ability to support internationalization.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Factually correct that error messages are hardcoded, but the entire codebase uses hardcoded strings with no R.string references or stringResource() calls anywhere — strings.xml contains only the app name. This is the project's consistent established pattern. The finding is a generic i18n best-practice recommendation that could be applied verbatim to any Android project, not a specific inconsistency in the changed code.",
+      "severity_justification": "No i18n infrastructure exists in the project, so there is no convention being violated and no localization support to degrade.",
+      "category_justification": "Generic code quality / internationalization suggestion with no project-specific grounding.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreen.kt",
+      "start_line": 223,
+      "end_line": 232,
+      "message": "The Snackbar used during profile updates fails silently if the queue is full, meaning error or success notifications might not be presented to the user under heavy activity.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Factually correct that SnackbarManager uses trySend() on a BUFFERED channel and can drop events when full, but: (1) this is pre-existing documented behavior in SnackbarManager, not introduced by this PR; (2) Channel.BUFFERED has a 64-element capacity that is effectively impossible to fill during a single profile update flow; (3) the finding is generic and could be applied to every screen using SnackbarManager without modification.",
+      "severity_justification": "Negligible practical risk — the 64-element buffer cannot realistically be exhausted during a profile update interaction.",
+      "category_justification": "Concerns notification delivery reliability under load conditions.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/utils/network/apiHelper.kt",
+      "start_line": 23,
+      "end_line": 46,
+      "message": "The API error response parsing assumes 'detail' or 'msg' keys exist without validating their presence. Missing keys or invalid JSON can lead to crashes or misleading error messages.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The claimed crashes do not occur: jsonObject.get(\"detail\")?.asString uses a null-safe call, and all JSON parsing in both the general and 422 error blocks is wrapped in try-catch(Exception) with fallback to errorBody. The crash claim is factually incorrect. Additionally, apiHelper.kt is pre-existing code not modified by this PR.",
+      "severity_justification": "No actual crash risk exists; all exception paths are caught. The worst case is showing raw error body text to the user, a minor UX concern present before this PR.",
+      "category_justification": "The finding concerns error handling robustness in the API response parsing utility.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/data/remote/operator/api/OperatorAccountApi.kt",
+      "start_line": 46,
+      "end_line": 54,
+      "message": "The retrofit API interface assumes the server always returns a response body. Null bodies in case of failures or empty successes may lead to runtime null pointer exceptions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "apiHelper explicitly guards against null bodies with 'if (body != null) { Resource.Success(...) } else { Resource.Empty(...) }', making NPE from a null response body impossible. The finding's claim that the code assumes the server always returns a non-null body is factually incorrect. Using Response<T> in Retrofit is the idiomatic approach for handling nullable bodies, and apiHelper is pre-existing code not changed by this PR.",
+      "severity_justification": "No actual NPE risk exists; the null body case is already explicitly handled.",
+      "category_justification": "The finding makes an incorrect factual claim about null safety in response body handling.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/domain/model/OperatorAccountUpdateRequest.kt",
+      "start_line": 7,
+      "end_line": 10,
+      "message": "The hasChanges function presumes all fields are corresponding updates. If the fields are dynamically added later, this can fail unnoticed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "All four current data class fields are correctly listed in hasChanges(). The finding describes a hypothetical future maintenance scenario where a developer adds a field and forgets to update the manual list — this is not a current bug. The concern is generic enough to apply verbatim to any manually-maintained list in any codebase, and 'dynamically added' is a misleading description for what is simply a static code change.",
+      "severity_justification": "No current bug exists; the risk is a future omission that would be easily spotted during code review of any change adding a new FieldUpdate field to the same class.",
+      "category_justification": "A hypothetical future maintenance concern about keeping a manual list in sync with class fields.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/di/SerializationModule.kt",
+      "start_line": 24,
+      "end_line": 27,
+      "message": "The SerializeNullsGson qualifier introduced here does not verify usage conformity across app layers leading to accidental misdefinition if misused.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding is vague and generic — 'does not verify usage conformity across app layers' could be said about any Hilt qualifier in any Android project. Hilt qualifiers are precisely the mechanism Android/Dagger provides to distinguish multiple bindings of the same type; they enforce correct injection at compile time. The @SerializeNullsGson qualifier is used in exactly one injection site (OperatorAccountRepositoryImpl) where it is intentionally needed, and the standard Gson (without serializeNulls) is still provided unqualified for all other uses. There is no concrete misuse scenario demonstrated.",
+      "severity_justification": "No actual misuse exists in the code and Hilt's compile-time DI validation would flag incorrect qualifier usage.",
+      "category_justification": "A vague concern about future misuse of a DI qualifier with no concrete code-specific evidence.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreen.kt",
+      "start_line": 427,
+      "end_line": 435,
+      "message": "The phone number formatter only works for Indian phone numbers (assumes +91), which makes this implementation non-flexible for international users.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The +91 India-only assumption is an intentional design decision for this app — the project is named 'entebus-android-operator', targets Indian operators (evidenced by +91 hardcoded throughout the phone formatting, formatPhoneForUI stripping +91, and the 10-digit Indian mobile number validation). The finding is a generic internationalization preference with no evidence that international phone numbers are a requirement for this application. The same comment could be copy-pasted onto any India-specific app without modification.",
+      "severity_justification": "No users are harmed given the app's clearly India-specific scope. Internationalizing phone handling would require broader architectural changes with no stated business need.",
+      "category_justification": "A generic i18n/flexibility suggestion that does not identify a concrete bug or convention violation in this codebase.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app/src/main/java/com/nixbug/entebus/presentation/screens/personaldetails/PersonalDetailsScreenViewModel.kt",
+      "start_line": 350,
+      "end_line": 357,
+      "message": "`hasChanges()` is read from the composable on every recomposition by reading `_uiState.value` directly inside a non-suspend function. Because it isn't a `State`, Compose won't observe it for recomposition, so the back-press dialog / \"no changes\" branch can use stale values relative to what the user just typed. Consider deriving this from the collected `uiState` (e.g., a `derivedStateOf` or a `StateFlow<Boolean>`) so the UI always sees a consistent value with the rest of the state it just read.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding incorrectly claims hasChanges() can return stale values. It reads _uiState.value, which is a MutableStateFlow.value — always the current/latest value. The call sites are event handler lambdas (BackHandler, onBackClick), not recomposition-time reads, so Compose's recomposition observability model does not apply. There is no staleness or consistency problem here.",
+      "severity_justification": "Even if taken at face value, the scenario would be a minor UX inconsistency at worst, not data loss or a crash.",
+      "category_justification": "The finding is about potentially incorrect/stale state reads causing wrong branching logic in event handlers.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

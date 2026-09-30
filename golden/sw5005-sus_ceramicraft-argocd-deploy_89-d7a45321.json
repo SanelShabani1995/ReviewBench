@@ -1,0 +1,335 @@
+{
+  "pr_key": "sw5005-sus_ceramicraft-argocd-deploy_89-d7a45321",
+  "pr": {
+    "repo": "https://github.com/sw5005-sus/ceramicraft-argocd-deploy",
+    "pr_number": 89,
+    "base": "9cf42c1eecc554ca953c3685fa1b6a34eeed910c",
+    "head": "d7a4532170487a111654cf8aa742f4007334b6e2"
+  },
+  "findings": [
+    {
+      "file": "app-of-apps.yaml",
+      "start_line": 433,
+      "end_line": 433,
+      "message": "The agent-app ArgoCD Application is pinned to the feature branch 'AI-20-AISecureAgent-Feature-collection' instead of 'HEAD'. Every other application in this file uses 'HEAD'. Once this branch is merged or deleted, ArgoCD will be unable to sync this application and will go into an error state. This should be changed to 'HEAD' before or immediately after the branch is merged.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: every other app-sourced entry in app-of-apps.yaml uses HEAD (or a semantic chart version), and only the new agent-app at line 433 references a feature branch. ArgoCD will fail to sync once that branch is deleted or diverges.",
+      "severity_justification": "A stale branch reference will cause the ArgoCD application to error permanently after the branch is deleted, breaking automated sync and potentially leaving the workload unmanaged.",
+      "category_justification": "This is an operational/deployment reliability issue — the ArgoCD sync will fail once the feature branch no longer exists.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 19,
+      "end_line": 41,
+      "message": "No liveness or readiness probes are defined. The previous Helm values configured both probes at '/ai-secure-agent-ms/v1/ping'. Without probes, Kubernetes cannot detect an unresponsive or crash-looping container, and traffic will be routed to pods that are not yet ready or have failed silently.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: the new agent/ai-secure-agent.yaml has no liveness or readiness probes, while the deleted Helm values.yaml explicitly configured both at /ai-secure-agent-ms/v1/ping. The probes were dropped in this migration.",
+      "severity_justification": "Without probes, Kubernetes cannot detect a stuck or not-yet-ready container, so traffic may be sent to failing pods. Real impact depends on workload stability, but it's a meaningful reliability regression.",
+      "category_justification": "Missing health probes affect Kubernetes' ability to manage pod lifecycle and route traffic correctly — a direct reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 19,
+      "end_line": 41,
+      "message": "No resource requests or limits are defined. The previous Helm values specified cpu: 100m–200m and memory: 256Mi–345Mi. Without these, the container is treated as a BestEffort pod, is the first to be evicted under pressure, and can starve other workloads on the node.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: agent/ai-secure-agent.yaml has no resources block in the container spec. The deleted helm_backend/ai-secure-agent-ms/values.yaml had cpu: 100m-200m and memory: 256Mi-345Mi. Resource constraints were dropped in this migration.",
+      "severity_justification": "BestEffort QoS class means first eviction under node pressure and potential resource starvation of other workloads. Significant operational risk but not an immediate hard failure.",
+      "category_justification": "Missing resource requests/limits directly affect pod scheduling QoS class, eviction priority, and node stability — a reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 20,
+      "end_line": 20,
+      "message": "The image tag is prefixed with 'debug-' (lian1280/ceramicraft-ai-secure-agent:debug-202604071410). Debug builds are typically not hardened and may expose additional tooling, verbose logging, or reduced performance. A production-grade image tag should be used instead.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Factually correct — the image tag is debug-202604071410 in the new manifest. The same tag existed in the deleted Helm values.yaml, so this is pre-existing. Still a real concern worth flagging.",
+      "severity_justification": "Debug-tagged images may have extra logging or tooling but the exact implications depend on the project's tagging convention. Low severity since the same tag was already deployed via Helm.",
+      "category_justification": "Using a debug-tagged image in a production deployment is an operational/reliability concern, not a security vulnerability per se.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 13,
+      "end_line": 16,
+      "message": "The pod template metadata lacks the 'linkerd.io/inject: disabled' annotation that was present in the old Helm values. Linkerd is deployed in this cluster (visible in app-of-apps.yaml). If Linkerd's mutating webhook injects a sidecar into this pod and the application is not compatible, it can fail to start or behave incorrectly.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Linkerd is deployed in the cluster (app-of-apps.yaml line 286-316), the deleted Helm values.yaml had 'podAnnotations: linkerd.io/inject: disabled' explicitly opting out, and the new manifest has no pod annotations. The explicit opt-out in the original config signals a known reason to exclude this service from Linkerd injection.",
+      "severity_justification": "If the namespace or cluster default injects Linkerd sidecars and the app is incompatible, the pod could fail to start. The explicit prior opt-out strongly implies this was deliberate, making this a realistic regression.",
+      "category_justification": "Dropping a required pod annotation that controls sidecar injection can cause pod startup failures — a reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 47,
+      "end_line": 60,
+      "message": "The new Service only exposes port 8080 (HTTP). The previous Helm values also exposed gRPC port 5001 (service.grpcPort: 5001), which the shared service template rendered as a named 'grpc' port. Any callers relying on gRPC communication at port 5001 will silently lose connectivity with no Service port to route through.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: deleted values.yaml had service.grpcPort: 5001 and charts/templates/service.yaml renders a named 'grpc' port from that value. The new Service manifest at lines 47-60 only exposes port 8080. The gRPC port was dropped in this migration.",
+      "severity_justification": "If any callers use gRPC on port 5001, they lose connectivity silently. Whether gRPC is actively used cannot be determined from the repo, but the port was deliberately configured and its removal is a potential breaking change.",
+      "category_justification": "A missing service port that was previously exposed represents incorrect/incomplete behavior in the network configuration.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 43,
+      "end_line": 45,
+      "message": "The Deployment references ConfigMap 'ai-secure-agent-ms-config', which is defined in 'backend/ai-secure-agent-config.yaml' and owned by the 'backend-app' ArgoCD Application. This creates an untracked cross-application dependency: if 'backend-app' prunes or modifies that ConfigMap independently, the pods in 'agent-app' will fail to start. The ConfigMap should be colocated with the Deployment in the 'agent/' directory.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: agent/ai-secure-agent.yaml references ConfigMap 'ai-secure-agent-ms-config', which is defined in backend/ai-secure-agent-config.yaml and owned by backend-app (which has prune: true). agent-app has an untracked dependency on a resource managed by a different ArgoCD Application.",
+      "severity_justification": "If backend-app prunes or modifies the ConfigMap independently, agent-app pods will fail to mount the volume and crash. This is a real operational risk in a GitOps setup with automated pruning.",
+      "category_justification": "Cross-application resource ownership in ArgoCD with prune enabled creates a dependency that can silently break pod startup — an operational reliability concern.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 59,
+      "end_line": 60,
+      "message": "Missing newline at end of file. YAML tooling and some Kubernetes manifest processors expect a trailing newline; its absence can cause concatenation errors when manifests are piped or combined.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified via hex dump: file ends without a newline byte, consistent with the diff warning. The claim is factually correct.",
+      "severity_justification": "Missing trailing newline is a POSIX convention violation and a cosmetic issue. In an ArgoCD GitOps context, Kubernetes/ArgoCD handle this without error; real-world impact is negligible.",
+      "category_justification": "A missing newline at end of file is a code style/formatting convention issue with no functional impact in this context.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app-of-apps.yaml",
+      "start_line": 441,
+      "end_line": 442,
+      "message": "Missing newline at end of file. Consistent with the same issue in agent/ai-secure-agent.yaml — both new file additions omit the trailing newline, which can cause issues when tools concatenate or diff manifests.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Purely POSIX style convention, no practical impact on YAML/ArgoCD",
+      "severity_justification": "Same as finding 8 — a POSIX convention violation with negligible practical impact in an ArgoCD GitOps context.",
+      "category_justification": "Missing trailing newline is a formatting/style convention issue with no functional impact.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 19,
+      "end_line": 41,
+      "message": "The Deployment has no 'envFrom' referencing the Vault-backed secret (ms-secret-vault) that all other microservices inject via the shared Helm chart template. The config.yml mounts database credentials for MySQL and Redis by name but without the secret, any runtime lookup of those credentials from Vault/External Secrets will be unavailable, likely causing startup failures if the application expects them as environment variables.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the shared Helm chart template unconditionally injects envFrom secretRef ms-secret-vault (via default), which all other services use. The new raw manifest has no envFrom. The config.yml shows MySQL/Redis connections where passwords would normally come from this secret.",
+      "severity_justification": "If the application requires database credentials from ms-secret-vault as environment variables, the missing envFrom will cause runtime failures connecting to MySQL/Redis — likely a startup crash in production.",
+      "category_justification": "The secret injection was part of the standard deployment pattern and was dropped in the migration, causing missing required environment variables.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 4,
+      "end_line": 4,
+      "message": "The Deployment and Service are being created in the `default` namespace. It is a best practice to use dedicated namespaces for applications to provide logical separation, resource quotas, and access control.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "All other backend microservices in this cluster deploy to the default namespace (backend-app, helm microservices, etc.). Using default is the established project convention. The finding is a generic best-practice comment that ignores the actual codebase pattern.",
+      "severity_justification": "Even if valid in general, this is a cosmetic/architectural preference with no immediate impact given the cluster's existing convention.",
+      "category_justification": "Namespace organisation is an architectural/maintenance concern.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 28,
+      "end_line": 28,
+      "message": "The MLFLOW_TRACKING_URI environment variable is hardcoded with a specific service URL (mlflow-tracking-svc.mlflow.svc.cluster.local:5000). This presents a configuration issue, as the service may not be reachable in all environments or clusters. Consider making this configurable via a ConfigMap or a Secret.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The same value was hardcoded in the deleted Helm values.yaml — this is pre-existing and unchanged behavior. The finding is a generic 'make it configurable' suggestion without evidence of a multi-environment requirement or concrete problem. This is a single-cluster GitOps repo.",
+      "severity_justification": "No concrete impact — the value is the correct cluster-internal DNS address and was already hardcoded before.",
+      "category_justification": "Generic configurability suggestion.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "app-of-apps.yaml",
+      "start_line": 433,
+      "end_line": 435,
+      "message": "The syncPolicy for the Application enables automated pruning and self-healing, which is good for ensuring alignment with Git. However, unexpected changes or deletions in the source repository could cause disruptions in the cluster if not properly reviewed.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Every application in app-of-apps.yaml uses the same prune: true and selfHeal: true settings. This is the established project-wide convention. The finding is a generic boilerplate caution about ArgoCD auto-sync that could apply to any GitOps project, not a specific concern about this change.",
+      "severity_justification": "Even as a general observation, it adds no actionable value — the same policy is already applied to all other apps without issue.",
+      "category_justification": "Relates to deployment/sync policy behavior.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 17,
+      "end_line": 17,
+      "message": "[yaml.kubernetes.security.run-as-non-root.run-as-non-root] When running containers in Kubernetes, it's important to ensure that they  are properly secured to prevent privilege escalation attacks.  One potential vulnerability is when a container is allowed to run  applications as the root user, which could allow an attacker to gain  access to sensitive resources. To mitigate this risk, it's recommended to  add a `securityContext` to the container, with the parameter `runAsNonRoot`  set to `true`. This will ensure that the container runs as a non-root user,  limiting the damage that could be caused by any potential attacks. By  adding a `securityContext` to the container in your Kubernetes pod, you can  help to ensure that your containerized applications are more secure and  less vulnerable to privilege escalation attacks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is a verbatim static analysis boilerplate alert. No other application deployments in this project set securityContext/runAsNonRoot — it's not a project convention. The finding presents generic security advice without demonstrating a concrete exploitable vulnerability specific to this codebase.",
+      "severity_justification": "While running as root in containers is a real general concern, this is a copy-paste scanner output with no project-specific analysis.",
+      "category_justification": "The finding is framed as a container privilege escalation security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "yaml.kubernetes.security.run-as-non-root.run-as-non-root"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 19,
+      "end_line": 19,
+      "message": "[yaml.kubernetes.security.allow-privilege-escalation-no-securitycontext.allow-privilege-escalation-no-securitycontext] In Kubernetes, each pod runs in its own isolated environment with its own set of security policies. However, certain container images may contain `setuid` or `setgid` binaries that could allow an attacker to perform privilege escalation and gain access to sensitive resources. To mitigate this risk, it's recommended to add a `securityContext` to the container in the pod, with the parameter `allowPrivilegeEscalation` set to `false`. This will prevent the container from running any privileged processes and limit the impact of any potential attacks. By adding a `securityContext` to your Kubernetes pod, you can help to ensure that your containerized applications are more secure and less vulnerable to privilege escalation attacks.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "security",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Identical pattern to finding 14 — verbatim static analysis boilerplate. No deployments in this project set allowPrivilegeEscalation: false in a securityContext. The finding demonstrates no concrete exploitable vulnerability specific to this codebase and would apply identically to every Kubernetes deployment lacking a securityContext.",
+      "severity_justification": "Generic security hygiene advice with no project-specific analysis or demonstrated exploit path.",
+      "category_justification": "Framed as a container privilege escalation security concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "yaml.kubernetes.security.allow-privilege-escalation-no-securitycontext.allow-privilege-escalation-no-securitycontext"
+      }
+    },
+    {
+      "file": "agent/ai-secure-agent.yaml",
+      "start_line": 9,
+      "end_line": 9,
+      "message": "This hard-codes the agent at one replica but does not recreate the HPA that the shared Helm chart rendered by default (`charts/values.yaml` enables min 1/max 5). The migration therefore removes the service's ability to scale under CPU load.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the shared Helm chart (charts/values.yaml) defaults to hpa.enabled: true (min 1/max 5), which the deleted helm_backend/ai-secure-agent-ms/values.yaml would have inherited since it had no hpa override. The new raw manifest agent/ai-secure-agent.yaml has only replicas: 1 with no HPA resource, confirming autoscaling capability is lost in this migration.",
+      "severity_justification": "Loss of autoscaling means the service cannot scale under CPU load, which is a real operational regression, though the service remains functional at a fixed single replica.",
+      "category_justification": "The issue is about the removal of autoscaling (HPA), which affects the service's ability to handle load — a fault tolerance and operational concern.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

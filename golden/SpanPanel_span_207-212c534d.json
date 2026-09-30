@@ -1,0 +1,393 @@
+{
+  "pr_key": "SpanPanel_span_207-212c534d",
+  "pr": {
+    "repo": "https://github.com/SpanPanel/span",
+    "pr_number": 207,
+    "base": "fb408059e77858d187117ba47f92bdcede73b255",
+    "head": "212c534d8f2d584696b5579c2825b2a972cad719"
+  },
+  "findings": [
+    {
+      "file": "custom_components/span_panel/services.py",
+      "start_line": 215,
+      "end_line": 219,
+      "message": "Translation keys 'monitoring_not_enabled' (lines 218, 230) and 'graph_horizon_not_available' (line 388) are referenced in ServiceValidationError calls but are absent from strings.json. HA will log a warning for each missing key and the user will see the raw fallback string instead of a localized error message.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `monitoring_not_enabled` appears at lines 218 and 230, and `graph_horizon_not_available` at line 388 in services.py as translation_key arguments to ServiceValidationError. Neither key exists in the `exceptions` section of strings.json (which only contains circuit_priority_failed, circuit_relay_failed, export_manifest_no_entries, gfe_override_failed, panel_auth_failed, panel_connection_failed, panel_not_ready). HA will fall back to the raw key string instead of a localized message.",
+      "severity_justification": "Users will see raw translation keys instead of human-readable error messages when monitoring is not enabled or graph horizon is unavailable, degrading UX for service error paths.",
+      "category_justification": "Missing i18n/translation entries for user-facing error messages — a localization completeness issue.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/services.py",
+      "start_line": 315,
+      "end_line": 334,
+      "message": "When set_global_monitoring is called with only {\"enabled\": true} (and no threshold or notification fields), the monitor is created via _get_or_create_monitor but the enabled state is never written to storage. After an HA restart, async_is_enabled returns False so monitoring silently stops. The save only happens inside set_global_settings which is guarded by 'if data:' — an empty data dict after popping 'enabled' and 'config_entry_id' means no save occurs.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified in services.py: when set_global_monitoring is called with only {\"enabled\": true}, `data` is empty after popping `enabled` and `config_entry_id`, so `if data: monitor.set_global_settings(data)` is skipped. The only save path that writes `enabled=True` is `async_save_overrides`, which is only triggered from `set_global_settings`. Without it, storage never gets `enabled=True`, and after HA restart `async_is_enabled` returns False, silently dropping the monitoring state.",
+      "severity_justification": "Users who enable monitoring via the service with only {\"enabled\": true} will find monitoring silently disabled after every HA restart.",
+      "category_justification": "Logic bug where the enabled state is not persisted to storage when no threshold/notification fields accompany the enable call.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/alert_dispatcher.py",
+      "start_line": 167,
+      "end_line": 167,
+      "message": "strftime('%-I:%M %p') uses the Linux/macOS-specific '%-' flag to suppress leading zeros. On Windows this raises ValueError, breaking all alert dispatch on that platform. Use '%I:%M %p'.lstrip('0') or a platform-agnostic approach instead.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "While `%-I` is technically Linux/macOS-specific, the project explicitly sets `platform = \"linux\"` in pyproject.toml, and Home Assistant itself only targets Linux for production deployments. The Windows concern does not apply to this codebase.",
+      "severity_justification": "Even if the concern were valid, it would only affect a platform this integration explicitly does not target.",
+      "category_justification": "The finding is about platform-specific behavior causing runtime errors.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/alert_dispatcher.py",
+      "start_line": 221,
+      "end_line": 225,
+      "message": "Notification dispatch tasks are created with hass.async_create_task but no error callback or name is set. If dispatch_to_target raises (e.g., invalid service, connection error), the exception is logged as an unhandled exception in an asyncio task but the caller gets no feedback. Consider adding a task name for easier debugging and handling errors so repeated failures don't flood the log silently.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "While factually correct that no task name or error callback is set, this is the consistent pattern used throughout the codebase (coordinator.py, current_monitor.py, graph_horizon.py). HA's task exception handler does log unhandled exceptions, so failures are not truly silent. The suggestion is a generic best-practice applicable to any fire-and-forget async pattern, not a specific actionable issue.",
+      "severity_justification": "Notification failures would be logged by HA's default task exception handler; there is no silent failure path and no incorrect behavior.",
+      "category_justification": "Concerns error handling robustness in async task dispatch.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/frontend.py",
+      "start_line": 58,
+      "end_line": 92,
+      "message": "_async_ensure_lovelace_resource directly reads and writes the internal 'lovelace_resources' storage key that HA's Lovelace integration also manages. Writing to this store bypasses HA's internal cache, creating a race condition: if HA's lovelace component saves its in-memory state after this function writes, the card resource entry will be overwritten and lost on the next HA restart. HA provides no public API for this, so this is inherently fragile.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: `_async_ensure_lovelace_resource` creates a `Store(hass, 1, 'lovelace_resources')` and writes directly to it (lines 65-88), bypassing HA's in-memory ResourceStorageCollection. The manifest has `frontend` as a dependency but not `lovelace`, so HA's lovelace module may already have loaded its cache. Any UI-triggered lovelace resource save would overwrite the storage with HA's cached state, silently losing the entry until the next HA restart.",
+      "severity_justification": "Users could find the card JS resource missing after editing lovelace config via UI, breaking the dashboard until HA restarts. The re-registration on startup partially mitigates but doesn't eliminate the issue.",
+      "category_justification": "Race condition with HA's internal storage layer that can cause intermittent loss of a required registration.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/coordinator.py",
+      "start_line": 436,
+      "end_line": 478,
+      "message": "If _run_post_update_tasks raises an unexpected exception (e.g., from the solar migration or current monitor processing), the outer except Exception block catches it, calls _mark_panel_offline, and returns stale data. This is incorrect because the snapshot was successfully fetched — the panel is online. The post-update failure should not be treated as a panel connectivity failure, and returning stale data silently masks the real error.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified in coordinator.py: `_run_post_update_tasks` is called inside the try block after `_mark_panel_online()`. Any exception raised inside it (from solar migration, dip notification, or current_monitor.process_snapshot) is caught by `except Exception as err`, which calls `_mark_panel_offline(err)` and returns stale data. This is incorrect — the panel is online; the snapshot was already fetched successfully. The bug causes entities to falsely show unavailable and suppresses the real error.",
+      "severity_justification": "A failure in any post-update task (e.g., current_monitor.process_snapshot raising) would mark all panel entities unavailable and return stale data, misleading users about the panel's actual state. The failure is masked behind a connectivity error.",
+      "category_justification": "Logic error: post-update task failures are incorrectly classified as connectivity failures, causing wrong entity availability state and misleading error messages.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/alert_dispatcher.py",
+      "start_line": 145,
+      "end_line": 148,
+      "message": "dispatch_to_target falls through to the else branch for non-entity notify targets and constructs the service name as target.split('.')[1]. For a target like 'notify.send_message' this works, but the function is documented to also accept service-only targets (the else branch). If 'notify' is passed without a dot, the fallback produces service='notify' so the call becomes hass.services.async_call('notify', 'notify', ...) which is wrong and will silently fail.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: lines 146-147 set both `domain` and `service` to `'notify'` when the target has no dot, so `hass.services.async_call('notify', 'notify', ...)` would be called. No input validation on NOTIFY_TARGETS prevents a dotless target. The intended fallback (call `notify.<bare_service>`) would require `service = target`, not `service = 'notify'`. The bug is real but only triggered by malformed user input, as documented usage is always `domain.service` format.",
+      "severity_justification": "Only affects users who enter a bare service name without a domain prefix, which is contrary to the documented format. The malformed target would silently fail to deliver the notification.",
+      "category_justification": "Logic bug in the fallback branch of dispatch_to_target producing an incorrect service call.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/current_monitor.py",
+      "start_line": 121,
+      "end_line": 127,
+      "message": "set_circuit_override and set_mains_override each schedule async_save_overrides via async_create_task without tracking the task. Rapid successive calls (e.g., bulk monitoring configuration from the UI) will queue multiple concurrent saves, potentially writing interleaved state to storage. HA's Store serializes writes but the tasks themselves are not deduplicated, creating unnecessary I/O. More critically, if a save task fails the error is silently discarded.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The primary correctness claim ('potentially writing interleaved state') is factually incorrect: asyncio is single-threaded and tasks execute sequentially, so each save reads the current in-memory state without interleaving. HA's Store already debounces rapid writes. The 'silent error' concern is a generic pattern applied consistently throughout the entire codebase (coordinator.py, graph_horizon.py, config_flow.py all use async_create_task the same way). No distinct correctness issue is identified.",
+      "severity_justification": "Even if multiple tasks are queued, the last one will always write the correct final state. HA Store debouncing handles the I/O efficiency concern.",
+      "category_justification": "The finding concerns async task scheduling and storage I/O behavior.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/migrations.py",
+      "start_line": 41,
+      "end_line": 75,
+      "message": "The migration chain starts at v2→v3, so config entries at version 1 (pre-1.3.x) are never properly handled. The check 'if config_entry.version < 3' would run for v1 entries and attempt to add CONF_API_VERSION based on 'simulation_mode', which may not be present, then proceed through v3-v6 migrations without the unique-ID normalization that v1→v2 used to perform. The CHANGELOG says 'you must already be on v1.3.x', but there's no explicit guard that aborts for v1 entries — they silently migrate with potentially corrupted unique_ids.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: migrations.py has no guard for config version 1 entries and the v1→v2 `migrate_config_entry_sensors` unique_id normalization step (present in the old __init__.py) is missing. v1 entries would silently skip normalization. The finding correctly identifies the gap. Partial mitigation exists: after migration, `async_setup_entry` raises ConfigEntryAuthFailed for `api_version == 'v1'`, so users are forced to reauthenticate rather than silently running with corrupted state — but stale entities from skipped normalization would persist.",
+      "severity_justification": "Users on v1 config entries (pre-1.3.x) are very rare given the changelog warnings. The setup raises ConfigEntryAuthFailed making the issue visible rather than silent. Stale entities from skipped unique_id normalization could create duplicates but are easily cleaned up.",
+      "category_justification": "Missing migration step could result in corrupted/stale entity unique_ids for v1 config entries.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/__init__.py",
+      "start_line": 252,
+      "end_line": 254,
+      "message": "async_unload_entry calls current_monitor.async_stop() which is a synchronous method that clears in-memory state, but does not persist the running=False state to storage. After unload+reload the monitor would restart (via async_is_enabled returning True from a prior save), but any in-flight save tasks from set_circuit_override/set_global_settings that were scheduled before unload may run after the store is gone, causing unhandled exceptions.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "HA's `Store` is tied to `hass` (not the config entry) and persists across entry unloads. Pending `async_save_overrides` tasks hold a reference to the monitor instance (preventing GC), so `self._store` remains valid and writable. The saves would complete normally without exceptions. The finding's premise — 'after the store is gone' — is factually incorrect.",
+      "severity_justification": "Even if the concern were valid, it would only affect edge cases during rapid unload+reload cycles; monitoring would resume correctly on the next load.",
+      "category_justification": "Concerns task lifecycle and storage validity during entry unload.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/config_flow_validation.py",
+      "start_line": 117,
+      "end_line": 117,
+      "message": "[python.lang.correctness.tempfile.flush.tempfile-without-flush] Using 'tmp.name' without '.flush()' or '.close()' may cause an error because the file may not exist when 'tmp.name' is used. Use '.flush()' or close the file before using 'tmp.name'.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The file path is captured on line 117 inside the `with` block (where the file clearly exists), but is not used for reading until after the `with` block exits — at which point Python's context manager has already closed and flushed the file. `ctx.load_verify_locations` is called outside the `with` block with a fully written, closed file. The static analysis rule fires spuriously because it doesn't track that the path is only used after the context manager closes the file.",
+      "severity_justification": "The code is correct — file is fully written before it is read. No actual bug exists.",
+      "category_justification": "The finding is about potential data loss/file state, which is a correctness concern.",
+      "producer": "deterministic_tool:semgrep",
+      "source": {
+        "type": "tool",
+        "alignment": "generated",
+        "tool": "semgrep",
+        "rule_id": "python.lang.correctness.tempfile.flush.tempfile-without-flush"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/services.py",
+      "start_line": 433,
+      "end_line": 433,
+      "message": "The fallback response shape is inconsistent with `GraphHorizonManager.get_all_settings()`, which always includes `sub_devices`. Callers that unconditionally read `sub_devices` (as they can for the normal path) will fail when no matching loaded entry/manager is found. Include an empty `sub_devices` key here as well.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `GraphHorizonManager.get_all_settings()` always returns `{'global_horizon': ..., 'circuits': ..., 'sub_devices': ...}`, but the fallback at line 433 returns only `{'global_horizon': DEFAULT_GRAPH_HORIZON, 'circuits': {}}`, missing the `sub_devices` key. Any caller unconditionally accessing `response['sub_devices']` will get a KeyError on the fallback path.",
+      "severity_justification": "Callers that read `sub_devices` from the response will raise a KeyError when no loaded entry or manager is found, a real runtime error even if it only occurs in edge cases.",
+      "category_justification": "The fallback response shape is inconsistent with the normal return value, causing potential KeyErrors for consumers of this service.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/services.py",
+      "start_line": 246,
+      "end_line": 252,
+      "message": "Without an explicit `config_entry_id`, `_get_monitor()` returns the first loaded SPAN panel, and this handler only resolves the passed entity ID after that. In a multi-panel setup, selecting an entity from a different panel writes the override into the wrong monitor, so the requested circuit is never updated. Resolve the entity's registry entry/config entry before choosing the monitor (or expose/require `config_entry_id` in the service UI).",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `_get_monitor(call)` picks the first loaded entry when no `config_entry_id` is present. `resolve_entity_to_circuit_id` uses the global entity registry and extracts the circuit UUID from the unique_id regardless of which panel the entity belongs to, so passing an entity from Panel B silently writes the override into Panel A's monitor.",
+      "severity_justification": "In multi-panel setups (uncommon but supported), threshold overrides for a circuit are silently written to the wrong panel's monitor, so the intended circuit is never updated. The failure is silent, not an error.",
+      "category_justification": "The monitor selection logic produces incorrect behavior for multi-panel deployments — overrides are applied to the wrong panel's monitor.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/services.py",
+      "start_line": 260,
+      "end_line": 266,
+      "message": "This has the same multi-panel routing problem as the circuit threshold service: the monitor is chosen before the `leg` entity ID is resolved, so a mains current entity from another panel updates the first loaded panel's overrides unless the caller supplies a hidden `config_entry_id`. Use the entity registry entry to select the owning config entry before calling `_get_monitor()`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `async_handle_set_mains_threshold` (and `clear`) calls `_get_monitor(call)` before resolving the `leg` entity ID. `resolve_entity_to_mains_leg` uses the global entity registry, so passing a mains entity from Panel B succeeds but writes the override into Panel A's monitor — the same multi-panel routing bug as the circuit threshold service.",
+      "severity_justification": "Same severity as the circuit threshold case: in multi-panel setups, mains leg overrides are silently applied to the wrong monitor with no error raised.",
+      "category_justification": "Same incorrect routing logic as Finding 2 — the monitor is chosen before the entity's owning panel is identified, producing silent wrong-panel writes in multi-panel deployments.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/services.py",
+      "start_line": 254,
+      "end_line": 258,
+      "message": "Clearing by entity ID also operates on the first loaded monitor before resolving which panel owns the entity. In installations with more than one SPAN panel, clearing a second panel's circuit threshold can remove/modify state on the wrong panel and leave the intended override intact.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `async_handle_clear_circuit_threshold` calls `_get_monitor(call)` before resolving the entity, identical to the set handler. In multi-panel setups, passing a Panel B entity resolves the UUID via the global registry and then clears that circuit ID from Panel A's monitor instead, leaving Panel B's override unchanged.",
+      "severity_justification": "Same multi-panel routing bug — silently operates on the wrong panel's monitor with no error, leaving the intended override intact.",
+      "category_justification": "Same incorrect monitor-selection-before-entity-resolution pattern as Findings 2 and 3, applied to the clear operation.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/services.py",
+      "start_line": 268,
+      "end_line": 272,
+      "message": "Clearing a mains threshold has the same ownership issue: `_get_monitor(call)` selects the first loaded panel before `leg` is resolved from the entity registry, so entity IDs from other panels clear the wrong monitor unless callers know to pass the undocumented `config_entry_id`.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `async_handle_clear_mains_threshold` calls `_get_monitor(call)` before resolving the `leg` entity, identical to the other three handlers. In multi-panel setups a Panel B mains entity resolves via the global registry and clears the leg override on Panel A's monitor instead.",
+      "severity_justification": "Same multi-panel routing bug as Findings 2-4 — silently clears the wrong panel's override with no error raised.",
+      "category_justification": "Fourth instance of the same incorrect monitor-selection-before-entity-resolution pattern, applied to clearing mains overrides.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/websocket.py",
+      "start_line": 149,
+      "end_line": 153,
+      "message": "When a circuit has no tab data, this reports `voltage` as 120 because `len(tabs) != 2`. Other helpers in this integration treat missing/empty tabs as unknown (`construct_voltage_attribute()` returns `None`), and `export_circuit_manifest` skips circuits without tabs. Returning 120 here can make the dashboard calculate/display current incorrectly for circuits whose tab metadata is absent; use `None` (or the shared helper) when `tabs` is empty.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: when `circuit.tabs` is empty, `tabs=[]` and `len(tabs) != 2`, so `voltage` is reported as 120 rather than `None`. The shared `construct_voltage_attribute()` helper explicitly returns `None` for empty tabs, and `export_circuit_manifest` skips tab-less circuits. The websocket handler is inconsistent with the established pattern and will cause the dashboard to use 120V for unknown circuits instead of treating them as unknown.",
+      "severity_justification": "Dashboard current calculations (power/voltage) will produce incorrect values for circuits without tab data, potentially misleading users about circuit utilization, rather than showing the data as unknown/unavailable.",
+      "category_justification": "The voltage value reported for circuits with missing tab data is factually wrong (120 instead of None/unknown), inconsistent with the integration's own helpers and circuit-skipping logic.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/services.yaml",
+      "start_line": 101,
+      "end_line": 103,
+      "message": "This field is exposed in `services.yaml`, but `strings.json` does not define `services.set_global_monitoring.fields.enabled` (the translated fields start at `continuous_threshold_pct`). The Services UI will show a missing/blank translation for `enabled`; add the field translation when exposing this selector.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `services.yaml` lines 101-103 expose `set_global_monitoring.fields.enabled` with a boolean selector, but `strings.json` has no `enabled` field under `set_global_monitoring.fields` — translations start at `continuous_threshold_pct`. The Services UI will show a blank/missing label for the `enabled` toggle.",
+      "severity_justification": "The service still functions correctly; only the UI label for the `enabled` field is missing, which is a cosmetic/UX issue in the Services developer tools panel.",
+      "category_justification": "Missing translation entry for a UI-facing field — the strings.json file is the translation/documentation surface for service field labels.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "custom_components/span_panel/websocket.py",
+      "start_line": 66,
+      "end_line": 66,
+      "message": "The sidebar panel is registered for non-admin users by default (`panel_admin_only` defaults to false), but the topology WebSocket it needs is now admin-only. Non-admin users can open the dashboard but will be denied the data request, making the default dashboard unusable for them. Either make the panel admin-only whenever its required APIs are admin-only, or avoid requiring admin for read-only topology data.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: `handle_panel_topology` at line 66 is decorated with `@websocket_api.require_admin`, but the sidebar panel is registered with `require_admin=False` by default (PANEL_ADMIN_ONLY defaults to False in frontend.py). Non-admin users can open the dashboard but will receive a WebSocket auth error when it requests topology data, making the dashboard non-functional for them.",
+      "severity_justification": "The default configuration exposes the sidebar panel to all users while silently breaking its core functionality for non-admins. Users will see a panel that doesn't load data, with no clear explanation. Fixing requires either removing the admin requirement from the WebSocket or defaulting the panel to admin-only.",
+      "category_justification": "There is a direct mismatch between the panel's access control (non-admin by default) and its required API's access control (admin-only), causing the feature to fail silently for non-admin users.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

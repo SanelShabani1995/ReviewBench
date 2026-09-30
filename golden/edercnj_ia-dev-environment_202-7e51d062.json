@@ -1,0 +1,611 @@
+{
+  "pr_key": "edercnj_ia-dev-environment_202-7e51d062",
+  "pr": {
+    "repo": "https://github.com/edercnj/ia-dev-environment",
+    "pr_number": 202,
+    "base": "2159a5434ce888127b578ad8b788e550fd3412ce",
+    "head": "7e51d062b3fd69794c941b43f3aa8830a7a1729f"
+  },
+  "findings": [
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-epic-implement/SKILL.md",
+      "start_line": 510,
+      "end_line": 519,
+      "message": "DoR path has a double 'story-' prefix bug. storyId in execution-state.json is 'story-XXXX-YYYY' (confirmed by the schema example at line 489 and actual execution-state.json files), so the computed path becomes `dor-story-story-XXXX-YYYY.md`. But x-story-plan produces files named `dor-story-XXXX-YYYY.md` (confirmed by the path table in x-story-plan/SKILL.md line 97 and actual task files in plans/epic-0004/plans/). The DoR check will silently always take the 'file does not exist' branch, defeating the entire feature without any error.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the storyId field in execution-state.json includes the 'story-' prefix (e.g., 'story-0042-0001' as shown in the schema at line 489). The path template `dor-story-{storyId}.md` would expand to `dor-story-story-0042-0001.md`. But x-story-plan/x-epic-plan both confirm the actual file is named `dor-story-XXXX-YYYY.md` (numeric portion only, e.g., `dor-story-0028-0002.md`). The double 'story-' prefix is a real path construction bug.",
+      "severity_justification": "This bug completely defeats the DoR pre-check feature introduced by this PR. Stories that are NOT_READY will silently pass the DoR check (file-not-found takes the 'proceed' branch), allowing non-ready stories to be dispatched for implementation. The feature ships broken with no error indication.",
+      "category_justification": "The path construction logic produces the wrong file path, causing the DoR check to silently fail open.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-epic-implement/SKILL.md",
+      "start_line": 537,
+      "end_line": 539,
+      "message": "Same double 'story-' prefix bug for the tasks-story path used to determine PRE_PLANNED mode. `tasks-story-{storyId}.md` with storyId='story-XXXX-YYYY' resolves to `tasks-story-story-XXXX-YYYY.md`, but actual files are named `tasks-story-XXXX-YYYY.md` (verified in plans/epic-0004/plans/). PRE_PLANNED mode will never be detected, making the per-task checkpoint and task-aware execution dead code.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The path at line 539 is parenthetical/descriptive context, not a procedural step used to detect PRE_PLANNED mode. PRE_PLANNED mode detection is performed by x-dev-lifecycle (Phase 0.5 — Planning Mode Detection) using XXXX-YYYY numeric-only patterns, not by x-dev-epic-implement checking this file. The x-dev-epic-implement orchestrator determines per-task checkpoint applicability via the tasks field in execution-state.json, not file existence. The finding's core claim that this path causes PRE_PLANNED mode to never be detected is factually incorrect.",
+      "severity_justification": "The path is a minor documentation inaccuracy in a descriptive/parenthetical context and does not control any procedural logic in x-dev-epic-implement.",
+      "category_justification": "The issue, to the extent it exists, is a wrong path reference in descriptive documentation, not a functional correctness bug.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-epic-implement/SKILL.md",
+      "start_line": 285,
+      "end_line": 291,
+      "message": "The description states 'the x-dev-lifecycle / x-dev-implement subagent receives the task state and skips DONE tasks automatically', but the actual subagent prompt template in Section 1.4 (lines 728–759) contains no task checkpoint data. The orchestrator reclassifies tasks in execution-state.json but never passes that state to the spawned subagent, so the claimed resume-at-task-level behavior does not work.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: the Section 1.4 prompt template passes only storyId, epicId, branchName, currentPhase, and skipReview — no task checkpoint data. x-dev-lifecycle Phase 2 reads the task breakdown file and executes all tasks in order with no logic to check execution-state.json for DONE tasks and skip them. Phase 8 writes DONE status but there is no read-and-skip path. The claim at line 289 that the subagent 'receives the task state and skips DONE tasks automatically' is unsupported by the actual specification.",
+      "severity_justification": "The per-task resume feature (a key selling point of this PR) is described as working but is not actually implemented — re-running a story will re-execute all tasks including already-DONE ones, defeating the granular resume guarantee.",
+      "category_justification": "The documented behavior claims resume-at-task-level works, but the mechanism for passing task state to the subagent and skipping DONE tasks is missing from both the prompt template and x-dev-lifecycle Phase 2.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-epic-implement/SKILL.md",
+      "start_line": 519,
+      "end_line": 530,
+      "message": "DoR-BLOCKED stories have no resume path. When a story is marked BLOCKED with reason 'DoR not satisfied', the blockedBy field is never set (it stores a reason string, not a dependency list). Step 2 reevaluation (line 297) keeps stories BLOCKED when blockedBy is undefined. These stories will remain permanently BLOCKED across --resume runs with no documented way to re-evaluate them after fixing the DoR.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Section 1.1b marks DoR-failed stories as BLOCKED with a reason string, but the blockedBy schema field is String[] for story IDs. Step 2 reevaluation only unblocks stories when all blockedBy entries resolve to SUCCESS stories — a reason string like 'DoR not satisfied: ...' won't match any story ID, falling into the 'missing from stories map → keep BLOCKED' branch. There is no documented mechanism to re-evaluate DoR-blocked stories on --resume after fixing the DoR file.",
+      "severity_justification": "Stories blocked by DoR failure are permanently stuck with no recovery path short of manual execution-state.json edits, undermining the usability of the DoR pre-check feature.",
+      "category_justification": "The schema type mismatch between a reason string and the story-ID array expected by Step 2 reevaluation creates a correctness bug where a recoverable failure state becomes permanent.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-lifecycle/SKILL.md",
+      "start_line": 670,
+      "end_line": 676,
+      "message": "Phase 8 instructs x-dev-lifecycle to update execution-state.json, but x-dev-lifecycle takes only STORY-ID as its argument (line 6) and has no access to the epicDir path. execution-state.json is owned and pathed by the epic orchestrator (x-dev-epic-implement). The x-dev-lifecycle subagent has no way to locate and write to the correct epic-level state file, making this instruction unactionable.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding is incorrect. x-dev-lifecycle Phase 0 step 4 explicitly extracts the epic ID from the story ID (line 79: 'Extract epic ID from story ID (e.g., story-0001-0003 → epic ID 0001)') and uses it throughout the skill to construct plans/epic-XXXX/ paths. It can therefore locate and write to plans/epic-XXXX/execution-state.json without any additional epicDir argument.",
+      "severity_justification": "The finding's premise is factually wrong — no actionability gap exists because the path is derivable from the story ID.",
+      "category_justification": "The finding makes a factual claim about path accessibility that is incorrect given how x-dev-lifecycle derives the epic ID.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-lifecycle/SKILL.md",
+      "start_line": 136,
+      "end_line": 165,
+      "message": "Two different sections are both named 'Phase 0.5': the new 'Planning Mode Detection' section (line 136) and the pre-existing 'API-First Contract Generation' section (line 165). They appear in the same file with the same phase number, creating an ambiguity about execution order and whether both run or which takes precedence. The API-first section is conditional (wrapped in a template tag) but the Planning Mode Detection is unconditional—an agent following this skill will encounter conflicting phase numbering.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: at SHA 7e51d062, x-dev-lifecycle/SKILL.md has two sections both labeled 'Phase 0.5': line 136 '### Phase 0.5 — Planning Mode Detection' (added by a prior commit in this PR branch, f3a1e5aaa) and line 165 '## Phase 0.5 — API-First Contract Generation' (pre-existing). The PR diff shows a rename to 0.4 was intended but the actual commit at this SHA only modified x-dev-epic-implement/SKILL.md, leaving the duplicate numbering in place. An agent following this skill encounters two Phase 0.5 sections.",
+      "severity_justification": "Duplicate phase numbering in AI agent documentation creates genuine ambiguity about execution order and whether both phases run. An agent may skip or double-execute one, though the API-First section is conditional on a template variable.",
+      "category_justification": "The issue is conflicting phase numbering in the skill documentation that guides agent behavior, causing ambiguity about the execution flow.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-lifecycle/SKILL.md",
+      "start_line": 140,
+      "end_line": 158,
+      "message": "PRE_PLANNED mode requires all 7 artifact types to exist, but artifact #6 (Compliance Assessment, compliance-story-XXXX-YYYY.md) is a conditional artifact generated only when compliance is active (1F is skipped when compliance='none', per line 347). For the majority of projects where compliance is not enabled, compliance-story will never exist, making it impossible for PRE_PLANNED mode to ever trigger. The 7-artifact requirement is irreconcilable with the conditional nature of the compliance artifact.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: PRE_PLANNED mode requires all 7 artifact types, but artifact #6 (compliance-story-XXXX-YYYY.md) is generated only by Phase 1F which explicitly skips when compliance is not active (line 347: 'skip entirely with log compliance assessment skipped'). For non-compliance projects, this file never exists, making the all-7-types condition permanently unsatisfiable. Such projects would always fall into HYBRID mode, never PRE_PLANNED, even when all applicable artifacts exist.",
+      "severity_justification": "PRE_PLANNED mode — the optimized execution path that skips Phase 1A-1F and enables task-by-task execution — is completely unreachable for non-compliance projects, which is likely the majority. The entire PRE_PLANNED feature from this PR branch is effectively dead code for those projects.",
+      "category_justification": "The mode detection logic contains a logical impossibility: it requires a conditionally-generated artifact that cannot exist for a large class of projects.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 293,
+      "end_line": 298,
+      "message": "TPP level ordering in the QA subagent prompt is inconsistent with x-test-plan/SKILL.md. Here Level 4 = collection (iterations/map/filter) and Level 5 = conditional (multiple branches). In x-test-plan, Level 4 = Complex Conditions and Level 5 = Iterations. These skills are meant to work together (x-story-plan produces test tasks consumed by x-dev-implement), so the inverted ordering will cause plans generated by x-story-plan to be out of TPP sequence when x-test-plan's ordering is used as reference.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Verified: x-story-plan lines 293-298 defines Level 4=collection (iterations/map/filter) and Level 5=conditional (multiple branches), while x-test-plan defines Level 4=Complex Conditions and Level 5=Iterations — levels 4 and 5 are inverted. The inconsistency is real and would affect TPP ordering consistency between the two skills. However, x-story-plan is not modified by this PR's commit (SHA 7e51d062 only modifies x-dev-epic-implement/SKILL.md).",
+      "severity_justification": "The inverted TPP levels are a documentation inconsistency between two related skills that could cause agents to order test scenarios incorrectly, but the impact is limited to ordering rather than correctness of the tests themselves.",
+      "category_justification": "Inconsistent TPP level definitions between two cooperating AI agent skill files that are meant to work together.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 120,
+      "end_line": 125,
+      "message": "Section 0.5 'Verify Story File Exists' still uses the hardcoded path `plans/epic-XXXX/story-XXXX-YYYY.md` instead of `<EPIC_DIR>/story-XXXX-YYYY.md`. This contradicts the path resolution introduced in the new sections 0.2 and 0.3, which resolve EPIC_DIR to support suffix variants like `plans/epic-XXXX-*`. For epics with suffix directories (e.g., plans/epic-0028-artifact-persistence/), the verification will incorrectly look in the non-suffixed path and falsely report NOT_FOUND.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: Section 0.5 at lines 120-125 uses hardcoded path `plans/epic-XXXX/story-XXXX-YYYY.md` in the bash command and error message, while Section 0.2 explicitly resolves EPIC_DIR to support suffix variants like `plans/epic-XXXX-*`. For epics with suffix directories, section 0.5 would check the wrong (non-suffixed) path and falsely report NOT_FOUND before aborting. The inconsistency is real.",
+      "severity_justification": "For epics with suffix directories, the story file verification aborts with a false NOT_FOUND error, completely blocking x-story-plan from running. However, epics without suffix directories (the common case) are unaffected.",
+      "category_justification": "The hardcoded path in section 0.5 contradicts the EPIC_DIR resolution logic established in sections 0.2-0.3, causing incorrect path lookup for suffix-variant epic directories.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/test/resources/golden/java-quarkus/.claude/skills/x-dev-lifecycle/SKILL.md",
+      "start_line": 136,
+      "end_line": 677,
+      "message": "Only 1 of 210 golden SKILL.md files was updated despite changes to three skills (x-dev-lifecycle, x-dev-implement, x-dev-epic-implement). The GoldenFileTest performs byte-for-byte comparison between pipeline output and golden files across all 17 profiles. The 69 other x-dev-lifecycle golden files, all 70 x-dev-epic-implement goldens, and all 70 x-dev-implement goldens remain at their pre-PR content. The test suite will fail on first run. The PR description acknowledges '[ ] Golden files will need updating' but this is a merge-blocking issue given the quality gate requires all tests to pass.",
+      "tp_fp": "tp",
+      "severity": "high",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Verified: 209/210 golden SKILL.md files differ from their source templates — 70 x-dev-epic-implement, 69 x-dev-lifecycle (all except java-quarkus/.claude), and 70 x-dev-implement golden files. GoldenFileTest performs byte-for-byte comparison across 17 profiles and will fail for each mismatch. The PR description acknowledges this with an unchecked '[ ] Golden files will need updating' checkbox. The AGENTS.md merge checklist requires all tests to pass.",
+      "severity_justification": "209 golden file mismatches will cause the GoldenFileTest suite to fail on first run, blocking the merge per the project's quality gate (coverage ≥ 95%, zero compiler/linter warnings, all tests passing). The PR author acknowledged this gap explicitly.",
+      "category_justification": "The finding is about test suite failures due to outdated golden files that are used for byte-for-byte validation of the pipeline output.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-epic-implement/SKILL.md",
+      "start_line": 281,
+      "end_line": 284,
+      "message": "The logic for re-evaluating BLOCKED tasks on resume is incomplete. It correctly transitions a BLOCKED task to PENDING if its dependencies become DONE, but it doesn't account for the case where a dependency may have failed and moved to another state (e.g., FAILED, or back to PENDING). A task should only be unblocked if all its dependencies are DONE.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The rule at line 283 — 'if all task dependencies are DONE -> PENDING; otherwise keep BLOCKED' — correctly handles FAILED and PENDING dependency states via the 'otherwise keep BLOCKED' branch. The condition 'all dependencies DONE' is a strict AND: if any dependency is FAILED, PENDING, or IN_PROGRESS, it evaluates false and the task stays BLOCKED. The finding's own stated requirement ('a task should only be unblocked if all its dependencies are DONE') is exactly what the rule implements.",
+      "severity_justification": "The finding is based on a misreading of the logic; the code correctly handles the scenarios described.",
+      "category_justification": "The finding makes a claim about incorrect task state transition logic, which is the correctness category.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-implement/SKILL.md",
+      "start_line": 252,
+      "end_line": 258,
+      "message": "The resume check for tasks is potentially flawed. It only checks for file existence and passing tests. A task could be partially complete, with the file existing but tests failing, or tests passing but not all code for the task being present. A more reliable method, as used in other parts of the system, would be to check a state file (like execution-state.json) to see if the task is explicitly marked as 'DONE'.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding's proposed alternative (check execution-state.json) is unworkable: x-dev-implement never writes task status to execution-state.json — that happens in x-dev-lifecycle Phase 8 after all tasks complete, so tasks would always appear non-DONE during x-dev-implement execution. The current file+test check is the most reliable heuristic available within x-dev-implement's scope and is consistent with TDD principles where test passage defines completion. The concern about 'tests passing but code incomplete' is speculative in a TDD context.",
+      "severity_justification": "The finding raises a theoretical reliability concern but the suggested alternative is worse; the existing heuristic is appropriate.",
+      "category_justification": "The finding makes a claim about a potentially unreliable state-detection mechanism.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 458,
+      "end_line": 464,
+      "message": "The process for handling security tasks (SEC-NNN) is ambiguous. It states the original security task is retained for verification and must depend on the augmented implementation task. However, it does not specify how this dependency is created or updated in the task list, which could lead to incorrect execution order if not handled properly by the consolidation logic in Phase 4.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The dependency mechanism IS specified: the TASK_PROPOSAL format has an explicit `dependencies` field, and line 345 instructs the Security agent to 'Mark dependencies on implementation tasks they augment.' Rule 2 mandates the dependency ('MUST depend on that implementation task'). The finding claims no mechanism is specified, but the dependencies field and the agent instruction together constitute the specification. The concern about ID remapping during consolidation applies equally to all dependencies across all task types, not uniquely to SEC tasks. Additionally, x-story-plan is not in this PR's diff.",
+      "severity_justification": "The concern is about documentation clarity for a pre-existing skill not modified by this PR, with a mechanism that already exists.",
+      "category_justification": "The finding is about specification clarity for how a dependency relationship is expressed, not a missing functional mechanism.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 718,
+      "end_line": 720,
+      "message": "The DoR check for the architecture plan relies on a fallback to `architecture-story-XXXX-YYYY.md`. The instructions now consolidate individual plan files into a single `planning-report-story-XXXX-YYYY.md`. Relying on a fallback to a file that may no longer be the primary artifact could lead to incorrect validation if the main report exists but the old standalone file does not.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The DoR check explicitly prioritizes planning-report-story-XXXX-YYYY.md (primary) and uses the standalone file only as fallback. If the main report exists and contains the Architecture Assessment section, check #1 passes regardless of whether the standalone file exists. The finding's concern ('incorrect validation if the main report exists but the old standalone file does not') describes a non-issue — the primary check succeeds in that scenario, making the fallback irrelevant. The finding misreads the validation priority order.",
+      "severity_justification": "The claimed failure scenario doesn't actually cause incorrect behavior given the primary-first validation logic.",
+      "category_justification": "The finding is about a perceived ambiguity in validation logic that doesn't represent an actual behavioral bug.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-epic-implement/SKILL.md",
+      "start_line": 560,
+      "end_line": 560,
+      "message": "The description for `commitSha` in the Per-Task Fields table is 'When DONE', implying it's optional. However, for a task to be considered truly complete and auditable, the commit SHA should be mandatory for any task with a 'DONE' status. This makes the resume logic more robust.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The 'When DONE' value in the Required column follows the established schema convention used throughout this SKILL.md: commitSha is 'When SUCCESS' in StoryEntry, blockedBy is 'When BLOCKED', prUrl is 'When PR created', etc. This convention means the field is required when the condition is met, not that it's optional. The finding misinterprets 'When DONE' as implying optionality when it is actually a conditional required pattern consistent with the rest of the codebase.",
+      "severity_justification": "The finding is based on a misreading of a consistent schema convention; no actual behavioral gap exists.",
+      "category_justification": "The finding is about interpretation of a field's required status in a schema definition.",
+      "producer": "llm_review:gemini-2.5-pro",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-epic-implement/SKILL.md",
+      "start_line": 507,
+      "end_line": 523,
+      "message": "The DoR pre-check logic assumes that the file parsing for the `## Final Verdict` section will succeed without handling cases of malformed files or unexpected content. This can lead to runtime issues if an invalid or partially corrupted `dor-story-{storyId}.md` file is encountered.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The concern is a generic best-practice suggestion ('handle malformed files') that could be applied verbatim to any file-reading instruction in any AI agent specification. It doesn't identify a specific, concrete failure scenario unique to this code — it doesn't demonstrate what specific malformation would occur or why the DoR files produced by x-story-plan would be malformed. For AI agent documentation, the absence of explicit error-handling branches for 'file exists but content unexpected' is standard — agents handle format variations implicitly. The finding lacks the specificity needed to be actionable.",
+      "severity_justification": "Even if the file were malformed, the worst outcome is the agent proceeding without a clear verdict — a minor robustness gap rather than a critical failure.",
+      "category_justification": "The finding concerns missing error handling for unexpected input, which is a reliability concern.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-epic-implement/SKILL.md",
+      "start_line": 523,
+      "end_line": 523,
+      "message": "When a DoR file is found but the required `## Final Verdict` section is missing, the behavior is undefined. It should explicitly handle this scenario, such as skipping the verdict validation with a logged warning or marking the story as `NOT_READY` safely.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "This is effectively the same generic concern as Finding 16 — missing explicit error handling for edge cases in file parsing. The specific sub-case (Final Verdict section absent) could be copy-pasted to any file-reading instruction. For AI agent behavioral documentation, undefined behavior for a missing section means the agent uses reasonable inference rather than crashing deterministically. The finding adds no specificity beyond Finding 16 and doesn't demonstrate a concrete failure path unique to this codebase.",
+      "severity_justification": "The edge case (existing DoR file without a Final Verdict section) is unlikely given x-story-plan always generates the section, and even if it occurs the worst outcome is ambiguous agent behavior rather than data loss or incorrect execution.",
+      "category_justification": "The concern is about missing error handling for an edge case in file parsing.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-implement/SKILL.md",
+      "start_line": 244,
+      "end_line": 250,
+      "message": "The `Resume Check` step assumes that testing a component validates its completeness without checking its dependencies explicitly. This could lead to false positives when a component's dependencies are incomplete or missing.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "In TDD practice with compiled languages, a component's tests implicitly validate its dependencies — missing or incomplete dependencies cause test compilation or runtime failures, which correctly triggers the 'tests fail → proceed with implementation' branch. The concern about 'false positives when dependencies are incomplete' is speculative and doesn't demonstrate a concrete scenario where tests pass despite missing dependencies. The finding is a generic best-practice suggestion that could be copy-pasted to any test-based completion check, and x-dev-implement is not modified by this PR.",
+      "severity_justification": "The proposed failure scenario is unlikely in practice given how TDD and compiled languages work.",
+      "category_justification": "The finding makes a claim about a potentially incorrect state detection in the resume check logic.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-lifecycle/SKILL.md",
+      "start_line": 428,
+      "end_line": 451,
+      "message": "Task dependency ordering in `Phase 2` assumes that the detected dependencies can be fully resolved in the current context. If any dependencies reference external files or tasks not loaded, the task-by-task execution may fail without a recovery mechanism.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Phase 2 executes tasks in 'dependency order' as defined in the tasks-story file, which contains an ordered list of intra-list task dependencies (TASK-NNN referencing other TASK-NNN entries within the same file). The concern about 'external files or tasks not loaded' doesn't apply — task dependencies in this design are self-contained within the task breakdown file. The finding makes a generic claim about dependency resolution failure that could be copy-pasted to any dependency-ordered execution system without identifying a concrete failure path specific to this code.",
+      "severity_justification": "The failure mode described doesn't correspond to how task dependencies work in this system.",
+      "category_justification": "The finding concerns a missing recovery mechanism for dependency resolution failures.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-lifecycle/SKILL.md",
+      "start_line": 428,
+      "end_line": 451,
+      "message": "The atomic commit instructions for each task in `Phase 2` (`planningMode == PRE_PLANNED`) do not include handling of failure cases (e.g., test failures or incomplete DoD validation). Each failed task could leave the system in an inconsistent state without rolling back changes.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "x-dev-implement (which executes task-by-task) explicitly orders DoD validation before the atomic commit, with 'do NOT mark as DONE' on failure preventing the commit step. The error handling table covers test regression ('Revert last change, investigate root cause') and DoD failure ('Log failed criteria, attempt fix'). Phase 2 in x-dev-lifecycle is a high-level orchestration overview that delegates execution details to x-dev-implement; the failure handling exists in that delegated skill. The finding misses that x-dev-implement provides the missing rollback/recovery mechanisms.",
+      "severity_justification": "The failure handling claimed to be missing is actually present in x-dev-implement, which handles the actual execution.",
+      "category_justification": "The finding concerns missing error recovery mechanisms for task execution failures.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 70,
+      "end_line": 117,
+      "message": "The epic directory resolution logic assumes that glob-based matching will always produce a valid single result, lacking error handling for ambiguous matches (e.g., multiple suffix variants resolved) or for no matches.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding incorrectly claims 'no matches' is unhandled — step 5 explicitly says 'If no directory matches, stop and report.' The 'both exact and suffix' case is handled by step 4. The only genuinely unhandled scenario is multiple suffix variants (e.g., plans/epic-0028-foo and plans/epic-0028-bar), but this is an extremely unlikely edge case not representative of realistic usage. The finding's factual claim that 'no matches' is unhandled is wrong, undermining its credibility. x-story-plan is not modified by this PR.",
+      "severity_justification": "The only real gap (multiple suffix variants) is highly unlikely in practice and pre-existing, while the main claim about no-match handling is factually incorrect.",
+      "category_justification": "The finding concerns missing error handling for edge cases in directory resolution.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/test/resources/golden/java-quarkus/.claude/skills/x-dev-lifecycle/SKILL.md",
+      "start_line": 136,
+      "end_line": 136,
+      "message": "Same duplicate \"Phase 0.5\" identifier issue as in the source file: the new \"Phase 0.5 — Planning Mode Detection\" coexists with the pre-existing \"Phase 0.5 — API-First Contract Generation\" (line 165 in this golden file). Fix in the source template will propagate here when the golden file is regenerated.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Confirmed: the golden file at SHA 7e51d062b has two sections both labeled 'Phase 0.5' — line 136 'Phase 0.5 — Planning Mode Detection' and line 165 'Phase 0.5 — API-First Contract Generation'. The duplicate exists in the checked-out file. The diff shows the intended fix (renaming to Phase 0.4) but the actual blob at this SHA is still in the pre-fix state.",
+      "severity_justification": "Duplicate phase identifiers in a markdown skill description file cause confusion when reading the document but have no runtime impact since these are LLM instruction files, not executable code.",
+      "category_justification": "This is a duplicate section identifier in a markdown documentation/skill file, which is a documentation consistency issue.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-implement/SKILL.md",
+      "start_line": 390,
+      "end_line": 396,
+      "message": "The \"See Also\" entry references `x-lib-task-decomposer` as the producer of per-task plans, but the PR description and related skills (`x-story-plan`, `x-epic-plan`) indicate that per-task plans are produced by `x-story-plan` (Phase 4). There does not appear to be a skill named `x-lib-task-decomposer` in the codebase. Please confirm the correct upstream skill name and update both the table row and the bullet on line 396.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "pre-existing",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding incorrectly claims x-lib-task-decomposer does not exist in the codebase. The skill exists at java/src/main/resources/targets/claude/skills/core/lib/x-lib-task-decomposer/SKILL.md and is also deployed to .claude/skills/lib/x-lib-task-decomposer. The reference in x-dev-implement/SKILL.md lines 390-396 is correct.",
+      "severity_justification": "The finding's premise is false; the reference is accurate and no change is needed.",
+      "category_justification": "The finding concerns references between skill documentation files.",
+      "producer": "ccr:claude-opus-4.7[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-epic-implement/SKILL.md",
+      "start_line": 523,
+      "end_line": 535,
+      "message": "The added DoR integration is only shown in this local snippet; the actual Core Loop Algorithm later in Section 1.3 still dispatches stories immediately after `updateStoryStatus` without running the DoR pre-check. Because agents are instructed to execute Section 1.3, the new NOT_READY blocking behavior can be skipped despite this section claiming it is integrated.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the a0 DoR pre-check step exists only in the illustrative snippet inside Section 1.1b (line 527), not in the actual Core Loop Algorithm in Section 1.3 (lines 619-626). An agent executing the Core Loop steps in Section 1.3 goes directly from step 6 to 'a. updateStoryStatus' with no DoR pre-check. The PR only added the illustrative snippet but did not update the Core Loop pseudocode itself.",
+      "severity_justification": "The Core Loop is the canonical executable procedure that agents follow. NOT_READY stories can be dispatched without the DoR gate, defeating the feature's stated purpose of blocking unready stories.",
+      "category_justification": "The skill documentation's Core Loop Algorithm is the operative instruction set; having the guard only in a prose example but not in the algorithm means the blocking behavior cannot function as described.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-implement/SKILL.md",
+      "start_line": 253,
+      "end_line": 253,
+      "message": "The TPP sort order here omits `conditional` and `iteration` and places `collection` before `conditional`, which conflicts with the repository's documented TPP sequence (`03-testing-philosophy.md` and `x-test-plan`: nil/constant/scalar, then complex conditions, then iterations/collections, then edge cases). This can cause task-aware execution to run tasks out of the intended test-progression order.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Line 253 of x-dev-implement/SKILL.md uses 'nil->constant->scalar->collection' as the TPP ordering description, omitting levels 3 (constant→variable), 4 (unconditional→conditional), 6 (statement→recursion/iteration), and 7 (value→mutated value) from the canonical 7-level sequence documented in 03-testing-philosophy.md. In an LLM-driven system, this ordering instruction IS the algorithm, and the omission of conditional and iteration levels is a real inconsistency that could mislead an agent ordering tasks.",
+      "severity_justification": "Since x-lib-task-decomposer assigns numeric TPP levels (1-7) to tasks, a careful agent would sort numerically and the omission may not cause actual ordering errors in practice. The issue is primarily a documentation inconsistency.",
+      "category_justification": "The finding identifies an incomplete/inconsistent description of the TPP ordering sequence in a skill instruction file, where the shorthand doesn't match the canonical 7-level TPP sequence.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-epic-implement/SKILL.md",
+      "start_line": 510,
+      "end_line": 512,
+      "message": "The core skill output is covered by byte-for-byte golden tests for all profiles, but this new section has no corresponding golden update (searching the golden tree finds no `DoR Pre-check` section). `GoldenFileTest` will fail until the generated skill output is refreshed for the affected profiles/platforms, not just the source resource.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: all checked golden files for x-dev-epic-implement/SKILL.md have 1518 lines while the source is 1606 lines (88-line discrepancy exactly matching the PR's additions). None contain 'DoR' or 'dor-story'. GoldenFileTest performs byte-for-byte comparison via the assembler pipeline, and the PR description itself marks the golden update checkbox as unchecked.",
+      "severity_justification": "GoldenFileTest is a mandatory CI gate described as byte-for-byte parity acceptance criterion. With 70+ golden files out of sync, the test suite will fail, blocking the merge.",
+      "category_justification": "The finding is about missing golden file updates that will cause GoldenFileTest to fail — a testing infrastructure issue.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-implement/SKILL.md",
+      "start_line": 247,
+      "end_line": 249,
+      "message": "This skill is included in the generated profile outputs covered by `GoldenFileTest`, but the golden tree does not contain the new `Task-Aware TDD Loop` section. The source change needs corresponding golden updates for the generated profiles/platforms or the byte-for-byte golden tests will fail.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: source x-dev-implement/SKILL.md has 400 lines and 10 occurrences of 'Task-Aware TDD Loop', while all golden files (e.g. java-quarkus/.claude/skills/x-dev-implement/SKILL.md) have 337 lines with zero occurrences. Commit 51973091a (in this PR branch) added the task-aware mode to the source but the golden files were never updated. GoldenFileTest performs byte-for-byte comparison and will fail.",
+      "severity_justification": "GoldenFileTest is a mandatory CI gate with byte-for-byte parity as the acceptance criterion. The mismatch across all golden profiles will cause test failures blocking the merge.",
+      "category_justification": "Missing golden file updates that will cause GoldenFileTest to fail — same class of testing infrastructure issue as finding 5.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-story-plan/SKILL.md",
+      "start_line": 73,
+      "end_line": 75,
+      "message": "The generated profile outputs are checked by `GoldenFileTest`, but the golden resources do not contain this new `Resolve Epic Directory` section. Please refresh the golden files for the affected generated profiles/platforms so the source skill and expected output stay in sync.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "medium",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: x-story-plan was added to core/x-story-plan/ in this PR branch but has zero corresponding golden files in any of the 17 profile directories. SkillsAssembler copies all core skills including x-story-plan, so GoldenFileTest's validateCompleteness() will fail for every profile reporting x-story-plan/SKILL.md as an extra generated file with no golden counterpart.",
+      "severity_justification": "GoldenFileTest is a mandatory CI gate performing byte-for-byte parity checks. The entirely absent golden files for x-story-plan will cause failures for all 17 profiles.",
+      "category_justification": "Missing golden test artifacts for a newly added skill will cause GoldenFileTest to fail — a testing infrastructure issue introduced by the PR.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-lifecycle/SKILL.md",
+      "start_line": 136,
+      "end_line": 138,
+      "message": "Only the `java-quarkus/.claude` golden appears to include this new lifecycle section, but `GoldenFileTest` compares generated outputs for every profile and platform. Since this source skill is shared, the remaining golden outputs need to be regenerated as well or the golden parity suite will report mismatches.",
+      "tp_fp": "tp",
+      "severity": "medium",
+      "category": "testing",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "Confirmed: the source x-dev-lifecycle/SKILL.md is 732 lines but 69 out of 70 golden files are stale (681, 639, or 544 lines). Only java-quarkus/.claude matches at 732 lines. GoldenFileTest compares all profiles/platforms and will report mismatches for the other 69 files.",
+      "severity_justification": "GoldenFileTest is a mandatory CI gate. With 69 out of 70 lifecycle golden files out of sync, virtually all profile tests will fail, blocking the merge.",
+      "category_justification": "Incomplete golden file updates across profiles and platforms will cause GoldenFileTest to fail — the same testing infrastructure issue as findings 5 and 6.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": "java/src/main/resources/targets/claude/skills/core/x-dev-lifecycle/SKILL.md",
+      "start_line": 673,
+      "end_line": 673,
+      "message": "Use the same spelling used by the surrounding Phase 8 instructions (`Concluída`) to avoid writing a different status value into Section 8.1.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "documentation",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The PR diff explicitly changes line 673 from 'Concluida' to 'Concluída' — the exact fix the finding recommends. Per the instruction to trust the diff hunk for the specific lines under review, the PR's final state for this line already uses the correct accented form. The finding describes an inconsistency that the PR diff directly resolves.",
+      "severity_justification": "A spelling inconsistency in a Portuguese word within an LLM instruction file — minor impact even if left unaddressed, as it only affects the status label written to a story file.",
+      "category_justification": "Inconsistent spelling of a Portuguese term across two instructions within the same skill file.",
+      "producer": "ccr:gpt-5.5[ReasoningEffort=medium]",
+      "source": {
+        "type": "ccr",
+        "alignment": "generated"
+      }
+    }
+  ]
+}

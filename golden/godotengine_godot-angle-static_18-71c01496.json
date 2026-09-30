@@ -1,0 +1,131 @@
+{
+  "pr_key": "godotengine_godot-angle-static_18-71c01496",
+  "pr": {
+    "repo": "https://github.com/godotengine/godot-angle-static",
+    "pr_number": 18,
+    "base": "c7c2bb9a034bc6e31379a987fb2f461d31ec9362",
+    "head": "71c014962453f10d3d40ee8c6ff10ab517a1fa68"
+  },
+  "findings": [
+    {
+      "file": ".github/workflows/ci.yaml",
+      "start_line": 192,
+      "end_line": 196,
+      "message": "The 'Setup MinGW path' step unconditionally adds 'C:/mingw32/bin' to PATH for all builds where matrix.mingw == 'yes', including the x86_64 GCC build that sets mingw_prefix=C:/mingw64. The x86_64 build will search for gcc in C:/mingw32/bin (wrong architecture) and either pick up the wrong compiler or fail if it isn't present. It should conditionally add C:/mingw64/bin for the x86_64 target.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "hard",
+      "context_required": "diff-plus-related-files",
+      "tp_fp_justification": "The finding's core claim is factually wrong. When `mingw_prefix` is set, `windows.py` constructs fully-qualified absolute paths for all compiler tools (e.g. `C:/mingw64/bin/x86_64-w64-mingw32-g++`), so PATH is not used for compiler resolution. Adding `C:/mingw32/bin` to PATH for the x86_64 build is arguably sloppy but does not cause the wrong compiler to be selected.",
+      "severity_justification": "Even if the PATH step is slightly incorrect, the build outcome is unaffected because compiler tools are resolved via absolute paths from mingw_prefix.",
+      "category_justification": "The finding is about incorrect PATH configuration leading to wrong compiler selection, which is a correctness concern — but the underlying claim is wrong.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/ci.yaml",
+      "start_line": 136,
+      "end_line": 148,
+      "message": "The matrix entries for GCC builds still define 'msys' and 'msysenv' fields (e.g. msys: mingw64, msysenv: x86_64) but these are now unused since the msys2/setup-msys2 action was removed. While not a crash, they are dead configuration that can confuse future maintainers and suggests the removal was incomplete.",
+      "tp_fp": "tp",
+      "severity": "low",
+      "category": "maintainability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "Verified: `msys` and `msysenv` are defined in both GCC matrix entries (lines 134-135, 146-147) but are not referenced anywhere else in the workflow file after the removal of the msys2/setup-msys2 action. They are dead configuration left by an incomplete cleanup in this PR.",
+      "severity_justification": "No runtime impact — these fields are silently ignored by GitHub Actions. The concern is purely about maintainability and misleading configuration for future readers.",
+      "category_justification": "Dead/unused configuration fields left over from an incomplete refactor, which can confuse future maintainers.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/ci.yaml",
+      "start_line": 217,
+      "end_line": 219,
+      "message": "The 'Build ANGLE' step does not specify 'shell: bash', so on Windows runners it will use PowerShell by default. The SCons build invokes 'scons' with arguments containing forward-slash paths (e.g. mingw_prefix=C:/mingw64). While this often works, the LLVM/MinGW path flag uses '$HOME/llvm-mingw' (a bash-style variable) set via GITHUB_PATH — if any SCons platform scripts or sub-invocations resolve paths differently under PowerShell vs bash, this can silently produce wrong builds. The LLVM builds on windows-2019 and the GCC builds on windows-2025 now use different effective shells, creating an inconsistency.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "pre-existing",
+      "difficulty": "hard",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "LLVM builds were already running without `shell: bash` (defaulting to PowerShell) and using `mingw_prefix=$HOME/llvm-mingw` before this PR, so the `$HOME` concern is pre-existing and evidently works. GCC builds now also run without explicit shell with static Windows paths (`C:/mingw64`, `C:/mingw32`) requiring no shell variable expansion. The finding's inconsistency claim is incorrect — both builds now use the same default shell.",
+      "severity_justification": "The concern is speculative with no demonstrated breakage path; LLVM builds prove the shell defaults work fine on Windows.",
+      "category_justification": "The finding is about potential build failures due to shell environment differences.",
+      "producer": "llm_review:claude-sonnet-4.6",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/ci.yaml",
+      "start_line": 132,
+      "end_line": 133,
+      "message": "The `os` value has been updated to `windows-2025`, but this runner image may not exist or be available at runtime. Verify compatibility with GitHub-hosted runners.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "The finding is a generic boilerplate warning that a runner image 'may not exist' without any supporting evidence. The PR author deliberately chose `windows-2025` for its pre-installed MinGW toolchains at known paths (`C:/mingw64`, `C:/mingw32`), which is the whole motivation for the switch. By the current date (2026), `windows-2025` is a well-established GitHub-hosted runner.",
+      "severity_justification": "Even if taken seriously, this is a simple verification concern with no demonstrated failure.",
+      "category_justification": "Concerns about runner availability are an operational/reliability concern for CI/CD.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/ci.yaml",
+      "start_line": 138,
+      "end_line": 139,
+      "message": "The `os` value has been updated to `windows-2025`, but this runner image may not exist or be available at runtime. Verify compatibility with GitHub-hosted runners.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "reliability",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "broader-project-context",
+      "tp_fp_justification": "Identical boilerplate claim as Finding 4, just targeting the x86_32 matrix entry instead of x86_64. Same reasoning applies: `windows-2025` is a deliberate choice for its pre-installed MinGW toolchains, and is a well-established runner image.",
+      "severity_justification": "No demonstrated failure path; purely speculative concern about runner availability.",
+      "category_justification": "Concerns about CI runner availability fall under operational reliability.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    },
+    {
+      "file": ".github/workflows/ci.yaml",
+      "start_line": 195,
+      "end_line": 196,
+      "message": "The conditional installation of SCons is now removed for non-Mingw builds. Ensure that all build paths continue to operate correctly without this step.",
+      "tp_fp": "fp",
+      "severity": "low",
+      "category": "correctness",
+      "scope": "introduced-by-pr",
+      "difficulty": "easy",
+      "context_required": "diff-only",
+      "tp_fp_justification": "The finding misreads the change. SCons installation was not removed for non-MinGW builds — the conditional guard was removed, making the step unconditional and ensuring SCons is installed for all builds. Non-MinGW builds continue to have SCons installed exactly as before.",
+      "severity_justification": "The claim is factually incorrect; no build path lost SCons installation.",
+      "category_justification": "The finding makes an incorrect claim about a build step being removed when it was actually made unconditional.",
+      "producer": "llm_review:gpt-4o",
+      "source": {
+        "type": "llm_review",
+        "alignment": "generated"
+      }
+    }
+  ]
+}
