@@ -9,6 +9,10 @@
  * Version: 2.0.0 — session-based architecture with tool use
  */
 
+import {
+  renderClassifierFinding,
+} from "../eval/prompt-format.js";
+
 export const CLASSIFIER_VERSION = "3.0.0";
 
 export const CLASSIFIER_SYSTEM_PROMPT = `You are an expert code review classifier. Your job is to evaluate whether code review findings on a pull request are **true positives (TP)** or **false positives (FP)**, and to assign auxiliary labels.
@@ -218,7 +222,7 @@ export function buildClassifierUserMessage(args: {
 ${locationInfo}${hunkSection}
 
 **Finding:**
-> ${args.message}
+${renderClassifierFinding(args.message)}
 
 ---
 
