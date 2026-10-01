@@ -4,6 +4,11 @@ Use this pipeline when your reviewer has already produced normalized findings
 and you only want to match, classify, and score them. The pipeline accepts one
 JSON file or recursively loads every JSON file in a directory.
 
+This is a private tuning tool. Results produced locally cannot be submitted or
+published directly to the ReviewBench leaderboard. To receive an official
+evaluation and appear on the leaderboard, onboard your reviewer and start the
+final through the ReviewBench self-service portal.
+
 You choose the LLM judge. The selected model is used for both matching candidate
 findings to the golden set and classifying unmatched findings.
 
