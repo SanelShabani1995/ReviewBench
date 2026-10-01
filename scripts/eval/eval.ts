@@ -25,11 +25,6 @@
  *   --allow-empty        Allow intentional dry/no-op runs with no candidates/overlap
  *   --provider <name>    LLM provider for matcher/classifier (default: auto-detect)
  *   --model <id>         LLM model (default: auto-detect)
- *   --scoring-profile <id>  Pin the judge to a published snapshot (e.g.
- *                        official-2026-07, or "latest"). Sets the judge model;
- *                        a conflicting explicit --model is rejected (error), and
- *                        the run errors if your auth can't provide that model.
- *   --list-profiles      Print the available scoring profiles and exit.
  *   --repo-dir <path>    Repo checkout directory (default: /tmp/review-repos)
  */
 
@@ -47,13 +42,6 @@ import { CLASSIFIER_SYSTEM_PROMPT } from "../classifier/prompts.js";
 import { renderJudgeSystemPrompt } from "./prompt-format.js";
 import { buildUnmatchedClassificationMap } from "./unmatched-classifications.js";
 import {
-  buildCouncilFindingAudit,
-  combineClassifications,
-  combineCorrespondences,
-  type Combination,
-  type CouncilFindingAudit,
-} from "./council.js";
-import {
   buildEvalInputSummary,
   loadCandidateFindings,
   strictInputProblems,
@@ -63,15 +51,6 @@ import { askJudge, JUDGE_CALL_PER_FINDING_MS, JUDGE_CALL_TIMEOUT_MS } from "./ju
 import type { ManifestEntry } from "../lib/types.js";
 import { prKey } from "../lib/types.js";
 import { aggregateCandidateUsage } from "../lib/usage.js";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import {
-  describeProfiles,
-  judgesOf,
-  normalizeModelId,
-  resolveProfile,
-  sameModel,
-} from "./scoring-profiles.js";
-import { installScoringBackend } from "../lib/scoring-backend.js";
 
 // ---------------------------------------------------------------------------
 // Detailed per-finding output
@@ -99,7 +78,6 @@ interface FindingDetail {
   llm_classification?: "tp" | "fp";
   result_severity?: string;
   result_category?: string;
-  council?: CouncilFindingAudit;
 }
 
 interface PRDetailedOutput {
@@ -123,11 +101,7 @@ interface CliArgs {
   allowEmpty: boolean;
   provider?: string;
   modelId?: string;
-  profileId?: string;
   repoDir: string;
-  /** Resolved council judges, primary first. One entry when the profile has one judge. */
-  judges?: { provider: string; modelId: string }[];
-  combination?: Combination;
 }
 
 function parseArgs(): CliArgs {
@@ -182,21 +156,6 @@ function parseArgs(): CliArgs {
         break;
       case "--model":
         opts.modelId = args[++i];
-        break;
-      case "--scoring-profile": {
-        // Require a value: this flag exists to prevent silent judge degradation,
-        // so a missing/flag-shaped value must error rather than no-op into auto.
-        const v = args[++i];
-        if (!v || v.startsWith("--")) {
-          console.error("--scoring-profile requires a value (e.g. official-2026-07, or 'latest')");
-          process.exit(1);
-        }
-        opts.profileId = v;
-        break;
-      }
-      case "--list-profiles":
-        console.log(describeProfiles());
-        process.exit(0);
         break;
       case "--repo-dir":
         opts.repoDir = args[++i];
@@ -278,29 +237,18 @@ interface Checkpoint {
   /**
    * Identity of the judge that produced these scores (model + prompt hashes).
    * A checkpoint is only reused when the current run's fingerprint matches, so a
-   * profiled/explicit-model run can't resume PR scores produced by a different
-   * judge (which would then be mislabeled with the newly pinned model in
-   * eval_config). Auto-selected runs share the "auto" sentinel, so this guard
-   * only distinguishes explicitly-named judges — the case profiles care about.
+   * run can't resume PR scores produced by a different judge.
    */
   fingerprint?: string;
   completed: Record<string, PRScoreResult>;
   details: Record<string, PRDetailedOutput>;
-  /** Council runs: each judge's own scores per PR, keyed by judge model. */
-  judgeScores?: Record<string, Record<string, PRScoreResult>>;
 }
 
 /**
- * Fingerprint the judge for checkpoint-compatibility: the resolved model
- * (normalized so the same model via different providers matches) plus the
- * matcher/classifier prompt hashes. Two runs share a checkpoint only if these
- * match, so cross-judge score contamination between explicitly-named judges is
- * impossible.
+ * Fingerprint the judge and prompts for checkpoint compatibility.
  */
-function evalFingerprint(modelId?: string, judges?: { modelId: string }[]): string {
-  const judge = judges && judges.length > 1
-    ? judges.map((j) => normalizeModelId(j.modelId)).join("+")
-    : modelId ? normalizeModelId(modelId) : "auto";
+function evalFingerprint(provider?: string, modelId?: string): string {
+  const judge = `${provider ?? "auto"}/${modelId ?? "auto"}`;
   return [
     judge,
     sha256(renderJudgeSystemPrompt(CLASSIFIER_SYSTEM_PROMPT)),
@@ -308,14 +256,12 @@ function evalFingerprint(modelId?: string, judges?: { modelId: string }[]): stri
   ].join("|");
 }
 
-type JudgeScoreMaps = Map<string, Map<string, PRScoreResult>>;
-
 function loadCheckpoint(
   outputPath: string,
   expectedFingerprint: string,
-): { scores: Map<string, PRScoreResult>; details: Map<string, PRDetailedOutput>; judgeScores: JudgeScoreMaps } {
+): { scores: Map<string, PRScoreResult>; details: Map<string, PRDetailedOutput> } {
   const cpPath = outputPath.replace(/\.json$/, ".checkpoint.json");
-  const empty = () => ({ scores: new Map<string, PRScoreResult>(), details: new Map<string, PRDetailedOutput>(), judgeScores: new Map() as JudgeScoreMaps });
+  const empty = () => ({ scores: new Map<string, PRScoreResult>(), details: new Map<string, PRDetailedOutput>() });
   if (!existsSync(cpPath)) return empty();
 
   try {
@@ -332,7 +278,6 @@ function loadCheckpoint(
     return {
       scores: new Map(Object.entries(data.completed)),
       details: new Map(Object.entries(data.details ?? {})),
-      judgeScores: new Map(Object.entries(data.judgeScores ?? {}).map(([judge, byPr]) => [judge, new Map(Object.entries(byPr))])),
     };
   } catch {
     return empty();
@@ -344,7 +289,6 @@ function saveCheckpoint(
   fingerprint: string,
   scores: Map<string, PRScoreResult>,
   details: Map<string, PRDetailedOutput>,
-  judgeScores: JudgeScoreMaps = new Map(),
 ): void {
   const cpPath = outputPath.replace(/\.json$/, ".checkpoint.json");
   mkdirSync(dirname(resolve(cpPath)), { recursive: true });
@@ -352,9 +296,6 @@ function saveCheckpoint(
     fingerprint,
     completed: Object.fromEntries(scores),
     details: Object.fromEntries(details),
-    ...(judgeScores.size > 0
-      ? { judgeScores: Object.fromEntries([...judgeScores].map(([judge, byPr]) => [judge, Object.fromEntries(byPr)])) }
-      : {}),
   };
   writeFileSync(resolve(cpPath), JSON.stringify(data, null, 2));
 }
@@ -425,48 +366,20 @@ async function evalPR(
   goldenStore: GoldenStore,
   opts: CliArgs,
   label: string,
-): Promise<{ score: PRScoreResult; details: PRDetailedOutput; judgeScores: Map<string, PRScoreResult> } | null> {
+): Promise<{ score: PRScoreResult; details: PRDetailedOutput } | null> {
   const golden = goldenStore.get(prKeyStr);
   if (!golden) return null;
 
-  // The judges, primary first. One judge is the ordinary case; a council runs
-  // each judge in turn and combines their verdicts per finding.
-  const judges: { provider?: string; modelId?: string }[] = opts.judges && opts.judges.length > 0
-    ? opts.judges
-    : [{ provider: opts.provider, modelId: opts.modelId }];
-  const council = judges.length > 1;
-  if (council && opts.ingest) {
-    throw new Error("--ingest is not supported with a council profile");
-  }
-
-  // Step 1-2: Match + identify novel. Each judge matches on its own; a
-  // council keeps a match only when a majority proposed it. A council judge
-  // that fails is retried once and then abstains (an empty vote).
-  const pipelines: Awaited<ReturnType<typeof dedup>>[] = [];
-  const matchVotes: import("../lib/match-types.js").RawCorrespondence[][] = [];
-  for (const judge of judges) {
-    const judgeName = judge.modelId ?? "auto";
-    const tag = council ? ` [${judgeName}]` : "";
-    const p = await askJudge(
-      () => dedup(candidate.findings, golden, { matcher: { provider: judge.provider, modelId: judge.modelId } }),
-      { what: `${prKeyStr}: matcher ${judgeName}`, council, log: (m) => console.log(`  ${label}${tag}: ${m}`) },
-    );
-    if (!p) {
-      matchVotes.push([]);
-      continue;
-    }
-    pipelines.push(p);
-    matchVotes.push(p.correspondences);
-    if (council) {
-      const matched = p.correspondences.filter((c) => c.matched_golden_indices.length > 0).length;
-      console.log(`  ${label}${tag}: matched ${matched}/${candidate.findings.length}`);
-    }
-  }
-  if (pipelines.length === 0) throw new Error(`${prKeyStr}: no judge answered the matcher`);
-  const pipeline = pipelines[0];
-  const correspondences = council
-    ? combineCorrespondences(matchVotes, candidate.findings.length)
-    : pipeline.correspondences;
+  const judgeName = opts.modelId ?? "auto";
+  const pipeline = await askJudge(
+    () => dedup(candidate.findings, golden, {
+      matcher: { provider: opts.provider, modelId: opts.modelId },
+    }),
+    {
+      what: `${prKeyStr}: matcher ${judgeName}`,
+    },
+  );
+  const correspondences = pipeline.correspondences;
 
   // Build scoring input before classification so duplicate matches that lose
   // scoring credit are classified alongside truly novel findings.
@@ -483,10 +396,8 @@ async function evalPR(
     return finding;
   });
 
-  // Step 3: Classify every candidate that is unmatched for scoring. Each
-  // judge classifies the same unmatched set; a council combines per finding.
+  // Step 3: Classify every candidate that is unmatched for scoring.
   let classifications: ClassifiedFinding[];
-  const perJudgeClassifications: ClassifiedFinding[][] = judges.map(() => []);
   if (unmatchedFindings.length > 0) {
     const nwo = golden.pr.repo.replace("https://github.com/", "");
     const manifestEntry = getManifestEntry(opts.manifestPath, prKeyStr);
@@ -500,12 +411,9 @@ async function evalPR(
     }
     // The budget grows with the number of findings the judge has to answer.
     const timeoutMs = JUDGE_CALL_TIMEOUT_MS + JUDGE_CALL_PER_FINDING_MS * unmatchedFindings.length;
-    for (const [j, judge] of judges.entries()) {
-      const judgeName = judge.modelId ?? "auto";
-      const tag = council ? ` [${judgeName}]` : "";
-      const result = await askJudge(
-        async () => {
-          const answer = await classifyFindings({
+    const classificationResult = await askJudge(
+      async () => {
+        const answer = await classifyFindings({
           nwo,
           prUrl: `${golden.pr.repo}/pull/${golden.pr.pr_number}`,
           headSha: golden.pr.head,
@@ -516,35 +424,25 @@ async function evalPR(
           prBody: manifestEntry.body,
           findings: unmatchedFindings,
           config: {
-            ...(judge.provider ? { provider: judge.provider } : {}),
-            ...(judge.modelId ? { modelId: judge.modelId } : {}),
-            // Session logs per judge, so a council's transcripts stay apart.
-            ...(council ? { sessionDir: `classifier-output/sessions/${judgeName.replace(/[^a-zA-Z0-9._-]/g, "_")}` } : {}),
+            ...(opts.provider ? { provider: opts.provider } : {}),
+            ...(opts.modelId ? { modelId: opts.modelId } : {}),
           },
           onProgress: (idx, total, r) => {
-            console.log(`  ${label}${tag}: classifying ${idx + 1}/${total} -> ${r.tp_fp} ${r.severity} ${r.category}`);
+            console.log(`  ${label}: classifying ${idx + 1}/${total} -> ${r.tp_fp} ${r.severity} ${r.category}`);
           },
-          });
-          // A judge that answered only a prefix of the findings has failed
-          // this attempt; a partial vote is not a vote.
-          if (answer.classifications.length !== unmatchedFindings.length) {
-            throw new Error(`classified ${answer.classifications.length}/${unmatchedFindings.length} findings`);
-          }
-          return answer;
-        },
-        { what: `${prKeyStr}: classifier ${judgeName}`, council, timeoutMs, log: (m) => console.log(`  ${label}${tag}: ${m}`) },
-      );
-      if (!result) {
-        perJudgeClassifications[j] = [];
-        continue;
-      }
-      perJudgeClassifications[j] = result.classifications;
-      console.log(`  ${label}${tag}: tools: ${formatToolCalls(result.tool_calls)}`);
-    }
-    if (council && perJudgeClassifications.every((c) => c.length === 0)) {
-      throw new Error(`${prKeyStr}: no judge answered the classifier`);
-    }
-    classifications = council ? combineClassifications(perJudgeClassifications) : perJudgeClassifications[0];
+        });
+        if (answer.classifications.length !== unmatchedFindings.length) {
+          throw new Error(`classified ${answer.classifications.length}/${unmatchedFindings.length} findings`);
+        }
+        return answer;
+      },
+      {
+        what: `${prKeyStr}: classifier ${judgeName}`,
+        timeoutMs,
+      },
+    );
+    classifications = classificationResult.classifications;
+    console.log(`  ${label}: tools: ${formatToolCalls(classificationResult.tool_calls)}`);
   } else {
     classifications = [];
   }
@@ -574,35 +472,6 @@ async function evalPR(
   };
 
   const result = scorePR(scoringInput);
-  const classificationPositions = new Map(
-    unmatchedIndices.map((candidateIndex, position) => [candidateIndex, position]),
-  );
-  const councilAudit = (candidateIndex: number): CouncilFindingAudit | undefined =>
-    council
-      ? buildCouncilFindingAudit(
-          candidateIndex,
-          classificationPositions.get(candidateIndex),
-          judges,
-          matchVotes,
-          perJudgeClassifications,
-        )
-      : undefined;
-
-  // A council also scores each judge's own labels over the council's match
-  // set, so the report can show where the judges disagree. A judge that did
-  // not answer every unmatched finding gets no score for this PR.
-  const judgeScores = new Map<string, PRScoreResult>();
-  if (council) {
-    for (const [j, judge] of judges.entries()) {
-      const own = perJudgeClassifications[j];
-      if (own.length !== unmatchedIndices.length) continue;
-      judgeScores.set(judge.modelId ?? "auto", scorePR({
-        ...scoringInput,
-        unmatched_classifications: buildUnmatchedClassificationMap(prKeyStr, unmatchedIndices, own),
-      }));
-    }
-  }
-
   // Build detailed per-finding output. The scored match is one golden per finding;
   // the full covered list is what grounded recall was computed from, so it goes out too.
   const coveredBy = new Map<number, number[]>();
@@ -632,7 +501,6 @@ async function evalPR(
         matched_truth_label: g.tp_fp,
         result_severity: g.severity,
         result_category: g.category,
-        ...(council ? { council: councilAudit(i) } : {}),
       };
     }
     const cls = unmatchedCls.get(i);
@@ -653,7 +521,6 @@ async function evalPR(
         llm_classification: cls.tp_fp,
         result_severity: cls.severity,
         result_category: cls.category,
-        ...(council ? { council: councilAudit(i) } : {}),
       };
     }
     return {
@@ -666,7 +533,6 @@ async function evalPR(
       matched_to_ground_truth: false,
       llm_judged_match: false,
       match_method: "none" as const,
-      ...(council ? { council: councilAudit(i) } : {}),
     };
   });
 
@@ -696,7 +562,7 @@ async function evalPR(
     writeGoldenSet(opts.goldenDir, updated);
   }
 
-  return { score: result, details, judgeScores };
+  return { score: result, details };
 }
 
 // ---------------------------------------------------------------------------
@@ -711,8 +577,6 @@ function computeEvalConfig(
   prKeys: string[],
   goldenStore: GoldenStore,
   modelId?: string,
-  judges?: { provider: string; modelId: string }[],
-  combination?: Combination,
 ): EvalConfig {
   // Hash golden findings content for evaluated PRs
   const goldenContents: string[] = [];
@@ -729,8 +593,7 @@ function computeEvalConfig(
 
   const classifierPromptHash = sha256(renderJudgeSystemPrompt(CLASSIFIER_SYSTEM_PROMPT));
 
-  const council = judges && judges.length > 1;
-  const judgeName = council ? `council(${judges.map((j) => j.modelId).join("+")})` : modelId ?? "auto";
+  const judgeName = modelId ?? "auto";
   return {
     golden_hash: goldenHash,
     classifier_model: judgeName,
@@ -738,11 +601,6 @@ function computeEvalConfig(
     matcher_model: judgeName,
     matcher_prompt_hash: matcherPromptHash,
     evaluated_prs_hash: evaluatedPrsHash,
-    ...(council ? {
-      judges: judges.map((j) => ({ model: j.modelId, provider: j.provider })),
-      combination: combination ?? "majority",
-      tie_breaker: "primary-judge" as const,
-    } : {}),
   };
 }
 
@@ -801,137 +659,11 @@ function computeCorpusStats(
 }
 
 // ---------------------------------------------------------------------------
-// Scoring profiles
-// ---------------------------------------------------------------------------
-
-/**
- * Apply a `--scoring-profile` selection to the parsed args: pin the judge model
- * from the profile, verify the harness prompts haven't drifted from the
- * snapshot, and confirm the pinned model is actually reachable under the user's
- * auth — failing loudly (before any scoring work) instead of silently degrading
- * to a different model. Mutates `opts` in place. No-op when no profile is set.
- */
-async function applyScoringProfile(opts: CliArgs): Promise<void> {
-  if (!opts.profileId) return;
-
-  let resolution: ReturnType<typeof resolveProfile>;
-  try {
-    resolution = resolveProfile(opts.profileId);
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  }
-  const { profile, viaAlias } = resolution;
-
-  // A profile pins the model; refuse a conflicting explicit --model rather than
-  // silently letting one win. Compared provider-agnostically so an equivalent
-  // spelling (e.g. anthropic's claude-sonnet-4-6) isn't a false conflict.
-  const judgeSpecs = judgesOf(profile);
-  if (opts.modelId && !judgeSpecs.some((j) => sameModel(opts.modelId!, j.model))) {
-    console.error(
-      `--model ${opts.modelId} conflicts with --scoring-profile ${profile.id} ` +
-        `(which pins ${judgeSpecs.map((j) => j.model).join(", ")}). Drop --model, or drop --scoring-profile.`,
-    );
-    process.exit(1);
-  }
-
-  // Enforced: the harness prompts must match the snapshot, or the judge behaves
-  // differently and the numbers aren't comparable.
-  const currentHashes = {
-    classifier: sha256(renderJudgeSystemPrompt(CLASSIFIER_SYSTEM_PROMPT)),
-    matcher: sha256(renderJudgeSystemPrompt(MATCHER_SYSTEM_PROMPT)),
-  };
-  const drifted: string[] = [];
-  if (currentHashes.classifier !== profile.promptHashes.classifier) drifted.push("classifier");
-  if (currentHashes.matcher !== profile.promptHashes.matcher) drifted.push("matcher");
-  if (drifted.length > 0) {
-    console.error(
-      `Scoring profile ${profile.id} expects the ${profile.judge.model} ` +
-        `${drifted.join(" and ")} prompt(s) from that snapshot, but this checkout's ` +
-        `prompt(s) hash differently. The harness has drifted from the snapshot, so a ` +
-        `run here would not reproduce it. Check out the tag/commit for ${profile.id}.`,
-    );
-    process.exit(1);
-  }
-
-  // Resolve the pinned model against configured auth, provider-agnostically.
-  // Pin the EXACT registry provider+id we found so the matcher/classifier
-  // resolve to precisely this model (no fuzzy fallback to a different one), and
-  // fail loud now if nothing serves it rather than degrading mid-run. Respect a
-  // user-supplied --provider as a filter; otherwise prefer the provider we used.
-  const profileAuth = AuthStorage.create();
-  const registry = ModelRegistry.create(profileAuth);
-  // With SCORING_BACKEND=capi-sidecar the github-copilot models are only
-  // "available" once the sidecar is registered, so install it for the check.
-  const profileBackend = await installScoringBackend(registry, profileAuth);
-  const available = registry.getAvailable();
-  await profileBackend.close();
-  const pool = opts.provider
-    ? available.filter((m) => m.provider === opts.provider)
-    : available;
-  const resolved: { provider: string; modelId: string }[] = [];
-  for (const spec of judgeSpecs) {
-    const matched =
-      pool.find((m) => m.provider === spec.provider && sameModel(m.id, spec.model)) ??
-      pool.find((m) => sameModel(m.id, spec.model));
-    if (!matched) {
-      const shown = available.slice(0, 6).map((m) => `${m.provider}/${m.id}`).join(", ");
-      console.error(
-        `Scoring profile ${profile.id} needs "${spec.model}", which no configured ` +
-          `credential${opts.provider ? ` for provider "${opts.provider}"` : ""} exposes. ` +
-          `Provide auth that serves it — ${spec.authHint}.\n` +
-          (available.length > 0
-            ? `  Currently available: ${shown}${available.length > 6 ? ", …" : ""}`
-            : `  No models with configured auth were found. Set ANTHROPIC_API_KEY or run \`pi /login\`.`),
-      );
-      process.exit(1);
-    }
-    resolved.push({ provider: matched.provider, modelId: matched.id });
-  }
-  // The primary judge stays in the single-model fields for everything that
-  // reads them; the full list drives the council.
-  opts.provider = resolved[0].provider;
-  opts.modelId = resolved[0].modelId;
-  if (resolved.length > 1) {
-    opts.judges = resolved;
-    opts.combination = profile.combination ?? "majority";
-  }
-
-  console.log(
-    resolved.length > 1
-      ? `Scoring profile: ${profile.id} — council of ${resolved.map((j) => `${j.provider}/${j.modelId}`).join(", ")} (${opts.combination})`
-      : `Scoring profile: ${profile.id} — judge ${resolved[0].provider}/${resolved[0].modelId}`,
-  );
-  if (viaAlias) {
-    console.log(
-      `  (resolved "${opts.profileId}" → ${profile.id}; pin the dated id for reproducible runs)`,
-    );
-  }
-}
-
-/**
- * After scoring, warn (not fail) if the evaluated corpus differs from the
- * profile's snapshot. Expected for the public 25-PR subset and for any reviewer
- * whose covered PR set differs — the judge, not the corpus, is what's pinned.
- */
-function warnOnProfileCorpusMismatch(opts: CliArgs, evaluatedPrCount: number): void {
-  if (!opts.profileId) return;
-  const { profile } = resolveProfile(opts.profileId);
-  if (evaluatedPrCount !== profile.snapshot.prCount) {
-    console.warn(
-      `\nNote: scored ${evaluatedPrCount} PR(s); the ${profile.id} snapshot is ` +
-        `${profile.snapshot.prCount}. ${profile.snapshot.note}`,
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main() {
   const opts = parseArgs();
-  await applyScoringProfile(opts);
 
   console.log("Loading candidate findings...");
   const candidateLoad = loadCandidateFindings(opts.candidatePath);
@@ -987,11 +719,10 @@ async function main() {
   }
 
   // Load checkpoint (only reused if it came from the same judge fingerprint)
-  const fingerprint = evalFingerprint(opts.modelId, opts.judges);
+  const fingerprint = evalFingerprint(opts.provider, opts.modelId);
   const checkpoint = loadCheckpoint(opts.output, fingerprint);
   const completed = checkpoint.scores;
   const allDetails = checkpoint.details;
-  const judgeScores = checkpoint.judgeScores;
   const skippedFromCheckpoint = commonKeys.filter((k) => completed.has(k)).length;
   if (skippedFromCheckpoint > 0) {
     console.log(`Resuming: ${skippedFromCheckpoint} PRs already completed\n`);
@@ -1024,12 +755,7 @@ async function main() {
 
         completed.set(prKeyStr, evalResult.score);
         allDetails.set(prKeyStr, evalResult.details);
-        for (const [judge, score] of evalResult.judgeScores) {
-          let byPr = judgeScores.get(judge);
-          if (!byPr) { byPr = new Map(); judgeScores.set(judge, byPr); }
-          byPr.set(prKeyStr, score);
-        }
-        saveCheckpoint(opts.output, fingerprint, completed, allDetails, judgeScores);
+        saveCheckpoint(opts.output, fingerprint, completed, allDetails);
 
         const m = evalResult.score.metrics.overall;
         console.log(
@@ -1098,35 +824,12 @@ async function main() {
   }
 
   // Compute eval config fingerprint
-  agg.eval_config = computeEvalConfig(commonKeys, goldenStore, opts.modelId, opts.judges, opts.combination);
-  warnOnProfileCorpusMismatch(opts, prResults.length);
+  agg.eval_config = computeEvalConfig(commonKeys, goldenStore, opts.modelId);
 
   // Write output
   const outputPath = resolve(opts.output);
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, JSON.stringify(agg, null, 2));
-
-  // A council also writes each judge's own aggregate next to the combined one:
-  // results.<judge>.json, same shape, over the pull requests that judge
-  // scored. The match set is the council's, so the matcher stays the council.
-  if (opts.judges && opts.judges.length > 1) {
-    for (const judge of opts.judges) {
-      const byPr = judgeScores.get(judge.modelId);
-      const ownKeys = commonKeys.filter((k) => byPr?.has(k));
-      const own = ownKeys.map((k) => byPr!.get(k)!);
-      if (own.length === 0) continue;
-      const ownAgg = aggregate(own);
-      if (manifestByKey) ownAgg.corpus_stats = computeCorpusStats(ownKeys, manifestByKey);
-      ownAgg.eval_config = {
-        ...computeEvalConfig(ownKeys, goldenStore, judge.modelId),
-        matcher_model: agg.eval_config.matcher_model,
-        council_member_of: agg.eval_config.classifier_model,
-      } as EvalConfig;
-      const ownPath = outputPath.replace(/\.json$/, `.${judge.modelId.replace(/[^a-zA-Z0-9._-]/g, "_")}.json`);
-      writeFileSync(ownPath, JSON.stringify(ownAgg, null, 2));
-      console.log(`Judge ${judge.modelId}: ${own.length}/${commonKeys.length} PRs scored on its own labels -> ${ownPath}`);
-    }
-  }
 
   // Write detailed per-finding output
   const detailsPath = outputPath.replace(/\.json$/, ".details.json");

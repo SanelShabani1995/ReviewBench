@@ -22,7 +22,6 @@ import {
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { installScoringBackend } from "../lib/scoring-backend.js";
 
 import type { ClassificationResult, ClassifierInput } from "./types.js";
 import { toClassifierFinding } from "./types.js";
@@ -78,9 +77,6 @@ export interface PRSessionOptions {
   /** Findings to classify in this session */
   findings: ClassifierInput[];
 
-  /** Map from comment ID → diff hunk context from GitHub */
-  commentContexts?: Map<string, import("./github.js").CommentContext>;
-
   /** Classifier config */
   config?: ClassifierConfig;
 
@@ -110,14 +106,8 @@ export async function classifyPR(opts: PRSessionOptions): Promise<PRSessionResul
   }
   const modelRegistry = ModelRegistry.create(authStorage);
 
-  // With SCORING_BACKEND=capi-sidecar this points every github-copilot model
-  // at a local proxy that holds the CAPI credential, so no Copilot seat is
-  // needed. With the default backend it is a no-op.
-  const backend = await installScoringBackend(modelRegistry, authStorage);
-
   const model = resolveModel(modelRegistry, opts.config);
   if (!model) {
-    await backend.close();
     const available = modelRegistry.getAvailable();
     const hint = available.length > 0
       ? `Available: ${available.slice(0, 5).map(m => `${m.provider}/${m.id}`).join(", ")}...`
@@ -232,7 +222,6 @@ export async function classifyPR(opts: PRSessionOptions): Promise<PRSessionResul
     for (let i = 0; i < opts.findings.length; i++) {
       const finding = opts.findings[i];
       const normalized = toClassifierFinding(finding);
-      const commentCtx = opts.commentContexts?.get(normalized.id);
       const userMessage = buildClassifierUserMessage({
         filePath: normalized.filePath,
         startLine: normalized.startLine,
@@ -240,9 +229,6 @@ export async function classifyPR(opts: PRSessionOptions): Promise<PRSessionResul
         message: normalized.message,
         index: i + 1,
         total: opts.findings.length,
-        diffHunk: commentCtx?.diffHunk,
-        line: commentCtx?.line,
-        originalLine: commentCtx?.originalLine,
       });
 
       let responseText = await promptAndCollect(session, userMessage);
@@ -273,7 +259,6 @@ export async function classifyPR(opts: PRSessionOptions): Promise<PRSessionResul
   } finally {
     usage.elapsed_seconds = (Date.now() - sessionStart) / 1000;
     session.dispose();
-    await backend.close();
   }
 
   return { results, usage, tool_calls: toolCalls };

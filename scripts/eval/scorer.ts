@@ -80,16 +80,12 @@ export interface PRScoreResult {
 
 export interface EvalConfig {
   golden_hash: string;
-  /** The judge; for a council, "council(model+model+model)". */
+  /** The LLM judge used for matching and classification. */
   classifier_model: string;
   classifier_prompt_hash: string;
   matcher_model: string;
   matcher_prompt_hash: string;
   evaluated_prs_hash: string;
-  /** Present for a council: the judges in profile order, primary first. */
-  judges?: { model: string; provider?: string }[];
-  combination?: string;
-  tie_breaker?: "primary-judge";
 }
 
 export interface CorpusStats {

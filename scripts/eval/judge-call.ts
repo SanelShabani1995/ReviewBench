@@ -1,11 +1,8 @@
 /**
- * Bounding and retrying the judge calls made while scoring one pull request.
+ * Bounds the judge calls made while scoring one pull request.
  *
  * A model call that never returns must not stall the run, so every judge
  * call (one matcher pass, one classifier pass) runs under a time budget.
- * In a council a judge that fails is given one more attempt from a fresh
- * session and then abstains for that pull request, so a single bad answer
- * does not fail the run. With one judge every error propagates, as before.
  */
 
 /** Base budget for one judge call. */
@@ -33,40 +30,9 @@ export function withTimeout<T>(promise: Promise<T>, what: string, ms = JUDGE_CAL
 export interface AskJudgeOptions {
   /** Names the call in messages, e.g. "owner/repo#12: classifier gpt-5". */
   what: string;
-  /** Whether other judges can cover for this one. */
-  council: boolean;
   timeoutMs?: number;
-  log?: (message: string) => void;
 }
 
-/**
- * Run one judge call. `attempt` starts a fresh session each time it is called.
- *
- * Returns the answer, or undefined when the judge abstains. A council judge
- * abstains after a timeout, or after an error that repeats on a second
- * attempt. A lone judge never abstains: its error is thrown.
- */
-export async function askJudge<T>(attempt: () => Promise<T>, opts: AskJudgeOptions): Promise<T | undefined> {
-  const { what, council, timeoutMs = JUDGE_CALL_TIMEOUT_MS, log = () => {} } = opts;
-  try {
-    return await withTimeout(attempt(), what, timeoutMs);
-  } catch (err) {
-    if (!council) throw err;
-    if (err instanceof JudgeTimeout) {
-      log(`${err.message}; abstains`);
-      return undefined;
-    }
-    log(`${what} failed: ${describe(err)}; retrying once from a fresh session`);
-  }
-  try {
-    return await withTimeout(attempt(), what, timeoutMs);
-  } catch (err) {
-    log(`${what} failed again: ${describe(err)}; abstains`);
-    return undefined;
-  }
-}
-
-function describe(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err);
-  return msg.split("\n")[0].slice(0, 300);
+export function askJudge<T>(attempt: () => Promise<T>, opts: AskJudgeOptions): Promise<T> {
+  return withTimeout(attempt(), opts.what, opts.timeoutMs);
 }

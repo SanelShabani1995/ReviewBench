@@ -6,7 +6,6 @@
  */
 
 import { classifyPR, type ClassifierConfig } from "../classifier/classify.js";
-import { fetchPRContext, type PRContext } from "../classifier/github.js";
 import type { FindingInput, ClassificationResult } from "../classifier/types.js";
 import type { ClassifiedFinding } from "../eval/scorer.js";
 import type { Finding } from "../lib/types.js";
@@ -22,14 +21,9 @@ export interface ClassifyOptions {
   config?: ClassifierConfig;
   repoDir?: string;
   onProgress?: (index: number, total: number, result: ClassificationResult) => void;
-  /**
-   * Frozen-corpus PR context. When `baseSha` is supplied, PR title/body/diff are
-   * sourced from the corpus (manifest + mirror checkout) instead of the upstream
-   * GitHub API, so scoring never contacts the (possibly rotted) upstream repo.
-   */
-  baseSha?: string;
-  prTitle?: string;
-  prBody?: string;
+  baseSha: string;
+  prTitle: string;
+  prBody: string;
 }
 
 /**
@@ -69,38 +63,11 @@ export async function classifyFindings(opts: ClassifyOptions): Promise<ClassifyR
     producer: f.producer,
   }));
 
-  // Fetch PR context. Prefer the frozen corpus (manifest title/body + mirror
-  // diff) so scoring never contacts the upstream repo, which may have rotted
-  // (deleted, or head force-pushed away). Fall back to the GitHub API only when
-  // no corpus context is supplied (e.g. golden ingestion of fresh PRs).
-  let prContext: PRContext;
-  if (opts.baseSha !== undefined) {
-    // Fail hard on malformed frozen metadata rather than silently classifying
-    // with empty context (ManifestEntry is only a compile-time assertion over
-    // parsed JSON, so a missing/null title/body can reach here at runtime).
-    // A body may legitimately be empty; a title may not.
-    if (typeof opts.prTitle !== "string" || opts.prTitle.trim().length === 0) {
-      throw new Error(`${nwo} (${prUrl}): corpus PR title missing/empty; refusing to classify with empty context`);
-    }
-    if (typeof opts.prBody !== "string") {
-      throw new Error(`${nwo} (${prUrl}): corpus PR body missing; refusing to classify with empty context`);
-    }
-    fetchCommit(repoDir, opts.baseSha);
-    const diff = getFullDiff(repoDir, opts.baseSha, headSha);
-    prContext = {
-      url: prUrl,
-      nwo,
-      title: opts.prTitle,
-      body: opts.prBody,
-      diff,
-      head_sha: headSha,
-      // Upstream review-comment hunks are unused in this path: findings are
-      // re-keyed as `finding-N`, so the comment-id lookup never matches.
-      commentDiffHunks: new Map(),
-    };
-  } else {
-    prContext = await fetchPRContext(nwo, prUrl, headSha);
+  if (opts.prTitle.trim().length === 0) {
+    throw new Error(`${nwo} (${prUrl}): corpus PR title missing/empty; refusing to classify with empty context`);
   }
+  fetchCommit(repoDir, opts.baseSha);
+  const diff = getFullDiff(repoDir, opts.baseSha, headSha);
 
   // Track partial results in case the classifier fails mid-batch
   const partialResults: ClassificationResult[] = [];
@@ -112,12 +79,11 @@ export async function classifyFindings(opts: ClassifyOptions): Promise<ClassifyR
     const response = await classifyPR({
       nwo,
       prUrl,
-      prTitle: prContext.title,
-      prBody: prContext.body,
-      diff: prContext.diff,
+      prTitle: opts.prTitle,
+      prBody: opts.prBody,
+      diff,
       headSha,
       findings: inputs,
-      commentContexts: prContext.commentDiffHunks,
       config: {
         ...config,
         ...(repoDir ? { repoDir } : {}),

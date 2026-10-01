@@ -23,7 +23,6 @@ import {
 
 import type { Finding } from "../lib/types.js";
 import type { RawCorrespondence } from "../lib/match-types.js";
-import { installScoringBackend } from "../lib/scoring-backend.js";
 import {
   renderMatcherFinding,
   renderJudgeSystemPrompt,
@@ -307,13 +306,9 @@ export async function matchFindings(
   // Create a single session for all matching
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
-  // See classify.ts: with SCORING_BACKEND=capi-sidecar this starts the local
-  // CAPI proxy and points the github-copilot provider at it.
-  const backend = await installScoringBackend(modelRegistry, authStorage);
   const model = resolveModel(modelRegistry, config?.provider, config?.modelId);
 
   if (!model) {
-    await backend.close();
     throw new Error("No suitable model found for matching");
   }
 
@@ -404,7 +399,6 @@ export async function matchFindings(
     }
   } finally {
     session.dispose();
-    await backend.close();
   }
 
   return { correspondences: allCorrespondences, stats };
