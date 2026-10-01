@@ -171,7 +171,9 @@ yourself (see Running).
 If your reviewer has already produced findings in the
 [normalized input format](docs/JUDGING_INPUT.md), you can run only the judging
 pipeline. You choose the LLM judge and pay for its calls with your own provider
-credentials; you do not need to run the reviewer container again.
+credentials. This standalone command does not run the reviewer container or a
+GitHub Actions workflow; it judges the existing findings and writes metrics
+JSON.
 
 ```sh
 npm ci

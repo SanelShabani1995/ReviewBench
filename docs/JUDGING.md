@@ -7,6 +7,19 @@ JSON file or recursively loads every JSON file in a directory.
 You choose the LLM judge. The selected model is used for both matching candidate
 findings to the golden set and classifying unmatched findings.
 
+This is a standalone local command, not a GitHub Actions workflow. It does not
+run the review agent or generate new candidate findings. It:
+
+1. Loads your existing findings and the published golden findings.
+2. Calls your selected LLM judge to match candidate findings to golden findings.
+3. Calls the same judge to classify candidate findings that remain unmatched.
+4. Calculates the metrics and writes the result JSON files.
+
+The final artifacts are metrics JSON, but producing them requires judge model
+calls because semantic matching and unmatched-finding validation are part of
+the scoring procedure. If findings have already been matched and classified,
+this command does not currently accept those intermediate judgments as input.
+
 ## Install
 
 The judging tools require Node.js 20 or newer.
