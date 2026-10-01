@@ -254,6 +254,8 @@ model selection, full-corpus commands, checkpoints, and output metrics.
   with your credentials because its model and configuration are part of what
   the benchmark measures.
 
+ReviewBench currently uses Claude Sonnet 5 to judge official leaderboard results.
+
 We never read your credentials or supply your agent's model access.
 
 ### Credentials
