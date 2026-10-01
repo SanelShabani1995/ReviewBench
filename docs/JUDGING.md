@@ -34,6 +34,11 @@ Set your provider's API key in the environment before running the judge. The
 pipeline reads the key through the bundled pi model registry; keys do not belong
 in candidate files, command arguments, or the repository.
 
+The pi package is used as an SDK for provider authentication, model discovery,
+LLM calls, and read-only classifier tools. ReviewBench initializes an API
+session for the model selected with `--provider` and `--model`; it does not
+train, download, or start a local model.
+
 Common providers include:
 
 | Provider | Environment variable | CLI provider |
@@ -57,23 +62,20 @@ In PowerShell:
 $env:OPENAI_API_KEY = "<your key>"
 ```
 
-You can instead store provider credentials interactively:
-
-```sh
-npx pi
-# Enter /login and select your provider.
-```
-
 See the [pi provider documentation](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md)
 for the full provider list and provider-specific settings.
 
 ## Choose a judge model
 
-List the models available with your configured credentials:
+If needed, list model IDs available through the bundled provider registry:
 
 ```sh
 npx pi --list-models
 ```
+
+This optional command only prints models from the pi CLI. It does not run the
+ReviewBench judging pipeline. You do not need to run `npx pi` when using an API
+key environment variable.
 
 Pass the selected provider and model to the ReviewBench pipeline:
 

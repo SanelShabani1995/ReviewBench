@@ -111,7 +111,7 @@ export async function classifyPR(opts: PRSessionOptions): Promise<PRSessionResul
     const available = modelRegistry.getAvailable();
     const hint = available.length > 0
       ? `Available: ${available.slice(0, 5).map(m => `${m.provider}/${m.id}`).join(", ")}...`
-      : "No models with configured auth found. Set ANTHROPIC_API_KEY or run 'pi /login'.";
+      : "No models with configured auth found. Set your provider's API key environment variable.";
     throw new Error(`No suitable model found.\n${hint}`);
   }
 
