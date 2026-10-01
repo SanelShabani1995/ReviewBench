@@ -10,9 +10,9 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
 - [What is in the Repository?](#what-is-in-the-repository)
 - [Run your Code Review Agent on ReviewBench](#run-your-code-review-agent-on-reviewbench)
   - [Try it locally first](#try-it-locally-first)
-  - [How to judge your findings](#how-to-judge-your-findings)
   - [Onboarding](#onboarding)
   - [Running](#running)
+  - [How to judge your findings](#how-to-judge-your-findings)
   - [Costs](#costs)
   - [Credentials](#credentials)
 - [Contribution](#contribution)
@@ -166,29 +166,6 @@ small sample, so a score on them says your adapter works, not how good your
 agent is. The leaderboard runs on the full set of 219, which you can score
 yourself (see Running).
 
-### How to judge your findings
-
-If your reviewer has already produced findings in the
-[normalized input format](docs/JUDGING_INPUT.md), you can run only the judging
-pipeline. You choose the LLM judge and pay for its calls with your own provider
-credentials. This standalone command does not run the reviewer container or a
-GitHub Actions workflow; it judges the existing findings and writes metrics
-JSON.
-
-```sh
-npm ci
-export OPENAI_API_KEY="<your key>" # Or your provider's documented environment variable
-npm run judge -- \
-  --candidate ./my-agent-findings \
-  --provider openai \
-  --model <your-model-id> \
-  --output ./scoring/smoke.json \
-  --limit 1
-```
-
-See [How to judge findings](docs/JUDGING.md) for supported API-key variables,
-model selection, full-corpus commands, checkpoints, and output metrics.
-
 ### Onboarding
 
 Sign in to the [website](https://review-bench.ai/submit) with GitHub and
@@ -226,6 +203,29 @@ tuning happens on your side:
 There is no monthly cap on runs. You choose which configuration goes to the
 final; you do not choose which run, because the final is measured fresh. Your
 row shows how many configurations you tested.
+
+### How to judge your findings
+
+If your reviewer has already produced findings in the
+[normalized input format](docs/JUDGING_INPUT.md), you can run only the judging
+pipeline. You choose the LLM judge and pay for its calls with your own provider
+credentials. This standalone command does not run the reviewer container or a
+GitHub Actions workflow; it judges the existing findings and writes metrics
+JSON.
+
+```sh
+npm ci
+export OPENAI_API_KEY="<your key>" # Or your provider's documented environment variable
+npm run judge -- \
+  --candidate ./my-agent-findings \
+  --provider openai \
+  --model <your-model-id> \
+  --output ./scoring/smoke.json \
+  --limit 1
+```
+
+See [How to judge findings](docs/JUDGING.md) for supported API-key variables,
+model selection, full-corpus commands, checkpoints, and output metrics.
 
 ### Costs
 
