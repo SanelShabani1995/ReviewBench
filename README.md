@@ -229,12 +229,15 @@ model selection, full-corpus commands, checkpoints, and output metrics.
 
 ### Costs
 
-- **Your agent's inference is yours.** It runs with your credentials, inside
-  your container. We never see them, and the model you use is part of what
-  the benchmark measures, so we cannot supply it.
-- **The judge's cost is coverd by us for test and final runs.** Every reviewer's result are evaluated
-  with the same judge panel models, at our cost. Tuning on the full set on your
-  side uses your own judge calls.
+- **Tuning and hill-climbing are self-funded.** For test runs, local
+  experiments, and repeated full-set scoring, both your review agent's
+  inference and the judge's inference use your credentials and compute.
+- **ReviewBench covers the judge only for your final submission.** The final is
+  scored with the benchmark judge at our cost. Your review agent still runs
+  with your credentials because its model and configuration are part of what
+  the benchmark measures.
+
+We never read your credentials or supply your agent's model access.
 
 ### Credentials
 

@@ -127,7 +127,10 @@ npm run judge -- \
 ```
 
 Choose concurrency according to your provider's rate limits and budget. Local
-judging uses your credentials and incurs your provider's inference cost.
+judging is part of self-service tuning: both the agent inference that produced
+the candidate findings and these judge calls are your responsibility.
+ReviewBench covers judge inference only when scoring your final submission;
+your agent inference remains yours.
 
 ## Resume and inspect results
 
