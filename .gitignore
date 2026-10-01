@@ -1,0 +1,4 @@
+node_modules/
+scoring/
+findings/
+.reviewbench-repos/

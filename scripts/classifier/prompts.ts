@@ -9,6 +9,10 @@
  * Version: 2.0.0 — session-based architecture with tool use
  */
 
+import {
+  renderClassifierFinding,
+} from "../eval/prompt-format.js";
+
 export const CLASSIFIER_VERSION = "3.0.0";
 
 export const CLASSIFIER_SYSTEM_PROMPT = `You are an expert code review classifier. Your job is to evaluate whether code review findings on a pull request are **true positives (TP)** or **false positives (FP)**, and to assign auxiliary labels.
@@ -195,30 +199,17 @@ export function buildClassifierUserMessage(args: {
   line?: number | null;
   originalLine?: number | null;
 }): string {
-  let locationInfo = `**File:** ${args.filePath}`;
-  if (args.startLine === args.endLine) {
-    locationInfo += `\n**Line:** ${args.startLine}`;
-  } else {
-    locationInfo += `\n**Lines:** ${args.startLine}–${args.endLine}`;
-  }
-  if (args.line != null) {
-    locationInfo += `\n**New-file line:** ${args.line}`;
-  }
-  if (args.originalLine != null) {
-    locationInfo += `\n**Old-file line:** ${args.originalLine}`;
-  }
-
-  let hunkSection = "";
-  if (args.diffHunk) {
-    hunkSection = `\n\n**Diff hunk context:**\n\`\`\`diff\n${args.diffHunk}\n\`\`\``;
-  }
-
   return `## Finding ${args.index}/${args.total}
 
-${locationInfo}${hunkSection}
-
-**Finding:**
-> ${args.message}
+${renderClassifierFinding({
+  file: args.filePath,
+  start_line: args.startLine,
+  end_line: args.endLine,
+  message: args.message,
+  diff_hunk: args.diffHunk,
+  line: args.line,
+  original_line: args.originalLine,
+})}
 
 ---
 

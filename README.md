@@ -5,6 +5,20 @@ ReviewBench is an open, reproducible benchmark for evaluating AI code review sys
 
 For each pull request, the benchmark provides a human-reviewed golden set of code review findings that serves as the ground truth. ReviewBench compares an agent's findings with this reference set to measure how reliably it identifies useful issues while avoiding false positives. Results can also be explored by dimensions such as severity and category.
 
+## Table of Contents
+
+- [What is in the Repository?](#what-is-in-the-repository)
+- [Submit your Reviewer to the ReviewBench Leaderboard](#submit-your-reviewer-to-the-reviewbench-leaderboard)
+  - [1. Validate your submission locally](#1-validate-your-submission-locally)
+  - [2. Onboard through the self-service portal](#2-onboard-through-the-self-service-portal)
+  - [3. Run official test and final evaluations](#3-run-official-test-and-final-evaluations)
+  - [Optional: Judge your own findings locally for tuning](#optional-judge-your-own-findings-locally-for-tuning)
+  - [Costs](#costs)
+  - [Credentials](#credentials)
+- [Contribution](#contribution)
+- [Governance](#governance)
+- [License](#license)
+
 ## What is in the Repository?
 
 - **[The test set: 25 tasks](corpus/test/).** The selected pull
@@ -14,13 +28,16 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
   leaderboard runs on, with its corresponding findings in [`golden/`](golden/).
 - **[Benchmark documentation](docs/METHODOLOGY.md).** How the corpus was
   built, how findings are labeled, and how agents are judged and scored.
-- **[Everything a reviewer vendor needs](#run-your-code-review-agent-on-reviewbench).**
+- **[Everything a reviewer vendor needs](#submit-your-reviewer-to-the-reviewbench-leaderboard).**
   The [agent contract](AGENT_CONTRACT.md), the [Codex CLI example](examples/codex-cli/), a
   [local test script](scripts/try-agent.sh) and the
   [onboarding guide](docs/ONBOARDING.md).
 - **[The classifier prompt and supporting script](scripts/classifier/prompts.ts).**
   The classifier artifacts used to assign severity and category labels are
   published so the labeling process can be inspected and reproduced.
+- **[The judging CLI](#optional-judge-your-own-findings-locally-for-tuning).**
+  Privately score already-normalized findings for tuning with an LLM judge you
+  choose.
 
 The full corpus manifest and all golden findings are public.
 
@@ -99,14 +116,19 @@ they are not formal human labels.
 | Other | 40 | 18.3% |
 | **Total** | **219** | **100%** |
 
-## Run your Code Review Agent on ReviewBench
+## Submit your Reviewer to the ReviewBench Leaderboard
 
 Evaluate your code review agent on the same pull requests, against the same
 expert findings, and with the same judge used for every agent on the
-[leaderboard](https://review-bench.ai). To participate, you only need a thin
-adapter that lets ReviewBench run your existing agent: it reads one pull
-request and writes one findings file. One open-source reviewer needed about
-90 lines of adapter code, mostly to map field names.
+[leaderboard](https://review-bench.ai). **To appear on the leaderboard, you
+must onboard and submit through the ReviewBench self-service portal.** Local
+runs and locally generated metrics are for development only and cannot be
+published as leaderboard results.
+
+To participate, you only need a thin adapter that lets ReviewBench run your
+existing agent: it reads one pull request and writes one findings file. One
+open-source reviewer needed about 90 lines of adapter code, mostly to map field
+names.
 
 Four steps; the [onboarding guide](docs/ONBOARDING.md) walks through each one.
 
@@ -120,13 +142,17 @@ Four steps; the [onboarding guide](docs/ONBOARDING.md) walks through each one.
 4. **Register it** on the [website](https://review-bench.ai/submit). Everything
    after that happens there.
 
-### Try it locally first
+### 1. Validate your submission locally
 
 [`scripts/try-agent.sh`](scripts/try-agent.sh) runs your image on the test
 set the way the benchmark does: one fresh container per pull request, the
 same mounts and variables, and the same checks on the findings file. With
 `--set full` it runs the full set instead. It needs docker, git and jq, and
 fetches each pull request from GitHub.
+
+This checks that the same container you plan to submit can complete the
+benchmark PRs and produce valid findings. It does not score the findings or
+submit anything to ReviewBench.
 
 ```sh
 git clone https://github.com/review-bench/ReviewBench && cd ReviewBench
@@ -148,9 +174,10 @@ each one.
 **Test set scores are not leaderboard scores.** These 25 pull requests are a
 small sample, so a score on them says your adapter works, not how good your
 agent is. The leaderboard runs on the full set of 219, which you can score
-yourself (see Running).
+privately while tuning (see
+[Judge your own findings locally](#optional-judge-your-own-findings-locally-for-tuning)).
 
-### Onboarding
+### 2. Onboard through the self-service portal
 
 Sign in to the [website](https://review-bench.ai/submit) with GitHub and
 register your reviewer. You fill in a display name, the image pinned by
@@ -169,7 +196,7 @@ Credentials are entered on the website, never in the pull request. They are
 stored in Azure Key Vault and travel from there straight into your container.
 No person reads the values.
 
-### Running
+### 3. Run official test and final evaluations
 
 Once the manifest is merged, test runs and finals start from the website;
 tuning happens on your side:
@@ -186,16 +213,50 @@ tuning happens on your side:
 
 There is no monthly cap on runs. You choose which configuration goes to the
 final; you do not choose which run, because the final is measured fresh. Your
-row shows how many configurations you tested.
+row shows how many configurations you tested. **Only a final run started
+through this self-service flow can be published on the leaderboard.**
+
+### Optional: Judge your own findings locally for tuning
+
+If you want to run your agent entirely on your own infrastructure, use any
+runner or process you prefer to produce findings in the
+[normalized input format](docs/JUDGING_INPUT.md). You can then run only the
+judging pipeline. You choose the LLM judge and pay for its calls with your own
+provider credentials. This standalone command does not run the reviewer
+container or a GitHub Actions workflow; it judges the existing findings and
+writes metrics JSON.
+
+This path is for private tuning and hill-climbing. It does not onboard your
+reviewer, submit a final run, or publish a leaderboard result. Use the
+self-service path above when you are ready for an official evaluation.
+
+```sh
+npm ci
+export OPENAI_API_KEY="<your key>" # Or your provider's documented environment variable
+npm run judge -- \
+  --candidate ./my-agent-findings \
+  --provider openai \
+  --model <your-model-id> \
+  --output ./scoring/smoke.json \
+  --limit 1
+```
+
+See [How to judge findings](docs/JUDGING.md) for supported API-key variables,
+model selection, full-corpus commands, checkpoints, and output metrics.
 
 ### Costs
 
-- **Your agent's inference is yours.** It runs with your credentials, inside
-  your container. We never see them, and the model you use is part of what
-  the benchmark measures, so we cannot supply it.
-- **The judge's cost is coverd by us for test and final runs.** Every reviewer's result are evaluated
-  with the same judge panel models, at our cost. Tuning on the full set on your
-  side uses your own judge calls.
+- **Tuning and hill-climbing are self-funded.** For test runs, local
+  experiments, and repeated full-set scoring, both your review agent's
+  inference and the judge's inference use your credentials and compute.
+- **ReviewBench covers the judge only for your final submission.** The final is
+  scored with the benchmark judge at our cost. Your review agent still runs
+  with your credentials because its model and configuration are part of what
+  the benchmark measures.
+
+ReviewBench currently uses Claude Sonnet 5 to judge official leaderboard results.
+
+We never read your credentials or supply your agent's model access.
 
 ### Credentials
 
