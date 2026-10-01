@@ -56,6 +56,7 @@ import type { ManifestEntry } from "../lib/types.js";
 import { prKey } from "../lib/types.js";
 import { aggregateCandidateUsage } from "../lib/usage.js";
 import { checkpointFingerprint } from "./checkpoint-fingerprint.js";
+import { outputSidecarPath } from "./output-paths.js";
 
 // ---------------------------------------------------------------------------
 // Detailed per-finding output
@@ -260,7 +261,7 @@ function loadCheckpoint(
   outputPath: string,
   expectedFingerprint: string,
 ): { scores: Map<string, PRScoreResult>; details: Map<string, PRDetailedOutput> } {
-  const cpPath = outputPath.replace(/\.json$/, ".checkpoint.json");
+  const cpPath = outputSidecarPath(outputPath, "checkpoint");
   const empty = () => ({ scores: new Map<string, PRScoreResult>(), details: new Map<string, PRDetailedOutput>() });
   if (!existsSync(cpPath)) return empty();
 
@@ -290,7 +291,7 @@ function saveCheckpoint(
   scores: Map<string, PRScoreResult>,
   details: Map<string, PRDetailedOutput>,
 ): void {
-  const cpPath = outputPath.replace(/\.json$/, ".checkpoint.json");
+  const cpPath = outputSidecarPath(outputPath, "checkpoint");
   mkdirSync(dirname(resolve(cpPath)), { recursive: true });
   const data: Checkpoint = {
     fingerprint,
@@ -301,7 +302,7 @@ function saveCheckpoint(
 }
 
 function removeCheckpoint(outputPath: string): void {
-  const cpPath = outputPath.replace(/\.json$/, ".checkpoint.json");
+  const cpPath = outputSidecarPath(outputPath, "checkpoint");
   if (existsSync(cpPath)) {
     unlinkSync(cpPath);
   }
@@ -737,6 +738,7 @@ async function main() {
     prKeys: commonKeys,
     candidates: commonKeys.map((key) => candidateByPR.get(key)),
     goldenSets: commonKeys.map((key) => goldenStore.get(key)),
+    manifestEntries: commonKeys.map((key) => getManifestEntry(opts.manifestPath, key)),
   });
   const checkpoint = loadCheckpoint(opts.output, fingerprint);
   const completed = checkpoint.scores;
@@ -850,7 +852,7 @@ async function main() {
   writeFileSync(outputPath, JSON.stringify(agg, null, 2));
 
   // Write detailed per-finding output
-  const detailsPath = outputPath.replace(/\.json$/, ".details.json");
+  const detailsPath = outputSidecarPath(outputPath, "details");
   const detailsArray = commonKeys
     .map((k) => allDetails.get(k))
     .filter((d): d is PRDetailedOutput => !!d);

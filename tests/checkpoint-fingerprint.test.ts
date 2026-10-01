@@ -11,6 +11,7 @@ const base = {
   prKeys: ["repo_1-abcdef12"],
   candidates: [{ pr: { head: "abcdef123456" }, findings: [{ message: "candidate" }] }],
   goldenSets: [{ pr: { head: "abcdef123456" }, findings: [{ message: "golden" }] }],
+  manifestEntries: [{ title: "Title", body: "Body" }],
 };
 
 test("checkpoint fingerprint is canonical but changes with judge or evaluated inputs", () => {
@@ -33,6 +34,13 @@ test("checkpoint fingerprint is canonical but changes with judge or evaluated in
     checkpointFingerprint({
       ...base,
       goldenSets: [{ pr: { head: "abcdef123456" }, findings: [{ message: "changed" }] }],
+    }),
+    fingerprint,
+  );
+  assert.notEqual(
+    checkpointFingerprint({
+      ...base,
+      manifestEntries: [{ title: "Changed title", body: "Body" }],
     }),
     fingerprint,
   );

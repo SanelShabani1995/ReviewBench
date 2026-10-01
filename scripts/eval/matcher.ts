@@ -116,7 +116,7 @@ function extractJson(text: string): unknown | null {
   }
 }
 
-function parseMatcherResponse(
+export function parseMatcherResponse(
   responseText: string,
   candidateCount: number,
   goldenCount: number,
@@ -124,24 +124,31 @@ function parseMatcherResponse(
   const parsed = extractJson(responseText) as Partial<MatcherResponse> | null;
 
   if (!parsed || !Array.isArray(parsed.candidateFindings)) {
-    return Array.from({ length: candidateCount }, (_, i) => ({
-      candidate_index: i,
-      matched_golden_indices: [],
-    }));
+    throw new Error("matcher returned invalid JSON response");
   }
 
   const correspondences: RawCorrespondence[] = [];
+  const seen = new Set<number>();
 
   for (const entry of parsed.candidateFindings) {
-    if (!Number.isInteger(entry.index)) continue;
-    if (entry.index < 0 || entry.index >= candidateCount) continue;
-
-    const matched: number[] = [];
-    for (const gi of entry.matchedGoldenIndices ?? []) {
-      if (Number.isInteger(gi) && gi >= 0 && gi < goldenCount) {
-        matched.push(gi);
-      }
+    if (
+      !entry ||
+      !Number.isInteger(entry.index) ||
+      entry.index < 0 ||
+      entry.index >= candidateCount ||
+      seen.has(entry.index) ||
+      !Array.isArray(entry.matchedGoldenIndices)
+    ) {
+      throw new Error("matcher returned invalid candidate finding entries");
     }
+    seen.add(entry.index);
+
+    const matched = entry.matchedGoldenIndices.map((gi) => {
+      if (!Number.isInteger(gi) || gi < 0 || gi >= goldenCount) {
+        throw new Error("matcher returned invalid golden finding indices");
+      }
+      return gi;
+    });
 
     correspondences.push({
       candidate_index: entry.index,
@@ -149,15 +156,8 @@ function parseMatcherResponse(
     });
   }
 
-  // Fill in any missing candidates
-  const seen = new Set(correspondences.map((c) => c.candidate_index));
-  for (let i = 0; i < candidateCount; i++) {
-    if (!seen.has(i)) {
-      correspondences.push({
-        candidate_index: i,
-        matched_golden_indices: [],
-      });
-    }
+  if (seen.size !== candidateCount) {
+    throw new Error("matcher response omitted candidate findings");
   }
 
   return correspondences.sort((a, b) => a.candidate_index - b.candidate_index);

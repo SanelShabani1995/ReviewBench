@@ -27,6 +27,7 @@ export function checkpointFingerprint(args: {
   prKeys: string[];
   candidates: unknown[];
   goldenSets: unknown[];
+  manifestEntries: unknown[];
 }): string {
   return [
     `${args.provider}/${args.modelId}`,
@@ -36,6 +37,7 @@ export function checkpointFingerprint(args: {
       pr_keys: args.prKeys,
       candidates: args.candidates,
       golden_sets: args.goldenSets,
+      manifest_entries: args.manifestEntries,
     }),
   ].join("|");
 }
