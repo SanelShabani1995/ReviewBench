@@ -1,0 +1,32 @@
+{
+  "name": "codex",
+  "display_name": "Codex",
+  "image": "ghcr.io/review-bench/rb-agent-codex-review@sha256:6295bdca634b87d1267c9c69bd64211fd350bae54db94ae8739a8c696584061f",
+  "image_visibility": "private",
+  "contact": "abadawii591@gmail.com",
+  "configuration": [
+    {
+      "key": "model",
+      "value": "gpt-6.1-sol"
+    },
+    {
+      "key": "reasoning",
+      "value": "high"
+    }
+  ],
+  "secrets": {
+    "env": [
+      "OPENAI_API_KEY",
+      "GHCR_PULL_TOKEN"
+    ]
+  },
+  "model_api_url": "https://deeppromptcentralus.openai.azure.com/openai/v1",
+  "egress": [
+    "api.githubcopilot.com",
+    "deeppromptcentralus.openai.azure.com"
+  ],
+  "contacts": [
+    "abadawi591"
+  ],
+  "provider": "Codex"
+}
