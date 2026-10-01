@@ -10,7 +10,7 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
 - [What is in the Repository?](#what-is-in-the-repository)
 - [Run your Code Review Agent on ReviewBench](#run-your-code-review-agent-on-reviewbench)
   - [Try it locally first](#try-it-locally-first)
-  - [Judge existing findings](#judge-existing-findings)
+  - [How to judge your findings](#how-to-judge-your-findings)
   - [Onboarding](#onboarding)
   - [Running](#running)
   - [Costs](#costs)
@@ -35,8 +35,8 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
 - **[The classifier prompt and supporting script](scripts/classifier/prompts.ts).**
   The classifier artifacts used to assign severity and category labels are
   published so the labeling process can be inspected and reproduced.
-- **[The judging CLI](#judge-existing-findings).** Score already-normalized
-  findings locally with the published golden set and official judge profile.
+- **[The judging CLI](#how-to-judge-your-findings).** Score already-normalized
+  findings locally with the published golden set and an LLM judge you choose.
 
 The full corpus manifest and all golden findings are public.
 
@@ -166,109 +166,26 @@ small sample, so a score on them says your adapter works, not how good your
 agent is. The leaderboard runs on the full set of 219, which you can score
 yourself (see Running).
 
-### Judge existing findings
+### How to judge your findings
 
 If your reviewer has already produced findings in the
-[required JSON format](AGENT_CONTRACT.md#what-you-write), you can run only the
-judging stage. You do not need to run the container harness or regenerate the
-findings.
-
-#### Install and authenticate
-
-The judging tools require Node.js 20 or newer:
+[normalized input format](docs/JUDGING_INPUT.md), you can run only the judging
+pipeline. You choose the LLM judge and pay for its calls with your own provider
+credentials; you do not need to run the reviewer container again.
 
 ```sh
 npm ci
-npm run judge:profiles
-```
-
-The official `official-2026-09` profile pins the same Claude Sonnet 5 model and
-prompt snapshots used for leaderboard scoring. Configure a provider that
-serves that model by setting `ANTHROPIC_API_KEY`, or authenticate another
-supported provider with `npx pi /login`. The evaluator fails before scoring if
-the pinned model is unavailable or the prompt snapshot has drifted.
-
-Local judging uses your model credentials and incurs your provider's inference
-cost. ReviewBench covers the judge cost only for portal test and final runs.
-
-#### Prepare the findings
-
-Pass either one JSON file or a directory containing JSON files. Directories are
-read recursively, so the files may be grouped by round or repository. Each file
-uses the same normalized output accepted from a reviewer:
-
-```json
-{
-  "pr": {
-    "repo": "https://github.com/owner/repo",
-    "pr_number": 123,
-    "base": "<40-character base SHA>",
-    "head": "<40-character head SHA>"
-  },
-  "agent": "my-reviewer",
-  "findings": [
-    {
-      "producer": "my-reviewer",
-      "file": "src/file.ts",
-      "start_line": 10,
-      "end_line": 12,
-      "message": "The cache is updated without holding the mutex, so concurrent requests can lose writes."
-    }
-  ],
-  "usage": {
-    "time_in_ms": 12345
-  }
-}
-```
-
-The PR identity and SHAs must match [`corpus/manifest.json`](corpus/manifest.json).
-Use `"findings": []` when the reviewer completed the PR and found no issues.
-Strict validation is enabled by default and rejects malformed files, unknown
-PRs, and runs with no overlap with the golden set. If the entire candidate set
-intentionally contains no findings, add `--allow-empty`.
-
-#### Run the judge
-
-Start with one PR to verify authentication, input shape, and output paths:
-
-```sh
+export OPENAI_API_KEY="<your key>" # Or your provider's documented environment variable
 npm run judge -- \
   --candidate ./my-agent-findings \
-  --scoring-profile official-2026-09 \
+  --provider openai \
+  --model <your-model-id> \
   --output ./scoring/smoke.json \
   --limit 1
 ```
 
-Then score every candidate PR against the published 219-PR corpus:
-
-```sh
-npm run judge -- \
-  --candidate ./my-agent-findings \
-  --golden ./golden \
-  --manifest ./corpus/manifest.json \
-  --scoring-profile official-2026-09 \
-  --output ./scoring/results.json \
-  --concurrency 4
-```
-
-Choose concurrency according to your provider's rate limits. During a run,
-`results.checkpoint.json` is updated after each PR. Running the same command
-again resumes compatible completed work; checkpoints from a different judge or
-prompt fingerprint are ignored. The checkpoint is removed after a fully
-successful run.
-
-The command prints the final summary and writes:
-
-- `scoring/results.json`: aggregate grounded and augmented precision, recall,
-  and F1 metrics, plus corpus and evaluator provenance.
-- `scoring/results.details.json`: each candidate finding, its judge decision,
-  golden matches, and per-PR metrics.
-- `scoring/results.checkpoint.json`: resumable intermediate state, present only
-  while a run is incomplete.
-
-Grounded metrics compare against the original expert golden findings.
-Augmented metrics also credit judge-confirmed valid findings that are not in
-the original golden set.
+See [How to judge findings](docs/JUDGING.md) for supported API-key variables,
+model selection, full-corpus commands, checkpoints, and output metrics.
 
 ### Onboarding
 
@@ -313,8 +230,8 @@ row shows how many configurations you tested.
 - **Your agent's inference is yours.** It runs with your credentials, inside
   your container. We never see them, and the model you use is part of what
   the benchmark measures, so we cannot supply it.
-- **The judge's cost is covered by us for test and final runs.** Every reviewer's results are evaluated
-  with the same Claude Sonnet 5 judge, at our cost. Tuning on the full set on your
+- **The judge's cost is coverd by us for test and final runs.** Every reviewer's result are evaluated
+  with the same judge panel models, at our cost. Tuning on the full set on your
   side uses your own judge calls.
 
 ### Credentials
