@@ -23,8 +23,8 @@
  *   --strict             Fail on malformed inputs or empty/non-overlapping runs (default)
  *   --no-strict          Warn and continue on malformed inputs where possible
  *   --allow-empty        Allow intentional dry/no-op runs with no candidates/overlap
- *   --provider <name>    LLM provider for matcher/classifier (default: auto-detect)
- *   --model <id>         LLM model (default: auto-detect)
+ *   --provider <name>    Exact LLM provider for matcher/classifier (required)
+ *   --model <id>         Exact LLM model ID (required)
  *   --repo-dir <path>    Repo checkout directory (default: /tmp/review-repos)
  */
 
@@ -40,9 +40,13 @@ import { printSummary } from "./print-summary.js";
 import { MATCHER_SYSTEM_PROMPT } from "./matcher.js";
 import { CLASSIFIER_SYSTEM_PROMPT } from "../classifier/prompts.js";
 import { renderJudgeSystemPrompt } from "./prompt-format.js";
-import { buildUnmatchedClassificationMap } from "./unmatched-classifications.js";
+import {
+  buildUnmatchedClassificationMap,
+  selectNovelTruePositives,
+} from "./unmatched-classifications.js";
 import {
   buildEvalInputSummary,
+  candidateIdentityProblem,
   loadCandidateFindings,
   strictInputProblems,
   type PRFindings,
@@ -51,6 +55,7 @@ import { askJudge, JUDGE_CALL_PER_FINDING_MS, JUDGE_CALL_TIMEOUT_MS } from "./ju
 import type { ManifestEntry } from "../lib/types.js";
 import { prKey } from "../lib/types.js";
 import { aggregateCandidateUsage } from "../lib/usage.js";
+import { checkpointFingerprint } from "./checkpoint-fingerprint.js";
 
 // ---------------------------------------------------------------------------
 // Detailed per-finding output
@@ -99,8 +104,8 @@ interface CliArgs {
   limit: number;
   strict: boolean;
   allowEmpty: boolean;
-  provider?: string;
-  modelId?: string;
+  provider: string;
+  modelId: string;
   repoDir: string;
 }
 
@@ -116,6 +121,8 @@ function parseArgs(): CliArgs {
     limit: Infinity,
     strict: true,
     allowEmpty: false,
+    provider: "",
+    modelId: "",
     repoDir: "/tmp/review-repos",
   };
 
@@ -168,6 +175,10 @@ function parseArgs(): CliArgs {
 
   if (!opts.candidatePath) {
     console.error("--candidate is required");
+    process.exit(1);
+  }
+  if (!opts.provider || !opts.modelId) {
+    console.error("--provider and --model are required");
     process.exit(1);
   }
 
@@ -235,7 +246,7 @@ function writeGoldenSet(goldenDir: string, goldenSet: GoldenSet): void {
 
 interface Checkpoint {
   /**
-   * Identity of the judge that produced these scores (model + prompt hashes).
+   * Identity of the judge and evaluated inputs that produced these scores.
    * A checkpoint is only reused when the current run's fingerprint matches, so a
    * run can't resume PR scores produced by a different judge.
    */
@@ -244,18 +255,7 @@ interface Checkpoint {
   details: Record<string, PRDetailedOutput>;
 }
 
-/**
- * Fingerprint the judge and prompts for checkpoint compatibility.
- */
-function evalFingerprint(provider?: string, modelId?: string): string {
-  const judge = `${provider ?? "auto"}/${modelId ?? "auto"}`;
-  return [
-    judge,
-    sha256(renderJudgeSystemPrompt(CLASSIFIER_SYSTEM_PROMPT)),
-    sha256(renderJudgeSystemPrompt(MATCHER_SYSTEM_PROMPT)),
-  ].join("|");
-}
-
+/** Load completed PR scores only when all compatibility inputs match. */
 function loadCheckpoint(
   outputPath: string,
   expectedFingerprint: string,
@@ -270,8 +270,8 @@ function loadCheckpoint(
     // rather than resuming its scores under this run's model label.
     if (data.fingerprint !== expectedFingerprint) {
       console.warn(
-        "Ignoring existing checkpoint: it was produced by a different judge " +
-          "(model/prompt fingerprint mismatch). Re-scoring from scratch.",
+        "Ignoring existing checkpoint: its judge, prompts, or evaluation inputs differ. " +
+          "Re-scoring from scratch.",
       );
       return empty();
     }
@@ -369,11 +369,15 @@ async function evalPR(
 ): Promise<{ score: PRScoreResult; details: PRDetailedOutput } | null> {
   const golden = goldenStore.get(prKeyStr);
   if (!golden) return null;
+  const identityProblem = candidateIdentityProblem(candidate.pr, golden.pr);
+  if (identityProblem) {
+    throw new Error(`${prKeyStr}: ${identityProblem}`);
+  }
 
-  const judgeName = opts.modelId ?? "auto";
+  const judgeName = `${opts.provider}/${opts.modelId}`;
   const pipeline = await askJudge(
-    () => dedup(candidate.findings, golden, {
-      matcher: { provider: opts.provider, modelId: opts.modelId },
+    (signal) => dedup(candidate.findings, golden, {
+      matcher: { provider: opts.provider, modelId: opts.modelId, signal },
     }),
     {
       what: `${prKeyStr}: matcher ${judgeName}`,
@@ -403,16 +407,20 @@ async function evalPR(
     const manifestEntry = getManifestEntry(opts.manifestPath, prKeyStr);
     // Guard against a manifest/golden mismatch before trusting the manifest's
     // title/body for this PR.
-    if (manifestEntry.head !== golden.pr.head || manifestEntry.base !== golden.pr.base) {
+    if (
+      manifestEntry.repo !== golden.pr.repo ||
+      manifestEntry.pr_number !== golden.pr.pr_number ||
+      manifestEntry.head !== golden.pr.head ||
+      manifestEntry.base !== golden.pr.base
+    ) {
       throw new Error(
-        `${prKeyStr}: manifest base/head (${manifestEntry.base.slice(0, 8)}..${manifestEntry.head.slice(0, 8)}) ` +
-        `does not match golden (${golden.pr.base.slice(0, 8)}..${golden.pr.head.slice(0, 8)})`,
+        `${prKeyStr}: manifest PR identity does not match golden`,
       );
     }
     // The budget grows with the number of findings the judge has to answer.
     const timeoutMs = JUDGE_CALL_TIMEOUT_MS + JUDGE_CALL_PER_FINDING_MS * unmatchedFindings.length;
     const classificationResult = await askJudge(
-      async () => {
+      async (signal) => {
         const answer = await classifyFindings({
           nwo,
           prUrl: `${golden.pr.repo}/pull/${golden.pr.pr_number}`,
@@ -423,9 +431,11 @@ async function evalPR(
           prTitle: manifestEntry.title,
           prBody: manifestEntry.body,
           findings: unmatchedFindings,
+          repoBaseDir: opts.repoDir,
+          signal,
           config: {
-            ...(opts.provider ? { provider: opts.provider } : {}),
-            ...(opts.modelId ? { modelId: opts.modelId } : {}),
+            provider: opts.provider,
+            modelId: opts.modelId,
           },
           onProgress: (idx, total, r) => {
             console.log(`  ${label}: classifying ${idx + 1}/${total} -> ${r.tp_fp} ${r.severity} ${r.category}`);
@@ -543,23 +553,22 @@ async function evalPR(
 
   // Optional: ingest novel TPs
   if (opts.ingest && pipeline.novel_findings.length > 0) {
-    const novelClassifications = pipeline.novel_indices.map((i) => {
-      const cls = unmatchedCls.get(i);
-      if (!cls) {
-        throw new Error(
-          `${prKeyStr}: missing classifier result for novel candidate ${i}`,
-        );
-      }
-      return cls;
-    });
-    const updated = merge(
-      golden.findings,
-      pipeline.novel_findings,
-      novelClassifications,
-      candidate.pr,
+    const novelTruePositives = selectNovelTruePositives(
       prKeyStr,
+      pipeline.novel_indices,
+      pipeline.novel_findings,
+      unmatchedCls,
     );
-    writeGoldenSet(opts.goldenDir, updated);
+    if (novelTruePositives.findings.length > 0) {
+      const updated = merge(
+        golden.findings,
+        novelTruePositives.findings,
+        novelTruePositives.classifications,
+        golden.pr,
+        prKeyStr,
+      );
+      writeGoldenSet(opts.goldenDir, updated);
+    }
   }
 
   return { score: result, details };
@@ -576,7 +585,8 @@ function sha256(input: string): string {
 function computeEvalConfig(
   prKeys: string[],
   goldenStore: GoldenStore,
-  modelId?: string,
+  provider: string,
+  modelId: string,
 ): EvalConfig {
   // Hash golden findings content for evaluated PRs
   const goldenContents: string[] = [];
@@ -593,7 +603,7 @@ function computeEvalConfig(
 
   const classifierPromptHash = sha256(renderJudgeSystemPrompt(CLASSIFIER_SYSTEM_PROMPT));
 
-  const judgeName = modelId ?? "auto";
+  const judgeName = `${provider}/${modelId}`;
   return {
     golden_hash: goldenHash,
     classifier_model: judgeName,
@@ -719,7 +729,15 @@ async function main() {
   }
 
   // Load checkpoint (only reused if it came from the same judge fingerprint)
-  const fingerprint = evalFingerprint(opts.provider, opts.modelId);
+  const fingerprint = checkpointFingerprint({
+    provider: opts.provider,
+    modelId: opts.modelId,
+    classifierPrompt: renderJudgeSystemPrompt(CLASSIFIER_SYSTEM_PROMPT),
+    matcherPrompt: renderJudgeSystemPrompt(MATCHER_SYSTEM_PROMPT),
+    prKeys: commonKeys,
+    candidates: commonKeys.map((key) => candidateByPR.get(key)),
+    goldenSets: commonKeys.map((key) => goldenStore.get(key)),
+  });
   const checkpoint = loadCheckpoint(opts.output, fingerprint);
   const completed = checkpoint.scores;
   const allDetails = checkpoint.details;
@@ -824,7 +842,7 @@ async function main() {
   }
 
   // Compute eval config fingerprint
-  agg.eval_config = computeEvalConfig(commonKeys, goldenStore, opts.modelId);
+  agg.eval_config = computeEvalConfig(commonKeys, goldenStore, opts.provider, opts.modelId);
 
   // Write output
   const outputPath = resolve(opts.output);

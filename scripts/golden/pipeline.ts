@@ -62,8 +62,9 @@ export interface PipelineResult {
 export interface PipelineConfig {
   /** Matcher config */
   matcher?: {
-    provider?: string;
-    modelId?: string;
+    provider: string;
+    modelId: string;
+    signal?: AbortSignal;
   };
   /** If true, skip classification (just dedup) */
   skipClassification?: boolean;
@@ -129,10 +130,11 @@ export async function dedup(
 
   // Run the matcher
   const { matchFindings } = await import("../eval/matcher.js");
+  if (!config?.matcher) throw new Error("matcher provider and model are required");
   const { correspondences, stats: matcherStats } = await matchFindings(
     newFindings,
     goldenAsFindings,
-    config?.matcher,
+    config.matcher,
   );
 
   // Separate duplicates from novel

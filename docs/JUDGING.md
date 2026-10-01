@@ -90,7 +90,8 @@ Pass the selected provider and model to the ReviewBench pipeline:
 
 The model must support the tool calls used by the matcher and classifier. Judge
 choice affects the resulting labels and metrics, so record the exact provider
-and model when comparing runs.
+and model when comparing runs. Both values are required and must exactly match
+an authenticated model; the evaluator does not fall back to another provider.
 
 ## Prepare the input
 
@@ -146,10 +147,10 @@ after a fully successful run.
 
 The command prints the final summary and writes:
 
-- `scoring/results.json`: aggregate grounded and augmented precision, recall,
-  and F1 metrics, plus corpus and evaluator provenance.
+- `scoring/results.json`: aggregate grounded and augmented precision and recall,
+  plus corpus and evaluator provenance.
 - `scoring/results.details.json`: each candidate finding, its judge decision,
-  golden matches, and per-PR metrics.
+  and its golden matches, grouped by PR.
 - `scoring/results.checkpoint.json`: resumable intermediate state while a run
   is incomplete.
 

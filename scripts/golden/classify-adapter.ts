@@ -11,15 +11,14 @@ import type { ClassifiedFinding } from "../eval/scorer.js";
 import type { Finding } from "../lib/types.js";
 import { checkoutRepo, fetchCommit, getFullDiff } from "../extraction/git.js";
 
-const DEFAULT_REPO_DIR = "/tmp/classifier-repos";
-
 export interface ClassifyOptions {
   nwo: string;
   prUrl: string;
   headSha: string;
   findings: Finding[];
-  config?: ClassifierConfig;
-  repoDir?: string;
+  config: ClassifierConfig;
+  repoBaseDir: string;
+  signal?: AbortSignal;
   onProgress?: (index: number, total: number, result: ClassificationResult) => void;
   baseSha: string;
   prTitle: string;
@@ -51,7 +50,7 @@ export async function classifyFindings(opts: ClassifyOptions): Promise<ClassifyR
   }
 
   // Checkout repo for tool access
-  const repoDir = opts.repoDir ?? checkoutRepo(nwo, headSha, DEFAULT_REPO_DIR);
+  const repoDir = checkoutRepo(nwo, headSha, opts.repoBaseDir);
 
   // Convert to classifier input format
   const inputs: FindingInput[] = findings.map((f, i) => ({
@@ -84,6 +83,7 @@ export async function classifyFindings(opts: ClassifyOptions): Promise<ClassifyR
       diff,
       headSha,
       findings: inputs,
+      signal: opts.signal,
       config: {
         ...config,
         ...(repoDir ? { repoDir } : {}),

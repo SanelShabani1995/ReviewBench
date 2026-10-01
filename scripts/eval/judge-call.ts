@@ -18,13 +18,29 @@ export class JudgeTimeout extends Error {
   }
 }
 
-export function withTimeout<T>(promise: Promise<T>, what: string, ms = JUDGE_CALL_TIMEOUT_MS): Promise<T> {
+export async function withTimeout<T>(
+  attempt: (signal: AbortSignal) => Promise<T>,
+  what: string,
+  ms = JUDGE_CALL_TIMEOUT_MS,
+): Promise<T> {
+  const controller = new AbortController();
+  let timedOut = false;
   let timer: NodeJS.Timeout | undefined;
-  const clock = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new JudgeTimeout(what, ms)), ms);
-    timer.unref();
-  });
-  return Promise.race([promise, clock]).finally(() => clearTimeout(timer));
+  timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, ms);
+  timer.unref();
+  try {
+    const result = await attempt(controller.signal);
+    if (timedOut) throw new JudgeTimeout(what, ms);
+    return result;
+  } catch (error) {
+    if (timedOut) throw new JudgeTimeout(what, ms);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export interface AskJudgeOptions {
@@ -33,6 +49,9 @@ export interface AskJudgeOptions {
   timeoutMs?: number;
 }
 
-export function askJudge<T>(attempt: () => Promise<T>, opts: AskJudgeOptions): Promise<T> {
-  return withTimeout(attempt(), opts.what, opts.timeoutMs);
+export function askJudge<T>(
+  attempt: (signal: AbortSignal) => Promise<T>,
+  opts: AskJudgeOptions,
+): Promise<T> {
+  return withTimeout(attempt, opts.what, opts.timeoutMs);
 }

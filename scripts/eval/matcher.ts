@@ -83,46 +83,13 @@ function buildMatcherPrompt(
   return prompt;
 }
 
-/** Model ID substrings to try, in priority order. */
-const MODEL_PREFERENCES = [
-  "claude-sonnet-4.6",
-  "claude-sonnet-4.5",
-  "claude-sonnet-4",
-  "claude-sonnet",
-  "claude",
-];
-
 export function resolveModel(
   modelRegistry: ReturnType<typeof ModelRegistry.create>,
-  provider?: string,
-  modelId?: string,
+  provider: string,
+  modelId: string,
 ) {
   const available = modelRegistry.getAvailable();
-
-  // For an explicitly requested model, match the id EXACTLY first so a pinned
-  // model (e.g. from a scoring profile) can't be shadowed by a versioned/prefix
-  // sibling that merely contains the id as a substring. Fuzzy `.includes` is
-  // kept only as a fallback for partial user input and for auto-selection.
-  if (provider && modelId) {
-    const exact = available.find((m) => m.provider === provider && m.id === modelId);
-    if (exact) return exact;
-    const partial = available.find((m) => m.provider === provider && m.id.includes(modelId));
-    if (partial) return partial;
-  }
-
-  if (modelId) {
-    const exact = available.find((m) => m.id === modelId);
-    if (exact) return exact;
-    const partial = available.find((m) => m.id.includes(modelId));
-    if (partial) return partial;
-  }
-
-  for (const pref of MODEL_PREFERENCES) {
-    const match = available.find((m) => m.id.includes(pref));
-    if (match) return match;
-  }
-
-  return available[0] ?? null;
+  return available.find((m) => m.provider === provider && m.id === modelId) ?? null;
 }
 
 interface MatcherResponse {
@@ -248,8 +215,9 @@ async function matchChunk(
 }
 
 export interface MatcherConfig {
-  provider?: string;
-  modelId?: string;
+  provider: string;
+  modelId: string;
+  signal?: AbortSignal;
 }
 
 export interface MatcherStats {
@@ -272,7 +240,7 @@ export interface MatchResult {
 export async function matchFindings(
   candidateFindings: Finding[],
   goldenFindings: Finding[],
-  config?: MatcherConfig,
+  config: MatcherConfig,
 ): Promise<MatchResult> {
   const emptyStats: MatcherStats = { llm_calls: 0, input_tokens: 0, output_tokens: 0 };
 
@@ -306,10 +274,10 @@ export async function matchFindings(
   // Create a single session for all matching
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
-  const model = resolveModel(modelRegistry, config?.provider, config?.modelId);
+  const model = resolveModel(modelRegistry, config.provider, config.modelId);
 
   if (!model) {
-    throw new Error("No suitable model found for matching");
+    throw new Error(`Requested matcher model is unavailable: ${config.provider}/${config.modelId}`);
   }
 
   const agentDir = getAgentDir();
@@ -336,6 +304,11 @@ export async function matchFindings(
   });
 
   const stats: MatcherStats = { llm_calls: 0, input_tokens: 0, output_tokens: 0 };
+  const abortSession = () => {
+    void session.abort();
+  };
+  config.signal?.addEventListener("abort", abortSession, { once: true });
+  if (config.signal?.aborted) abortSession();
 
   session.subscribe((event: any) => {
     if (event.type === "turn_end" && event.message?.usage) {
@@ -398,6 +371,8 @@ export async function matchFindings(
       }
     }
   } finally {
+    config.signal?.removeEventListener("abort", abortSession);
+    if (config.signal?.aborted) await session.abort();
     session.dispose();
   }
 

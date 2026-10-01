@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   buildEvalInputSummary,
+  candidateIdentityProblem,
   loadCandidateFindings,
   strictInputProblems,
   type CandidateLoadResult,
@@ -60,6 +61,35 @@ test("loadCandidateFindings reports malformed and invalid files while loading va
     assert.equal(result.byPR.size, 1);
     assert.equal(result.byPR.get("acme_widgets_12-abcdef12")?.findings.length, 2);
     assert.equal(result.byPR.get("acme_widgets_12-abcdef12")?.usage?.time_in_ms, 500);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("loadCandidateFindings rejects truncated-key collisions with different full identities", () => {
+  const dir = mkdtempSync(join(tmpdir(), "eval-input-collision-"));
+  try {
+    writeFileSync(
+      join(dir, "candidate-a.json"),
+      JSON.stringify(validCandidate()),
+    );
+    writeFileSync(
+      join(dir, "candidate-b.json"),
+      JSON.stringify({
+        ...validCandidate(),
+        pr: {
+          ...validCandidate().pr,
+          head: "abcdef12ffffffff",
+        },
+      }),
+    );
+
+    const result = loadCandidateFindings(dir);
+
+    assert.equal(result.byPR.get("acme_widgets_12-abcdef12")?.findings.length, 1);
+    assert.equal(result.stats.files_loaded, 1);
+    assert.equal(result.stats.skipped_invalid_files, 1);
+    assert.match(result.stats.skipped_files[0]?.message ?? "", /head/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -141,6 +171,28 @@ test("strictInputProblems catches all overlaps skipped by limit", () => {
   });
 
   assert.match(problems.join("\n"), /all overlapping candidate PRs were skipped/);
+});
+
+test("candidateIdentityProblem compares the complete frozen PR identity", () => {
+  const golden = {
+    repo: "https://github.com/acme/widgets",
+    pr_number: 12,
+    base: "base-sha-full",
+    head: "abcdef1234567890",
+  };
+
+  assert.equal(candidateIdentityProblem(golden, golden), null);
+  assert.match(
+    candidateIdentityProblem(
+      { ...golden, base: "different-base", head: "abcdef12ffffeeee" },
+      golden,
+    ) ?? "",
+    /base, head/,
+  );
+  assert.match(
+    candidateIdentityProblem({ ...golden, repo: "https://github.com/other/widgets" }, golden) ?? "",
+    /repo/,
+  );
 });
 
 function candidateLoadResult(keys: string[]): CandidateLoadResult {

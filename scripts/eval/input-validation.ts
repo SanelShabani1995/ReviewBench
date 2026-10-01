@@ -54,6 +54,26 @@ export interface StrictInputOptions {
   allowEmpty: boolean;
 }
 
+type PRIdentity = {
+  repo: string;
+  pr_number: number;
+  base: string;
+  head: string;
+};
+
+export function candidateIdentityProblem(
+  candidate: PRIdentity,
+  golden: PRIdentity,
+): string | null {
+  const mismatches: string[] = [];
+  for (const field of ["repo", "pr_number", "base", "head"] as const) {
+    if (candidate[field] !== golden[field]) mismatches.push(field);
+  }
+  return mismatches.length > 0
+    ? `candidate PR identity differs from golden on: ${mismatches.join(", ")}`
+    : null;
+}
+
 export function loadCandidateFindings(path: string): CandidateLoadResult {
   const byPR = new Map<string, PRFindings>();
   const stats: CandidateLoadStats = {
@@ -98,7 +118,17 @@ export function loadCandidateFindings(path: string): CandidateLoadResult {
     const key = prKey(output.pr);
 
     if (byPR.has(key)) {
-      byPR.get(key)!.findings.push(...output.findings);
+      const existing = byPR.get(key)!;
+      const identityProblem = candidateIdentityProblem(output.pr, existing.pr);
+      if (identityProblem) {
+        skip(
+          filePath,
+          "invalid-shape",
+          `${identityProblem}; truncated PR key collides with another candidate file`,
+        );
+        return;
+      }
+      existing.findings.push(...output.findings);
     } else {
       byPR.set(key, {
         pr_key: key,

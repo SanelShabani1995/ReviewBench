@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildUnmatchedClassificationMap } from "../scripts/eval/unmatched-classifications.js";
+import {
+  buildUnmatchedClassificationMap,
+  selectNovelTruePositives,
+} from "../scripts/eval/unmatched-classifications.js";
 import { resolveForScoring } from "../scripts/lib/match-types.js";
 import type { ClassifiedFinding } from "../scripts/eval/scorer.js";
 
@@ -66,4 +69,40 @@ test("buildUnmatchedClassificationMap fails on missing classifier entries", () =
       ]),
     /missing classifier result for unmatched candidate 4/,
   );
+});
+
+test("selectNovelTruePositives excludes classifier false positives from ingestion", () => {
+  const findings = [
+    {
+      producer: "agent",
+      file: "src/a.ts",
+      start_line: 1,
+      end_line: 1,
+      message: "real issue",
+      source: { type: "agent", alignment: "generated" },
+    },
+    {
+      producer: "agent",
+      file: "src/b.ts",
+      start_line: 2,
+      end_line: 2,
+      message: "false alarm",
+      source: { type: "agent", alignment: "generated" },
+    },
+  ];
+  const classifications = new Map([
+    [4, classification("tp", "medium", "correctness")],
+    [7, classification("fp", "low", "maintainability")],
+  ]);
+
+  const selected = selectNovelTruePositives(
+    "repo_1-abcdef12",
+    [4, 7],
+    findings,
+    classifications,
+  );
+
+  assert.deepEqual(selected.findings, [findings[0]]);
+  assert.equal(selected.classifications.length, 1);
+  assert.equal(selected.classifications[0].tp_fp, "tp");
 });

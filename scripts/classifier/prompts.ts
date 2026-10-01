@@ -199,30 +199,17 @@ export function buildClassifierUserMessage(args: {
   line?: number | null;
   originalLine?: number | null;
 }): string {
-  let locationInfo = `**File:** ${args.filePath}`;
-  if (args.startLine === args.endLine) {
-    locationInfo += `\n**Line:** ${args.startLine}`;
-  } else {
-    locationInfo += `\n**Lines:** ${args.startLine}–${args.endLine}`;
-  }
-  if (args.line != null) {
-    locationInfo += `\n**New-file line:** ${args.line}`;
-  }
-  if (args.originalLine != null) {
-    locationInfo += `\n**Old-file line:** ${args.originalLine}`;
-  }
-
-  let hunkSection = "";
-  if (args.diffHunk) {
-    hunkSection = `\n\n**Diff hunk context:**\n\`\`\`diff\n${args.diffHunk}\n\`\`\``;
-  }
-
   return `## Finding ${args.index}/${args.total}
 
-${locationInfo}${hunkSection}
-
-**Finding:**
-${renderClassifierFinding(args.message)}
+${renderClassifierFinding({
+  file: args.filePath,
+  start_line: args.startLine,
+  end_line: args.endLine,
+  message: args.message,
+  diff_hunk: args.diffHunk,
+  line: args.line,
+  original_line: args.originalLine,
+})}
 
 ---
 

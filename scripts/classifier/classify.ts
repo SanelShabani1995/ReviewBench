@@ -38,9 +38,9 @@ import { renderJudgeSystemPrompt } from "../eval/prompt-format.js";
 
 export interface ClassifierConfig {
   /** Model ID, e.g. "claude-sonnet-4.6" */
-  modelId?: string;
+  modelId: string;
   /** Provider name, e.g. "github-copilot", "anthropic" */
-  provider?: string;
+  provider: string;
   /** API key (falls back to env vars / auth.json) */
   apiKey?: string;
   /** Directory to persist session logs (default: classifier-output/sessions) */
@@ -51,15 +51,6 @@ export interface ClassifierConfig {
 
 /** The judge may look but not touch: file reading and searching only, no shell. */
 const CLASSIFIER_TOOLS = ["read", "grep", "find", "ls"];
-
-/** Model ID substrings to try, in priority order, when auto-detecting. */
-const MODEL_PREFERENCES = [
-  "claude-sonnet-4.6",
-  "claude-sonnet-4.5",
-  "claude-sonnet-4",
-  "claude-sonnet",
-  "claude",
-];
 
 // ---------------------------------------------------------------------------
 // PR Session — one session per PR+SHA, classifies multiple findings
@@ -78,7 +69,8 @@ export interface PRSessionOptions {
   findings: ClassifierInput[];
 
   /** Classifier config */
-  config?: ClassifierConfig;
+  config: ClassifierConfig;
+  signal?: AbortSignal;
 
   /** Progress callback — receives the session's live usage stats */
   onProgress?: (result: ClassificationResult, index: number, total: number, liveUsage: import("./types.js").UsageStats) => void;
@@ -100,9 +92,8 @@ export interface PRSessionResult {
  */
 export async function classifyPR(opts: PRSessionOptions): Promise<PRSessionResult> {
   const authStorage = AuthStorage.create();
-  if (opts.config?.apiKey) {
-    const provider = opts.config.provider ?? "anthropic";
-    authStorage.setRuntimeApiKey(provider, opts.config.apiKey);
+  if (opts.config.apiKey) {
+    authStorage.setRuntimeApiKey(opts.config.provider, opts.config.apiKey);
   }
   const modelRegistry = ModelRegistry.create(authStorage);
 
@@ -146,6 +137,11 @@ export async function classifyPR(opts: PRSessionOptions): Promise<PRSessionResul
     }),
     tools: CLASSIFIER_TOOLS,
   });
+  const abortSession = () => {
+    void session.abort();
+  };
+  opts.signal?.addEventListener("abort", abortSession, { once: true });
+  if (opts.signal?.aborted) abortSession();
 
   // Log session file location for debugging
   if (session.sessionFile) {
@@ -258,6 +254,8 @@ export async function classifyPR(opts: PRSessionOptions): Promise<PRSessionResul
     }
   } finally {
     usage.elapsed_seconds = (Date.now() - sessionStart) / 1000;
+    opts.signal?.removeEventListener("abort", abortSession);
+    if (opts.signal?.aborted) await session.abort();
     session.dispose();
   }
 
@@ -316,50 +314,14 @@ async function promptAndCollect(session: any, message: string): Promise<string> 
 // Model resolution
 // ---------------------------------------------------------------------------
 
-function resolveModel(
+export function resolveModel(
   modelRegistry: ReturnType<typeof ModelRegistry.create>,
-  config?: ClassifierConfig
+  config: ClassifierConfig,
 ) {
-  const provider = config?.provider;
-  const modelId = config?.modelId;
-
-  // Explicit provider + model
-  if (provider && modelId) {
-    const exact = modelRegistry.find(provider, modelId);
-    if (exact && modelRegistry.hasConfiguredAuth(exact)) return exact;
-    const available = modelRegistry.getAvailable();
-    const byId = available.find(m => m.id.includes(modelId));
-    if (byId) return byId;
-    return null;
-  }
-
-  // Only provider
-  if (provider) {
-    const available = modelRegistry.getAvailable().filter(m => m.provider === provider);
-    for (const pref of MODEL_PREFERENCES) {
-      const match = available.find(m => m.id.includes(pref));
-      if (match) return match;
-    }
-    return available[0] ?? null;
-  }
-
-  // Only model ID
-  if (modelId) {
-    const available = modelRegistry.getAvailable();
-    const exact = available.find(m => m.id === modelId);
-    if (exact) return exact;
-    const partial = available.find(m => m.id.includes(modelId));
-    if (partial) return partial;
-    return null;
-  }
-
-  // Fully automatic
   const available = modelRegistry.getAvailable();
-  for (const pref of MODEL_PREFERENCES) {
-    const match = available.find(m => m.id.includes(pref));
-    if (match) return match;
-  }
-  return available[0] ?? null;
+  return available.find(
+    (m) => m.provider === config.provider && m.id === config.modelId,
+  ) ?? null;
 }
 
 // ---------------------------------------------------------------------------

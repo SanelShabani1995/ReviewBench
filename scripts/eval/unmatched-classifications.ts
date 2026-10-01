@@ -1,4 +1,5 @@
 import type { ClassifiedFinding } from "./scorer.js";
+import type { Finding } from "../lib/types.js";
 
 export function buildUnmatchedClassificationMap(
   prKey: string,
@@ -30,4 +31,33 @@ export function buildUnmatchedClassificationMap(
   }
 
   return result;
+}
+
+export function selectNovelTruePositives(
+  prKey: string,
+  novelCandidateIndices: number[],
+  novelFindings: Finding[],
+  classifications: Map<number, ClassifiedFinding>,
+): { findings: Finding[]; classifications: ClassifiedFinding[] } {
+  if (novelCandidateIndices.length !== novelFindings.length) {
+    throw new Error(
+      `${prKey}: ${novelCandidateIndices.length} novel indices for ${novelFindings.length} findings`,
+    );
+  }
+
+  const findings: Finding[] = [];
+  const selectedClassifications: ClassifiedFinding[] = [];
+  novelCandidateIndices.forEach((candidateIndex, position) => {
+    const classification = classifications.get(candidateIndex);
+    if (!classification) {
+      throw new Error(
+        `${prKey}: missing classifier result for novel candidate ${candidateIndex}`,
+      );
+    }
+    if (classification.tp_fp === "tp") {
+      findings.push(novelFindings[position]);
+      selectedClassifications.push(classification);
+    }
+  });
+  return { findings, classifications: selectedClassifications };
 }
