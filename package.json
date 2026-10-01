@@ -1,0 +1,24 @@
+{
+  "name": "reviewbench",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Open benchmark and judging tools for AI code review systems",
+  "type": "module",
+  "scripts": {
+    "judge": "tsx scripts/eval/eval.ts",
+    "judge:profiles": "tsx scripts/eval/eval.ts --list-profiles",
+    "typecheck": "tsc --noEmit",
+    "test:judge": "node --import tsx --test tests/**/*.test.ts",
+    "test": "npm run typecheck && npm run test:judge"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "octokit": "^5.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}
