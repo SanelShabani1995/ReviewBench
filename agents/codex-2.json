@@ -1,0 +1,31 @@
+{
+  "name": "codex-2",
+  "display_name": "Codex",
+  "provider": "Codex",
+  "image": "ghcr.io/simonaliao/review-bench-self-serve@sha256:33c7b1ba4cdd8e198289f4b2a602726134e3c831100187d798015b0e552484c1",
+  "image_visibility": "private",
+  "contact": "zhehuiliao@microsoft.com",
+  "configuration": [
+    {
+      "key": "model",
+      "value": "gpt-5.6-sol"
+    },
+    {
+      "key": "reasoning",
+      "value": "xhigh"
+    }
+  ],
+  "secrets": {
+    "env": [
+      "OPENAI_API_KEY",
+      "GHCR_PULL_TOKEN"
+    ]
+  },
+  "model_api_url": "https://deeppromptaustraliaeast.openai.azure.com/openai/v1",
+  "contacts": [
+    "simonaliao"
+  ],
+  "egress": [
+    "deeppromptaustraliaeast.openai.azure.com"
+  ]
+}
