@@ -23,7 +23,7 @@ jobs:
     steps:
       # The merged pull request no longer has a merge ref, so check out the
       # commit the merge produced.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
 
