@@ -1,0 +1,26 @@
+{
+  "name": "shengyu-test",
+  "display_name": "shengyu-test",
+  "image": "ghcr.io/review-bench/rb-agent-codex-review@sha256:6295bdca634b87d1267c9c69bd64211fd350bae54db94ae8739a8c696584061f",
+  "image_visibility": "public",
+  "contact": "shengyu.fu@gmail.com",
+  "configuration": [
+    {
+      "key": "model",
+      "value": "gpt-5.6-sol"
+    }
+  ],
+  "secrets": {
+    "env": [
+      "OPENAI_API_KEY"
+    ]
+  },
+  "model_api_url": "https://api.openai.com/v1",
+  "contacts": [
+    "shengyfu"
+  ],
+  "provider": "shengyu-test",
+  "egress": [
+    "api.openai.com"
+  ]
+}
