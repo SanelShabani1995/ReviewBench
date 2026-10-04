@@ -81,6 +81,25 @@ function exportFinding(finding: GoldenFinding): TestFinding {
   };
 }
 
+function validateGoldenLabels(key: string, golden: GoldenSet): void {
+  golden.findings.forEach((finding, index) => {
+    if (finding.tp_fp !== "tp" && finding.tp_fp !== "fp") {
+      throw new Error(
+        `${key}: finding ${index + 1} has invalid tp_fp ${JSON.stringify(finding.tp_fp)}`,
+      );
+    }
+    if (
+      finding.severity !== "high" &&
+      finding.severity !== "medium" &&
+      finding.severity !== "low"
+    ) {
+      throw new Error(
+        `${key}: finding ${index + 1} has invalid severity ${JSON.stringify(finding.severity)}`,
+      );
+    }
+  });
+}
+
 function loadStats(): TestStats[] {
   const entries = readJson<TestEntry[]>(testManifestPath);
   return entries.map((entry) => {
@@ -89,6 +108,7 @@ function loadStats(): TestStats[] {
     if (golden.pr_key !== key) {
       throw new Error(`${key}: golden pr_key is ${golden.pr_key}`);
     }
+    validateGoldenLabels(key, golden);
 
     const findings = golden.findings
       .filter((finding) => finding.tp_fp === "tp")
@@ -97,15 +117,20 @@ function loadStats(): TestStats[] {
       throw new Error(`${key}: test-set PR has no canonical TP findings`);
     }
 
+    const severity = {
+      high: findings.filter((finding) => finding.severity === "high").length,
+      medium: findings.filter((finding) => finding.severity === "medium").length,
+      low: findings.filter((finding) => finding.severity === "low").length,
+    };
+    if (severity.high === 0 && severity.medium === 0) {
+      throw new Error(`${key}: Tier B PR has no medium canonical TP findings`);
+    }
+
     return {
       key,
       headingKey: headingKey(entry),
       findings,
-      severity: {
-        high: findings.filter((finding) => finding.severity === "high").length,
-        medium: findings.filter((finding) => finding.severity === "medium").length,
-        low: findings.filter((finding) => finding.severity === "low").length,
-      },
+      severity,
       categories: [...new Set(findings.map((finding) => finding.category))].sort(),
     };
   });
