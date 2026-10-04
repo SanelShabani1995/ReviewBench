@@ -83,19 +83,19 @@ PHP, Ruby, Shell, and Swift.
 
 | Severity | Findings | Share |
 |---|---:|---:|
-| High | 37 | 10.3% |
-| Medium | 135 | 37.5% |
-| Low | 188 | 52.2% |
-| **Total** | **360** | **100%** |
+| High | 36 | 10.2% |
+| Medium | 134 | 38.1% |
+| Low | 182 | 51.7% |
+| **Total** | **352** | **100%** |
 
 #### Finding Categories
 
 | Category | Findings | Category | Findings |
 |---|---:|---|---:|
-| Correctness | 138 | Reliability | 59 |
-| Maintainability | 45 | Testing | 35 |
+| Correctness | 133 | Reliability | 58 |
+| Maintainability | 44 | Testing | 35 |
 | Security | 27 | Documentation | 21 |
-| Performance | 13 | API architecture | 12 |
+| Performance | 12 | API architecture | 12 |
 | Accessibility | 10 |  |  |
 
 ### Full Set Distribution
