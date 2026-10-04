@@ -25,6 +25,12 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
   repository sizes, change sizes, finding categories, and severities.
 - **[The full set: 219 tasks](corpus/manifest.json).** Every pull request the
   leaderboard runs on, with its corresponding findings in [`golden/`](golden/).
+- **[Repository mirrors](https://github.com/review-bench).** Each source
+  repository in the corpus has a mirror in the review-bench organization,
+  named `review-bench/<owner>_<repo>`, holding every task's base and head
+  commits. The judge and the local test script check out pull requests from
+  these mirrors, so the benchmark still runs if an upstream repository is
+  deleted or rewritten.
 - **[Benchmark documentation](docs/METHODOLOGY.md).** How the corpus was
   built, how findings are labeled, and how agents are judged and scored.
 - **[Everything a reviewer vendor needs](#submit-your-reviewer-to-the-reviewbench-leaderboard).**
@@ -147,7 +153,10 @@ Four steps; the [onboarding guide](docs/ONBOARDING.md) walks through each one.
 set the way the benchmark does: one fresh container per pull request, the
 same mounts and variables, and the same checks on the findings file. With
 `--set full` it runs the full set instead. It needs docker, git and jq, and
-fetches each pull request from GitHub.
+fetches each pull request's commits from its mirror in the
+[review-bench organization](https://github.com/review-bench)
+(`review-bench/<owner>_<repo>`), the same copy the judge uses. It falls back
+to the upstream repository only if the mirror lacks a commit.
 
 This checks that the same container you plan to submit can complete the
 benchmark PRs and produce valid findings. It does not score the findings or
