@@ -83,10 +83,10 @@ PHP, Ruby, Shell, and Swift.
 
 | Severity | Findings | Share |
 |---|---:|---:|
-| High | 37 | 10.3% |
-| Medium | 135 | 37.5% |
-| Low | 188 | 52.2% |
-| **Total** | **360** | **100%** |
+| High | 36 | 10.2% |
+| Medium | 134 | 38.1% |
+| Low | 182 | 51.7% |
+| **Total** | **352** | **100%** |
 
 #### Finding Categories
 
