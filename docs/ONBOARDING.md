@@ -64,7 +64,7 @@ scripts/try-agent.sh ghcr.io/<you>/<name>@sha256:<digest> --pr 0 -e OPENAI_API_K
 
 It runs your image on the test set (or, with `--set full`, the full set)
 exactly as the benchmark does and checks the findings file. See
-[Try it locally](../README.md#try-it-locally-first). Two things the portal
+[Validate your submission locally](../README.md#1-validate-your-submission-locally). Two things the portal
 does for you that you do yourself here: a private package needs
 `docker login ghcr.io` first (a classic token with `read:packages`, the same
 one you will enter as `GHCR_PULL_TOKEN`), and an endpoint other than OpenAI

@@ -16,7 +16,6 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
   - [Costs](#costs)
   - [Credentials](#credentials)
 - [Contribution](#contribution)
-- [Governance](#governance)
 - [License](#license)
 
 ## What is in the Repository?
@@ -289,10 +288,5 @@ not the onboarding path; the website is. For how the benchmark works, see the
 ReviewBench welcomes contributions, suggestions, and feedback. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution requirements, the process for disputing golden-set labels, and information about becoming a maintainer.
 The benchmark corpus is not currently accepting new pull-request submissions. Instructions will be published in the contribution guide when submissions open.
 
-## Governance
-ReviewBench follows a consensus-based governance model:
-- [Governance policy](GOVERNANCE.md) — project roles, decisions, appeals, and amendments
-- [Maintainers](MAINTAINERS.md) — current project maintainers
-
 ## License
-The repository is licensed under the [MIT License](LICENSE). The project documents copied from the MVG proposal retain the notices included in those files.
+The repository is licensed under the [MIT License](LICENSE).
