@@ -92,10 +92,10 @@ PHP, Ruby, Shell, and Swift.
 
 | Category | Findings | Category | Findings |
 |---|---:|---|---:|
-| Correctness | 138 | Reliability | 59 |
-| Maintainability | 45 | Testing | 35 |
+| Correctness | 133 | Reliability | 58 |
+| Maintainability | 44 | Testing | 35 |
 | Security | 27 | Documentation | 21 |
-| Performance | 13 | API architecture | 12 |
+| Performance | 12 | API architecture | 12 |
 | Accessibility | 10 |  |  |
 
 ### Full Set Distribution

@@ -135,7 +135,7 @@ function updateReadme(readme: string, stats: TestStats[]): string {
   const totals = totalSeverity(stats);
   const total = totals.high + totals.medium + totals.low;
   const percent = (count: number) => `${((count / total) * 100).toFixed(1)}%`;
-  const table = [
+  const severityTable = [
     "| Severity | Findings | Share |",
     "|---|---:|---:|",
     `| High | ${totals.high} | ${percent(totals.high)} |`,
@@ -144,11 +144,56 @@ function updateReadme(readme: string, stats: TestStats[]): string {
     `| **Total** | **${total}** | **100%** |`,
   ].join("\n");
 
-  return replaceRequired(
+  const withSeverity = replaceRequired(
     readme,
     /\| Severity \| Findings \| Share \|\r?\n\|---\|---:\|---:\|\r?\n\| High \|.*?\r?\n\| Medium \|.*?\r?\n\| Low \|.*?\r?\n\| \*\*Total\*\* \|.*?$/m,
-    table,
+    severityTable,
     "README finding severity table",
+  );
+
+  const categoryLabels = new Map([
+    ["correctness", "Correctness"],
+    ["reliability", "Reliability"],
+    ["maintainability", "Maintainability"],
+    ["testing", "Testing"],
+    ["security", "Security"],
+    ["documentation", "Documentation"],
+    ["performance", "Performance"],
+    ["api-architecture", "API architecture"],
+    ["accessibility", "Accessibility"],
+  ]);
+  const counts = new Map<string, number>();
+  for (const entry of stats) {
+    for (const finding of entry.findings) {
+      counts.set(finding.category, (counts.get(finding.category) ?? 0) + 1);
+    }
+  }
+  const unexpected = [...counts.keys()].filter((category) => !categoryLabels.has(category));
+  if (unexpected.length > 0) {
+    throw new Error(`README category labels missing for: ${unexpected.join(", ")}`);
+  }
+  const categoryCells = [...categoryLabels]
+    .filter(([category]) => counts.has(category))
+    .map(([category, label]) => [label, counts.get(category)!] as const);
+  const categoryRows: string[] = [];
+  for (let index = 0; index < categoryCells.length; index += 2) {
+    const left = categoryCells[index];
+    const right = categoryCells[index + 1];
+    categoryRows.push(
+      `| ${left[0]} | ${left[1]} | ${right?.[0] ?? ""} | ${right?.[1] ?? ""} |`,
+    );
+  }
+  const categoryTable = [
+    "| Category | Findings | Category | Findings |",
+    "|---|---:|---|---:|",
+    ...categoryRows,
+  ].join("\n");
+
+  return replaceRequired(
+    withSeverity,
+    /\| Category \| Findings \| Category \| Findings \|\r?\n\|---\|---:\|---\|---:\|(?:\r?\n\|.*\|)+/,
+    categoryTable,
+    "README finding category table",
   );
 }
 
