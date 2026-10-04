@@ -1,4 +1,4 @@
-name: Validate test set
+name: Validate corpus
 
 on:
   pull_request:
@@ -6,6 +6,8 @@ on:
       - corpus/test/**
       - golden/**
       - scripts/sync-test-set.ts
+      - scripts/validate-golden.ts
+      - docs/EXTRACTION.md
       - README.md
       - package.json
       - package-lock.json
@@ -15,6 +17,8 @@ on:
       - corpus/test/**
       - golden/**
       - scripts/sync-test-set.ts
+      - scripts/validate-golden.ts
+      - docs/EXTRACTION.md
       - README.md
       - package.json
       - package-lock.json
@@ -37,4 +41,5 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm run check:golden
       - run: npm run check:test-set
