@@ -173,12 +173,10 @@ preserving the agent's original line anchors and messages.
 Before labeling, all findings — regardless of producer — are normalized to
 a common schema. This includes: collapsing multi-line messages into
 single-message findings where appropriate, canonicalizing file paths
-relative to the repository root, and preserving finding locations.
-Findings are not discarded or clamped merely because they fall partially
-or entirely outside the PR diff. The classifier explicitly allows findings
-in pre-existing code, outside the diff, or in untouched files to be TPs
-if they are factually correct, relevant, and non-trivial. Scope is recorded
-separately and is not a factor in the classifier's TP/FP decision.
+relative to the repository root, and clamping line ranges to the changed
+hunks of the PR. Findings that fall entirely outside the diff are
+discarded; findings that partially overlap the diff are retained with the
+overlap recorded.
 
 ## 5. Labeling
 
@@ -364,14 +362,11 @@ Matching is performed by an LLM. For each pair group (a chunk of
 candidate findings and a chunk of golden findings in the same file),
 the matcher receives:
 
-- Each candidate finding's file path, line range, and message.
-- Each golden finding's file path, line range, and message.
-
-The current implementation passes `null` for code context on every
-matcher call and disables tools. The matcher therefore receives no
-source-code snippets and cannot inspect the repository; it reasons from
-the finding messages and locations alone. This differs from the classifier,
-which can investigate source code.
+- The code snippet covering the locations of all findings in the group.
+- Each candidate finding's file path, line range, and message, together
+  with the code at that location.
+- Each golden finding's file path, line range, and message, together
+  with the code at that location.
 
 The matcher is prompted to reason about each finding's underlying issue
 and what a minimal fix would look like, then to decide which candidate
@@ -395,33 +390,25 @@ The many-to-many correspondences are resolved into scoring inputs as
 follows:
 
 - **For recall:** a golden finding is *covered* if at least one
-  candidate finding matches it in the raw correspondences, regardless of
-  which golden label the candidate claims for precision. All golden
-  findings matched by one candidate can contribute to recall. Multiple
-  candidates matching the same golden finding do not inflate recall —
-  the golden finding is counted once.
-- **For precision:** candidates are processed in candidate order. Each
-  candidate claims at most one golden finding: the first unclaimed match
-  in golden-set order. It inherits that golden finding's label and is
-  counted as matched ($M$). Only that golden finding is claimed; the
-  candidate's other matches remain available for later candidates to claim.
-  Candidates with no unclaimed match are treated as unmatched and proceed to
+  candidate finding matches it. Multiple candidates matching the same
+  golden finding do not inflate recall — the golden finding is counted
+  once.
+- **For precision:** the first candidate finding that matches a golden
+  finding inherits that golden finding's label and is counted as
+  matched ($M$). Additional candidate findings matching the same
+  golden finding are reclassified as unmatched and proceed to
   Section 6.3 for independent classification. This prevents multiple
   candidates from claiming credit for the same golden TP while still
   letting the classifier assess whether the duplicate findings are
   independently valid.
 
 When a candidate finding matches multiple golden findings, it inherits
-the label of the first *unclaimed* matched golden finding, not necessarily
-the first raw match. Its remaining correspondences still count toward
-recall coverage. For example, if one candidate matches two golden TPs,
-both are covered for recall, but the candidate contributes only one
-matched TP to precision.
+the label of the first matched golden finding (by golden-set order) and
+the remaining correspondences are recorded but do not affect scoring.
 
 ### 6.3 Classification of Unmatched Findings
 
-Candidate findings with no raw match, or whose matches have all already
-been claimed for precision, are classified
+Candidate findings that do not match any golden finding are classified
 using the same Claude Sonnet 5 classifier described in Section 5.3. This
 produces a TP/FP decision and the same auxiliary labels for each unmatched
 candidate finding under the guidelines used to label the golden set.
@@ -433,7 +420,7 @@ Let, for a single PR:
 - $G$ = the set of golden findings.
 - $G_{TP} \subseteq G$ = the golden findings labeled TP.
 - $C$ = the set of candidate findings produced by the agent.
-- $M \subseteq C$ = candidate findings that claim a golden finding for precision.
+- $M \subseteq C$ = candidate findings that match some golden finding.
 - $M_{TP} \subseteq M$ = matched candidate findings whose matched golden
   finding is in $G_{TP}$.
 - $U = C \setminus M$ = unmatched candidate findings.
@@ -453,7 +440,7 @@ methodology has independently labeled.
 $$
 \text{Grounded precision} = \frac{|M_{TP}|}{|M|}
 \qquad
-\text{Grounded recall} = \frac{|\{g \in G_{TP} : \exists c \in C \text{ raw-matched to } g\}|}{|G_{TP}|}
+\text{Grounded recall} = \frac{|\{g \in G_{TP} : \exists c \in M \text{ matched to } g\}|}{|G_{TP}|}
 $$
 
 Grounded precision answers: of the candidate findings that the
@@ -472,7 +459,7 @@ $$
 $$
 
 $$
-\text{Augmented recall} = \frac{|\{g \in G_{TP} : \exists c \in C \text{ raw-matched to } g\}| + |U_{TP}|}{|G_{TP}| + |U_{TP}|}
+\text{Augmented recall} = \frac{|\{g \in G_{TP} : \exists c \in M \text{ matched to } g\}| + |U_{TP}|}{|G_{TP}| + |U_{TP}|}
 $$
 
 Augmented precision answers: across all findings the agent produced,
