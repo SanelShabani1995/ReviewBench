@@ -28,9 +28,10 @@ For each pull request, the benchmark provides a human-reviewed golden set of cod
 - **[Repository mirrors](https://github.com/review-bench).** Each source
   repository in the corpus has a mirror in the review-bench organization,
   named `review-bench/<owner>_<repo>`, holding every task's base and head
-  commits. The judge and the local test script check out pull requests from
-  these mirrors, so the benchmark still runs if an upstream repository is
-  deleted or rewritten.
+  commits. If an original repository link is unavailable, use its corresponding
+  mirror. The judge and the local test script check out pull requests from these
+  mirrors, so the benchmark still runs if an upstream repository is deleted or
+  rewritten.
 - **[Benchmark documentation](docs/METHODOLOGY.md).** How the corpus was
   built, how findings are labeled, and how agents are judged and scored.
 - **[Everything a reviewer vendor needs](#submit-your-reviewer-to-the-reviewbench-leaderboard).**
