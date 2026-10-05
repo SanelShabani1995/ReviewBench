@@ -367,12 +367,6 @@ the matcher receives:
 - Each candidate finding's file path, line range, and message.
 - Each golden finding's file path, line range, and message.
 
-The current implementation passes `null` for code context on every
-matcher call and disables tools. The matcher therefore receives no
-source-code snippets and cannot inspect the repository; it reasons from
-the finding messages and locations alone. This differs from the classifier,
-which can investigate source code.
-
 The matcher is prompted to reason about each finding's underlying issue
 and what a minimal fix would look like, then to decide which candidate
 findings refer to the same underlying issue as which golden findings.
