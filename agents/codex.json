@@ -28,5 +28,6 @@
   "contacts": [
     "abadawi591"
   ],
-  "provider": "Codex"
+  "provider": "Codex",
+  "pr_timeout_seconds": 2400
 }
